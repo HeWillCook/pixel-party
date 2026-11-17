@@ -2,6 +2,7 @@ import type { ActionResult } from 'deepspace/worker'
 import { z } from 'zod'
 import { ROOMS } from '../game/config'
 import { addRoomMember, findRoom, joinCodePattern, roomRecords } from '../server/rooms'
+import type { RoomRecord } from '../server/rooms'
 import type { ServerTools } from '../server/server-tools'
 
 const createParams = z.object({ name: z.string().trim().min(1).max(40), mode: z.enum(['coop', 'team']), visibility: z.enum(['public', 'private']) })
@@ -23,13 +24,13 @@ export async function createRoom(tools: ServerTools, userId: string, params: unk
     return { success: false, code: 'room_limit', error: `You can host at most ${ROOMS.maxActivePerUser} active rooms` }
   }
   for (let attempt = 0; attempt < 10; attempt++) {
-    const joinCode = randomJoinCode(parsed.data.visibility === 'private' ? 4 : 10)
+    const joinCode = randomJoinCode(4)
     const existing = await findRoom(tools, joinCode)
     if (!existing.success) return existing
     // Keep closed codes reserved too: the collection has a unique index and old links must stay closed.
     if (existing.data) continue
     const result = await tools.create('rooms', {
-      ...parsed.data, joinCode, hostId: userId, memberIds: [userId], status: parsed.data.visibility === 'private' ? 'lobby' : 'playing',
+      ...parsed.data, joinCode, hostId: userId, memberIds: [userId], status: 'lobby',
       currentRoundId: '', playerCount: 0, lastActiveAt: Date.now(), isDefaultBoard: false,
     })
     if (result.success) return { success: true, data: { roomId: result.data.recordId, joinCode } }
@@ -46,4 +47,22 @@ export async function joinRoom(tools: ServerTools, userId: string, params: unkno
   if (!result.success) return result
   if (!result.data || result.data.data.status === 'closed') return { success: false, code: 'not_found', error: 'Room not found' }
   return addRoomMember(tools, result.data, userId)
+}
+
+/** Keep the record and unique code as a tombstone; shutdown is retryable. */
+export async function deleteRoom(tools: ServerTools, userId: string, params: unknown, close: (room: RoomRecord) => Promise<void>): Promise<ActionResult<{ roomId: string }>> {
+  const parsed = joinParams.safeParse(params)
+  if (!parsed.success) return { success: false, code: 'invalid_params', error: 'Invalid join code' }
+  const result = await findRoom(tools, parsed.data.joinCode)
+  if (!result.success) return result
+  const room = result.data
+  if (!room) return { success: false, code: 'not_found', error: 'Room not found' }
+  if (room.data.isDefaultBoard || room.data.joinCode.toLowerCase() === 'play') return { success: false, code: 'default_board', error: 'The public board cannot be deleted' }
+  if (room.data.hostId !== userId) return { success: false, code: 'not_host', error: 'Only the host can delete this room' }
+  const closed = await tools.update('rooms', room.recordId, { status: 'closed', playerCount: 0 })
+  if (!closed.success) return closed
+  try { await close(room) } catch {
+    return { success: false, code: 'close_failed', error: 'Room closed to new joins, but shutdown failed. Retry Delete room.' }
+  }
+  return { success: true, data: { roomId: room.recordId } }
 }

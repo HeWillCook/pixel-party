@@ -54,7 +54,7 @@ export function countPlayers(connections: Array<{ userId: string | null }>): num
 export function newRoomState(init: { roomId: string; mode: Mode; isDefaultBoard: boolean; startsInLobby?: boolean }, now: number, rng: () => number): RoomState {
   const config = MODES[init.mode]
   const wordEntry = pickWord(rng, [])
-  const lobby = init.startsInLobby === true && !init.isDefaultBoard
+  const lobby = init.startsInLobby === true
   return {
     roomId: init.roomId, mode: init.mode, isDefaultBoard: init.isDefaultBoard, grid: createGrid(config.width, config.height), version: 0,
     round: { id: `${now}-0`, word: lobby ? '' : wordEntry.word, state: lobby ? 'lobby' : 'playing', startedAt: lobby ? 0 : now, endsAt: lobby ? null : now + config.capMs, askAvailableAt: now + JUDGE.askMinMs },
@@ -94,7 +94,7 @@ function endRound(s: RoomState, now: number, outcome: 'won' | 'timeout', guesses
   const contributorCount = contributors(s.grid).length
   const result: RoundView['result'] = score === undefined ? { outcome, contributorCount } : { outcome, score, contributorCount }
   const round: RoundView = { ...s.round, state: 'intermission', endedAt: now, result }
-  const state: RoomState = { ...s, round, status: 'intermission', intermissionEndsAt: now + MODES[s.mode].intermissionMs }
+  const state: RoomState = { ...s, round, status: 'intermission', intermissionEndsAt: null }
   const event: RoundEndedEvent = { roomId: s.roomId, roundId: round.id, mode: s.mode, word: round.word, startedAt: round.startedAt, endedAt: now, outcome, ...(score === undefined ? {} : { score }), pixelsUsed: used, durationMs, contributorIds: contributors(s.grid), finalGuesses: guesses }
   return { state, events: [{ type: 'round', round }, { type: 'roundEnded', event }] }
 }
@@ -123,38 +123,34 @@ function statusEvent(s: RoomState, now: number, playerCount: number): RoomEvent 
   return { type: 'roomStatus', event: { roomId: s.roomId, status: s.status, playerCount, lastActiveAt: now, currentRoundId: s.round.id } }
 }
 
-export function advance(s: RoomState, now: number, signedInConnected: number, rng: () => number): RoomTransition {
-  if (signedInConnected === 0 && !s.isDefaultBoard && (s.status === 'paused' || s.status === 'lobby') && s.emptySince !== null && now - s.emptySince >= ROOMS.closeAfterEmptyMs) {
+export function advance(s: RoomState, now: number, signedInConnected: number, _rng: () => number): RoomTransition {
+  if (s.status === 'closed') return { state: s, events: [] }
+  if (signedInConnected === 0 && !s.isDefaultBoard && (s.status === 'paused' || s.status === 'lobby' || s.status === 'intermission') && s.emptySince !== null && now - s.emptySince >= ROOMS.closeAfterEmptyMs) {
     const state: RoomState = { ...s, status: 'closed' }
     return { state, events: [statusEvent(state, now, signedInConnected)] }
   }
-  if (s.status === 'lobby') {
+  if (s.status === 'lobby' || s.status === 'intermission') {
     const emptySince = signedInConnected > 0 ? null : s.emptySince ?? now
-    return { state: emptySince === s.emptySince ? s : { ...s, emptySince }, events: [] }
+    return { state: emptySince === s.emptySince && s.intermissionEndsAt === null ? s : { ...s, emptySince, intermissionEndsAt: null }, events: [] }
   }
-  if (signedInConnected === 0 && (s.status === 'playing' || s.status === 'intermission')) {
+  if (signedInConnected === 0 && s.status === 'playing') {
     const state: RoomState = { ...s, pausedFrom: s.status, status: 'paused', pausedAt: now, emptySince: now, round: { ...s.round, state: 'paused' } }
     return { state, events: [statusEvent(state, now, 0)] }
   }
   if (s.status === 'paused' && signedInConnected > 0 && s.pausedAt !== null) {
     const elapsed = now - s.pausedAt
-    if (elapsed > ROOMS.resumeWindowMs) {
-      const next = startNextRound({ ...s, status: 'playing' }, now, rng)
-      return { state: next.state, events: [...next.events, statusEvent(next.state, now, signedInConnected)] }
-    }
     const restored = s.pausedFrom ?? 'playing'
     const round: RoundView = { ...s.round, state: restored, startedAt: s.round.startedAt + elapsed, endsAt: s.round.endsAt === null ? null : s.round.endsAt + elapsed, askAvailableAt: s.round.askAvailableAt + elapsed }
-    const state: RoomState = { ...s, status: restored, round, intermissionEndsAt: s.intermissionEndsAt === null ? null : s.intermissionEndsAt + elapsed, lastJudgedAt: s.lastJudgedAt + elapsed, pausedAt: null, pausedFrom: null, emptySince: null }
+    const state: RoomState = { ...s, status: restored, round, intermissionEndsAt: null, lastJudgedAt: s.lastJudgedAt + elapsed, pausedAt: null, pausedFrom: null, emptySince: null }
     return { state, events: [{ type: 'round', round }, statusEvent(state, now, signedInConnected)] }
   }
   if (s.status === 'playing' && now >= s.round.startedAt + MODES[s.mode].capMs) return endRound(s, now, 'timeout', s.lastGuesses)
-  if (s.status === 'intermission' && s.intermissionEndsAt !== null && now >= s.intermissionEndsAt) return startNextRound(s, now, rng)
   return { state: s, events: [] }
 }
 
 export function nextAlarmAt(s: RoomState, now: number): number | null {
   const deadlines: number[] = []
-  if ((s.status === 'paused' || s.status === 'lobby') && !s.isDefaultBoard && s.emptySince !== null) deadlines.push(s.emptySince + ROOMS.closeAfterEmptyMs)
+  if ((s.status === 'paused' || s.status === 'lobby' || s.status === 'intermission') && !s.isDefaultBoard && s.emptySince !== null) deadlines.push(s.emptySince + ROOMS.closeAfterEmptyMs)
   if (s.status === 'playing') {
     deadlines.push(s.round.startedAt + MODES[s.mode].capMs)
     if (s.version !== s.lastJudgedVersion && !s.judgeInFlight) {
@@ -163,7 +159,6 @@ export function nextAlarmAt(s: RoomState, now: number): number | null {
       deadlines.push(Math.max(s.lastJudgedAt + JUDGE.tickMs, rateReady))
     }
   }
-  if (s.status === 'intermission' && s.intermissionEndsAt !== null) deadlines.push(s.intermissionEndsAt)
   return deadlines.length ? Math.max(now, Math.min(...deadlines)) : null
 }
 
@@ -173,7 +168,7 @@ export function serializeRoomState(s: RoomState): string {
 
 export function deserializeRoomState(json: string): RoomState {
   const state = JSON.parse(json) as RoomState & { grid: { width: number; height: number; cells: string; placedBy: string[] } }
-  return { ...state, judgeInFlight: false, grid: { ...state.grid, cells: decodeCells(state.grid.cells, state.grid.width * state.grid.height) } }
+  return { ...state, judgeInFlight: false, intermissionEndsAt: null, grid: { ...state.grid, cells: decodeCells(state.grid.cells, state.grid.width * state.grid.height) } }
 }
 
 /** Apply a frame atomically in the shell, preserving per-cell validation and responses. */
@@ -185,4 +180,11 @@ export function applyPlacements(state: RoomState, cells: Placement[], userId: st
     events.push(...next.events)
   }
   return { state, events }
+}
+
+/** Identities are normalized by the socket boundary; only live players can start. */
+export function nextRoundRejection(state: RoomState, userId: string | null, hostId: string | null, connectedIds: string[]): 'not_signed_in' | 'not_host' | null {
+  if (!userId || !connectedIds.includes(userId)) return 'not_signed_in'
+  if (state.isDefaultBoard || userId === hostId || (hostId && !connectedIds.includes(hostId))) return null
+  return 'not_host'
 }

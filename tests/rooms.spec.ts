@@ -39,7 +39,7 @@ async function token(request: APIRequestContext): Promise<string> {
 }
 
 test('room actions require authentication', async ({ request }) => {
-  for (const action of ['createRoom', 'joinRoom']) {
+  for (const action of ['createRoom', 'joinRoom', 'deleteRoom']) {
     expect((await request.post(`/api/actions/${action}`, { data: {} })).status()).toBe(401)
   }
 })
@@ -69,6 +69,7 @@ test.describe('authenticated room API', () => {
     for (let index = 0; index < 5; index++) {
       const result = await action('createRoom', hostToken, { name: 'API room', mode: 'coop', visibility: index === 0 ? 'public' : 'private' })
       expect(result.success).toBe(true)
+      expect(result.data.joinCode).toMatch(/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}$/)
       created.push(result.data)
     }
     expect(await action('createRoom', hostToken, { name: 'Sixth', mode: 'coop', visibility: 'public' })).toMatchObject({ success: false, code: 'room_limit' })

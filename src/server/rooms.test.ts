@@ -1,7 +1,7 @@
 import { canCreate, canDelete, canRead, canUpdate } from 'deepspace/worker'
 import { describe, expect, it, vi } from 'vitest'
 import { schemas } from '../schemas'
-import { createRoom, joinRoom } from '../actions/rooms'
+import { createRoom, deleteRoom, joinRoom } from '../actions/rooms'
 import { ensureDefaultBoard } from './default-board'
 import { memoryTools } from './room-test-tools'
 
@@ -31,14 +31,14 @@ describe('game collection permissions', () => {
 })
 
 describe('room actions', () => {
-  it('creates validated public/private rooms with random short private codes and legacy public codes', async () => {
+  it('creates validated public/private rooms with four-character codes', async () => {
     const { tools, rows } = memoryTools()
     for (const visibility of ['public', 'private']) {
       const result = await createRoom(tools, 'host', { name: 'Drawing party', mode: 'coop', visibility })
       expect(result.success).toBe(true)
       if (!result.success) throw new Error(result.error)
-      expect(result.data.joinCode).toMatch(visibility === 'private' ? /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}$/ : /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{10}$/)
-      expect(rows('rooms').get(result.data.roomId)!.status).toBe(visibility === 'private' ? 'lobby' : 'playing')
+      expect(result.data.joinCode).toMatch(/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}$/)
+      expect(rows('rooms').get(result.data.roomId)!.status).toBe('lobby')
       expect(rows('rooms').get(result.data.roomId)).toMatchObject({ visibility, hostId: 'host', memberIds: ['host'], playerCount: 0, currentRoundId: '', isDefaultBoard: false })
     }
     expect(new Set([...rows('rooms').values()].map(room => room.joinCode)).size).toBe(2)
@@ -122,20 +122,20 @@ describe('room actions', () => {
   })
 })
 
-it('retries collisions ten times without overwriting rooms', async () => {
+it.each(['public', 'private'] as const)('retries %s collisions ten times without reusing a closed code', async visibility => {
   const { tools, rows, create } = memoryTools()
   const random = vi.spyOn(crypto, 'getRandomValues').mockImplementation(array => {
     (array as Uint8Array).fill(0)
     return array
   })
   try {
-    rows('rooms').set('existing', { joinCode: 'AAAA', status: 'lobby', hostId: 'other' })
-    expect(await createRoom(tools, 'host', { name: 'Party', mode: 'coop', visibility: 'private' })).toMatchObject({ success: false, code: 'code_unavailable' })
+    rows('rooms').set('existing', { joinCode: 'AAAA', status: 'closed', hostId: 'other' })
+    expect(await createRoom(tools, 'host', { name: 'Party', mode: 'coop', visibility })).toMatchObject({ success: false, code: 'code_unavailable' })
     expect(random).toHaveBeenCalledTimes(10)
     expect(create).not.toHaveBeenCalled()
     random.mockImplementationOnce(array => { (array as Uint8Array).fill(1); return array })
-    expect(await createRoom(tools, 'host', { name: 'Party', mode: 'coop', visibility: 'private' })).toMatchObject({ success: true, data: { joinCode: 'BBBB' } })
-    expect(rows('rooms').get('existing')!.status).toBe('lobby')
+    expect(await createRoom(tools, 'host', { name: 'Party', mode: 'coop', visibility })).toMatchObject({ success: true, data: { joinCode: 'BBBB' } })
+    expect(rows('rooms').get('existing')!.status).toBe('closed')
   } finally { random.mockRestore() }
 })
 it('joins short, legacy and default codes case-insensitively', async () => {
@@ -151,4 +151,35 @@ it('retries a unique-index collision from a concurrent creator but returns other
   expect(create).toHaveBeenCalledTimes(2)
   create.mockResolvedValueOnce({ success: false, error: 'offline' } as never)
   expect(await createRoom(tools, 'host', { name: 'Fail', mode: 'coop', visibility: 'private' })).toMatchObject({ success: false, error: 'offline' })
+})
+
+
+it('only lets the host close a custom room, reserves its code, and frees an active slot', async () => {
+  const { tools, rows, update } = memoryTools()
+  for (let i = 0; i < 5; i++) rows('rooms').set(`room${i}`, { joinCode: `ABC${i}`, hostId: 'host', status: 'playing', isDefaultBoard: false })
+  const close = vi.fn(async () => {})
+  expect(await deleteRoom(tools, 'guest', { joinCode: 'ABC0' }, close)).toMatchObject({ success: false, code: 'not_host' })
+  expect(update).not.toHaveBeenCalled()
+  expect(close).not.toHaveBeenCalled()
+  expect(await deleteRoom(tools, 'host', { joinCode: '../bad' }, close)).toMatchObject({ success: false, code: 'invalid_params' })
+  expect(await deleteRoom(tools, 'host', { joinCode: 'NONE' }, close)).toMatchObject({ success: false, code: 'not_found' })
+  expect(await deleteRoom(tools, 'host', { joinCode: 'abc0' }, close)).toMatchObject({ success: true })
+  expect(rows('rooms').get('room0')).toMatchObject({ joinCode: 'ABC0', status: 'closed' })
+  expect(close).toHaveBeenCalledWith(expect.objectContaining({ recordId: 'room0' }))
+  expect(await joinRoom(tools, 'host', { joinCode: 'ABC0' })).toMatchObject({ success: false, code: 'not_found' })
+  expect(await createRoom(tools, 'host', { name: 'Replacement', mode: 'coop', visibility: 'public' })).toMatchObject({ success: true })
+  rows('rooms').set('default-board', { joinCode: 'play', hostId: 'host', status: 'playing', isDefaultBoard: true })
+  expect(await deleteRoom(tools, 'host', { joinCode: 'PLAY' }, close)).toMatchObject({ success: false, code: 'default_board' })
+})
+
+it('reports storage and shutdown failures and lets hosts retry an already closed room', async () => {
+  const { tools, rows, update } = memoryTools()
+  rows('rooms').set('room', { joinCode: 'AB2Z', hostId: 'host', status: 'playing', isDefaultBoard: false })
+  const close = vi.fn<() => Promise<void>>(async () => { throw new Error('offline') })
+  update.mockResolvedValueOnce({ success: false, error: 'storage offline' } as never)
+  expect(await deleteRoom(tools, 'host', { joinCode: 'AB2Z' }, close)).toMatchObject({ success: false, error: 'storage offline' })
+  expect(close).not.toHaveBeenCalled()
+  expect(await deleteRoom(tools, 'host', { joinCode: 'AB2Z' }, close)).toMatchObject({ success: false, code: 'close_failed' })
+  close.mockResolvedValueOnce(undefined)
+  expect(await deleteRoom(tools, 'host', { joinCode: 'AB2Z' }, close)).toMatchObject({ success: true })
 })

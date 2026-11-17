@@ -52,10 +52,20 @@ describe('PixelRoom persistence recovery', () => {
     expect(restored.judgeInFlight).toBe(false)
   })
 
+  it('restores legacy intermissions without their auto-start deadline', () => {
+    const state = newRoomState(init, 100, () => 0)
+    state.status = 'intermission'
+    state.round.state = 'intermission'
+    state.intermissionEndsAt = 200
+    expect(restorePixelState(serializeRoomState(state), init, 900, () => 0)).toMatchObject({
+      status: 'intermission', intermissionEndsAt: null, round: state.round,
+    })
+  })
+
   it.each(['not json', '{}', '{"grid":{"cells":"!"}}', '{"round":null}'])(
     'replaces a corrupt row without crashing: %s', (saved) => {
       const log = vi.spyOn(console, 'warn').mockImplementation(() => {})
-      expect(restorePixelState(saved, init, 900, () => 0)).toEqual(newRoomState(init, 900, () => 0))
+      expect(restorePixelState(saved, init, 900, () => 0)).toEqual(newRoomState({ ...init, startsInLobby: true }, 900, () => 0))
       expect(log).toHaveBeenCalledTimes(1)
     },
   )
@@ -64,22 +74,23 @@ describe('PixelRoom persistence recovery', () => {
     const saved = JSON.parse(serializeRoomState(newRoomState(init, 100, () => 0)))
     saved.round.startedAt = 'invalid'
     vi.spyOn(console, 'warn').mockImplementation(() => {})
-    expect(restorePixelState(JSON.stringify(saved), init, 900, () => 0).round.startedAt).toBe(900)
+    expect(restorePixelState(JSON.stringify(saved), init, 900, () => 0).round.state).toBe('lobby')
   })
 })
 
-describe('temporary next authorization seam', () => {
+describe('next authorization seam', () => {
   const state = newRoomState(init, 100, () => 0)
   it('normalizes SDK anonymous identities before authorizing', () => {
     expect(nextCommandRejection(state, null)).toBe('not_signed_in')
     expect(nextCommandRejection(state, 'anon-socket')).toBe('not_signed_in')
   })
-  it('denies unknown-host custom rooms and always denies next on the default board', () => {
-    expect(nextCommandRejection(state, 'owner')).toBe('not_host')
-    expect(nextCommandRejection({ ...state, isDefaultBoard: true }, 'owner')).toBe('not_host')
-    expect(nextCommandRejection({ ...state, isDefaultBoard: true }, 'owner', 'owner')).toBe('not_host')
-    expect(nextCommandRejection(state, 'other', 'owner')).toBe('not_host')
-    expect(nextCommandRejection(state, 'owner', 'owner')).toBeNull()
+  it('denies unknown hosts, allows default-board players and recovers when a host leaves', () => {
+    expect(nextCommandRejection(state, 'owner', null, ['owner'])).toBe('not_host')
+    expect(nextCommandRejection({ ...state, isDefaultBoard: true }, 'owner', null, ['owner'])).toBeNull()
+    expect(nextCommandRejection({ ...state, isDefaultBoard: true }, 'owner', 'owner', ['owner'])).toBeNull()
+    expect(nextCommandRejection(state, 'other', 'owner', ['owner', 'other'])).toBe('not_host')
+    expect(nextCommandRejection(state, 'owner', 'owner', ['owner'])).toBeNull()
+    expect(nextCommandRejection(state, 'other', 'owner', ['other'])).toBeNull()
   })
 })
 
@@ -188,6 +199,106 @@ describe('durable room boundaries', () => {
     await restored.command(host.connection, { t: 'next' })
     expect((JSON.parse((database.prepare('SELECT state FROM pixel_state').get() as { state: string }).state) as RoomState).roundCounter).toBe(1)
     database.close()
+  })
+
+  it('closes live sockets, persists a tombstone, deletes alarms and stops judge calls on host deletion', async () => {
+    const harness = roomHarness()
+    harness.database.prepare('UPDATE pixel_state SET host_id = ?').run('host')
+    const room = harness.makeRoom()
+    const host = await harness.connect('host', room)
+    const guest = await harness.connect('guest', room)
+    const request = (hostId: string) => new Request('https://pixel/close', { method: 'POST', headers: { 'X-Room-Id': 'test', 'X-Room-Host': hostId } })
+    expect((await room.fetch(request('guest'))).status).toBe(403)
+    expect(harness.saved().status).toBe('playing')
+    expect((await room.fetch(request('host'))).status).toBe(204)
+    expect(harness.saved().status).toBe('closed')
+    for (const client of [host, guest]) {
+      expect(messages(client).at(-1)).toEqual({ t: 'closed' })
+      expect(client.connection.readyState).toBe(WebSocket.CLOSED)
+    }
+    expect(harness.durable.storage.deleteAlarm).toHaveBeenCalled()
+    await room.tick()
+    await room.command(host.connection, { t: 'next' })
+    await room.command(host.connection, { t: 'ask' })
+    expect(integration).not.toHaveBeenCalled()
+    expect(reserve).not.toHaveBeenCalled()
+    expect(harness.saved().status).toBe('closed')
+    const restored = harness.makeRoom()
+    expect((await restored.fetch(new Request('https://pixel/ws', { headers: { Upgrade: 'websocket' } }))).status).toBe(410)
+    harness.database.close()
+  })
+
+  it('closes a room that has never opened a socket and remains closed after wake', async () => {
+    const database = new DatabaseSync(':memory:')
+    const durable = durableState(database)
+    const room = new TestPixelRoom(durable as unknown as DurableObjectState, {} as Env)
+    expect((await room.fetch(new Request('https://pixel/close', { method: 'POST', headers: {
+      'X-Room-Id': 'test', 'X-Room-Mode': 'coop', 'X-Room-Default': 'false', 'X-Room-Host': 'host',
+    } }))).status).toBe(204)
+    const restored = new TestPixelRoom(durable as unknown as DurableObjectState, {} as Env)
+    expect((await restored.fetch(new Request('https://pixel/ws', { headers: { Upgrade: 'websocket' } }))).status).toBe(410)
+    database.close()
+  })
+
+  it('waits for earlier status writes before writing closed and ignores an in-flight judge result', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const harness = roomHarness()
+    harness.database.prepare('UPDATE pixel_state SET host_id = ?').run('host')
+    const room = harness.makeRoom()
+    const host = await harness.connect('host', room)
+    await room.command(host.connection, { t: 'place', x: 0, y: 0, c: 4 })
+    vi.setSystemTime(Date.now() + JUDGE.askMinMs)
+    reserve.mockResolvedValue(Response.json({ ok: true }))
+    let releaseJudge!: (result: unknown) => void
+    let called!: () => void
+    const began = new Promise<void>(resolve => { called = resolve })
+    integration.mockImplementation(() => { called(); return new Promise(resolve => { releaseJudge = resolve }) })
+    const judging = room.command(host.connection, { t: 'ask' })
+    await began
+    let releaseStatus!: () => void
+    let statusBegan!: () => void
+    const writing = new Promise<void>(resolve => { statusBegan = resolve })
+    room.onRoomStatus.mockImplementationOnce(async () => {
+      statusBegan()
+      await new Promise<void>(resolve => { releaseStatus = resolve })
+    })
+    const joining = harness.connect('guest', room)
+    await writing
+    const closing = room.fetch(new Request('https://pixel/close', { method: 'POST', headers: { 'X-Room-Id': 'test', 'X-Room-Host': 'host' } }))
+    releaseStatus()
+    await joining
+    expect((await closing).status).toBe(204)
+    releaseJudge({ success: true, data: { content: [{ type: 'text', text: '{"guesses":["house"],"confidence":0.9}' }] } })
+    await judging
+    expect(harness.saved().status).toBe('closed')
+    expect(messages(host).at(-1)).toEqual({ t: 'closed' })
+    expect(room.onRoundEnded).not.toHaveBeenCalled()
+    expect(room.onRoomStatus).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'closed' }))
+    expect(harness.durable.storage.deleteAlarm).toHaveBeenCalled()
+    harness.database.close()
+  })
+
+  it('cannot close the default board', async () => {
+    const harness = roomHarness(true)
+    expect((await harness.room.fetch(new Request('https://pixel/close', { method: 'POST', headers: { 'X-Room-Id': 'test', 'X-Room-Host': 'host' } }))).status).toBe(403)
+    expect(harness.saved().status).not.toBe('closed')
+    harness.database.close()
+  })
+
+  it('lets a connected guest start when the host is absent, and lets any default-board player start', async () => {
+    for (const isDefault of [false, true]) {
+      const harness = roomHarness(isDefault, state => ({ ...state, status: 'intermission', intermissionEndsAt: 1, round: { ...state.round, state: 'intermission' } }))
+      harness.database.prepare('UPDATE pixel_state SET host_id = ?').run('host')
+      const room = harness.makeRoom()
+      const guest = await harness.connect('guest', room)
+      await room.tick()
+      expect(harness.saved().status).toBe('intermission')
+      expect(harness.durable.storage.deleteAlarm).toHaveBeenCalled()
+      await room.command(guest.connection, { t: 'next' })
+      expect(harness.saved().status).toBe('playing')
+      expect(harness.saved().roundCounter).toBe(1)
+      harness.database.close()
+    }
   })
 
   it('batches solo cells into one durable write and keeps the abuse cap after wake', async () => {
@@ -442,7 +553,7 @@ describe('durable room boundaries', () => {
     harness.database.close()
   })
 
-  it.each(['connect', 'message', 'disconnect', 'alarm'])('still arms an alarm after %s persistence fails', async handler => {
+  it.each(['connect', 'message', 'disconnect', 'alarm'])('maintains the correct alarm after %s persistence fails', async handler => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(1_800_000_000_000)
     const harness = roomHarness()
@@ -456,7 +567,10 @@ describe('durable room boundaries', () => {
       : handler === 'disconnect' ? harness.room.disconnect(owner.connection)
       : harness.room.tick()
     await expect(pending).rejects.toThrow('storage failed')
-    expect(harness.durable.storage.setAlarm).toHaveBeenCalledOnce()
+    if (handler === 'alarm') {
+      expect(harness.durable.storage.deleteAlarm).toHaveBeenCalled()
+      expect(harness.durable.storage.setAlarm).not.toHaveBeenCalled()
+    } else expect(harness.durable.storage.setAlarm).toHaveBeenCalledOnce()
     harness.database.close()
   })
 
