@@ -36,6 +36,7 @@ A live, shared pixel canvas turned into a game, judged by an AI.
 | 2026-11-16 | Builder-check calls: rooms pause when empty and close after 30 min; private rooms via link + member list; live guesses over WebSocket, not records | Nothing runs or costs money in an empty room; avoids ~240 records/hr/room |
 | 2026-11-16 | Cut quick play / matchmaking | Only useful with real traffic; with few players it lands people in empty rooms; default board covers "just play" |
 | 2026-11-16 | App-wide daily AI budget (default 3,000 judge calls/day ≈ $0.25), then "AI is resting" | Measured cost is tiny, but scripted accounts could otherwise run ~$3/day each; bounds worst case |
+| 2026-11-16 | Verification pipeline: implementer self-check → cross-family review → orchestrator re-runs checks → logged; CI runs `npm run verify` on every push | Nothing is done on an agent's say-so; gives the writeup a concrete "what I verified" record |
 | 2026-11-16 | Rooms (friends via link/code, or random quick-play) plus an always-on public co-op board | Reviewers likely visit alone; co-op works solo, team mode needs a room of friends or two tabs |
 
 ## DeepSpace features: planned use
@@ -100,6 +101,14 @@ AI image generation (the point is humans draw), ElevenLabs announcer (gimmick).
 
 - **2026-11-16: Design doc approved:** `docs/superpowers/specs/2026-11-16-pixel-party-design.md` (builder check by OpenCode DeepSeek Flash; 6 of its 7 questions settled by me, solo-play decided by Will).
 
+- **2026-11-16: Scaffold code lowers the day-1 risks (read by me in spike 2's scratch scaffold).** The scaffold's
+  `src/server/realtime-routes.ts` WebSocket route already accepts connections with no token (identity null), so
+  spectators work. Server-side record writes are a `RECORD_ROOMS` stub `POST /api/tools/execute` with
+  `X-App-Action`, and integrations are `apiWorkerFetch(env, …)` with `APP_OWNER_JWT` (both in
+  `src/server/action-routes.ts`). Both use only env bindings a custom Durable Object also receives. Still to prove at
+  runtime in plan Task 1.
+- **2026-11-16: Implementation plan written:** `docs/superpowers/plans/2026-11-16-pixel-party.md` (11 tasks; tasks 9-10 are should-ship).
+
 ## Spikes (throwaway tests)
 
 | # | Question | Status | Result |
@@ -117,6 +126,11 @@ AI image generation (the point is humans draw), ElevenLabs announcer (gimmick).
 - Can a custom DO call the integration proxy directly? (verify day 1)
 - Cooldown length, round length, judge frequency
 - Final name ("Pixel Party" for now)
+
+## Verification log
+
+| Task | Commit | Commands run | Result | Reviewer | Will to check by hand |
+|---|---|---|---|---|---|
 
 ## Agent log
 
