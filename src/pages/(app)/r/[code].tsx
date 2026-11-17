@@ -18,20 +18,22 @@ import {
   Lock,
   LogIn,
   SearchX,
-  Sparkles,
   Trophy,
   Users,
   XCircle,
 } from 'lucide-react'
+import { DeleteRoomButton } from '../../../components/game/DeleteRoomButton'
 import { AskAiButton } from '../../../components/game/AskAiButton'
 import { GuessFeed } from '../../../components/game/GuessFeed'
+import { MuteButton } from '../../../components/game/MuteButton'
 import { Palette } from '../../../components/game/Palette'
 import { PixelCanvas } from '../../../components/game/PixelCanvas'
 import { PlayerCursors } from '../../../components/game/PlayerCursors'
+import { PlayersPanel } from '../../../components/game/PlayersPanel'
 import { RoundBar } from '../../../components/game/RoundBar'
+import { useGameSounds } from '../../../components/game/useGameSounds'
 import { Button } from '../../../components/ui'
 import { roomAccessView, type RejectMsg } from '../../../game/client-state'
-import { MODES } from '../../../game/config'
 import { contributorLabel } from '../../../game/contributor-label'
 import { cooldownMs } from '../../../game/rules'
 import { usePixelRoom } from '../../../hooks/usePixelRoom'
@@ -45,6 +47,9 @@ interface RoomRecord {
   status: 'lobby' | 'playing' | 'intermission' | 'paused' | 'closed'
   isDefaultBoard: boolean
 }
+
+// Space for the canvas/palette gap, frame shadow and page bottom padding.
+const CANVAS_BOTTOM_CHROME_PX = 24
 
 interface RoundRecord {
   roomId: string
@@ -78,7 +83,7 @@ function rejectMessage(reject: RejectMsg | null, now: number): string | null {
     case 'round_inactive':
       return 'Round is not currently active.'
     case 'not_host':
-      return 'Only the room host can skip to the next round.'
+      return 'The host starts the next round while connected.'
     case 'out_of_bounds':
       return 'That spot is outside the canvas.'
     case 'bad_color':
@@ -92,15 +97,30 @@ function InviteBadge({ code }: { code: string }) {
   const [copyStatus, setCopyStatus] = useState('Copy link')
   return (
     <div className="flex items-center gap-2">
-      <span data-testid="room-code" className="font-pixel rounded-md border-2 border-amber-400 bg-amber-400/10 px-3 py-1 text-lg font-extrabold tracking-widest text-amber-300" aria-label={`Room code ${code}`}>
+      <span
+        data-testid="room-code"
+        className="pp-chip px-2.5 py-0.5 text-lg tracking-widest"
+        aria-label={`Room code ${code}`}
+      >
         {code}
       </span>
-      <Button type="button" variant="secondary" size="sm" className="arcade-btn gap-1.5" data-testid="copy-room-link" onClick={async () => {
-        try {
-          await navigator.clipboard.writeText(new URL(`/r/${encodeURIComponent(code)}`, window.location.origin).href)
-          setCopyStatus('Copied!')
-        } catch { setCopyStatus('Could not copy') }
-      }}>
+      <Button
+        type="button"
+        variant="secondary"
+        size="sm"
+        className="pp-btn h-8 gap-1.5 px-3 text-base uppercase"
+        data-testid="copy-room-link"
+        onClick={async () => {
+          try {
+            await navigator.clipboard.writeText(
+              new URL(`/r/${encodeURIComponent(code)}`, window.location.origin).href,
+            )
+            setCopyStatus('Copied!')
+          } catch {
+            setCopyStatus('Could not copy')
+          }
+        }}
+      >
         <Copy className="h-3.5 w-3.5" aria-hidden />
         <span aria-live="polite">{copyStatus}</span>
       </Button>
@@ -117,6 +137,7 @@ export default function RoomPage() {
   const { getName } = useUserLookup()
 
   const { state, sessionExpired, place, ask, next } = usePixelRoom(joinCode)
+  const { muted, toggleMute } = useGameSounds(state)
   const { peers, updateState: updatePresence } = usePresenceRoom(`pixel:${joinCode}`)
 
   const { records: roomRecords } = useQuery<RoomRecord>('rooms', {
@@ -142,6 +163,17 @@ export default function RoomPage() {
   const trailingCursorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const overlayDialogRef = useRef<HTMLDivElement | null>(null)
 
+  const roomPageRef = useRef<HTMLDivElement | null>(null)
+  const headerRef = useRef<HTMLDivElement | null>(null)
+  const centerColRef = useRef<HTMLDivElement | null>(null)
+  const roundBarWrapRef = useRef<HTMLDivElement | null>(null)
+  const canvasSlotRef = useRef<HTMLDivElement | null>(null)
+  const paletteWrapRef = useRef<HTMLDivElement | null>(null)
+  const [availBox, setAvailBox] = useState<{ width: number; height: number }>({
+    width: 640,
+    height: 600,
+  })
+
   useEffect(() => {
     const interval = setInterval(() => {
       setNow(Date.now())
@@ -156,6 +188,56 @@ export default function RoomPage() {
       }
     }
   }, [])
+
+  const isSpectator = state.snapshotLoaded ? !state.you.userId : !isSignedIn
+  const roundPlaying = state.round?.state === 'playing'
+  const canDraw = Boolean(state.you.userId) && Boolean(roundPlaying)
+  const cooldownTotalMs = cooldownMs(Math.max(1, state.players))
+  const cooldownRemainingMs = Math.max(0, state.you.cooldownUntil - now)
+  const friendlyReject = rejectMessage(state.lastReject, now)
+
+  useEffect(() => {
+    const measure = () => {
+      const col = centerColRef.current
+      if (!col) return
+      const colWidth = col.clientWidth || Math.max(280, window.innerWidth - 32)
+      const slot = canvasSlotRef.current
+      // The app shell locks document scrolling; main is the sole scroll container.
+      const topOffset = slot
+        ? slot.getBoundingClientRect().top + (slot.closest('main')?.scrollTop ?? 0)
+        : 140
+      const paletteH = paletteWrapRef.current
+        ? paletteWrapRef.current.getBoundingClientRect().height
+        : 36
+      const usedHeight = topOffset + paletteH + CANVAS_BOTTOM_CHROME_PX
+      const availHeight = Math.max(200, window.innerHeight - usedHeight)
+      setAvailBox((prev) =>
+        prev.width === colWidth && prev.height === availHeight
+          ? prev
+          : { width: colWidth, height: availHeight },
+      )
+    }
+
+    measure()
+    const ro = new ResizeObserver(measure)
+    if (roomPageRef.current) ro.observe(roomPageRef.current)
+    if (centerColRef.current) ro.observe(centerColRef.current)
+    if (headerRef.current) ro.observe(headerRef.current)
+    if (roundBarWrapRef.current) ro.observe(roundBarWrapRef.current)
+    if (paletteWrapRef.current) ro.observe(paletteWrapRef.current)
+    window.addEventListener('resize', measure)
+    return () => {
+      ro.disconnect()
+      window.removeEventListener('resize', measure)
+    }
+  }, [
+    state.snapshotLoaded,
+    state.round?.state,
+    isSpectator,
+    Boolean(friendlyReject),
+    sessionExpired,
+    roomDoc?.data.name,
+  ])
 
   const handleHoverCell = useCallback(
     (cell: { x: number; y: number } | null) => {
@@ -184,12 +266,6 @@ export default function RoomPage() {
     [updatePresence],
   )
 
-  const isSpectator = state.snapshotLoaded ? !state.you.userId : !isSignedIn
-  const roundPlaying = state.round?.state === 'playing'
-  const canDraw = Boolean(state.you.userId) && Boolean(roundPlaying)
-  const cooldownTotalMs = cooldownMs(Math.max(1, state.players))
-  const cooldownRemainingMs = Math.max(0, state.you.cooldownUntil - now)
-
   const pixelsCount = useMemo(() => {
     let count = 0
     for (let i = 0; i < state.cells.length; i++) {
@@ -205,6 +281,11 @@ export default function RoomPage() {
     joinCode !== 'play' &&
     roomDoc?.data.hostId === user?.id
 
+  const hostConnected = state.roster.some(player => player.userId === roomDoc?.data.hostId)
+  const canStart = Boolean(state.connected && state.you.userId) && (
+    joinCode === 'play' || isHost || (Boolean(roomDoc?.data.hostId) && !hostConnected)
+  )
+
   const handlePlace = useCallback(
     (x: number, y: number, color: number) => {
       if (isSpectator) {
@@ -216,8 +297,6 @@ export default function RoomPage() {
     },
     [isSpectator, canDraw, place],
   )
-
-  const friendlyReject = rejectMessage(state.lastReject, now)
 
   const contributorInfo = useMemo(() => {
     const rawIds = currentRoundDoc?.data.contributorIds
@@ -244,12 +323,6 @@ export default function RoomPage() {
     }
   }, [currentRoundDoc, getName, pixelsCount, state.round?.result?.contributorCount, user])
 
-  const intermissionRemainingSec = useMemo(() => {
-    if (state.round?.state !== 'intermission' || !state.round.endedAt) return 0
-    const endsAt = state.round.endedAt + MODES[state.mode].intermissionMs
-    return Math.max(0, Math.ceil((endsAt - now) / 1000))
-  }, [state.round, state.mode, now])
-
   const showOverlay =
     state.round?.state === 'intermission' &&
     state.round.result != null &&
@@ -264,7 +337,15 @@ export default function RoomPage() {
 
   const accessView = roomAccessView(state)
   if (accessView === 'loading') {
-    return <div role="status" data-testid="room-loading" className="mx-auto max-w-2xl px-4 py-10 text-center text-muted-foreground">Connecting…</div>
+    return (
+      <div
+        role="status"
+        data-testid="room-loading"
+        className="mx-auto max-w-2xl px-4 py-10 text-center text-muted-foreground"
+      >
+        Connecting…
+      </div>
+    )
   }
 
   // Terminal connection states (401 private room, 404 unknown room, 410 closed room)
@@ -274,28 +355,31 @@ export default function RoomPage() {
         data-testid="room-page"
         className="mx-auto flex w-full max-w-2xl flex-col gap-4 px-4 py-10 sm:px-6"
       >
-        <Link
-          to="/party"
-          className="font-pixel inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
-          Back to Lobby
-        </Link>
+        <div className="flex items-center justify-between gap-2">
+          <Link
+            to="/party"
+            className="inline-flex items-center gap-1.5 text-base uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <ArrowLeft className="h-4 w-4" aria-hidden />
+            Back to Lobby
+          </Link>
+          <MuteButton muted={muted} onToggle={toggleMute} />
+        </div>
 
         {state.connectError === 'unauthorized' && (
           <div
             data-testid="room-error-unauthorized"
-            className="arcade-card flex flex-col items-center gap-4 rounded-xl border-2 border-amber-400 bg-card p-6 text-center"
+            className="pp-panel flex flex-col items-center gap-4 p-6 text-center"
           >
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-amber-400/20 ring-2 ring-amber-400">
-              <Lock className="h-6 w-6 text-amber-300" aria-hidden />
+            <div className="pp-chip flex h-12 w-12 items-center justify-center">
+              <Lock className="h-6 w-6 text-[var(--sunset-1)]" aria-hidden />
             </div>
             <div className="space-y-1">
-              <h1 className="font-pixel text-xl font-extrabold uppercase text-foreground">
+              <h1 className="text-2xl uppercase text-[var(--sunset-2)]">
                 Private Room — Sign In Required
               </h1>
-              <p className="text-sm text-muted-foreground">
-                Invite room <span className="font-pixel text-amber-300">{joinCode}</span> is private.
+              <p className="text-base text-muted-foreground">
+                Invite room <span className="text-[var(--sunset-1)]">{joinCode}</span> is private.
                 Sign in with your account to join the board.
               </p>
             </div>
@@ -304,14 +388,14 @@ export default function RoomPage() {
                 type="button"
                 data-testid="room-error-sign-in"
                 onClick={() => setShowAuthModal(true)}
-                className="arcade-btn font-pixel bg-amber-400 px-5 font-extrabold uppercase text-slate-950 hover:bg-amber-300"
+                className="pp-btn px-5 text-lg uppercase"
               >
                 <LogIn className="mr-2 h-4 w-4" aria-hidden />
                 Sign in to join
               </Button>
               <Link
                 to="/party"
-                className="arcade-btn font-pixel inline-flex h-10 items-center justify-center rounded-md bg-secondary px-4 text-xs font-bold text-secondary-foreground hover:bg-secondary/80"
+                className="pp-chip inline-flex h-10 items-center justify-center px-4 text-base uppercase hover:bg-secondary"
               >
                 Back to Lobby
               </Link>
@@ -322,23 +406,23 @@ export default function RoomPage() {
         {state.connectError === 'not_found' && (
           <div
             data-testid="room-error-not-found"
-            className="arcade-card flex flex-col items-center gap-4 rounded-xl border-2 border-rose-400/80 bg-card p-6 text-center"
+            className="pp-panel flex flex-col items-center gap-4 p-6 text-center"
           >
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-rose-500/20 ring-2 ring-rose-400">
-              <SearchX className="h-6 w-6 text-rose-300" aria-hidden />
+            <div className="pp-chip flex h-12 w-12 items-center justify-center">
+              <SearchX className="h-6 w-6 text-[var(--sunset-3)]" aria-hidden />
             </div>
             <div className="space-y-1">
-              <h1 className="font-pixel text-xl font-extrabold uppercase text-foreground">
+              <h1 className="text-2xl uppercase text-[var(--sunset-2)]">
                 Room Not Found
               </h1>
-              <p className="text-sm text-muted-foreground">
-                No room exists for code <span className="font-pixel text-rose-300">{joinCode}</span>.
+              <p className="text-base text-muted-foreground">
+                No room exists for code <span className="text-[var(--sunset-3)]">{joinCode}</span>.
                 Check the invite code or jump into an active board from the lobby.
               </p>
             </div>
             <Link
               to="/party"
-              className="arcade-btn font-pixel inline-flex h-10 items-center justify-center rounded-md bg-amber-400 px-5 text-sm font-extrabold uppercase text-slate-950 hover:bg-amber-300"
+              className="pp-btn inline-flex h-10 items-center justify-center px-5 text-lg uppercase"
             >
               Back to Lobby
             </Link>
@@ -348,23 +432,23 @@ export default function RoomPage() {
         {state.connectError === 'closed' && (
           <div
             data-testid="room-error-closed"
-            className="arcade-card flex flex-col items-center gap-4 rounded-xl border-2 border-border bg-card p-6 text-center"
+            className="pp-panel flex flex-col items-center gap-4 p-6 text-center"
           >
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-secondary ring-2 ring-border">
+            <div className="pp-chip flex h-12 w-12 items-center justify-center">
               <XCircle className="h-6 w-6 text-muted-foreground" aria-hidden />
             </div>
             <div className="space-y-1">
-              <h1 className="font-pixel text-xl font-extrabold uppercase text-foreground">
-                This Room Has Closed
+              <h1 className="text-2xl uppercase text-[var(--sunset-2)]">
+                {state.closedByHost ? 'This room was closed by the host' : 'This Room Has Closed'}
               </h1>
-              <p className="text-sm text-muted-foreground">
-                Room <span className="font-pixel text-amber-300">{joinCode}</span> has ended. Head
+              <p className="text-base text-muted-foreground">
+                Room <span className="text-[var(--sunset-1)]">{joinCode}</span> has ended. Head
                 back to the lobby to join the main board or start a new room.
               </p>
             </div>
             <Link
               to="/party"
-              className="arcade-btn font-pixel inline-flex h-10 items-center justify-center rounded-md bg-amber-400 px-5 text-sm font-extrabold uppercase text-slate-950 hover:bg-amber-300"
+              className="pp-btn inline-flex h-10 items-center justify-center px-5 text-lg uppercase"
             >
               Back to Lobby
             </Link>
@@ -377,48 +461,112 @@ export default function RoomPage() {
   }
 
   const header = (
-    <div className="flex flex-wrap items-center justify-between gap-2">
-      <Link
-        to="/party"
-        className="font-pixel inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
-        Back to Lobby
-      </Link>
+    <div
+      ref={headerRef}
+      className="flex flex-wrap items-center justify-between gap-2 leading-none"
+    >
+      <div className="flex flex-wrap items-baseline gap-3">
+        <Link
+          to="/party"
+          className="inline-flex items-center gap-1 text-base uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <ArrowLeft className="h-4 w-4" aria-hidden />
+          Lobby
+        </Link>
+        <span className="pp-logo text-[28px] leading-none sm:text-[32px]">
+          Pixel Party
+        </span>
+        {roomDoc?.data.name &&
+          roomDoc.data.name.trim() !== '' &&
+          roomDoc.data.name.trim().toLowerCase() !== 'pixel party' && (
+            <span
+              data-testid="room-name"
+              className="text-xl uppercase text-[var(--soft-text)]"
+            >
+              {roomDoc.data.name}
+            </span>
+          )}
+      </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        {(roomDoc?.data.visibility === 'private' || state.round?.state === 'lobby') && <InviteBadge code={roomDoc?.data.joinCode ?? joinCode} />}
-        {isHost && state.round?.state !== 'lobby' && (
+      <div className="flex flex-wrap items-center gap-2 text-base">
+        {roomDoc?.data.visibility === 'private' || state.round?.state === 'lobby' ? (
+          <InviteBadge code={roomDoc?.data.joinCode ?? joinCode} />
+        ) : (
+          <span
+            data-testid="room-code"
+            className="pp-chip uppercase"
+            aria-label={`Room code ${roomDoc?.data.joinCode ?? joinCode}`}
+          >
+            ROOM {roomDoc?.data.joinCode ?? joinCode}
+          </span>
+        )}
+        <span className="pp-chip uppercase">
+          {state.players} {state.players === 1 ? 'PLAYER' : 'PLAYERS'}
+        </span>
+        {isHost && <DeleteRoomButton joinCode={joinCode} />}
+        {canStart && state.round?.state !== 'lobby' && (state.round?.state === 'intermission' || isHost) && (
           <Button
             type="button"
             variant="secondary"
             size="sm"
             data-testid="host-next-button"
             onClick={next}
-            className="arcade-btn font-pixel h-8 gap-1.5 px-3 text-xs font-bold"
+            className="pp-btn h-8 gap-1.5 px-3 text-base uppercase"
           >
-            <FastForward className="h-3.5 w-3.5 text-amber-400" aria-hidden />
-            Skip Round
+            <FastForward className="h-3.5 w-3.5 text-[var(--sunset-1)]" aria-hidden />
+            {state.round?.state === 'intermission' ? 'New game' : 'Skip Round'}
           </Button>
         )}
+        <MuteButton muted={muted} onToggle={toggleMute} />
       </div>
     </div>
   )
 
   if (state.round?.state === 'lobby') {
     return (
-      <div data-testid="room-page" className="mx-auto flex w-full max-w-2xl flex-col gap-4 px-4 py-6">
+      <div
+        data-testid="room-page"
+        className="mx-auto flex w-full max-w-2xl flex-col gap-4 px-4 py-6"
+      >
         {header}
-        <div data-testid="room-lobby" className="arcade-card space-y-4 rounded-lg bg-card p-5">
-          <h1 className="font-pixel text-xl font-bold">{roomDoc?.data.name ?? 'Waiting room'}</h1>
-          <p className="text-sm text-muted-foreground">Share the room link and start whenever you’re ready.</p>
-          <h2 data-testid="round-players" className="font-pixel font-bold">{state.players} {state.players === 1 ? 'painter' : 'painters'}</h2>
+        <div data-testid="room-lobby" className="pp-panel space-y-4 p-5">
+          <h1 className="text-2xl uppercase text-[var(--sunset-2)]">
+            {roomDoc?.data.name ?? 'Waiting room'}
+          </h1>
+          <p className="text-base text-muted-foreground">
+            Share the room link and start whenever you’re ready.
+          </p>
+          <h2 data-testid="round-players" className="text-xl text-[var(--sunset-1)]">
+            {state.players} {state.players === 1 ? 'painter' : 'painters'}
+          </h2>
           <ul className="space-y-2" aria-label="Connected players">
-            {state.roster.map(player => <li key={player.userId} className="rounded bg-secondary px-3 py-2 text-sm">{player.name}{player.userId === roomDoc?.data.hostId ? ' (Host)' : ''}</li>)}
+            {state.roster.map((player) => (
+              <li
+                key={player.userId}
+                className="border border-border bg-secondary px-3 py-2 text-base"
+              >
+                &gt; {player.name}
+                {player.userId === roomDoc?.data.hostId ? ' (Host)' : ''}
+              </li>
+            ))}
           </ul>
-          {isHost ? (
-            <Button data-testid="host-start-button" disabled={!state.connected} onClick={next} className="arcade-btn font-pixel bg-amber-400 font-bold text-slate-950 hover:bg-amber-300">Start</Button>
-          ) : <p className="text-sm text-muted-foreground">Waiting for the host to start.</p>}
+          <p data-testid="round-watching" className="text-base text-muted-foreground">
+            {state.watching} watching
+          </p>
+          {canStart ? (
+            <Button
+              data-testid="host-start-button"
+              disabled={!state.connected}
+              onClick={next}
+              className="pp-btn px-6 py-2 text-xl uppercase"
+            >
+              Start
+            </Button>
+          ) : (
+            <p className="text-base text-muted-foreground">
+              Waiting for the host to start.
+            </p>
+          )}
         </div>
       </div>
     )
@@ -426,34 +574,32 @@ export default function RoomPage() {
 
   return (
     <div
+      ref={roomPageRef}
       data-testid="room-page"
-      className="mx-auto flex w-full max-w-6xl flex-col gap-3 px-3 py-3 sm:gap-4 sm:px-6 sm:py-4"
+      className="mx-auto flex w-full max-w-[1400px] flex-col gap-1.5 px-3 py-2 sm:px-5"
     >
       {header}
 
-      {/* Round Bar: Word, Timer, Players, Share */}
-      <RoundBar
-        round={state.round}
-        players={state.players}
-        connected={state.connected}
-        now={now}
-        joinCode={joinCode}
-        roomName={roomDoc?.data.name}
-        pixelsCount={pixelsCount}
-      />
-
-      {sessionExpired && <div role="status" data-testid="session-expired">Your session expired — sign in again</div>}
+      {sessionExpired && (
+        <div
+          role="status"
+          data-testid="session-expired"
+          className="pp-panel px-3 py-1.5 text-base text-[var(--sunset-1)]"
+        >
+          Your session expired — sign in again
+        </div>
+      )}
 
       {/* Spectator Sign-In Banner */}
       {isSpectator && (
         <div
           data-testid="spectator-banner"
-          className="arcade-card flex flex-wrap items-center justify-between gap-3 rounded-lg border-amber-400/70 bg-amber-500/10 px-4 py-2.5"
+          className="pp-panel flex flex-wrap items-center justify-between gap-2 px-3 py-1.5"
         >
-          <div className="flex items-center gap-2.5 text-xs sm:text-sm">
-            <LogIn className="h-4 w-4 shrink-0 text-amber-400" aria-hidden />
-            <span className="font-medium text-amber-100">
-              You are watching in <strong>Spectator Mode</strong>. Sign in to place pixels and ask the AI!
+          <div className="flex items-center gap-2 text-base">
+            <LogIn className="h-4 w-4 shrink-0 text-[var(--sunset-1)]" aria-hidden />
+            <span className="text-foreground">
+              You are watching in <span className="text-[var(--sunset-1)]">Spectator Mode</span>. Sign in to place pixels and ask the AI!
             </span>
           </div>
           <Button
@@ -461,7 +607,7 @@ export default function RoomPage() {
             size="sm"
             data-testid="spectator-sign-in-button"
             onClick={() => setShowAuthModal(true)}
-            className="arcade-btn font-pixel h-8 bg-amber-400 px-3 text-xs font-extrabold uppercase text-slate-950 hover:bg-amber-300"
+            className="pp-btn h-7 px-3 text-base uppercase"
           >
             Sign in to play
           </Button>
@@ -473,17 +619,17 @@ export default function RoomPage() {
         <div
           data-testid="reject-notice"
           role="status"
-          className="flex items-center justify-between gap-2 rounded-md border border-amber-400/50 bg-amber-950/60 px-3 py-2 text-xs font-medium text-amber-200"
+          className="pp-panel flex items-center justify-between gap-2 px-3 py-1.5 text-base text-[var(--sunset-1)]"
         >
           <div className="flex items-center gap-2">
-            <AlertCircle className="h-4 w-4 shrink-0 text-amber-400" aria-hidden />
+            <AlertCircle className="h-4 w-4 shrink-0 text-[var(--sunset-2)]" aria-hidden />
             <span>{friendlyReject}</span>
           </div>
           {state.lastReject?.reason === 'not_signed_in' && isSpectator && (
             <button
               type="button"
               onClick={() => setShowAuthModal(true)}
-              className="font-pixel underline hover:text-white"
+              className="underline hover:text-foreground"
             >
               Sign in
             </button>
@@ -491,216 +637,216 @@ export default function RoomPage() {
         </div>
       )}
 
-      {/* Main Game Stage: Responsive 2-column on desktop, stacked on mobile */}
-      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-12">
-        {/* Left/Center Column: Pixel Canvas + Palette */}
-        <div className="flex flex-col gap-3 lg:col-span-7">
-          <PixelCanvas
-            width={state.width}
-            height={state.height}
-            cells={state.cells}
-            activeColor={activeColor}
-            canDraw={canDraw}
-            cooldownRemainingMs={cooldownRemainingMs}
-            word={state.round?.word}
-            onPlace={handlePlace}
-            onHoverCell={handleHoverCell}
-          >
-            <PlayerCursors peers={peers} width={state.width} height={state.height} />
+      {/* Main Game Stage:
+          Desktop (>=1024px): PlayersPanel | Center Column (RoundBar, Canvas, Palette) | GuessFeed + AskAiButton
+          Mobile (<1024px): Center Column (RoundBar, Canvas, Palette), GuessFeed + AskAiButton, PlayersPanel */}
+      <div className="grid grid-cols-1 items-start gap-3 lg:grid-cols-[220px_minmax(0,1fr)_280px] xl:grid-cols-[240px_minmax(0,1fr)_300px]">
+        {/* Center Column: RoundBar + PixelCanvas + Palette (order-1 on mobile, order-2 on lg) */}
+        <div
+          ref={centerColRef}
+          className="order-1 flex min-w-0 flex-col items-center gap-2 lg:order-2"
+        >
+          <div ref={roundBarWrapRef} className="w-full">
+            <RoundBar
+              round={state.round}
+              connected={state.connected}
+              now={now}
+              joinCode={joinCode}
+              pixelsCount={pixelsCount}
+            />
+          </div>
 
-            {/* Win / Timeout Intermission Overlay */}
-            {showOverlay && state.round && (
-              <div
-                ref={overlayDialogRef}
-                data-testid="round-overlay"
-                role="dialog"
-                aria-modal="false"
-                aria-labelledby="overlay-heading"
-                tabIndex={-1}
-                onKeyDown={(e) => {
-                  if (e.key === 'Escape' && state.round?.id) {
-                    e.stopPropagation()
-                    setDismissedOverlayRoundId(state.round.id)
-                  }
-                }}
-                className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-slate-950/90 p-4 text-center backdrop-blur-xs focus:outline-none"
-              >
-                <div className="arcade-card flex w-full max-w-sm flex-col items-center gap-3 rounded-xl border-2 border-amber-400 bg-[#1b1530] p-5 shadow-2xl">
-                  {outcome === 'won' ? (
-                    <>
-                      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500/20 ring-2 ring-emerald-400">
-                        <Trophy className="h-6 w-6 text-emerald-400" aria-hidden />
-                      </div>
-                      <span
-                        id="overlay-heading"
-                        className="font-pixel rounded bg-emerald-500/20 px-2.5 py-0.5 text-xs font-extrabold uppercase tracking-widest text-emerald-300"
-                      >
-                        AI Guessed It!
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-amber-500/20 ring-2 ring-amber-400">
-                        <Clock className="h-6 w-6 text-amber-400" aria-hidden />
-                      </div>
-                      <span
-                        id="overlay-heading"
-                        className="font-pixel rounded bg-amber-500/20 px-2.5 py-0.5 text-xs font-extrabold uppercase tracking-widest text-amber-300"
-                      >
-                        Time&apos;s Up!
-                      </span>
-                    </>
-                  )}
+          <div ref={canvasSlotRef} className="flex items-center justify-center">
+            <PixelCanvas
+              width={state.width}
+              height={state.height}
+              cells={state.cells}
+              activeColor={activeColor}
+              canDraw={canDraw}
+              cooldownRemainingMs={cooldownRemainingMs}
+              availWidth={availBox.width}
+              availHeight={availBox.height}
+              word={state.round?.word}
+              onPlace={handlePlace}
+              onHoverCell={handleHoverCell}
+            >
+              <PlayerCursors peers={peers} width={state.width} height={state.height} />
 
-                  <div>
-                    <p className="text-xs uppercase tracking-wider text-muted-foreground">
-                      The word was
-                    </p>
-                    <h2
-                      data-testid="overlay-word"
-                      className="font-pixel mt-0.5 text-2xl font-extrabold uppercase tracking-wider text-amber-300"
-                    >
-                      {state.round.word}
-                    </h2>
-                  </div>
-
-                  <div className="grid w-full grid-cols-2 gap-2 rounded-lg bg-background/60 p-2.5 text-xs">
-                    <div className="flex flex-col items-center">
-                      <span className="text-muted-foreground">Score</span>
-                      <span
-                        data-testid="overlay-score"
-                        className="font-pixel mt-0.5 flex items-center gap-1 text-base font-extrabold text-emerald-400"
-                      >
-                        <Award className="h-4 w-4" aria-hidden />
-                        {state.round.result?.score ?? 0} pts
-                      </span>
-                    </div>
-                    <div className="flex flex-col items-center">
-                      <span className="text-muted-foreground">Pixels Used</span>
-                      <span className="font-pixel mt-0.5 text-base font-extrabold text-foreground">
-                        {currentRoundDoc?.data.pixelsUsed ?? pixelsCount} px
-                      </span>
-                    </div>
-                  </div>
-
-                  <div
-                    data-testid="overlay-contributors"
-                    className="w-full rounded-lg border border-border/60 bg-background/40 px-3 py-2 text-left"
-                  >
-                    <div className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      <Users className="h-3.5 w-3.5 text-cyan-400" aria-hidden />
-                      <span>Contributors</span>
-                    </div>
-                    {contributorInfo.names.length > 0 ? (
-                      <div className="flex flex-wrap gap-1.5">
-                        {contributorInfo.names.map((name, idx) => (
+              {/* Win / Timeout Intermission Overlay */}
+              {showOverlay && state.round && (
+                <div
+                  ref={overlayDialogRef}
+                  data-testid="round-overlay"
+                  role="dialog"
+                  aria-modal="false"
+                  aria-labelledby="overlay-heading"
+                  tabIndex={-1}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape' && state.round?.id) {
+                      e.stopPropagation()
+                      setDismissedOverlayRoundId(state.round.id)
+                    }
+                  }}
+                  className="pp-results absolute inset-0 z-20 flex flex-col items-center overflow-hidden bg-background/90 p-4 text-center focus:outline-none"
+                >
+                  <div className="pp-panel my-auto flex max-h-full min-h-0 w-full max-w-sm flex-col overflow-hidden">
+                    <div className="pp-results-body flex min-h-0 flex-col items-center gap-3 overflow-y-auto p-5">
+                      {outcome === 'won' ? (
+                        <>
+                          <div className="pp-results-icon pp-chip flex h-12 w-12 shrink-0 items-center justify-center">
+                            <Trophy className="h-6 w-6 text-[var(--sunset-1)]" aria-hidden />
+                          </div>
                           <span
-                            key={`${name}-${idx}`}
-                            className="font-pixel rounded bg-secondary px-2 py-0.5 text-xs font-bold text-foreground"
+                            id="overlay-heading"
+                            className="pp-chip px-2.5 py-0.5 text-base uppercase tracking-widest"
                           >
-                            {name}
+                            AI Guessed It!
                           </span>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="font-pixel text-xs text-foreground">
-                        {contributorInfo.fallbackText}
-                      </p>
-                    )}
-                  </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="pp-results-icon pp-chip flex h-12 w-12 shrink-0 items-center justify-center">
+                            <Clock className="h-6 w-6 text-[var(--sunset-2)]" aria-hidden />
+                          </div>
+                          <span
+                            id="overlay-heading"
+                            className="pp-chip px-2.5 py-0.5 text-base uppercase tracking-widest"
+                          >
+                            Time&apos;s Up!
+                          </span>
+                        </>
+                      )}
 
-                  <div className="mt-1 flex w-full flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-                    <span className="font-pixel">
-                      Next word in {intermissionRemainingSec}s…
-                    </span>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        data-testid="overlay-dismiss"
-                        onClick={() => state.round?.id && setDismissedOverlayRoundId(state.round.id)}
-                        className="arcade-btn font-pixel h-8 gap-1 px-2.5 text-xs font-bold"
+                      <div>
+                        <p className="text-sm uppercase tracking-wider text-muted-foreground">
+                          The word was
+                        </p>
+                        <h2
+                          data-testid="overlay-word"
+                          className="pp-results-word pp-word mt-0.5 text-3xl uppercase"
+                        >
+                          {state.round.word}
+                        </h2>
+                      </div>
+
+                      <div className="grid w-full shrink-0 grid-cols-2 gap-2 border border-border bg-background/60 p-2.5 text-base">
+                        <div className="flex flex-col items-center">
+                          <span className="text-muted-foreground">Score</span>
+                          <span
+                            data-testid="overlay-score"
+                            className="mt-0.5 flex items-center gap-1 text-xl text-[var(--sunset-1)]"
+                          >
+                            <Award className="h-4 w-4" aria-hidden />
+                            {state.round.result?.score ?? 0} pts
+                          </span>
+                        </div>
+                        <div className="flex flex-col items-center">
+                          <span className="text-muted-foreground">Pixels Used</span>
+                          <span className="mt-0.5 text-xl text-foreground">
+                            {currentRoundDoc?.data.pixelsUsed ?? pixelsCount} px
+                          </span>
+                        </div>
+                      </div>
+
+                      <div
+                        data-testid="overlay-contributors"
+                        className="w-full shrink-0 border border-border bg-background/40 px-3 py-2 text-left"
                       >
-                        <Eye className="h-3.5 w-3.5" aria-hidden />
-                        View Canvas
-                      </Button>
-                      {isHost && (
+                        <div className="mb-1 flex items-center gap-1.5 text-sm uppercase tracking-wider text-[var(--sunset-2)]">
+                          <Users className="h-3.5 w-3.5" aria-hidden />
+                          <span>Contributors</span>
+                        </div>
+                        {contributorInfo.names.length > 0 ? (
+                          <div className="flex flex-wrap gap-1.5">
+                            {contributorInfo.names.map((name, idx) => (
+                              <span
+                                key={`${name}-${idx}`}
+                                className="pp-chip px-2 py-0.5 text-sm"
+                              >
+                                {name}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-sm text-foreground">
+                            {contributorInfo.fallbackText}
+                          </p>
+                        )}
+                      </div>
+
+                    </div>
+                    <div className="pp-results-footer flex w-full shrink-0 flex-col items-center gap-2 border-t border-border bg-card p-3 text-sm text-muted-foreground">
+                      <span>{canStart ? 'Ready when you are.' : 'Waiting for the host to start a new game.'}</span>
+                      <div className="flex items-center gap-2">
                         <Button
                           type="button"
+                          variant="secondary"
                           size="sm"
-                          onClick={next}
-                          className="arcade-btn font-pixel h-8 bg-amber-400 px-3 text-xs font-extrabold text-slate-950 hover:bg-amber-300"
+                          data-testid="overlay-dismiss"
+                          onClick={() =>
+                            state.round?.id && setDismissedOverlayRoundId(state.round.id)
+                          }
+                          className="pp-chip h-8 gap-1 px-2.5 text-sm uppercase hover:bg-secondary"
                         >
-                          Next Word Now
+                          <Eye className="h-3.5 w-3.5" aria-hidden />
+                          View Canvas
                         </Button>
-                      )}
+                        {canStart && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            data-testid="overlay-next"
+                            onClick={next}
+                            className="pp-btn h-8 px-3 text-sm uppercase"
+                          >
+                            New game
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            )}
-          </PixelCanvas>
+              )}
+            </PixelCanvas>
+          </div>
 
-          <Palette
-            activeColor={activeColor}
-            onSelectColor={setActiveColor}
-            disabled={isSpectator}
-            cooldownRemainingMs={cooldownRemainingMs}
-            cooldownTotalMs={cooldownTotalMs}
-          />
+          <div ref={paletteWrapRef} className="w-full">
+            <Palette
+              activeColor={activeColor}
+              onSelectColor={setActiveColor}
+              disabled={isSpectator}
+              cooldownRemainingMs={cooldownRemainingMs}
+              cooldownTotalMs={cooldownTotalMs}
+            />
+          </div>
         </div>
 
-        {/* Right Column: Star AI Guess Feed + Ask Button + How Scoring Works */}
-        <div className="flex flex-col gap-3 lg:col-span-5">
+        {/* Right Column on lg, 2nd on mobile: GuessFeed with AskAiButton */}
+        <div className="order-2 flex flex-col gap-3 lg:order-3">
           <GuessFeed
             guesses={state.guesses}
+            guessLog={state.guessLog}
             aiResting={state.aiResting}
             roundId={state.round?.id}
+          >
+            <AskAiButton
+              askAvailableAt={state.round?.askAvailableAt ?? 0}
+              now={now}
+              isSpectator={isSpectator}
+              aiResting={state.aiResting}
+              roundPlaying={Boolean(roundPlaying)}
+              onAsk={ask}
+            />
+          </GuessFeed>
+        </div>
+
+        {/* Left Column on lg, 3rd on mobile: PlayersPanel */}
+        <div className="order-3 lg:order-1">
+          <PlayersPanel
+            players={state.players}
+            roster={state.roster}
+            watching={state.watching}
           />
-
-          <div className="arcade-card flex flex-col gap-2.5 rounded-lg bg-card p-3 sm:p-4">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h3 className="font-pixel text-xs font-bold uppercase tracking-wider text-foreground">
-                  Ready for a Verdict?
-                </h3>
-                <p className="text-xs text-muted-foreground">
-                  Nudge Claude Haiku to inspect the canvas right now.
-                </p>
-              </div>
-              <AskAiButton
-                askAvailableAt={state.round?.askAvailableAt ?? 0}
-                now={now}
-                isSpectator={isSpectator}
-                aiResting={state.aiResting}
-                roundPlaying={Boolean(roundPlaying)}
-                onAsk={ask}
-              />
-            </div>
-          </div>
-
-          {/* Minimalist Pixel Economy Rules Card */}
-          <div className="arcade-card rounded-lg bg-card/80 p-3.5 text-xs">
-            <div className="mb-2 flex items-center gap-1.5 font-bold uppercase tracking-wider text-amber-300">
-              <Sparkles className="h-3.5 w-3.5" aria-hidden />
-              <span className="font-pixel">1000-Pt Scoring Formula</span>
-            </div>
-            <ul className="space-y-1.5 text-muted-foreground">
-              <li>
-                <strong className="text-foreground">50% Pixel Economy (up to 500 pts):</strong>{' '}
-                Fewer non-empty pixels on the 32×32 grid (1,024 cells) when the AI guesses right means a higher economy score.
-              </li>
-              <li>
-                <strong className="text-foreground">50% Speed (up to 500 pts):</strong>{' '}
-                Faster wins against the 5-minute round clock earn the remaining half of the 1,000 points.
-              </li>
-              <li>
-                <strong className="text-foreground">Shared Victory:</strong>{' '}
-                Every contributor whose pixels remain on the final winning canvas receives the full round score.
-              </li>
-            </ul>
-          </div>
         </div>
       </div>
 

@@ -14,24 +14,24 @@ export default function SettingsPage() {
     // (app)/_layout provides (a plain background, or a raised panel), so they
     // stay transparent and inherit it.
     <div className="min-h-full text-foreground">
-      <div className="mx-auto max-w-2xl px-6 py-20">
-        <h1 className="mb-12 text-4xl font-bold tracking-tight">Settings</h1>
+      <div className="mx-auto max-w-2xl px-6 py-12">
+        <h1 className="pp-word mb-8 text-4xl uppercase">Settings</h1>
 
-        <section className="rounded-lg border border-border bg-card p-6">
-          <h2 className="mb-4 text-lg font-semibold">Your account</h2>
+        <section className="pp-panel p-6">
+          <h2 className="mb-4 text-2xl uppercase text-[var(--sunset-2)]">Your account</h2>
 
-          <dl className="space-y-3 text-sm">
+          <dl className="space-y-3 text-lg">
             <div>
-              <dt className="text-muted-foreground">Name</dt>
+              <dt className="uppercase text-muted-foreground">Name</dt>
               <dd className="text-foreground">{user?.name ?? '—'}</dd>
             </div>
             <div>
-              <dt className="text-muted-foreground">Email</dt>
+              <dt className="uppercase text-muted-foreground">Email</dt>
               <dd className="text-foreground">{user?.email ?? '—'}</dd>
             </div>
           </dl>
 
-          <Button variant="secondary" className="mt-6" onClick={() => signOut()}>
+          <Button variant="secondary" className="pp-btn mt-6 uppercase" onClick={() => signOut()}>
             Sign out
           </Button>
         </section>

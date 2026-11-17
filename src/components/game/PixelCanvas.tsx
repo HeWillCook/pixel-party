@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { strokeCells } from '../../game/stroke'
+import { boardCellSize } from '../../game/board-size'
 import { PALETTE } from '../../game/config'
+import { strokeCells } from '../../game/stroke'
 
 export interface PixelCanvasProps {
   width: number
@@ -10,6 +11,8 @@ export interface PixelCanvasProps {
   canDraw: boolean
   word?: string
   cooldownRemainingMs?: number
+  availWidth?: number
+  availHeight?: number
   onPlace: (x: number, y: number, color: number) => void
   onHoverCell?: (cell: { x: number; y: number } | null) => void
   children?: ReactNode
@@ -23,6 +26,8 @@ export function PixelCanvas({
   canDraw,
   word,
   cooldownRemainingMs = 0,
+  availWidth = 600,
+  availHeight = 600,
   onPlace,
   onHoverCell,
   children,
@@ -31,6 +36,15 @@ export function PixelCanvas({
   const isPointerDownRef = useRef(false)
   const lastDragCellRef = useRef<{ x: number; y: number } | null>(null)
   const [hoverCell, setHoverCell] = useState<{ x: number; y: number } | null>(null)
+
+  const cellSize = boardCellSize({
+    availWidth: Math.max(0, availWidth - 20),
+    availHeight: Math.max(0, availHeight - 20),
+    cols: width,
+    rows: height,
+  })
+  const cssWidth = cellSize * width
+  const cssHeight = cellSize * height
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -101,16 +115,14 @@ export function PixelCanvas({
     onHoverCell?.(null)
   }
 
-  const aspectRatio = `${width} / ${height}`
-
   return (
     <div
       data-testid="pixel-canvas-frame"
-      className="relative mx-auto flex w-full max-w-[min(100%,440px)] items-center justify-center rounded-lg border-4 border-[#3b3166] bg-[#130f21] p-2 shadow-[0_8px_0_0_rgba(0,0,0,0.55)] sm:p-2.5"
+      className="pp-frame relative mx-auto inline-flex items-center justify-center"
     >
       <div
-        className="relative w-full overflow-hidden rounded-sm ring-2 ring-black/80"
-        style={{ aspectRatio }}
+        className="relative overflow-hidden [container-type:inline-size]"
+        style={{ width: `${cssWidth}px`, height: `${cssHeight}px` }}
       >
         <canvas
           ref={canvasRef}
@@ -124,22 +136,13 @@ export function PixelCanvas({
           onPointerUp={handlePointerUpOrCancel}
           onPointerCancel={handlePointerUpOrCancel}
           onPointerLeave={handlePointerLeave}
-          className={`pixelated block h-full w-full touch-none select-none ${
+          className={`pixelated block touch-none select-none ${
             canDraw ? 'cursor-crosshair' : 'cursor-not-allowed'
           }`}
           style={{
+            width: `${cssWidth}px`,
+            height: `${cssHeight}px`,
             imageRendering: 'pixelated',
-          }}
-        />
-
-        {/* Subtle pixel grid overlay */}
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0 opacity-20"
-          style={{
-            backgroundImage:
-              'linear-gradient(to right, rgba(15, 23, 42, 0.35) 1px, transparent 1px), linear-gradient(to bottom, rgba(15, 23, 42, 0.35) 1px, transparent 1px)',
-            backgroundSize: `${100 / width}% ${100 / height}%`,
           }}
         />
 
@@ -147,7 +150,7 @@ export function PixelCanvas({
         {hoverCell && canDraw && (
           <div
             aria-hidden="true"
-            className="pointer-events-none absolute box-border border-2 border-amber-400 shadow-[0_0_0_1px_rgba(0,0,0,0.85)] transition-transform duration-75"
+            className="pointer-events-none absolute box-border border-2 border-[var(--sunset-1)] shadow-[0_0_0_1px_rgba(0,0,0,0.85)] transition-transform duration-75"
             style={{
               left: `${(hoverCell.x / width) * 100}%`,
               top: `${(hoverCell.y / height) * 100}%`,
@@ -160,7 +163,7 @@ export function PixelCanvas({
             {cooldownRemainingMs > 250 && (
               <span
                 data-testid="cursor-cooldown"
-                className="font-pixel absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-black/90 px-1.5 py-0.5 text-[10px] font-bold text-amber-300 ring-1 ring-amber-400/50"
+                className="pp-chip absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap px-1.5 py-0.5 text-xs"
               >
                 {(cooldownRemainingMs / 1000).toFixed(1)}s
               </span>

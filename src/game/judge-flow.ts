@@ -47,6 +47,8 @@ export async function runJudge(deps: JudgeDeps, s: RoomState, reason: 'tick' | '
     const version = current.version
     await deps.persist()
     const png = await deps.render(current, zone)
+    const rendered = deps.getState()
+    if (rendered.round.id !== roundId || rendered.status !== 'playing' || rendered.round.state !== 'playing') return { kind: 'stale' }
     const text = await deps.callJudge(png)
     const after = deps.getState()
     if (after.round.id !== roundId || after.status !== 'playing' || after.round.state !== 'playing') return { kind: 'stale' }

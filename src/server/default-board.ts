@@ -8,7 +8,7 @@ export async function ensureDefaultBoard(tools: ServerTools): Promise<ActionResu
   if (existing.error !== 'Record not found') return existing
   const data: RoomData = {
     name: 'Pixel Party', mode: 'coop', visibility: 'public', joinCode: 'play', hostId: '', memberIds: [],
-    status: 'playing', currentRoundId: '', playerCount: 0, lastActiveAt: Date.now(), isDefaultBoard: true,
+    status: 'lobby', currentRoundId: '', playerCount: 0, lastActiveAt: Date.now(), isDefaultBoard: true,
   }
   const created = await tools.create('rooms', data, 'default-board')
   return created.success ? { success: true, data: { recordId: created.data.recordId, data } } : created

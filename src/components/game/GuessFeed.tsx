@@ -1,58 +1,52 @@
-import { Sparkles, CheckCircle2, HelpCircle, Moon } from 'lucide-react'
+import { CheckCircle2, HelpCircle, Moon } from 'lucide-react'
+import type { ReactNode } from 'react'
 import type { ZoneId } from '../../game/config'
 import { JUDGE } from '../../game/config'
-import type { ZoneGuess } from '../../game/client-state'
+import type { GuessLogEntry, ZoneGuess } from '../../game/client-state'
 import { cn } from '../../lib/utils'
 
 export interface GuessFeedProps {
   guesses: Record<ZoneId, ZoneGuess | undefined>
+  guessLog: GuessLogEntry[]
   aiResting: boolean
   roundId?: string
+  children?: ReactNode
 }
 
-export function GuessFeed({ guesses, aiResting }: GuessFeedProps) {
+function formatRoundClock(atMs: number): string {
+  const totalSec = Math.max(0, Math.floor(atMs / 1000))
+  const m = Math.floor(totalSec / 60)
+  const s = totalSec % 60
+  return `${m}:${s.toString().padStart(2, '0')}`
+}
+
+export function GuessFeed({ guesses, guessLog, aiResting, children }: GuessFeedProps) {
   const zoneGuess = guesses.all ?? guesses.red ?? guesses.blue
-  const items = zoneGuess?.guesses ?? []
   const confidence = zoneGuess?.confidence ?? 0
-  const matched = zoneGuess?.matched ?? false
-  const animKey = items.join('|') || 'empty'
+  const matched = (zoneGuess?.matched ?? false) || guessLog.some((e) => e.matched)
 
   return (
     <div
       data-testid="guess-feed"
       aria-live="polite"
-      className={cn(
-        'arcade-card relative overflow-hidden rounded-lg p-3 sm:p-4 transition-colors',
-        matched
-          ? 'border-emerald-400 bg-emerald-950/60'
-          : aiResting
-            ? 'border-amber-500/50 bg-amber-950/30'
-            : 'border-pink-500/60 bg-[#1c1532]',
-      )}
+      className="pp-panel flex flex-col gap-2 px-3 py-2.5 text-[19px] leading-[1.15]"
     >
-      <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5">
           {aiResting ? (
-            <Moon className="h-4 w-4 text-amber-400" aria-hidden />
+            <Moon className="h-4 w-4 text-[var(--sunset-1)]" aria-hidden />
           ) : matched ? (
-            <CheckCircle2 className="h-4 w-4 text-emerald-400" aria-hidden />
-          ) : (
-            <Sparkles className="h-4 w-4 text-pink-400 animate-pulse" aria-hidden />
-          )}
-          <span className="font-pixel text-xs font-bold uppercase tracking-wider text-pink-300">
-            The AI thinks:
-          </span>
+            <CheckCircle2 className="h-4 w-4 text-[var(--sunset-1)]" aria-hidden />
+          ) : null}
+          <h4 className="m-0 text-[22px] uppercase text-[var(--sunset-2)]">
+            Haiku says
+          </h4>
         </div>
 
         {zoneGuess && !aiResting && (
           <span
             data-testid="guess-confidence"
-            className={cn(
-              'font-pixel rounded px-2 py-0.5 text-[11px] font-bold',
-              matched
-                ? 'bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-400/50'
-                : 'bg-pink-500/20 text-pink-200 ring-1 ring-pink-400/40',
-            )}
+            className="pp-chip px-2 py-0.5 text-sm"
           >
             {Math.round(confidence * 100)}% sure
           </span>
@@ -62,39 +56,42 @@ export function GuessFeed({ guesses, aiResting }: GuessFeedProps) {
       {aiResting ? (
         <p
           data-testid="ai-resting-banner"
-          className="font-pixel text-sm font-medium text-amber-200"
+          className="text-base text-[var(--sunset-1)]"
         >
           The AI is resting — back tomorrow
         </p>
-      ) : items.length === 0 ? (
-        <div className="flex items-center gap-2 py-1 text-sm text-muted-foreground">
-          <HelpCircle className="h-4 w-4 shrink-0 text-pink-400/70" aria-hidden />
-          <span>Place some pixels! Claude Haiku checks the canvas every {JUDGE.tickMs / 1000}s or when you press Ask.</span>
+      ) : guessLog.length === 0 ? (
+        <div className="flex items-center gap-2 py-1 text-base text-muted-foreground">
+          <HelpCircle className="h-4 w-4 shrink-0 text-[var(--sunset-3)]" aria-hidden />
+          <span>
+            Place some pixels! Claude Haiku checks the canvas every {JUDGE.tickMs / 1000}s or when you press Ask.
+          </span>
         </div>
       ) : (
         <div
-          key={animKey}
           data-testid="guess-list"
-          className="flex flex-wrap items-center gap-2"
+          className="max-h-48 space-y-1.5 overflow-y-auto pr-1"
         >
-          {items.map((guess, idx) => (
-            <span
-              key={`${guess}-${idx}`}
-              style={{ animationDelay: `${idx * 65}ms` }}
+          {guessLog.map((entry) => (
+            <p
+              key={entry.id}
               className={cn(
-                'animate-guess-pop font-pixel inline-flex items-center gap-1 rounded-md border-2 px-2.5 py-1 text-xs font-bold sm:text-sm',
-                matched && idx === 0
-                  ? 'border-emerald-300 bg-emerald-500 text-slate-950 shadow-[0_2px_0_0_rgba(0,0,0,0.5)]'
-                  : idx === 0
-                    ? 'border-amber-300 bg-amber-400/20 text-amber-200 shadow-[0_2px_0_0_rgba(0,0,0,0.4)]'
-                    : 'border-pink-400/40 bg-pink-950/60 text-pink-100',
+                'm-0 leading-snug',
+                entry.matched
+                  ? 'border border-[var(--sunset-1)] bg-secondary/80 px-1.5 py-0.5 text-[var(--sunset-1)]'
+                  : 'text-foreground',
               )}
             >
-              {guess}?
-            </span>
+              <span className="mr-1.5 text-[var(--sunset-3)]">
+                {formatRoundClock(entry.atMs)}
+              </span>
+              <span>{entry.guesses.join(', ')}</span>
+            </p>
           ))}
         </div>
       )}
+
+      {children && <div className="mt-1">{children}</div>}
     </div>
   )
 }

@@ -25,12 +25,13 @@ export interface RoundView {
 export interface ConnectedPlayer { userId: string; name: string }
 
 export type ServerMsg =
-  | { t: 'snapshot'; mode: Mode; width: number; height: number; cells: string; round: RoundView; you: { userId: string | null; cooldownUntil: number; team?: 'red' | 'blue' }; players: number; roster?: ConnectedPlayer[]; aiResting: boolean }
+  | { t: 'closed' }
+  | { t: 'snapshot'; mode: Mode; width: number; height: number; cells: string; round: RoundView; you: { userId: string | null; cooldownUntil: number; team?: 'red' | 'blue' }; players: number; roster?: ConnectedPlayer[]; watching?: number; aiResting: boolean }
   | { t: 'pixel'; x: number; y: number; c: number; by: string }
   | { t: 'reject'; reason: RejectReason | 'ask_too_soon' | 'not_host' | 'canvas_unchanged'; retryAt?: number; x?: number; y?: number }
   | { t: 'round'; round: RoundView }
   | { t: 'judgement'; zone: ZoneId; guesses: string[]; confidence: number; matched: boolean }
-  | { t: 'players'; count: number; roster?: ConnectedPlayer[] }
+  | { t: 'players'; count: number; roster?: ConnectedPlayer[]; watching?: number }
   | { t: 'ai_resting' }
 
 export function parseClientMsg(raw: string): ClientMsg | null {

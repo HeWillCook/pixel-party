@@ -357,3 +357,85 @@ The fake judge is selected by default in dev and tests so those runs make no pai
   test-worker API Playwright **4/4**, `git diff --check` PASS. Known runner warnings
   remain unchanged. No real AI calls, `DAILY_JUDGE` override, deployment, or push.
 - Provider: Codex implementation, self-review, and verification; no nested agents.
+- **2026-11-17: Pixel redesign direction agreed with Will** (visual companion mockups). VT323 everywhere, Navy glow background, Sunset accents in mockup A's design language, bigger centered canvas, chiptune SFX for four events (no per-pixel sound, no music) with a mute button, running guess log, and a watcher count (Will's call; the one server addition). Design: `docs/superpowers/specs/2026-11-17-pixel-redesign-design.md`; builder check by OpenCode DeepSeek Flash, 5 points settled by me, 2 by Will.
+- **2026-11-17: Pixel redesign built** (branch `t3/pixel-redesign-direction`, plan `docs/superpowers/plans/2026-11-17-pixel-redesign.md`, subagent-driven). Watcher count, per-round guess log, chiptune SFX + mute (Codex GPT-6.1 Terra); theme tokens + VT323, room page with big centered canvas (672px at 1440×900), other pages (Antigravity Gemini 4 Argon). Per-task reviews by Gemini 4 Hydrogen / Codex Sol, scoped re-reviews by OpenCode DeepSeek Flash; final whole-branch review Codex Sol xhigh → one fix wave (Codex Terra). Verify 247/247, offline Playwright 11 passed. Open: mobile results overlay hides its buttons below a scroll (375px).
+
+## 2026-11-17: Room codes, host shutdown, explicit starts, and initial HTML
+
+- All newly created public and private rooms use four characters from the existing crypto alphabet, retaining
+  ten collision attempts and unique-index race retries. Closed codes remain reserved. The join field uppercases
+  input and advertises four characters; its 64-character ceiling and the permissive server pattern preserve
+  legacy ten-character links/codes and `play`.
+- Hosts can confirm Delete room in the room header and on their public-room cards in the home list. The new
+  authenticated action checks host ownership, refuses the default board, closes the record without deleting it,
+  and sends an internal shutdown request to its PixelRoom. Shutdown persists a tombstone (including rooms never
+  opened), broadcasts a terminal host-closed message, closes sockets, and deletes the alarm. Status writes are
+  serialized so a pending playing/paused update cannot overwrite closed. Further judge calls stop; results of
+  an already issued integration call are discarded. The client displays “This room was closed by the host” and
+  does not reconnect. The existing non-closed-room quota filter frees the host slot; action tests verify this.
+- Round results now wait indefinitely for explicit New game, with no intermission alarm or countdown. Legacy
+  intermission deadlines are discarded on restore. A long pause resumes the same frozen round rather than
+  generating another word. Empty custom rooms still expire after 30 minutes, including rooms waiting on results.
+  The `next` command requires a connected signed-in caller: host while connected; any such player when the host
+  is absent; any such player on `play`. Unknown legacy hosts remain denied conservatively. Fresh public/private
+  rooms and a fresh default board wait in lobby; corrupt-state recovery also waits for Start. Valid persisted
+  playing rounds retain their state. Explicit Skip Round remains available under the same authorization rules.
+- **Superseded bug #4 diagnosis (corrected below):** the first offline flash test deliberately served the
+  prerendered landing HTML for `/r/*`. That synthetic case did not reproduce production, which already serves
+  the empty SPA shell. Commit `4ff80c8` added worker-first room routing and a 503 fallback on that unsupported
+  diagnosis; the follow-up removes those changes. The initial test's failure was not evidence of the user's flash.
+- Verification: `npm run verify` PASS (lint, TypeScript, 239 unit tests across 21 files, Worker/client builds,
+  prerender). `npx playwright test --config tests/offline.playwright.config.ts` PASS (8 tests, 3.2s). New coverage
+  also checks confirm/cancel deletion, no reconnect after closure, and explicit starts on custom/default results
+  when the host is absent. The smoke script explicitly starts a waiting board and accepts retained results after
+  disconnect; live smoke/account suites were updated where needed but not run. No dependencies or schema migrations.
+  No deploy, DeepSpace push, or Git push commands were run.
+- Provider: implementation, self-review, and verification by Codex; no nested agents (implementation sub-agent assignment).
+
+
+## 2026-11-17: Production flash investigation and routing rollback
+
+- Read-only production Chromium traces used fresh signed-out contexts for direct `/r/QX3J`, `/home` → Join
+  `QX3J`, and full reload. The throwaway script, JSON insertion/network timelines, compositor screenshots and
+  videos remain outside the repo at `/tmp/pixel-production-trace.mjs` and `/tmp/pixel-production-trace-final/`.
+  Initial room HTML is 838 bytes with an empty root, no prerender marker and no board markup.
+- QX3J currently returns HTTP **410**, so these traces reach **This Room Has Closed**, not the private-room
+  sign-in card. Terminal-card insertions occurred at 1238.7 ms for direct navigation, 1223.9 ms from the home
+  document's navigation start for home → Join, and 962.3 ms for reload. A document-start MutationObserver
+  recorded zero canvas, board-test-id, role-grid, landing-grid or large cell-grid insertions in all three flows.
+  Videos and screenshots show the blank AuthBoot/Connecting state followed by the closed card. No redirect to
+  `/`, `play` connection, home board preview or transient canvas was observed. AuthBoot is at
+  `src/pages/(app)/_layout.tsx:64`; the room's existing loading guard is at `src/pages/(app)/r/[code].tsx:264`;
+  its terminal branch begins at line 269. These guards already existed in the production base `fb3e1a6`.
+- Reverted `4ff80c8`'s `run_worker_first` additions, special room static handler, 503 behavior and four unit
+  cases for that handler. Kept the accepted lifecycle coverage and replaced the synthetic navigation-fallback
+  fixture with direct/home-join/reload coverage using the normal empty shell and a delayed 401. The new tests
+  observe insertions from document start, check initial and reloaded HTML, and confirm lowercase home input
+  navigates to the uppercase room. Both existing code and the reverted routing pass these checks. This is
+  additional negative coverage, **not a red/green reproduction or a proven fix for the reported bug**.
+- Bug #4 remains unresolved. A currently active private room that returns 401 is needed to trace the actual
+  reported path; production was not changed or revived. No speculative client fix was added.
+- Verification: `npm run verify` PASS (lint, TypeScript, 235 unit tests across 21 files, Worker/client builds,
+  prerender); `npx playwright test --config tests/offline.playwright.config.ts` PASS (9 tests, 3.1s).
+  The four fewer unit tests are the removed routing-workaround cases. No deploy or push commands were run.
+- Provider: investigation, focused rollback, coverage and verification by Codex (implementation sub-agent).
+
+## 2026-11-17: Redesign merged with main and review findings closed
+
+- Merged `origin/main` (`fb45ffd`) into the redesign branch with merge commit `3fb7ba5`.
+  Resolved six textual conflicts by preserving main's room-code, lifecycle, permission,
+  routing and explicit-start behavior alongside the redesign's layout and state additions.
+- Results now keep View Canvas/New game in a fixed, non-scrolling card footer with compact
+  narrow-board content. Countdown audio waits for a fresh reconnect snapshot; disconnected
+  and terminal states stay silent. Preserved main's four-character invite copy and removed
+  the dead RoundBar room-name prop; canvas measurement now accounts for document/main scroll.
+- Delete-room controls/dialog, mobile host-room cards and nav/logo/toggle focus are consistent
+  with VT323, square panels and Sunset tokens. Protected palette, judge, scoring and budget
+  files are unchanged from main. The dependency lockfile was unchanged, so no reinstall.
+- Verification: `npm run verify` PASS (lint, TypeScript, 263 unit tests across 24 files,
+  Worker/client builds and prerender); offline Playwright PASS (19 tests, 1 intentionally
+  gated screenshot capture); explicit screenshot run PASS with all 13 captures inspected.
+  Both 375×812 and 1280×720 results-control bounds tests run in the ordinary offline suite.
+- Full conflict audit, per-finding tests, logs and screenshot list:
+  `.superpowers/sdd/2026-11-17-pixel-redesign/merge-and-fix-report.md`.
+- No push, deployment, PR or nested agents. Implementation and verification by Codex.

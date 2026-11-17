@@ -18,6 +18,7 @@ import {
   Sparkles,
   Users,
 } from 'lucide-react'
+import { DeleteRoomButton } from '../../components/game/DeleteRoomButton'
 import {
   Badge,
   Button,
@@ -38,9 +39,9 @@ interface RoomRecord {
   isDefaultBoard: boolean
 }
 
-export default function HomePage() {
+export default function PartyPage() {
   const navigate = useNavigate()
-  const { isSignedIn } = useAuthProfileReady({ requireUser: false })
+  const { isSignedIn, user } = useAuthProfileReady({ requireUser: false })
   const { ready: mutationsReady } = useMutations('rooms')
   const { error: toastError, success: toastSuccess } = useToast()
 
@@ -57,10 +58,12 @@ export default function HomePage() {
   const [joinCodeInput, setJoinCodeInput] = useState('')
   const [joining, setJoining] = useState(false)
   const [showAuthModal, setShowAuthModal] = useState(false)
+  const [deletedRooms, setDeletedRooms] = useState<string[]>([])
 
   const livePublicRooms = rooms.filter(
     (room) =>
       room.data.status !== 'closed' &&
+      !deletedRooms.includes(room.recordId) &&
       room.data.visibility === 'public' &&
       !room.data.isDefaultBoard &&
       room.data.joinCode !== 'play',
@@ -160,26 +163,26 @@ export default function HomePage() {
       className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8"
     >
       {/* Hero Banner: Play Now on the Default Public Board */}
-      <section className="arcade-card relative overflow-hidden rounded-xl border-2 border-amber-400/80 bg-gradient-to-br from-[#231b42] via-[#171426] to-[#2d1636] p-5 sm:p-8">
+      <section className="pp-panel relative overflow-hidden p-5 sm:p-8">
         <div className="relative z-10 flex flex-col justify-between gap-6 lg:flex-row lg:items-center">
           <div className="max-w-xl space-y-2.5">
-            <div className="inline-flex items-center gap-2 rounded-full border border-amber-400/40 bg-amber-400/15 px-3 py-1 text-xs font-bold text-amber-300">
-              <Sparkles className="h-3.5 w-3.5" aria-hidden />
-              <span className="font-pixel uppercase tracking-wider">Always-On Co-op Canvas</span>
+            <div className="pp-chip inline-flex items-center gap-2 px-3 py-1 text-base uppercase tracking-wider">
+              <Sparkles className="h-4 w-4 text-[var(--sunset-1)]" aria-hidden />
+              <span>Always-On Co-op Canvas</span>
             </div>
-            <h1 className="font-pixel text-2xl font-extrabold uppercase tracking-tight text-foreground sm:text-4xl">
+            <h1 className="pp-word text-3xl uppercase leading-none sm:text-5xl">
               Draw Together. Beat the AI.
             </h1>
-            <p className="text-sm text-muted-foreground sm:text-base">
+            <p className="text-lg leading-snug text-muted-foreground">
               Jump straight onto the public 32×32 pixel board. Everyone on the board sees the word—except Claude Haiku, who watches the canvas and shouts out live guesses!
             </p>
             {defaultBoardRoom && (
-              <div className="flex items-center gap-3 pt-1 text-xs text-amber-200/90">
-                <span className="font-pixel inline-flex items-center gap-1.5 rounded bg-black/40 px-2.5 py-1">
-                  <Users className="h-3.5 w-3.5 text-cyan-400" aria-hidden />
+              <div className="flex flex-wrap items-center gap-3 pt-1 text-base">
+                <span className="pp-chip inline-flex items-center gap-1.5 px-2.5 py-0.5">
+                  <Users className="h-4 w-4 text-[var(--sunset-1)]" aria-hidden />
                   {defaultBoardRoom.data.playerCount ?? 0} active painters
                 </span>
-                <span className="font-pixel uppercase text-emerald-300">
+                <span className="uppercase text-[var(--sunset-1)]">
                   ● {defaultBoardRoom.data.status}
                 </span>
               </div>
@@ -190,7 +193,7 @@ export default function HomePage() {
             <Link
               to="/r/play"
               data-testid="lobby-play-now"
-              className="arcade-btn font-pixel inline-flex items-center justify-center gap-2.5 rounded-lg bg-amber-400 px-6 py-3.5 text-sm font-extrabold uppercase tracking-wider text-slate-950 hover:bg-amber-300 sm:text-base"
+              className="pp-btn inline-flex items-center justify-center gap-2.5 px-6 py-3 text-xl uppercase tracking-wider"
             >
               <Play className="h-5 w-5 fill-current" aria-hidden />
               Play now
@@ -203,16 +206,16 @@ export default function HomePage() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
         {/* Left 7 Cols: Live Public Rooms List */}
         <section className="flex flex-col gap-4 lg:col-span-7">
-          <div className="flex items-center justify-between">
+          <div className="flex items-start justify-between gap-3">
             <div>
-              <h2 className="font-pixel text-lg font-extrabold uppercase tracking-wider text-foreground">
+              <h2 className="text-2xl uppercase tracking-wider text-[var(--sunset-2)]">
                 Live Public Rooms
               </h2>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-base text-muted-foreground">
                 Drop into an active co-op canvas or spectate live rounds.
               </p>
             </div>
-            <Badge variant="secondary" className="font-pixel">
+            <Badge variant="secondary" className="pp-chip shrink-0 whitespace-nowrap text-base uppercase">
               {livePublicRooms.length + 1} Open
             </Badge>
           </div>
@@ -222,79 +225,85 @@ export default function HomePage() {
             <Link
               to="/r/play"
               data-testid="room-card-play"
-              className="arcade-card group flex items-center justify-between gap-4 rounded-lg bg-card p-4 transition-colors hover:border-amber-400/70"
+              className="pp-panel group flex items-center justify-between gap-3 p-4 transition-colors hover:border-[var(--sunset-1)]"
             >
-              <div className="flex items-center gap-3.5">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border-2 border-amber-400/60 bg-amber-400/15 text-amber-300">
+              <div className="flex min-w-0 items-center gap-3.5">
+                <div className="pp-chip flex h-11 w-11 shrink-0 items-center justify-center text-[var(--sunset-1)]">
                   <PaletteIcon className="h-5 w-5" aria-hidden />
                 </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-pixel text-sm font-extrabold text-foreground group-hover:text-amber-300">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="whitespace-nowrap text-xl uppercase text-foreground group-hover:text-[var(--sunset-1)]">
                       Public Board
                     </span>
-                    <Badge variant="default" className="font-pixel text-[10px] uppercase">
+                    <Badge variant="default" className="pp-chip text-sm uppercase">
                       Featured
                     </Badge>
                   </div>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    Code: <code className="font-pixel text-foreground">play</code> • Co-op 32×32
+                  <p className="mt-0.5 text-base text-muted-foreground">
+                    Code: <code className="text-[var(--sunset-1)]">play</code> • Co-op 32×32
                   </p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-3">
-                <span className="font-pixel inline-flex items-center gap-1 rounded bg-secondary px-2.5 py-1 text-xs font-bold text-foreground">
-                  <Users className="h-3.5 w-3.5 text-cyan-400" aria-hidden />
+              <div className="flex shrink-0 items-center gap-2.5">
+                <span className="pp-chip inline-flex items-center gap-1.5 px-2.5 py-0.5 text-base">
+                  <Users className="h-4 w-4 text-[var(--sunset-1)]" aria-hidden />
                   {defaultBoardRoom?.data.playerCount ?? 0}
                 </span>
-                <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-1 group-hover:text-amber-300" />
+                <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-1 group-hover:text-[var(--sunset-1)]" />
               </div>
             </Link>
 
             {roomsStatus === 'loading' && livePublicRooms.length === 0 ? (
-              <div className="arcade-card rounded-lg bg-card/50 p-6 text-center text-xs text-muted-foreground">
+              <div className="pp-panel p-6 text-center text-base text-muted-foreground">
                 Scanning active frequencies…
               </div>
             ) : livePublicRooms.length === 0 ? (
-              <div className="arcade-card rounded-lg bg-card/60 p-6 text-center">
-                <p className="font-pixel text-xs font-bold uppercase text-foreground">
+              <div className="pp-panel p-6 text-center">
+                <p className="text-lg uppercase text-[var(--sunset-2)]">
                   No custom public rooms right now
                 </p>
-                <p className="mt-1 text-xs text-muted-foreground">
+                <p className="mt-1 text-base text-muted-foreground">
                   Hop into the Public Board above or create your own room on the right!
                 </p>
               </div>
             ) : (
               livePublicRooms.map((room) => (
-                <Link
-                  key={room.recordId}
-                  to={`/r/${room.data.joinCode}`}
-                  data-testid={`room-card-${room.data.joinCode}`}
-                  className="arcade-card group flex items-center justify-between gap-4 rounded-lg bg-card p-4 transition-colors hover:border-pink-400/70"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-pixel truncate text-sm font-bold text-foreground group-hover:text-pink-300">
-                        {room.data.name}
-                      </span>
-                      <Badge variant="secondary" className="font-pixel text-[10px] uppercase">
-                        {room.data.status}
-                      </Badge>
+                <div key={room.recordId} className="pp-panel flex flex-col items-stretch sm:flex-row sm:items-center sm:gap-3 sm:pr-4">
+                  <Link
+                    to={`/r/${room.data.joinCode}`}
+                    data-testid={`room-card-${room.data.joinCode}`}
+                    className="group flex min-w-0 flex-1 items-center justify-between gap-4 p-4 transition-colors"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="truncate text-xl uppercase text-foreground group-hover:text-[var(--sunset-1)]">
+                          {room.data.name}
+                        </span>
+                        <Badge variant="secondary" className="pp-chip text-sm uppercase">
+                          {room.data.status}
+                        </Badge>
+                      </div>
+                      <p className="mt-0.5 text-base text-muted-foreground">
+                        Code: <code className="text-[var(--sunset-1)]">{room.data.joinCode}</code> • Co-op 32×32
+                      </p>
                     </div>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      Code: <code className="font-pixel text-foreground">{room.data.joinCode}</code> • Co-op 32×32
-                    </p>
-                  </div>
 
-                  <div className="flex items-center gap-3">
-                    <span className="font-pixel inline-flex items-center gap-1 rounded bg-secondary px-2.5 py-1 text-xs font-bold text-foreground">
-                      <Users className="h-3.5 w-3.5 text-cyan-400" aria-hidden />
-                      {room.data.playerCount ?? 0}
-                    </span>
-                    <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-1 group-hover:text-pink-300" />
-                  </div>
-                </Link>
+                    <div className="flex items-center gap-3">
+                      <span className="pp-chip inline-flex items-center gap-1.5 px-2.5 py-0.5 text-base">
+                        <Users className="h-4 w-4 text-[var(--sunset-1)]" aria-hidden />
+                        {room.data.playerCount ?? 0}
+                      </span>
+                      <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-1 group-hover:text-[var(--sunset-1)]" />
+                    </div>
+                  </Link>
+                  {user?.id === room.data.hostId && (
+                    <div className="flex justify-end px-4 pb-4 sm:p-0">
+                      <DeleteRoomButton joinCode={room.data.joinCode} onDeleted={() => setDeletedRooms(previous => [...previous, room.recordId])} />
+                    </div>
+                  )}
+                </div>
               ))
             )}
           </div>
@@ -306,19 +315,19 @@ export default function HomePage() {
           <form
             data-testid="create-room-form"
             onSubmit={handleCreateRoom}
-            className="arcade-card flex flex-col gap-4 rounded-xl bg-card p-5"
+            className="pp-panel flex flex-col gap-4 p-5"
           >
             <div className="flex items-center justify-between">
-              <h2 className="font-pixel text-base font-extrabold uppercase tracking-wider text-foreground">
+              <h2 className="text-2xl uppercase tracking-wider text-[var(--sunset-2)]">
                 Create a Room
               </h2>
-              <Badge variant="secondary" className="font-pixel text-[10px] uppercase">
+              <Badge variant="secondary" className="pp-chip text-sm uppercase">
                 Co-op 32×32
               </Badge>
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="room-name" className="font-pixel text-xs uppercase">
+              <Label htmlFor="room-name" className="text-base uppercase text-[var(--soft-text)]">
                 Room Name
               </Label>
               <Input
@@ -333,42 +342,42 @@ export default function HomePage() {
             </div>
 
             <div className="space-y-1.5">
-              <Label className="font-pixel text-xs uppercase">Mode</Label>
-              <div className="flex items-center justify-between rounded-md border border-border bg-secondary/60 px-3 py-2 text-xs">
-                <span className="font-pixel font-bold text-foreground">Co-op (32×32 Shared Grid)</span>
+              <Label className="text-base uppercase text-[var(--soft-text)]">Mode</Label>
+              <div className="flex items-center justify-between border border-border bg-secondary/60 px-3 py-2 text-base">
+                <span className="text-foreground">Co-op (32×32 Shared Grid)</span>
               </div>
             </div>
 
             <div className="space-y-1.5">
-              <Label className="font-pixel text-xs uppercase">Visibility</Label>
+              <Label className="text-base uppercase text-[var(--soft-text)]">Visibility</Label>
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
                   data-testid="visibility-public"
                   disabled={!mutationsReady || creating}
                   onClick={() => setVisibility('public')}
-                  className={`flex items-center justify-center gap-1.5 rounded-md border-2 px-3 py-2 text-xs font-bold transition-colors ${
+                  className={`flex items-center justify-center gap-1.5 border-2 px-3 py-2 text-base uppercase transition-colors ${
                     visibility === 'public'
-                      ? 'border-amber-400 bg-amber-400/15 text-amber-300'
+                      ? 'border-[var(--sunset-1)] bg-secondary text-[var(--sunset-1)]'
                       : 'border-border bg-secondary/40 text-muted-foreground hover:text-foreground'
                   }`}
                 >
-                  <Globe className="h-3.5 w-3.5" aria-hidden />
-                  <span className="font-pixel">Public</span>
+                  <Globe className="h-4 w-4" aria-hidden />
+                  <span>Public</span>
                 </button>
                 <button
                   type="button"
                   data-testid="visibility-private"
                   disabled={!mutationsReady || creating}
                   onClick={() => setVisibility('private')}
-                  className={`flex items-center justify-center gap-1.5 rounded-md border-2 px-3 py-2 text-xs font-bold transition-colors ${
+                  className={`flex items-center justify-center gap-1.5 border-2 px-3 py-2 text-base uppercase transition-colors ${
                     visibility === 'private'
-                      ? 'border-pink-400 bg-pink-400/15 text-pink-300'
+                      ? 'border-[var(--sunset-1)] bg-secondary text-[var(--sunset-1)]'
                       : 'border-border bg-secondary/40 text-muted-foreground hover:text-foreground'
                   }`}
                 >
-                  <Lock className="h-3.5 w-3.5" aria-hidden />
-                  <span className="font-pixel">Private</span>
+                  <Lock className="h-4 w-4" aria-hidden />
+                  <span>Private</span>
                 </button>
               </div>
             </div>
@@ -378,7 +387,7 @@ export default function HomePage() {
                 type="submit"
                 data-testid="create-room-submit"
                 disabled={!mutationsReady || creating || !roomName.trim()}
-                className="arcade-btn font-pixel mt-1 w-full gap-2 bg-amber-400 font-extrabold uppercase text-slate-950 hover:bg-amber-300"
+                className="pp-btn mt-1 w-full gap-2 text-lg uppercase"
               >
                 <Plus className="h-4 w-4" aria-hidden />
                 {creating ? 'Creating…' : 'Create & Launch Room'}
@@ -388,7 +397,7 @@ export default function HomePage() {
                 type="button"
                 data-testid="create-room-signin"
                 onClick={() => setShowAuthModal(true)}
-                className="arcade-btn font-pixel mt-1 w-full gap-2 bg-primary font-extrabold uppercase text-primary-foreground"
+                className="pp-btn mt-1 w-full gap-2 text-lg uppercase"
               >
                 Sign in to Host a Room
               </Button>
@@ -399,9 +408,9 @@ export default function HomePage() {
           <form
             data-testid="join-room-form"
             onSubmit={handleJoinCode}
-            className="arcade-card flex flex-col gap-3 rounded-xl bg-card p-5"
+            className="pp-panel flex flex-col gap-3 p-5"
           >
-            <h3 className="font-pixel text-sm font-extrabold uppercase tracking-wider text-foreground">
+            <h3 className="text-xl uppercase tracking-wider text-[var(--sunset-2)]">
               Have an invite code?
             </h3>
             <div className="flex gap-2">
@@ -412,11 +421,12 @@ export default function HomePage() {
                 />
                 <Input
                   data-testid="join-code-input"
-                  placeholder="Enter 10-char code"
+                  placeholder="Enter 4-char code"
+                  maxLength={64}
                   value={joinCodeInput}
-                  onChange={(e) => setJoinCodeInput(e.target.value)}
+                  onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
                   disabled={joining}
-                  className="font-pixel pl-8 uppercase"
+                  className="pl-8 uppercase"
                 />
               </div>
               <Button
@@ -424,7 +434,7 @@ export default function HomePage() {
                 variant="secondary"
                 data-testid="join-code-submit"
                 disabled={joining || !joinCodeInput.trim()}
-                className="arcade-btn font-pixel font-bold uppercase"
+                className="pp-btn px-5 text-lg uppercase"
               >
                 {joining ? 'Joining…' : 'Join'}
               </Button>

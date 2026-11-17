@@ -11,7 +11,7 @@ import { renderZonePng, toBase64 } from '../game/png'
 import { parseClientMsg, type ServerMsg } from '../game/protocol'
 import {
   advance, applyJudgeOutcome, applyPlacements, countPlayers, deserializeRoomState,
-  newRoomState, nextAlarmAt, serializeRoomState, startNextRound,
+  newRoomState, nextAlarmAt, nextRoundRejection, serializeRoomState, startNextRound,
   type RoomState, type RoomTransition, type RoundEndedEvent, type RoomStatusEvent,
 } from '../game/room-logic'
 import { cooldownMs } from '../game/rules'
@@ -58,27 +58,26 @@ export function restorePixelState(json: string, init: RoomInit, now: number, rng
     const validDimensions = restored.grid.width === config.width && restored.grid.height === config.height
     const validAttributions = restored.grid.placedBy.length === restored.grid.cells.length
     const validColors = restored.grid.cells.every(color => color < PALETTE.length)
-    const validWord = restored.status === 'lobby' ? restored.round.word === '' : restored.wordEntry.word === restored.round.word
+    const validWord = restored.round.state === 'lobby' ? restored.round.word === '' : restored.wordEntry.word === restored.round.word
     if (!validDimensions || !validAttributions || !validColors || !validWord) {
       throw new Error('Invalid saved grid or word')
     }
     return restored
   } catch {
-    console.warn('[PixelRoom] Invalid saved state; starting a fresh round')
-    return newRoomState(init, now, rng)
+    console.warn('[PixelRoom] Invalid saved state; waiting for Start')
+    return newRoomState({ ...init, startsInLobby: true }, now, rng)
   }
 }
 
-export function nextCommandRejection(state: RoomState, userId: string | null, hostUserId: string | null = null): 'not_signed_in' | 'not_host' | null {
-  const verifiedId = signedInId(userId)
-  if (!verifiedId) return 'not_signed_in'
-  return !state.isDefaultBoard && hostUserId === verifiedId ? null : 'not_host'
+export function nextCommandRejection(state: RoomState, userId: string | null, hostUserId: string | null = null, connectedUserIds: string[] = []): 'not_signed_in' | 'not_host' | null {
+  return nextRoundRejection(state, signedInId(userId), hostUserId, connectedUserIds)
 }
 
 export class PixelRoom extends BaseRoom<Env> {
   private game: RoomState | null = null
   private restingDay: string | null = null
   private hostUserId = ''
+  private statusWrite: Promise<void> = Promise.resolve()
 
   constructor(state: DurableObjectState, env: Env) {
     super(state, env)
@@ -96,15 +95,28 @@ export class PixelRoom extends BaseRoom<Env> {
   }
 
   override async fetch(request: Request): Promise<Response> {
-    if (request.headers.get('Upgrade') === 'websocket' && !this.game) {
+    const closing = request.method === 'POST' && new URL(request.url).pathname === '/close'
+    if ((request.headers.get('Upgrade') === 'websocket' || closing) && !this.game) {
       const roomId = request.headers.get('X-Room-Id')
       const mode = request.headers.get('X-Room-Mode')
       const isDefault = request.headers.get('X-Room-Default')
       const hostId = request.headers.get('X-Room-Host')
       if (!roomId || hostId === null || (mode !== 'coop' && mode !== 'team') || (isDefault !== 'true' && isDefault !== 'false')) return new Response('Missing room configuration', { status: 400 })
       this.hostUserId = isDefault === 'true' ? '' : hostId
-      this.game = newRoomState({ roomId, mode: mode as Mode, isDefaultBoard: isDefault === 'true', startsInLobby: request.headers.get('X-Room-Lobby') === 'true' }, Date.now(), Math.random)
+      this.game = newRoomState({ roomId, mode: mode as Mode, isDefaultBoard: isDefault === 'true', startsInLobby: true }, Date.now(), Math.random)
       this.persist()
+    }
+    if (closing) {
+      if (!this.game || this.game.isDefaultBoard || !this.hostUserId || request.headers.get('X-Room-Host') !== this.hostUserId || request.headers.get('X-Room-Id') !== this.game.roomId) return new Response('Forbidden', { status: 403 })
+      this.game = { ...this.game, status: 'closed', intermissionEndsAt: null, judgeInFlight: false }
+      this.persist()
+      this.broadcastGame({ t: 'closed' })
+      for (const ws of this.liveSockets()) { try { ws.close(4001, 'Room closed by host') } catch {} }
+      await this.state.storage.deleteAlarm()
+      // Finish any earlier status write before the terminal record write.
+      await this.statusWrite
+      await this.onRoomStatus({ roomId: this.game.roomId, status: 'closed', playerCount: 0, lastActiveAt: Date.now(), currentRoundId: this.game.round.id })
+      return new Response(null, { status: 204 })
     }
     if (request.headers.get('Upgrade') === 'websocket' && this.game?.status === 'closed') return new Response('Room closed', { status: 410 })
     return super.fetch(request)
@@ -117,9 +129,14 @@ export class PixelRoom extends BaseRoom<Env> {
 
   protected override async onConnect(ws: WebSocket, user: UserAttachment): Promise<void> {
     try {
+      if (this.game?.status === 'closed') {
+        this.sendGame(ws, { t: 'closed' })
+        ws.close(4001, 'Room closed by host')
+        return
+      }
       ws.serializeAttachment(user)
       await this.transition(this.withRoomStatus(advance(this.game!, Date.now(), this.playerCount(), Math.random), this.playerCount()), undefined, ws)
-      this.broadcastGame({ t: 'players', count: this.playerCount(), roster: this.playerRoster() })
+      this.broadcastGame({ t: 'players', count: this.playerCount(), roster: this.playerRoster(), watching: this.watcherCount() })
     } finally {
       await this.armAlarm().catch(logAlarmError)
     }
@@ -128,7 +145,7 @@ export class PixelRoom extends BaseRoom<Env> {
   protected override async onMessage(ws: WebSocket, user: UserAttachment, message: { type: string; [key: string]: unknown }): Promise<void> {
     try {
       const command = parseClientMsg(JSON.stringify(message))
-      if (!command || !this.game) return
+      if (!command || !this.game || this.game.status === 'closed') return
       const userId = signedInId(user.userId)
       await this.transition(advance(this.game, Date.now(), this.playerCount(), Math.random))
       if (command.t !== 'place' && !userId) {
@@ -138,7 +155,7 @@ export class PixelRoom extends BaseRoom<Env> {
       } else if (command.t === 'ask') {
         await this.judge('ask', ws)
       } else if (command.t === 'next') {
-        const reason = nextCommandRejection(this.game, userId, this.hostUserId)
+        const reason = nextCommandRejection(this.game, userId, this.hostUserId, this.playerRoster().map(player => player.userId))
         if (reason) this.sendGame(ws, { t: 'reject', reason })
         else await this.transition(startNextRound(this.game, Date.now(), Math.random))
       }
@@ -150,9 +167,9 @@ export class PixelRoom extends BaseRoom<Env> {
   protected override async onDisconnect(ws: WebSocket): Promise<void> {
     try {
       try { ws.close(1000, 'Disconnected') } catch {}
-      if (!this.game) return
+      if (!this.game || this.game.status === 'closed') return
       await this.transition(this.withRoomStatus(advance(this.game, Date.now(), this.playerCount(ws), Math.random), this.playerCount(ws)))
-      this.broadcastGame({ t: 'players', count: this.playerCount(ws), roster: this.playerRoster(ws) })
+      this.broadcastGame({ t: 'players', count: this.playerCount(ws), roster: this.playerRoster(ws), watching: this.watcherCount(ws) })
     } finally {
       await this.armAlarm().catch(logAlarmError)
     }
@@ -160,7 +177,7 @@ export class PixelRoom extends BaseRoom<Env> {
 
   protected override async onAlarm(): Promise<void> {
     try {
-      if (!this.game) return
+      if (!this.game || this.game.status === 'closed') return
       await this.transition(advance(this.game, Date.now(), this.playerCount(), Math.random))
       await this.judge('tick')
     } finally {
@@ -208,6 +225,10 @@ export class PixelRoom extends BaseRoom<Env> {
     return countPlayers(this.liveSockets(exclude).map(ws => ({ userId: signedInId(this.getAttachment(ws)?.userId) })))
   }
 
+  private watcherCount(exclude?: WebSocket): number {
+    return this.liveSockets(exclude).filter(ws => signedInId(this.getAttachment(ws)?.userId) === null).length
+  }
+
   private playerRoster(exclude?: WebSocket): { userId: string; name: string }[] {
     const players = new Map<string, { userId: string; name: string }>()
     for (const ws of this.liveSockets(exclude)) {
@@ -235,7 +256,7 @@ export class PixelRoom extends BaseRoom<Env> {
     const players = this.playerCount()
     this.sendGame(ws, {
       t: 'snapshot', mode: state.mode, width: state.grid.width, height: state.grid.height,
-      cells: encodeCells(state.grid.cells), round: state.round, players, roster: this.playerRoster(),
+      cells: encodeCells(state.grid.cells), round: state.round, players, roster: this.playerRoster(), watching: this.watcherCount(),
       you: { userId, cooldownUntil: placedAt === undefined ? 0 : placedAt + cooldownMs(players) },
       aiResting: this.restingDay === utcDay(Date.now()),
     })
@@ -268,7 +289,11 @@ export class PixelRoom extends BaseRoom<Env> {
           try { await this.onRoundEnded(event.event) } catch { console.warn('[PixelRoom] Round-ended hook failed') }
           break
         case 'roomStatus':
-          try { await this.onRoomStatus(event.event) } catch { console.warn('[PixelRoom] Room-status hook failed') }
+          this.statusWrite = this.statusWrite.then(async () => {
+            if (this.game?.status === 'closed' && event.event.status !== 'closed') return
+            await this.onRoomStatus(event.event)
+          }).catch(() => { console.warn('[PixelRoom] Room-status hook failed') })
+          await this.statusWrite
           break
         case 'reject': if (sender) this.sendGame(sender, { t: 'reject', reason: event.reason, x: event.x, y: event.y, ...(event.retryAt === undefined ? {} : { retryAt: event.retryAt }) }); break
         default: {
@@ -296,7 +321,7 @@ export class PixelRoom extends BaseRoom<Env> {
   }
 
   private async judge(reason: 'tick' | 'ask', requester?: WebSocket): Promise<void> {
-    if (!this.game) return
+    if (!this.game || this.game.status === 'closed') return
     const previousRound = this.game.round
     const outcome = await runJudge({
       now: Date.now,
@@ -316,6 +341,8 @@ export class PixelRoom extends BaseRoom<Env> {
       },
       getState: () => this.game!,
     }, this.game, reason, this.playerCount(), MODES[this.game.mode].zones[0])
+    // The room can close while the integration request is awaiting its result.
+    if ((this.game as RoomState).status === 'closed') return
     if (outcome.kind === 'resting') this.restingDay = utcDay(Date.now())
     if (outcome.kind === 'failed') console.warn('[PixelRoom] Judge attempt failed; retrying on the next eligible tick')
     const transition = applyJudgeOutcome(this.game, outcome, Date.now())
