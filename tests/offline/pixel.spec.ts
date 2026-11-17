@@ -177,3 +177,38 @@ test('switching from a public board to a private invite clears the previous room
   await expect(page.getByTestId('room-error-unauthorized')).toBeVisible()
   expect(errors).toEqual([])
 })
+
+test('banner-aware canvas sizing keeps palette inside 1280x720 with spectator banner and reject notice, and renders room name', async ({ page }) => {
+  const errors = await clientFixture(page)
+  let server!: WebSocketRoute
+  await page.routeWebSocket('**/api/pixel/**', socket => {
+    server = socket
+    const state = snapshot('playing')
+    socket.send(JSON.stringify({ ...state, you: { userId: null, cooldownUntil: 0 }, players: 1, watching: 2, roster: [{ userId: 'host', name: 'Offline host' }] }))
+  })
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await page.goto(`${origin}/r/AB2Z`)
+  await expect(page.getByTestId('pixel-canvas')).toBeVisible()
+  await expect(page.getByTestId('room-name')).toHaveText('Offline party')
+  await expect(page.getByTestId('spectator-banner')).toBeVisible()
+
+  server.send(JSON.stringify({ t: 'reject', reason: 'not_signed_in' }))
+  await expect(page.getByTestId('reject-notice')).toBeVisible()
+
+  await expect.poll(async () => {
+    return page.evaluate(() => {
+      const palette = document.querySelector('[data-testid="palette"]')!.getBoundingClientRect()
+      return palette.bottom
+    })
+  }).toBeLessThanOrEqual(720)
+
+  const metrics = await page.evaluate(() => {
+    const canvas = document.querySelector('[data-testid="pixel-canvas"]')!.getBoundingClientRect()
+    const palette = document.querySelector('[data-testid="palette"]')!.getBoundingClientRect()
+    return { canvasWidth: canvas.width, canvasBottom: canvas.bottom, paletteBottom: palette.bottom }
+  })
+  console.log('1280x720 banner-case metrics:', JSON.stringify(metrics))
+  expect(metrics.canvasBottom).toBeLessThanOrEqual(720)
+  expect(metrics.paletteBottom).toBeLessThanOrEqual(720)
+  expect(errors).toEqual([])
+})

@@ -115,7 +115,7 @@ async function setupClient(page: Page) {
                 {
                   recordId: 'room',
                   data: {
-                    name: 'Pixel Party',
+                    name: "Will's Room",
                     mode: 'coop',
                     visibility: 'public',
                     joinCode: 'QX3J',

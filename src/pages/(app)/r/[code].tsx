@@ -160,9 +160,11 @@ export default function RoomPage() {
   const trailingCursorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const overlayDialogRef = useRef<HTMLDivElement | null>(null)
 
+  const roomPageRef = useRef<HTMLDivElement | null>(null)
   const headerRef = useRef<HTMLDivElement | null>(null)
   const centerColRef = useRef<HTMLDivElement | null>(null)
   const roundBarWrapRef = useRef<HTMLDivElement | null>(null)
+  const canvasSlotRef = useRef<HTMLDivElement | null>(null)
   const paletteWrapRef = useRef<HTMLDivElement | null>(null)
   const [availBox, setAvailBox] = useState<{ width: number; height: number }>({
     width: 640,
@@ -196,17 +198,13 @@ export default function RoomPage() {
       const col = centerColRef.current
       if (!col) return
       const colWidth = col.clientWidth || Math.max(280, window.innerWidth - 32)
-      const navEl = document.querySelector('[data-testid="app-navigation"]')
-      const navH = navEl ? navEl.getBoundingClientRect().height : 48
-      const headerH = headerRef.current ? headerRef.current.getBoundingClientRect().height : 36
-      const roundBarH = roundBarWrapRef.current
-        ? roundBarWrapRef.current.getBoundingClientRect().height
-        : 40
+      const slot = canvasSlotRef.current
+      const topOffset = slot ? slot.getBoundingClientRect().top : 140
       const paletteH = paletteWrapRef.current
         ? paletteWrapRef.current.getBoundingClientRect().height
         : 36
-      // Reserve vertical space for nav, header, roundBar, palette, plus vertical paddings/gaps (~52px)
-      const usedHeight = navH + headerH + roundBarH + paletteH + 52
+      // Reserve vertical space for topOffset (includes nav, header, any banners, roundBar) + palette + gap + bottom shadow/padding (~24px)
+      const usedHeight = topOffset + paletteH + 24
       const availHeight = Math.max(200, window.innerHeight - usedHeight)
       setAvailBox((prev) =>
         prev.width === colWidth && prev.height === availHeight
@@ -217,6 +215,7 @@ export default function RoomPage() {
 
     measure()
     const ro = new ResizeObserver(measure)
+    if (roomPageRef.current) ro.observe(roomPageRef.current)
     if (centerColRef.current) ro.observe(centerColRef.current)
     if (headerRef.current) ro.observe(headerRef.current)
     if (roundBarWrapRef.current) ro.observe(roundBarWrapRef.current)
@@ -226,7 +225,14 @@ export default function RoomPage() {
       ro.disconnect()
       window.removeEventListener('resize', measure)
     }
-  }, [state.snapshotLoaded, state.round?.state, isSpectator, Boolean(friendlyReject), sessionExpired])
+  }, [
+    state.snapshotLoaded,
+    state.round?.state,
+    isSpectator,
+    Boolean(friendlyReject),
+    sessionExpired,
+    roomDoc?.data.name,
+  ])
 
   const handleHoverCell = useCallback(
     (cell: { x: number; y: number } | null) => {
@@ -455,7 +461,7 @@ export default function RoomPage() {
       ref={headerRef}
       className="flex flex-wrap items-center justify-between gap-2 leading-none"
     >
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-baseline gap-3">
         <Link
           to="/home"
           className="inline-flex items-center gap-1 text-base uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
@@ -466,6 +472,14 @@ export default function RoomPage() {
         <span className="pp-logo text-[28px] leading-none sm:text-[32px]">
           Pixel Party
         </span>
+        {roomDoc?.data.name && (
+          <span
+            data-testid="room-name"
+            className="text-xl uppercase text-[var(--soft-text)]"
+          >
+            {roomDoc.data.name}
+          </span>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-2 text-base">
@@ -553,6 +567,7 @@ export default function RoomPage() {
 
   return (
     <div
+      ref={roomPageRef}
       data-testid="room-page"
       className="mx-auto flex w-full max-w-[1400px] flex-col gap-1.5 px-3 py-2 sm:px-5"
     >
@@ -635,154 +650,156 @@ export default function RoomPage() {
             />
           </div>
 
-          <PixelCanvas
-            width={state.width}
-            height={state.height}
-            cells={state.cells}
-            activeColor={activeColor}
-            canDraw={canDraw}
-            cooldownRemainingMs={cooldownRemainingMs}
-            availWidth={availBox.width}
-            availHeight={availBox.height}
-            word={state.round?.word}
-            onPlace={handlePlace}
-            onHoverCell={handleHoverCell}
-          >
-            <PlayerCursors peers={peers} width={state.width} height={state.height} />
+          <div ref={canvasSlotRef} className="flex items-center justify-center">
+            <PixelCanvas
+              width={state.width}
+              height={state.height}
+              cells={state.cells}
+              activeColor={activeColor}
+              canDraw={canDraw}
+              cooldownRemainingMs={cooldownRemainingMs}
+              availWidth={availBox.width}
+              availHeight={availBox.height}
+              word={state.round?.word}
+              onPlace={handlePlace}
+              onHoverCell={handleHoverCell}
+            >
+              <PlayerCursors peers={peers} width={state.width} height={state.height} />
 
-            {/* Win / Timeout Intermission Overlay */}
-            {showOverlay && state.round && (
-              <div
-                ref={overlayDialogRef}
-                data-testid="round-overlay"
-                role="dialog"
-                aria-modal="false"
-                aria-labelledby="overlay-heading"
-                tabIndex={-1}
-                onKeyDown={(e) => {
-                  if (e.key === 'Escape' && state.round?.id) {
-                    e.stopPropagation()
-                    setDismissedOverlayRoundId(state.round.id)
-                  }
-                }}
-                className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-background/90 p-4 text-center focus:outline-none"
-              >
-                <div className="pp-panel flex w-full max-w-sm flex-col items-center gap-3 p-5">
-                  {outcome === 'won' ? (
-                    <>
-                      <div className="pp-chip flex h-12 w-12 items-center justify-center">
-                        <Trophy className="h-6 w-6 text-[var(--sunset-1)]" aria-hidden />
-                      </div>
-                      <span
-                        id="overlay-heading"
-                        className="pp-chip px-2.5 py-0.5 text-base uppercase tracking-widest"
-                      >
-                        AI Guessed It!
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      <div className="pp-chip flex h-12 w-12 items-center justify-center">
-                        <Clock className="h-6 w-6 text-[var(--sunset-2)]" aria-hidden />
-                      </div>
-                      <span
-                        id="overlay-heading"
-                        className="pp-chip px-2.5 py-0.5 text-base uppercase tracking-widest"
-                      >
-                        Time&apos;s Up!
-                      </span>
-                    </>
-                  )}
-
-                  <div>
-                    <p className="text-sm uppercase tracking-wider text-muted-foreground">
-                      The word was
-                    </p>
-                    <h2
-                      data-testid="overlay-word"
-                      className="pp-word mt-0.5 text-3xl uppercase"
-                    >
-                      {state.round.word}
-                    </h2>
-                  </div>
-
-                  <div className="grid w-full grid-cols-2 gap-2 border border-border bg-background/60 p-2.5 text-base">
-                    <div className="flex flex-col items-center">
-                      <span className="text-muted-foreground">Score</span>
-                      <span
-                        data-testid="overlay-score"
-                        className="mt-0.5 flex items-center gap-1 text-xl text-[var(--sunset-1)]"
-                      >
-                        <Award className="h-4 w-4" aria-hidden />
-                        {state.round.result?.score ?? 0} pts
-                      </span>
-                    </div>
-                    <div className="flex flex-col items-center">
-                      <span className="text-muted-foreground">Pixels Used</span>
-                      <span className="mt-0.5 text-xl text-foreground">
-                        {currentRoundDoc?.data.pixelsUsed ?? pixelsCount} px
-                      </span>
-                    </div>
-                  </div>
-
-                  <div
-                    data-testid="overlay-contributors"
-                    className="w-full border border-border bg-background/40 px-3 py-2 text-left"
-                  >
-                    <div className="mb-1 flex items-center gap-1.5 text-sm uppercase tracking-wider text-[var(--sunset-2)]">
-                      <Users className="h-3.5 w-3.5" aria-hidden />
-                      <span>Contributors</span>
-                    </div>
-                    {contributorInfo.names.length > 0 ? (
-                      <div className="flex flex-wrap gap-1.5">
-                        {contributorInfo.names.map((name, idx) => (
-                          <span
-                            key={`${name}-${idx}`}
-                            className="pp-chip px-2 py-0.5 text-sm"
-                          >
-                            {name}
-                          </span>
-                        ))}
-                      </div>
+              {/* Win / Timeout Intermission Overlay */}
+              {showOverlay && state.round && (
+                <div
+                  ref={overlayDialogRef}
+                  data-testid="round-overlay"
+                  role="dialog"
+                  aria-modal="false"
+                  aria-labelledby="overlay-heading"
+                  tabIndex={-1}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape' && state.round?.id) {
+                      e.stopPropagation()
+                      setDismissedOverlayRoundId(state.round.id)
+                    }
+                  }}
+                  className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-background/90 p-4 text-center focus:outline-none"
+                >
+                  <div className="pp-panel flex w-full max-w-sm flex-col items-center gap-3 p-5">
+                    {outcome === 'won' ? (
+                      <>
+                        <div className="pp-chip flex h-12 w-12 items-center justify-center">
+                          <Trophy className="h-6 w-6 text-[var(--sunset-1)]" aria-hidden />
+                        </div>
+                        <span
+                          id="overlay-heading"
+                          className="pp-chip px-2.5 py-0.5 text-base uppercase tracking-widest"
+                        >
+                          AI Guessed It!
+                        </span>
+                      </>
                     ) : (
-                      <p className="text-sm text-foreground">
-                        {contributorInfo.fallbackText}
-                      </p>
+                      <>
+                        <div className="pp-chip flex h-12 w-12 items-center justify-center">
+                          <Clock className="h-6 w-6 text-[var(--sunset-2)]" aria-hidden />
+                        </div>
+                        <span
+                          id="overlay-heading"
+                          className="pp-chip px-2.5 py-0.5 text-base uppercase tracking-widest"
+                        >
+                          Time&apos;s Up!
+                        </span>
+                      </>
                     )}
-                  </div>
 
-                  <div className="mt-1 flex w-full flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
-                    <span>Next word in {intermissionRemainingSec}s…</span>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        data-testid="overlay-dismiss"
-                        onClick={() =>
-                          state.round?.id && setDismissedOverlayRoundId(state.round.id)
-                        }
-                        className="pp-chip h-8 gap-1 px-2.5 text-sm uppercase hover:bg-secondary"
+                    <div>
+                      <p className="text-sm uppercase tracking-wider text-muted-foreground">
+                        The word was
+                      </p>
+                      <h2
+                        data-testid="overlay-word"
+                        className="pp-word mt-0.5 text-3xl uppercase"
                       >
-                        <Eye className="h-3.5 w-3.5" aria-hidden />
-                        View Canvas
-                      </Button>
-                      {isHost && (
+                        {state.round.word}
+                      </h2>
+                    </div>
+
+                    <div className="grid w-full grid-cols-2 gap-2 border border-border bg-background/60 p-2.5 text-base">
+                      <div className="flex flex-col items-center">
+                        <span className="text-muted-foreground">Score</span>
+                        <span
+                          data-testid="overlay-score"
+                          className="mt-0.5 flex items-center gap-1 text-xl text-[var(--sunset-1)]"
+                        >
+                          <Award className="h-4 w-4" aria-hidden />
+                          {state.round.result?.score ?? 0} pts
+                        </span>
+                      </div>
+                      <div className="flex flex-col items-center">
+                        <span className="text-muted-foreground">Pixels Used</span>
+                        <span className="mt-0.5 text-xl text-foreground">
+                          {currentRoundDoc?.data.pixelsUsed ?? pixelsCount} px
+                        </span>
+                      </div>
+                    </div>
+
+                    <div
+                      data-testid="overlay-contributors"
+                      className="w-full border border-border bg-background/40 px-3 py-2 text-left"
+                    >
+                      <div className="mb-1 flex items-center gap-1.5 text-sm uppercase tracking-wider text-[var(--sunset-2)]">
+                        <Users className="h-3.5 w-3.5" aria-hidden />
+                        <span>Contributors</span>
+                      </div>
+                      {contributorInfo.names.length > 0 ? (
+                        <div className="flex flex-wrap gap-1.5">
+                          {contributorInfo.names.map((name, idx) => (
+                            <span
+                              key={`${name}-${idx}`}
+                              className="pp-chip px-2 py-0.5 text-sm"
+                            >
+                              {name}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-foreground">
+                          {contributorInfo.fallbackText}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="mt-1 flex w-full flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
+                      <span>Next word in {intermissionRemainingSec}s…</span>
+                      <div className="flex items-center gap-2">
                         <Button
                           type="button"
+                          variant="secondary"
                           size="sm"
-                          onClick={next}
-                          className="pp-btn h-8 px-3 text-sm uppercase"
+                          data-testid="overlay-dismiss"
+                          onClick={() =>
+                            state.round?.id && setDismissedOverlayRoundId(state.round.id)
+                          }
+                          className="pp-chip h-8 gap-1 px-2.5 text-sm uppercase hover:bg-secondary"
                         >
-                          Next Word Now
+                          <Eye className="h-3.5 w-3.5" aria-hidden />
+                          View Canvas
                         </Button>
-                      )}
+                        {isHost && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={next}
+                            className="pp-btn h-8 px-3 text-sm uppercase"
+                          >
+                            Next Word Now
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            )}
-          </PixelCanvas>
+              )}
+            </PixelCanvas>
+          </div>
 
           <div ref={paletteWrapRef} className="w-full">
             <Palette
