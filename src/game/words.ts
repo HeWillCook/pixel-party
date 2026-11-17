@@ -43,6 +43,15 @@ export const WORDS: WordEntry[] = [
   { word: 'anchor', synonyms: ['ship anchor', 'boat anchor'], tier: 'medium' },
 ]
 
+/**
+ * Normalizes a guess or target phrase by lowercasing, replacing hyphens with
+ * spaces, stripping punctuation, collapsing whitespace, and dropping a leading
+ * article (`a `, `an `, `the `).
+ *
+ * Intentionally does NOT singularize: unconditional suffix stripping is lossy
+ * (e.g., "glass" or "glasses" vs "houses"). Plural variants are handled solely
+ * inside `matchGuess`'s candidate set.
+ */
 export function normalizeGuess(s: string): string {
   return s
     .toLowerCase()
@@ -92,6 +101,11 @@ export function matchGuess(guess: string, entry: WordEntry): boolean {
   return false
 }
 
+/**
+ * Picks a word from `WORDS` excluding any entries in `exclude`.
+ * Safety net: if every word in `WORDS` is excluded, falls back to the full
+ * `WORDS` list rather than throwing (rooms only exclude recent words).
+ */
 export function pickWord(rng: () => number, exclude: string[]): WordEntry {
   const excluded = new Set(exclude.map((w) => normalizeGuess(w)))
   const available = WORDS.filter((entry) => !excluded.has(normalizeGuess(entry.word)))

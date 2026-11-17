@@ -68,6 +68,17 @@ describe('grid', () => {
     expect(decodeCells(encodeCells(g.cells), 1024)).toEqual(g.cells)
   })
 
+  it('throws on decodeCells length mismatches (short or long payload)', () => {
+    const shortEncoded = encodeCells(new Uint8Array(10))
+    const longEncoded = encodeCells(new Uint8Array(1025))
+    expect(() => decodeCells(shortEncoded, 1024)).toThrow(
+      'decodeCells: expected 1024 bytes, got 10',
+    )
+    expect(() => decodeCells(longEncoded, 1024)).toThrow(
+      'decodeCells: expected 1024 bytes, got 1025',
+    )
+  })
+
   it('clears all cells and contributors', () => {
     const g = createGrid(32, 32)
     setPixel(g, 1, 2, 4, 'u1')

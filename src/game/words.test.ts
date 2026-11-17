@@ -29,8 +29,9 @@ describe('words', () => {
     }
   })
 
-  it('normalizes case, punctuation, spacing, and leading articles', () => {
-    expect(normalizeGuess('  The   Lighthouse! ')).toBe('lighthouse')
+  it('normalizes case, punctuation, spacing, and leading articles without singularizing', () => {
+    expect(normalizeGuess(' The  Lighthouse! ')).toBe('lighthouse')
+    expect(normalizeGuess('cats')).toBe('cats')
     expect(normalizeGuess('an apple.')).toBe('apple')
     expect(normalizeGuess('a   Light-House?')).toBe('light house')
   })
@@ -62,5 +63,11 @@ describe('words', () => {
     const remaining = WORDS[WORDS.length - 1]
     expect(pickWord(() => 0, exclude)).toEqual(remaining)
     expect(pickWord(() => 0.9999, exclude)).toEqual(remaining)
+  })
+
+  it('pickWord falls back to full WORDS list when every word is excluded', () => {
+    const allWords = WORDS.map((w) => w.word)
+    const picked = pickWord(() => 0.5, allWords)
+    expect(WORDS).toContainEqual(picked)
   })
 })

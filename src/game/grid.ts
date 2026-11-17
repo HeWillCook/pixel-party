@@ -46,9 +46,11 @@ export function encodeCells(cells: Uint8Array): string {
 
 export function decodeCells(s: string, length: number): Uint8Array {
   const binary = atob(s)
+  if (binary.length !== length) {
+    throw new Error(`decodeCells: expected ${length} bytes, got ${binary.length}`)
+  }
   const out = new Uint8Array(length)
-  const n = Math.min(binary.length, length)
-  for (let i = 0; i < n; i++) {
+  for (let i = 0; i < length; i++) {
     out[i] = binary.charCodeAt(i)
   }
   return out

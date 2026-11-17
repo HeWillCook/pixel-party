@@ -33,7 +33,11 @@ describe('validatePlacement', () => {
     expect(validatePlacement(base)).toEqual({ ok: true })
   })
 
-  it('rejects unauthenticated users first', () => {
+  it('rejects unauthenticated users', () => {
+    expect(validatePlacement({ ...base, userId: null })).toEqual({ ok: false, reason: 'not_signed_in' })
+  })
+
+  it('rejects unauthenticated users before round, bounds, and color checks', () => {
     expect(
       validatePlacement({ ...base, userId: null, roundPlaying: false, x: -1, color: 0 }),
     ).toEqual({ ok: false, reason: 'not_signed_in' })
