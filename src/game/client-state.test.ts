@@ -57,6 +57,8 @@ describe('client-state', () => {
     state = applyServerMsg(state, snapshot)
     expect(state.guessLog).toHaveLength(1)
     expect(state.guessLogRoundId).toBe('r1')
+    state = applyServerMsg(state, { t: 'judgement', zone: 'all', guesses: ['tower'], confidence: 0.5, matched: false })
+    expect(state.guessLog).toHaveLength(1)
     state = applyServerMsg(state, { ...snapshot, round: makeRound('r2') })
     expect(state.guessLog).toEqual([])
     expect(state.guessLogRoundId).toBe('r2')
