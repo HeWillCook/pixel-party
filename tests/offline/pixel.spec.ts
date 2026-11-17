@@ -25,7 +25,15 @@ async function clientFixture(page: Page, options: { signedIn?: boolean; prefligh
     if (url.pathname.startsWith('/api/')) return route.fulfill({ json: {} })
     const asset = url.pathname.startsWith('/assets/')
     const path = asset ? resolve(clientDir, `.${url.pathname}`) : resolve(clientDir, '_spa.html')
-    const contentType = asset ? (path.endsWith('.css') ? 'text/css' : 'application/javascript') : 'text/html'
+    const contentType = asset
+      ? path.endsWith('.css')
+        ? 'text/css'
+        : path.endsWith('.woff2')
+          ? 'font/woff2'
+          : path.endsWith('.woff')
+            ? 'font/woff'
+            : 'application/javascript'
+      : 'text/html'
     return route.fulfill({ contentType, body: await readFile(path) })
   })
   await page.routeWebSocket('**/ws/**', socket => {
