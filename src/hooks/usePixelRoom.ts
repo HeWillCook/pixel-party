@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { getAuthToken, useAuthStatus } from 'deepspace'
 import {
+  applyConnectError,
   applyOptimisticPlace,
   applyServerMsg,
+  clearLastReject,
   initialClientState,
+  statusToConnectError,
   type ClientState,
 } from '../game/client-state'
 import { PALETTE } from '../game/config'
@@ -18,6 +21,8 @@ export interface UsePixelRoomResult {
   chooseTeam: (t: 'red' | 'blue') => void
 }
 
+const REJECT_DISPLAY_MS = 4000
+
 export function usePixelRoom(joinCode: string): UsePixelRoomResult {
   const { isSignedIn, userId, sessionId } = useAuthStatus()
   const [state, setState] = useState<ClientState>(() => initialClientState())
@@ -29,6 +34,23 @@ export function usePixelRoom(joinCode: string): UsePixelRoomResult {
     stateRef.current = state
   }, [state])
 
+  // M6: Auto-clear reject banner after ~4s or once retryAt passes
+  useEffect(() => {
+    const reject = state.lastReject
+    if (!reject) return
+    const now = Date.now()
+    const delay =
+      reject.retryAt !== undefined && reject.retryAt > now
+        ? Math.min(REJECT_DISPLAY_MS, Math.max(250, reject.retryAt - now + 100))
+        : REJECT_DISPLAY_MS
+    const timer = setTimeout(() => {
+      setState((prev) =>
+        prev.lastReject === reject ? clearLastReject(prev) : prev,
+      )
+    }, delay)
+    return () => clearTimeout(timer)
+  }, [state.lastReject])
+
   useEffect(() => {
     setState(initialClientState())
     lastSendAtRef.current = 0
@@ -38,9 +60,10 @@ export function usePixelRoom(joinCode: string): UsePixelRoomResult {
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null
     let alive = true
     let backoffMs = 500
+    let terminalError = false
 
     const scheduleReconnect = () => {
-      if (!alive) return
+      if (!alive || terminalError) return
       const delay = backoffMs
       backoffMs = Math.min(backoffMs * 2, 8000)
       reconnectTimer = setTimeout(() => {
@@ -48,8 +71,26 @@ export function usePixelRoom(joinCode: string): UsePixelRoomResult {
       }, delay)
     }
 
+    const probeHttpError = async (pathUrl: string): Promise<boolean> => {
+      try {
+        const res = await fetch(pathUrl, {
+          method: 'GET',
+          credentials: 'same-origin',
+        })
+        const err = statusToConnectError(res.status)
+        if (err && alive) {
+          terminalError = true
+          setState((prev) => applyConnectError(prev, err))
+          return true
+        }
+      } catch {
+        // Network error — allow normal exponential backoff reconnect
+      }
+      return false
+    }
+
     const connect = async () => {
-      if (!alive) return
+      if (!alive || terminalError) return
       let token: string | null = null
       if (isSignedIn) {
         try {
@@ -58,7 +99,7 @@ export function usePixelRoom(joinCode: string): UsePixelRoomResult {
           token = null
         }
       }
-      if (!alive) return
+      if (!alive || terminalError) return
 
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
       const baseUrl = `${protocol}//${window.location.host}`
@@ -67,6 +108,11 @@ export function usePixelRoom(joinCode: string): UsePixelRoomResult {
         url.searchParams.set('token', token)
       }
 
+      const httpProbeUrl = `${window.location.origin}/api/pixel/${encodeURIComponent(joinCode)}/ws${
+        token ? `?token=${encodeURIComponent(token)}` : ''
+      }`
+
+      let receivedSnapshot = false
       const socket = new WebSocket(url.toString())
       ws = socket
       wsRef.current = socket
@@ -76,8 +122,8 @@ export function usePixelRoom(joinCode: string): UsePixelRoomResult {
           socket.close()
           return
         }
-        backoffMs = 500
-        setState((prev) => ({ ...prev, connected: true }))
+        // M1: Do not reset backoffMs on open; reset only after a snapshot arrives
+        setState((prev) => ({ ...prev, connected: true, connectError: null }))
       }
 
       socket.onmessage = (event) => {
@@ -85,6 +131,10 @@ export function usePixelRoom(joinCode: string): UsePixelRoomResult {
         if (typeof event.data !== 'string') return
         try {
           const msg = JSON.parse(event.data) as ServerMsg
+          if (msg.t === 'snapshot') {
+            receivedSnapshot = true
+            backoffMs = 500
+          }
           setState((prev) => applyServerMsg(prev, msg))
         } catch {
           // Ignore malformed server payloads
@@ -96,7 +146,18 @@ export function usePixelRoom(joinCode: string): UsePixelRoomResult {
         ws = null
         wsRef.current = null
         setState((prev) => ({ ...prev, connected: false }))
-        scheduleReconnect()
+        if (!alive || terminalError) return
+
+        // I2: If the socket closed before receiving a snapshot, probe HTTP status for 401 / 404 / 410
+        if (!receivedSnapshot) {
+          void probeHttpError(httpProbeUrl).then((isTerminal) => {
+            if (!isTerminal) {
+              scheduleReconnect()
+            }
+          })
+        } else {
+          scheduleReconnect()
+        }
       }
 
       socket.onerror = () => {
@@ -138,14 +199,14 @@ export function usePixelRoom(joinCode: string): UsePixelRoomResult {
       if (x < 0 || x >= current.width || y < 0 || y >= current.height) return
       if (!Number.isInteger(c) || c < 1 || c >= PALETTE.length) return
 
+      // M3: Gate placement on active playing state and signed-in snapshot identity
+      if (!current.you.userId || current.round?.state !== 'playing') return
+
       const now = Date.now()
       const cd = cooldownMs(Math.max(1, current.players))
 
-      // If signed in and playing, client-side throttle drag/clicks to cooldown
-      if (current.you.userId) {
-        if (now < current.you.cooldownUntil) return
-        if (now - lastSendAtRef.current < cd) return
-      }
+      if (now < current.you.cooldownUntil) return
+      if (now - lastSendAtRef.current < cd) return
 
       const idx = y * current.width + x
       if (current.cells[idx] === c) return

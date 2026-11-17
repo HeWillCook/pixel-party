@@ -19,6 +19,7 @@ export function GuessFeed({ guesses, aiResting }: GuessFeedProps) {
   return (
     <div
       data-testid="guess-feed"
+      aria-live="polite"
       className={cn(
         'arcade-card relative overflow-hidden rounded-lg p-3 sm:p-4 transition-colors',
         matched

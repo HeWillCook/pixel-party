@@ -171,7 +171,7 @@ export default function HomePage() {
               Draw Together. Beat the AI.
             </h1>
             <p className="text-sm text-muted-foreground sm:text-base">
-              Jump straight onto the public 32×32 pixel board. Paint the secret word with other players while Claude Haiku shouts out live guesses!
+              Jump straight onto the public 32×32 pixel board. Everyone on the board sees the word—except Claude Haiku, who watches the canvas and shouts out live guesses!
             </p>
             {defaultBoardRoom && (
               <div className="flex items-center gap-3 pt-1 text-xs text-amber-200/90">
@@ -193,7 +193,7 @@ export default function HomePage() {
               className="arcade-btn font-pixel inline-flex items-center justify-center gap-2.5 rounded-lg bg-amber-400 px-6 py-3.5 text-sm font-extrabold uppercase tracking-wider text-slate-950 hover:bg-amber-300 sm:text-base"
             >
               <Play className="h-5 w-5 fill-current" aria-hidden />
-              Play Now (/r/play)
+              Play now
             </Link>
           </div>
         </div>
@@ -336,7 +336,6 @@ export default function HomePage() {
               <Label className="font-pixel text-xs uppercase">Mode</Label>
               <div className="flex items-center justify-between rounded-md border border-border bg-secondary/60 px-3 py-2 text-xs">
                 <span className="font-pixel font-bold text-foreground">Co-op (32×32 Shared Grid)</span>
-                <span className="text-[11px] text-muted-foreground">1–8 Painters</span>
               </div>
             </div>
 
@@ -403,7 +402,7 @@ export default function HomePage() {
             className="arcade-card flex flex-col gap-3 rounded-xl bg-card p-5"
           >
             <h3 className="font-pixel text-sm font-extrabold uppercase tracking-wider text-foreground">
-              Have a Invite Code?
+              Have an invite code?
             </h3>
             <div className="flex gap-2">
               <div className="relative flex-1">
@@ -416,7 +415,7 @@ export default function HomePage() {
                   placeholder="Enter 10-char code"
                   value={joinCodeInput}
                   onChange={(e) => setJoinCodeInput(e.target.value)}
-                  disabled={!mutationsReady || joining}
+                  disabled={joining}
                   className="font-pixel pl-8 uppercase"
                 />
               </div>
@@ -424,7 +423,7 @@ export default function HomePage() {
                 type="submit"
                 variant="secondary"
                 data-testid="join-code-submit"
-                disabled={!mutationsReady || joining || !joinCodeInput.trim()}
+                disabled={joining || !joinCodeInput.trim()}
                 className="arcade-btn font-pixel font-bold uppercase"
               >
                 {joining ? 'Joining…' : 'Join'}

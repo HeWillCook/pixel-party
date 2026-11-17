@@ -5,6 +5,7 @@ import { cooldownMs } from './rules'
 
 export type SnapshotYou = Extract<ServerMsg, { t: 'snapshot' }>['you']
 export type RejectMsg = Extract<ServerMsg, { t: 'reject' }>
+export type ConnectError = 'unauthorized' | 'not_found' | 'closed'
 
 export interface ZoneGuess {
   guesses: string[]
@@ -15,6 +16,7 @@ export interface ZoneGuess {
 export interface ClientState {
   connected: boolean
   snapshotLoaded: boolean
+  connectError: ConnectError | null
   mode: Mode
   width: number
   height: number
@@ -33,6 +35,7 @@ export function initialClientState(): ClientState {
   return {
     connected: false,
     snapshotLoaded: false,
+    connectError: null,
     mode: 'coop',
     width,
     height,
@@ -43,6 +46,32 @@ export function initialClientState(): ClientState {
     players: 0,
     you: { userId: null, cooldownUntil: 0 },
     aiResting: false,
+    lastReject: null,
+  }
+}
+
+export function statusToConnectError(status: number): ConnectError | null {
+  if (status === 401) return 'unauthorized'
+  if (status === 404) return 'not_found'
+  if (status === 410) return 'closed'
+  return null
+}
+
+export function applyConnectError(
+  s: ClientState,
+  error: ConnectError | null,
+): ClientState {
+  return {
+    ...s,
+    connected: false,
+    connectError: error,
+  }
+}
+
+export function clearLastReject(s: ClientState): ClientState {
+  if (!s.lastReject) return s
+  return {
+    ...s,
     lastReject: null,
   }
 }
@@ -78,6 +107,7 @@ export function applyServerMsg(s: ClientState, m: ServerMsg): ClientState {
       return {
         ...s,
         snapshotLoaded: true,
+        connectError: null,
         mode: m.mode,
         width: m.width,
         height: m.height,
@@ -99,7 +129,8 @@ export function applyServerMsg(s: ClientState, m: ServerMsg): ClientState {
       const cells = s.cells.slice()
       cells[idx] = m.c
       const pending = new Map(s.pending)
-      if (m.by === s.you.userId && pending.has(idx)) {
+      // M4: Any authoritative pixel (from self or another player) resolves/supersedes the pending entry for that cell
+      if (pending.has(idx)) {
         pending.delete(idx)
       }
       const you =
@@ -130,10 +161,13 @@ export function applyServerMsg(s: ClientState, m: ServerMsg): ClientState {
 
       const pending = new Map(s.pending)
       if (isPlacementReject && pending.size > 0) {
-        for (const [idx, prevColor] of pending.entries()) {
+        // M4: Roll back only the oldest unconfirmed pending cell (FIFO) corresponding to this rejected placement
+        const firstEntry = pending.entries().next().value as [number, number] | undefined
+        if (firstEntry) {
+          const [idx, prevColor] = firstEntry
           cells[idx] = prevColor
+          pending.delete(idx)
         }
-        pending.clear()
       }
 
       const you =

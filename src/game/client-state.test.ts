@@ -2,9 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { encodeCells } from './grid'
 import type { RoundView, ServerMsg } from './protocol'
 import {
+  applyConnectError,
   applyOptimisticPlace,
   applyServerMsg,
+  clearLastReject,
   initialClientState,
+  statusToConnectError,
 } from './client-state'
 
 function makeRound(id: string, word = 'mushroom'): RoundView {
@@ -23,6 +26,7 @@ describe('client-state', () => {
     const s = initialClientState()
     expect(s.connected).toBe(false)
     expect(s.snapshotLoaded).toBe(false)
+    expect(s.connectError).toBeNull()
     expect(s.mode).toBe('coop')
     expect(s.width).toBe(32)
     expect(s.height).toBe(32)
@@ -48,8 +52,9 @@ describe('client-state', () => {
     expect(s2.pending.get(idx)).toBe(0)
   })
 
-  it('snapshot replaces cells and clears pending (Review Focus 1)', () => {
+  it('snapshot replaces cells, clears pending, and clears connectError (Review Focus 1)', () => {
     let s = initialClientState()
+    s = applyConnectError(s, 'unauthorized')
     s = applyOptimisticPlace(s, 2, 3, 5)
     expect(s.pending.size).toBe(1)
 
@@ -70,6 +75,7 @@ describe('client-state', () => {
 
     const next = applyServerMsg(s, msg)
     expect(next.snapshotLoaded).toBe(true)
+    expect(next.connectError).toBeNull()
     expect(next.pending.size).toBe(0)
     expect(next.cells[0]).toBe(9)
     expect(next.cells[3 * 32 + 2]).toBe(1)
@@ -78,7 +84,7 @@ describe('client-state', () => {
     expect(next.round?.id).toBe('r1')
   })
 
-  it('pixel for a pending cell from self removes it from pending', () => {
+  it('pixel for a pending cell (from self or another user) removes it from pending (M4)', () => {
     let s = initialClientState()
     const rawCells = new Uint8Array(32 * 32)
     s = applyServerMsg(s, {
@@ -94,24 +100,33 @@ describe('client-state', () => {
     })
 
     s = applyOptimisticPlace(s, 4, 6, 12)
-    const idx = 6 * 32 + 4
-    expect(s.pending.has(idx)).toBe(true)
+    s = applyOptimisticPlace(s, 5, 6, 10)
+    const idx1 = 6 * 32 + 4
+    const idx2 = 6 * 32 + 5
+    expect(s.pending.has(idx1)).toBe(true)
+    expect(s.pending.has(idx2)).toBe(true)
 
     // Pixel from another player on a different cell leaves pending intact
     s = applyServerMsg(s, { t: 'pixel', x: 0, y: 0, c: 3, by: 'user-2' })
     expect(s.cells[0]).toBe(3)
-    expect(s.pending.has(idx)).toBe(true)
+    expect(s.pending.has(idx1)).toBe(true)
 
-    // Pixel from self on the pending cell confirms it and removes from pending
+    // Pixel from another player on a pending cell overwrites it and removes its stale pending entry
+    s = applyServerMsg(s, { t: 'pixel', x: 5, y: 6, c: 14, by: 'user-2' })
+    expect(s.cells[idx2]).toBe(14)
+    expect(s.pending.has(idx2)).toBe(false)
+
+    // Pixel from self on the remaining pending cell confirms it and removes from pending
     s = applyServerMsg(s, { t: 'pixel', x: 4, y: 6, c: 12, by: 'user-1' })
-    expect(s.cells[idx]).toBe(12)
-    expect(s.pending.has(idx)).toBe(false)
+    expect(s.cells[idx1]).toBe(12)
+    expect(s.pending.has(idx1)).toBe(false)
   })
 
-  it('reject restores the pending cells previous colour and records lastReject', () => {
+  it('reject restores only the rejected pending cell in FIFO order and records lastReject (M4)', () => {
     let s = initialClientState()
     const rawCells = new Uint8Array(32 * 32)
-    rawCells[2 * 32 + 1] = 8 // existing dark green pixel
+    rawCells[2 * 32 + 1] = 8 // existing dark green pixel at (1, 2)
+    rawCells[3 * 32 + 1] = 6 // existing yellow pixel at (1, 3)
     s = applyServerMsg(s, {
       t: 'snapshot',
       mode: 'coop',
@@ -124,14 +139,31 @@ describe('client-state', () => {
       aiResting: false,
     })
 
+    const idxA = 2 * 32 + 1
+    const idxB = 3 * 32 + 1
     s = applyOptimisticPlace(s, 1, 2, 4) // paint red over dark green
-    expect(s.cells[2 * 32 + 1]).toBe(4)
+    s = applyOptimisticPlace(s, 1, 3, 9) // paint cyan over yellow
+    expect(s.cells[idxA]).toBe(4)
+    expect(s.cells[idxB]).toBe(9)
+    expect(s.pending.size).toBe(2)
 
+    // First reject rolls back only the first pending cell (idxA), leaving idxB pending
     s = applyServerMsg(s, { t: 'reject', reason: 'cooldown', retryAt: 2500 })
-    expect(s.cells[2 * 32 + 1]).toBe(8)
-    expect(s.pending.size).toBe(0)
+    expect(s.cells[idxA]).toBe(8)
+    expect(s.cells[idxB]).toBe(9)
+    expect(s.pending.size).toBe(1)
+    expect(s.pending.has(idxB)).toBe(true)
     expect(s.lastReject).toEqual({ t: 'reject', reason: 'cooldown', retryAt: 2500 })
     expect(s.you.cooldownUntil).toBe(2500)
+
+    // Second reject rolls back idxB
+    s = applyServerMsg(s, { t: 'reject', reason: 'cooldown', retryAt: 2600 })
+    expect(s.cells[idxB]).toBe(6)
+    expect(s.pending.size).toBe(0)
+
+    // clearLastReject clears lastReject
+    s = clearLastReject(s)
+    expect(s.lastReject).toBeNull()
   })
 
   it('judgement stores per-zone guesses', () => {
@@ -182,12 +214,22 @@ describe('client-state', () => {
     expect(s.round?.word).toBe('lighthouse')
   })
 
-  it('handles players and ai_resting messages', () => {
+  it('handles players, ai_resting, and terminal connectError transitions (I2)', () => {
     let s = initialClientState()
     s = applyServerMsg(s, { t: 'players', count: 5 })
     expect(s.players).toBe(5)
 
     s = applyServerMsg(s, { t: 'ai_resting' })
     expect(s.aiResting).toBe(true)
+
+    expect(statusToConnectError(401)).toBe('unauthorized')
+    expect(statusToConnectError(404)).toBe('not_found')
+    expect(statusToConnectError(410)).toBe('closed')
+    expect(statusToConnectError(503)).toBeNull()
+    expect(statusToConnectError(400)).toBeNull()
+
+    s = applyConnectError(s, 'not_found')
+    expect(s.connectError).toBe('not_found')
+    expect(s.connected).toBe(false)
   })
 })

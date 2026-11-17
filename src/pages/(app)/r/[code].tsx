@@ -12,11 +12,15 @@ import {
   ArrowLeft,
   Award,
   Clock,
+  Eye,
   FastForward,
+  Lock,
   LogIn,
+  SearchX,
   Sparkles,
   Trophy,
   Users,
+  XCircle,
 } from 'lucide-react'
 import { AskAiButton } from '../../../components/game/AskAiButton'
 import { GuessFeed } from '../../../components/game/GuessFeed'
@@ -96,24 +100,22 @@ export default function RoomPage() {
   })
   const roomDoc = roomRecords[0]
 
-  const { records: roundRecords } = useQuery<RoundRecord>(
-    'rounds',
-    state.round?.id
-      ? {
-          where: { roundId: state.round.id },
-          limit: 1,
-        }
-      : { limit: 1 },
-  )
+  const { records: roundRecords } = useQuery<RoundRecord>('rounds', {
+    where: { roundId: state.round?.id ?? '__none__' },
+    limit: 1,
+  })
   const currentRoundDoc = useMemo(
-    () => roundRecords.find((r) => r.data.roundId === state.round?.id),
+    () => (state.round?.id ? roundRecords.find((r) => r.data.roundId === state.round?.id) : undefined),
     [roundRecords, state.round?.id],
   )
 
   const [activeColor, setActiveColor] = useState<number>(4) // Default red
   const [now, setNow] = useState<number>(() => Date.now())
   const [showAuthModal, setShowAuthModal] = useState(false)
+  const [dismissedOverlayRoundId, setDismissedOverlayRoundId] = useState<string | null>(null)
   const lastPresenceSentRef = useRef<number>(0)
+  const trailingCursorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const overlayDialogRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -122,21 +124,44 @@ export default function RoomPage() {
     return () => clearInterval(interval)
   }, [])
 
+  useEffect(() => {
+    return () => {
+      if (trailingCursorTimerRef.current) {
+        clearTimeout(trailingCursorTimerRef.current)
+      }
+    }
+  }, [])
+
   const handleHoverCell = useCallback(
     (cell: { x: number; y: number } | null) => {
-      if (!cell) return
+      if (trailingCursorTimerRef.current) {
+        clearTimeout(trailingCursorTimerRef.current)
+        trailingCursorTimerRef.current = null
+      }
+      if (!cell) {
+        lastPresenceSentRef.current = Date.now()
+        updatePresence({ cursor: null })
+        return
+      }
       const t = Date.now()
-      // Throttle cursor broadcasts to 10/s (100ms)
-      if (t - lastPresenceSentRef.current < 100) return
-      lastPresenceSentRef.current = t
-      updatePresence({ cursor: { x: cell.x, y: cell.y }, x: cell.x, y: cell.y })
+      const elapsed = t - lastPresenceSentRef.current
+      if (elapsed >= 100) {
+        lastPresenceSentRef.current = t
+        updatePresence({ cursor: { x: cell.x, y: cell.y } })
+      } else {
+        trailingCursorTimerRef.current = setTimeout(() => {
+          trailingCursorTimerRef.current = null
+          lastPresenceSentRef.current = Date.now()
+          updatePresence({ cursor: { x: cell.x, y: cell.y } })
+        }, 100 - elapsed)
+      }
     },
     [updatePresence],
   )
 
-  const isSpectator = !isSignedIn || !state.you.userId
+  const isSpectator = state.snapshotLoaded ? !state.you.userId : !isSignedIn
   const roundPlaying = state.round?.state === 'playing'
-  const canDraw = !isSpectator && Boolean(roundPlaying)
+  const canDraw = Boolean(state.you.userId) && Boolean(roundPlaying)
   const cooldownTotalMs = cooldownMs(Math.max(1, state.players))
   const cooldownRemainingMs = Math.max(0, state.you.cooldownUntil - now)
 
@@ -157,28 +182,42 @@ export default function RoomPage() {
 
   const handlePlace = useCallback(
     (x: number, y: number, color: number) => {
-      if (!isSignedIn) {
+      if (isSpectator) {
         setShowAuthModal(true)
         return
       }
+      if (!canDraw) return
       place(x, y, color)
     },
-    [isSignedIn, place],
+    [isSpectator, canDraw, place],
   )
 
   const friendlyReject = rejectMessage(state.lastReject, now)
 
-  const contributorNames = useMemo(() => {
+  const contributorInfo = useMemo(() => {
     const rawIds = currentRoundDoc?.data.contributorIds
     const ids = Array.isArray(rawIds) ? rawIds : []
-    if (ids.length === 0) {
-      if (pixelsCount > 0 && user?.id) {
-        return [user.name || user.email || 'You']
+    if (ids.length > 0) {
+      return {
+        names: ids.map(
+          (id) => getName(id) || (id === user?.id ? user.name || 'You' : `Painter ${id.slice(0, 5)}`),
+        ),
+        fallbackText: null as string | null,
       }
-      return []
     }
-    return ids.map((id) => getName(id) || (id === user?.id ? user.name || 'You' : `Painter ${id.slice(0, 5)}`))
-  }, [currentRoundDoc, getName, pixelsCount, user])
+    const usedPx = currentRoundDoc?.data.pixelsUsed ?? pixelsCount
+    if (usedPx > 0) {
+      const painterCount = Math.max(1, state.players)
+      return {
+        names: [] as string[],
+        fallbackText: `${painterCount} ${painterCount === 1 ? 'painter' : 'painters'} (${usedPx} px on canvas)`,
+      }
+    }
+    return {
+      names: [] as string[],
+      fallbackText: 'No pixels placed this round.',
+    }
+  }, [currentRoundDoc, getName, pixelsCount, state.players, user])
 
   const intermissionRemainingSec = useMemo(() => {
     if (state.round?.state !== 'intermission' || !state.round.endedAt) return 0
@@ -186,8 +225,126 @@ export default function RoomPage() {
     return Math.max(0, Math.ceil((endsAt - now) / 1000))
   }, [state.round, state.mode, now])
 
-  const showOverlay = state.round?.state === 'intermission' && state.round.result != null
+  const showOverlay =
+    state.round?.state === 'intermission' &&
+    state.round.result != null &&
+    dismissedOverlayRoundId !== state.round.id
   const outcome = state.round?.result?.outcome
+
+  useEffect(() => {
+    if (showOverlay) {
+      overlayDialogRef.current?.focus()
+    }
+  }, [showOverlay])
+
+  // Terminal connection states (401 private room, 404 unknown room, 410 closed room)
+  if (state.connectError) {
+    return (
+      <div
+        data-testid="room-page"
+        className="mx-auto flex w-full max-w-2xl flex-col gap-4 px-4 py-10 sm:px-6"
+      >
+        <Link
+          to="/home"
+          className="font-pixel inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
+          Back to Lobby
+        </Link>
+
+        {state.connectError === 'unauthorized' && (
+          <div
+            data-testid="room-error-unauthorized"
+            className="arcade-card flex flex-col items-center gap-4 rounded-xl border-2 border-amber-400 bg-card p-6 text-center"
+          >
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-amber-400/20 ring-2 ring-amber-400">
+              <Lock className="h-6 w-6 text-amber-300" aria-hidden />
+            </div>
+            <div className="space-y-1">
+              <h1 className="font-pixel text-xl font-extrabold uppercase text-foreground">
+                Private Room — Sign In Required
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                Invite room <span className="font-pixel text-amber-300">{joinCode}</span> is private.
+                Sign in with your account to join the board.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              <Button
+                type="button"
+                data-testid="room-error-sign-in"
+                onClick={() => setShowAuthModal(true)}
+                className="arcade-btn font-pixel bg-amber-400 px-5 font-extrabold uppercase text-slate-950 hover:bg-amber-300"
+              >
+                <LogIn className="mr-2 h-4 w-4" aria-hidden />
+                Sign in to join
+              </Button>
+              <Link
+                to="/home"
+                className="arcade-btn font-pixel inline-flex h-10 items-center justify-center rounded-md bg-secondary px-4 text-xs font-bold text-secondary-foreground hover:bg-secondary/80"
+              >
+                Back to Lobby
+              </Link>
+            </div>
+          </div>
+        )}
+
+        {state.connectError === 'not_found' && (
+          <div
+            data-testid="room-error-not-found"
+            className="arcade-card flex flex-col items-center gap-4 rounded-xl border-2 border-rose-400/80 bg-card p-6 text-center"
+          >
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-rose-500/20 ring-2 ring-rose-400">
+              <SearchX className="h-6 w-6 text-rose-300" aria-hidden />
+            </div>
+            <div className="space-y-1">
+              <h1 className="font-pixel text-xl font-extrabold uppercase text-foreground">
+                Room Not Found
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                No room exists for code <span className="font-pixel text-rose-300">{joinCode}</span>.
+                Check the invite code or jump into an active board from the lobby.
+              </p>
+            </div>
+            <Link
+              to="/home"
+              className="arcade-btn font-pixel inline-flex h-10 items-center justify-center rounded-md bg-amber-400 px-5 text-sm font-extrabold uppercase text-slate-950 hover:bg-amber-300"
+            >
+              Back to Lobby
+            </Link>
+          </div>
+        )}
+
+        {state.connectError === 'closed' && (
+          <div
+            data-testid="room-error-closed"
+            className="arcade-card flex flex-col items-center gap-4 rounded-xl border-2 border-border bg-card p-6 text-center"
+          >
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-secondary ring-2 ring-border">
+              <XCircle className="h-6 w-6 text-muted-foreground" aria-hidden />
+            </div>
+            <div className="space-y-1">
+              <h1 className="font-pixel text-xl font-extrabold uppercase text-foreground">
+                This Room Has Closed
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                Room <span className="font-pixel text-amber-300">{joinCode}</span> has ended. Head
+                back to the lobby to join the main board or start a new room.
+              </p>
+            </div>
+            <Link
+              to="/home"
+              className="arcade-btn font-pixel inline-flex h-10 items-center justify-center rounded-md bg-amber-400 px-5 text-sm font-extrabold uppercase text-slate-950 hover:bg-amber-300"
+            >
+              Back to Lobby
+            </Link>
+          </div>
+        )}
+
+        {showAuthModal && <AuthOverlay onClose={() => setShowAuthModal(false)} />}
+      </div>
+    )
+  }
 
   return (
     <div
@@ -233,7 +390,7 @@ export default function RoomPage() {
       />
 
       {/* Spectator Sign-In Banner */}
-      {!isSignedIn && (
+      {isSpectator && (
         <div
           data-testid="spectator-banner"
           className="arcade-card flex flex-wrap items-center justify-between gap-3 rounded-lg border-amber-400/70 bg-amber-500/10 px-4 py-2.5"
@@ -267,7 +424,7 @@ export default function RoomPage() {
             <AlertCircle className="h-4 w-4 shrink-0 text-amber-400" aria-hidden />
             <span>{friendlyReject}</span>
           </div>
-          {state.lastReject?.reason === 'not_signed_in' && !isSignedIn && (
+          {state.lastReject?.reason === 'not_signed_in' && isSpectator && (
             <button
               type="button"
               onClick={() => setShowAuthModal(true)}
@@ -290,6 +447,7 @@ export default function RoomPage() {
             activeColor={activeColor}
             canDraw={canDraw}
             cooldownRemainingMs={cooldownRemainingMs}
+            word={state.round?.word}
             onPlace={handlePlace}
             onHoverCell={handleHoverCell}
           >
@@ -298,8 +456,19 @@ export default function RoomPage() {
             {/* Win / Timeout Intermission Overlay */}
             {showOverlay && state.round && (
               <div
+                ref={overlayDialogRef}
                 data-testid="round-overlay"
-                className="animate-in fade-in-0 zoom-in-95 absolute inset-0 z-20 flex flex-col items-center justify-center bg-slate-950/90 p-4 text-center backdrop-blur-xs"
+                role="dialog"
+                aria-modal="false"
+                aria-labelledby="overlay-heading"
+                tabIndex={-1}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape' && state.round?.id) {
+                    e.stopPropagation()
+                    setDismissedOverlayRoundId(state.round.id)
+                  }
+                }}
+                className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-slate-950/90 p-4 text-center backdrop-blur-xs focus:outline-none"
               >
                 <div className="arcade-card flex w-full max-w-sm flex-col items-center gap-3 rounded-xl border-2 border-amber-400 bg-[#1b1530] p-5 shadow-2xl">
                   {outcome === 'won' ? (
@@ -307,7 +476,10 @@ export default function RoomPage() {
                       <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500/20 ring-2 ring-emerald-400">
                         <Trophy className="h-6 w-6 text-emerald-400" aria-hidden />
                       </div>
-                      <span className="font-pixel rounded bg-emerald-500/20 px-2.5 py-0.5 text-xs font-extrabold uppercase tracking-widest text-emerald-300">
+                      <span
+                        id="overlay-heading"
+                        className="font-pixel rounded bg-emerald-500/20 px-2.5 py-0.5 text-xs font-extrabold uppercase tracking-widest text-emerald-300"
+                      >
                         AI Guessed It!
                       </span>
                     </>
@@ -316,7 +488,10 @@ export default function RoomPage() {
                       <div className="flex h-12 w-12 items-center justify-center rounded-full bg-amber-500/20 ring-2 ring-amber-400">
                         <Clock className="h-6 w-6 text-amber-400" aria-hidden />
                       </div>
-                      <span className="font-pixel rounded bg-amber-500/20 px-2.5 py-0.5 text-xs font-extrabold uppercase tracking-widest text-amber-300">
+                      <span
+                        id="overlay-heading"
+                        className="font-pixel rounded bg-amber-500/20 px-2.5 py-0.5 text-xs font-extrabold uppercase tracking-widest text-amber-300"
+                      >
                         Time&apos;s Up!
                       </span>
                     </>
@@ -361,9 +536,9 @@ export default function RoomPage() {
                       <Users className="h-3.5 w-3.5 text-cyan-400" aria-hidden />
                       <span>Contributors</span>
                     </div>
-                    {contributorNames.length > 0 ? (
+                    {contributorInfo.names.length > 0 ? (
                       <div className="flex flex-wrap gap-1.5">
-                        {contributorNames.map((name, idx) => (
+                        {contributorInfo.names.map((name, idx) => (
                           <span
                             key={`${name}-${idx}`}
                             className="font-pixel rounded bg-secondary px-2 py-0.5 text-xs font-bold text-foreground"
@@ -373,24 +548,39 @@ export default function RoomPage() {
                         ))}
                       </div>
                     ) : (
-                      <p className="text-xs text-muted-foreground">No pixels placed this round.</p>
+                      <p className="font-pixel text-xs text-foreground">
+                        {contributorInfo.fallbackText}
+                      </p>
                     )}
                   </div>
 
-                  <div className="mt-1 flex w-full items-center justify-between gap-2 text-xs text-muted-foreground">
+                  <div className="mt-1 flex w-full flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
                     <span className="font-pixel">
                       Next word in {intermissionRemainingSec}s…
                     </span>
-                    {isHost && (
+                    <div className="flex items-center gap-2">
                       <Button
                         type="button"
+                        variant="secondary"
                         size="sm"
-                        onClick={next}
-                        className="arcade-btn font-pixel h-8 bg-amber-400 px-3 text-xs font-extrabold text-slate-950 hover:bg-amber-300"
+                        data-testid="overlay-dismiss"
+                        onClick={() => state.round?.id && setDismissedOverlayRoundId(state.round.id)}
+                        className="arcade-btn font-pixel h-8 gap-1 px-2.5 text-xs font-bold"
                       >
-                        Next Word Now
+                        <Eye className="h-3.5 w-3.5" aria-hidden />
+                        View Canvas
                       </Button>
-                    )}
+                      {isHost && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={next}
+                          className="arcade-btn font-pixel h-8 bg-amber-400 px-3 text-xs font-extrabold text-slate-950 hover:bg-amber-300"
+                        >
+                          Next Word Now
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -439,17 +629,20 @@ export default function RoomPage() {
           <div className="arcade-card rounded-lg bg-card/80 p-3.5 text-xs">
             <div className="mb-2 flex items-center gap-1.5 font-bold uppercase tracking-wider text-amber-300">
               <Sparkles className="h-3.5 w-3.5" aria-hidden />
-              <span className="font-pixel">Less Ink = More Points</span>
+              <span className="font-pixel">1000-Pt Scoring Formula</span>
             </div>
             <ul className="space-y-1.5 text-muted-foreground">
               <li>
-                <strong className="text-foreground">Minimalist bonus:</strong> The fewer pixels on the 32×32 grid when the AI guesses the word, the higher everyone&apos;s score.
+                <strong className="text-foreground">50% Pixel Economy (up to 500 pts):</strong>{' '}
+                Fewer non-empty pixels on the 32×32 grid (1,024 cells) when the AI guesses right means a higher economy score.
               </li>
               <li>
-                <strong className="text-foreground">Speed bonus:</strong> Fast guesses earn extra points before the 5-minute clock runs out.
+                <strong className="text-foreground">50% Speed (up to 500 pts):</strong>{' '}
+                Faster wins against the 5-minute round clock earn the remaining half of the 1,000 points.
               </li>
               <li>
-                <strong className="text-foreground">Shared victory:</strong> Every painter who placed at least one pixel on the winning canvas earns full round points!
+                <strong className="text-foreground">Shared Victory:</strong>{' '}
+                Every contributor whose pixels remain on the final winning canvas receives the full round score.
               </li>
             </ul>
           </div>

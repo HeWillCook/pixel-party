@@ -58,7 +58,13 @@ export function RoundBar({
           {connected ? (
             <Wifi className="h-3.5 w-3.5 text-emerald-400" aria-label="Connected" />
           ) : (
-            <WifiOff className="h-3.5 w-3.5 text-amber-400" aria-label="Reconnecting" />
+            <span
+              data-testid="round-reconnecting"
+              className="font-pixel inline-flex items-center gap-1 rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-bold uppercase text-amber-300"
+            >
+              <WifiOff className="h-3 w-3 text-amber-400" aria-hidden />
+              Reconnecting…
+            </span>
           )}
           <span className="font-pixel text-xs uppercase tracking-wider text-muted-foreground">
             {roomName || (joinCode === 'play' ? 'Public Board' : `Room ${joinCode}`)}

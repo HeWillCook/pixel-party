@@ -7,6 +7,7 @@ export interface PixelCanvasProps {
   cells: Uint8Array
   activeColor: number
   canDraw: boolean
+  word?: string
   cooldownRemainingMs?: number
   onPlace: (x: number, y: number, color: number) => void
   onHoverCell?: (cell: { x: number; y: number } | null) => void
@@ -19,6 +20,7 @@ export function PixelCanvas({
   cells,
   activeColor,
   canDraw,
+  word,
   cooldownRemainingMs = 0,
   onPlace,
   onHoverCell,
@@ -110,6 +112,8 @@ export function PixelCanvas({
         <canvas
           ref={canvasRef}
           data-testid="pixel-canvas"
+          role="img"
+          aria-label={`Shared ${width}×${height} pixel canvas, word: ${word ?? 'loading'}`}
           width={width}
           height={height}
           onPointerDown={handlePointerDown}

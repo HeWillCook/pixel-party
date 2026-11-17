@@ -85,7 +85,7 @@ export default function Landing() {
               </h1>
 
               <p className="mb-8 max-w-xl text-base text-muted-foreground sm:text-lg">
-                Share a live 32×32 canvas with friends or strangers. Everyone sees the secret word—except the AI judge. Every pixel counts: the sparser and faster your drawing when the AI guesses right, the higher your score!
+                Share a live 32×32 canvas with friends or strangers. Everyone on the board sees the target word—only the AI judge is in the dark. Every pixel counts: points are 50% pixel economy and 50% speed!
               </p>
 
               <div className="flex flex-wrap items-center gap-3.5">
@@ -95,7 +95,7 @@ export default function Landing() {
                   className="arcade-btn font-pixel inline-flex items-center gap-2.5 rounded-lg bg-amber-400 px-6 py-3.5 text-sm font-extrabold uppercase tracking-wider text-slate-950 hover:bg-amber-300 sm:text-base"
                 >
                   <Play className="h-5 w-5 fill-current" aria-hidden />
-                  Play Now
+                  Play now
                 </Link>
 
                 <Link
@@ -188,10 +188,10 @@ export default function Landing() {
                 <Trophy className="h-5 w-5" aria-hidden />
               </div>
               <h2 className="font-pixel mb-1.5 text-sm font-extrabold uppercase tracking-wider text-foreground">
-                3. Minimalist Pixel Economy
+                3. 1000-Point Formula
               </h2>
               <p className="text-xs leading-relaxed text-muted-foreground">
-                Conserve your pixels! Winning with a 15-pixel silhouette scores way higher than filling the whole board. Every contributor shares the points.
+                Score up to 1,000 points (50% fewer pixels used, 50% speed). Every contributor with pixels on the winning canvas earns the full round score!
               </p>
             </div>
           </section>

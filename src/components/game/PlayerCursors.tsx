@@ -12,6 +12,7 @@ interface CursorCoords {
 }
 
 function readCursor(state: Record<string, unknown>): CursorCoords | null {
+  if ('cursor' in state && state.cursor === null) return null
   const raw = state.cursor ?? state
   if (!raw || typeof raw !== 'object') return null
   const candidate = raw as Record<string, unknown>
