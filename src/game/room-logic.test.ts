@@ -1,0 +1,95 @@
+import { describe, expect, it } from 'vitest'
+import { JUDGE, ROOMS } from './config'
+import { applyJudgeOutcome, applyPlacement, advance, countPlayers, deserializeRoomState, newRoomState, nextAlarmAt, serializeRoomState, shouldJudge, startNextRound } from './room-logic'
+
+const room = () => newRoomState({ roomId: 'room', mode: 'coop', isDefaultBoard: false }, 1000, () => 0)
+const judged = { kind: 'judged' as const, zone: 'all' as const, result: { guesses: ['house'], confidence: 0.9 }, matched: true }
+
+describe('room logic', () => {
+  it('counts distinct normalized signed-in identities', () => {
+    expect(countPlayers([{ userId: null }, { userId: 'a' }, { userId: 'a' }, { userId: 'b' }])).toBe(2)
+  })
+  it('validates placement without mutating the input', () => {
+    const original = room()
+    const rejected = applyPlacement(original, { x: 1, y: 1, c: 2, userId: null }, 2000, 1)
+    expect(rejected.events[0]).toMatchObject({ type: 'reject', reason: 'not_signed_in' })
+    const placed = applyPlacement(original, { x: 1, y: 1, c: 2, userId: 'a' }, 2000, 1)
+    expect(placed.events[0]).toMatchObject({ type: 'pixel', by: 'a' })
+    expect(placed.state.grid.cells[33]).toBe(2)
+    expect(original.grid.cells[33]).toBe(0)
+    expect(placed.state.version).toBe(original.version + 1)
+    expect(applyPlacement(placed.state, { x: 2, y: 1, c: 2, userId: 'a' }, 2001, 1).events[0]).toMatchObject({ reason: 'cooldown' })
+  })
+  it('gates judgements and permits retries after failed attempts', () => {
+    const s = room()
+    expect(shouldJudge(s, 20000, 1, 'tick')).toEqual({ ok: false, why: 'unchanged' })
+    s.version++
+    expect(shouldJudge(s, 20000, 0, 'tick')).toEqual({ ok: false, why: 'no_players' })
+    expect(shouldJudge(s, 6000, 1, 'ask')).toEqual({ ok: false, why: 'too_soon' })
+    expect(shouldJudge(s, 16000, 1, 'tick')).toEqual({ ok: true })
+    s.judgeCalls = [10000, 10001, 10002, 10003, 10004, 10005]
+    expect(shouldJudge(s, 20000, 1, 'tick')).toEqual({ ok: false, why: 'rate_cap' })
+    s.status = 'intermission'
+    expect(shouldJudge(s, 20000, 1, 'tick')).toEqual({ ok: false, why: 'not_playing' })
+  })
+  it('round-trips grid, authors, cooldowns, calls and word entry, clearing in-flight', () => {
+    const s = applyPlacement(room(), { x: 3, y: 2, c: 4, userId: 'a' }, 2000, 1).state
+    s.judgeCalls = [3000]; s.judgeInFlight = true
+    expect(deserializeRoomState(serializeRoomState(s))).toEqual({ ...s, judgeInFlight: false })
+  })
+  it('pauses and resumes with frozen timers', () => {
+    const s = room()
+    const paused = advance(s, 2000, 0, () => 0)
+    expect(paused.state).toMatchObject({ status: 'paused', pausedAt: 2000, emptySince: 2000 })
+    expect(paused.events).toContainEqual(expect.objectContaining({ type: 'roomStatus' }))
+    const resumed = advance(paused.state, 5000, 1, () => 0)
+    expect(resumed.state.round.startedAt).toBe(s.round.startedAt + 3000)
+    expect(resumed.state.round.endsAt).toBe(s.round.endsAt! + 3000)
+    expect(resumed.state.status).toBe('playing')
+    expect(s.status).toBe('playing')
+  })
+  it('closes empty non-default rooms and leaves default rooms unscheduled', () => {
+    const paused = advance(room(), 2000, 0, () => 0).state
+    expect(nextAlarmAt(paused, 2000)).toBe(2000 + ROOMS.closeAfterEmptyMs)
+    expect(advance(paused, 2000 + ROOMS.closeAfterEmptyMs, 0, () => 0).state.status).toBe('closed')
+    expect(nextAlarmAt({ ...paused, isDefaultBoard: true }, 2000)).toBeNull()
+  })
+  it('starts a fresh round after a long pause', () => {
+    const paused = advance(room(), 2000, 0, () => 0).state
+    const resumed = advance(paused, 2001 + ROOMS.resumeWindowMs, 1, () => 0)
+    expect(resumed.state.round.id).not.toBe(paused.round.id)
+    expect(resumed.state.round.word).not.toBe(paused.round.word)
+    expect(resumed.state.status).toBe('playing')
+  })
+  it('resumes an intermission with its deadline shifted', () => {
+    const ended = applyJudgeOutcome(room(), judged, 4000).state
+    const paused = advance(ended, 5000, 0, () => 0).state
+    const resumed = advance(paused, 8000, 1, () => 0).state
+    expect(resumed.status).toBe('intermission')
+    expect(resumed.intermissionEndsAt).toBe(15000)
+    expect(resumed.round.state).toBe('intermission')
+  })
+  it('times out and starts a new round excluding recent words', () => {
+    const s = room()
+    const timeout = advance(s, s.round.startedAt + 300000, 1, () => 0)
+    expect(timeout.state.round.result?.outcome).toBe('timeout')
+    expect(timeout.events).toContainEqual(expect.objectContaining({ type: 'roundEnded' }))
+    const next = advance(timeout.state, timeout.state.intermissionEndsAt!, 1, () => 0)
+    expect(next.state.round.word).not.toBe(s.round.word)
+    expect(next.events).toContainEqual({ type: 'cleared' })
+    expect(startNextRound(next.state, 400000, () => 0).state.round.id).not.toBe(next.state.round.id)
+  })
+  it('scores wins and includes contributors and final guesses', () => {
+    const s = applyPlacement(room(), { x: 1, y: 1, c: 2, userId: 'a' }, 2000, 1).state
+    const result = applyJudgeOutcome(s, judged, 4000)
+    expect(result.state.round.result).toEqual({ outcome: 'won', score: 995 })
+    expect(result.events).toContainEqual(expect.objectContaining({ type: 'roundEnded', event: expect.objectContaining({ contributorIds: ['a'], finalGuesses: ['house'], pixelsUsed: 1 }) }))
+    expect(result.state.intermissionEndsAt).toBe(12000)
+    expect(s.status).toBe('playing')
+  })
+  it('schedules the earliest pending deadline', () => {
+    const s = room(); s.version++
+    expect(nextAlarmAt(s, 2000)).toBe(1000 + JUDGE.tickMs)
+    expect(nextAlarmAt(s, 20000)).toBe(20000)
+  })
+})
