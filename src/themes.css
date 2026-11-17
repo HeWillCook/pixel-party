@@ -1,0 +1,104 @@
+/*
+ * Theme overrides — applied via <html data-theme="<id>">.
+ */
+
+[data-theme="arcade"] {
+  color-scheme: dark;
+  --color-background: #0d0b14;
+  --color-foreground: #fef3c7;
+  --color-card: #171426;
+  --color-card-foreground: #fef3c7;
+  --color-popover: #1e1933;
+  --color-popover-foreground: #fef3c7;
+  --color-primary: #f59e0b;
+  --color-primary-foreground: #0d0b14;
+  --color-secondary: #251f3d;
+  --color-secondary-foreground: #fde68a;
+  --color-muted: #1e1933;
+  --color-muted-foreground: #a79ec4;
+  --color-accent: #ec4899;
+  --color-accent-foreground: #ffffff;
+  --color-destructive: #ef4444;
+  --color-destructive-foreground: #ffffff;
+  --color-border: #362e59;
+  --color-input: #2c254a;
+  --color-ring: #f59e0b;
+  --radius: 0.375rem;
+  --shadow-card: 0 4px 0 0 rgba(0, 0, 0, 0.45);
+  --shadow-card-hover: 0 6px 0 0 rgba(0, 0, 0, 0.55);
+  --color-shell: #09080f;
+  --color-shell-panel: #171426;
+}
+
+[data-theme="paper"] {
+  color-scheme: light;
+  --color-background: #fffbeb;
+  --color-foreground: #1c1917;
+  --color-card: #ffffff;
+  --color-card-foreground: #1c1917;
+  --color-popover: #ffffff;
+  --color-popover-foreground: #1c1917;
+  --color-primary: #d97706;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #fef3c7;
+  --color-secondary-foreground: #1c1917;
+  --color-muted: #fef3c7;
+  --color-muted-foreground: #78716c;
+  --color-accent: #fde68a;
+  --color-accent-foreground: #1c1917;
+  --color-destructive: #dc2626;
+  --color-destructive-foreground: #ffffff;
+  --color-border: #e7e5e4;
+  --color-input: #e7e5e4;
+  --color-ring: #d97706;
+  --shadow-card: 0 2px 0 0 rgba(28, 25, 23, 0.12);
+  --shadow-card-hover: 0 4px 0 0 rgba(28, 25, 23, 0.18);
+  --color-shell: #fef3c7;
+  --color-shell-panel: #ffffff;
+}
+
+/* Crisp pixel art utility classes */
+.pixelated {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+.font-pixel {
+  font-family: ui-monospace, 'Cascadia Mono', 'SFMono-Regular', Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  letter-spacing: 0.04em;
+}
+
+.arcade-card {
+  border: 2px solid var(--color-border);
+  box-shadow: 0 4px 0 0 rgba(0, 0, 0, 0.45);
+}
+
+.arcade-btn {
+  border: 2px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 3px 0 0 rgba(0, 0, 0, 0.5);
+  transition: transform 80ms ease, box-shadow 80ms ease;
+}
+
+.arcade-btn:active:not(:disabled) {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 0 rgba(0, 0, 0, 0.5);
+}
+
+@keyframes guess-pop {
+  0% {
+    opacity: 0;
+    transform: translateY(6px) scale(0.94);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(-2px) scale(1.03);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-guess-pop {
+  animation: guess-pop 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}

@@ -1,0 +1,53 @@
+import { Bot, Moon, Sparkles } from 'lucide-react'
+import { Button } from '../ui'
+
+export interface AskAiButtonProps {
+  askAvailableAt: number
+  now: number
+  isSpectator: boolean
+  aiResting: boolean
+  roundPlaying: boolean
+  onAsk: () => void
+}
+
+export function AskAiButton({
+  askAvailableAt,
+  now,
+  isSpectator,
+  aiResting,
+  roundPlaying,
+  onAsk,
+}: AskAiButtonProps) {
+  const waitMs = Math.max(0, askAvailableAt - now)
+  const waitSec = Math.ceil(waitMs / 1000)
+  const isDisabled = isSpectator || aiResting || !roundPlaying || waitMs > 0
+
+  let label = 'Ask the AI now'
+  if (aiResting) {
+    label = 'The AI is resting — back tomorrow'
+  } else if (isSpectator) {
+    label = 'Sign in to Ask the AI'
+  } else if (!roundPlaying) {
+    label = 'Waiting for active round…'
+  } else if (waitMs > 0) {
+    label = `Ask the AI (${waitSec}s)`
+  }
+
+  return (
+    <Button
+      type="button"
+      data-testid="ask-ai-button"
+      disabled={isDisabled}
+      onClick={onAsk}
+      className="arcade-btn font-pixel w-full gap-2 bg-pink-600 px-4 py-2.5 text-xs font-extrabold uppercase tracking-wider text-white hover:bg-pink-500 disabled:opacity-60 sm:w-auto sm:text-sm"
+    >
+      {aiResting ? (
+        <Moon className="h-4 w-4 shrink-0" aria-hidden />
+      ) : (
+        <Bot className="h-4 w-4 shrink-0" aria-hidden />
+      )}
+      <span>{label}</span>
+      {!isDisabled && <Sparkles className="h-3.5 w-3.5 shrink-0 text-amber-300" aria-hidden />}
+    </Button>
+  )
+}
