@@ -1,6 +1,7 @@
 import { BaseRoom } from 'deepspace/worker'
 import type { Env } from '../../worker.js'
 import { BUDGET } from '../game/config'
+import { utcDay } from './room-time'
 
 export class BudgetRoom extends BaseRoom<Env> {
   constructor(state: DurableObjectState, env: Env) {
@@ -10,7 +11,7 @@ export class BudgetRoom extends BaseRoom<Env> {
 
   override async fetch(request: Request): Promise<Response> {
     if (request.method !== 'POST' || new URL(request.url).pathname !== '/reserve') return new Response('Not found', { status: 404 })
-    const day = new Date().toISOString().slice(0, 10)
+    const day = utcDay(Date.now())
     const result = this.state.storage.transactionSync(() => {
       const used = this.sql.exec<{ used: number }>('SELECT used FROM budget WHERE day = ?', day).toArray()[0]?.used ?? 0
       if (used >= BUDGET.dailyCalls) return { ok: false, used, cap: BUDGET.dailyCalls }

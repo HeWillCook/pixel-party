@@ -21,7 +21,7 @@ export interface RoundView {
 export type ServerMsg =
   | { t: 'snapshot'; mode: Mode; width: number; height: number; cells: string; round: RoundView; you: { userId: string | null; cooldownUntil: number; team?: 'red' | 'blue' }; players: number; aiResting: boolean }
   | { t: 'pixel'; x: number; y: number; c: number; by: string }
-  | { t: 'reject'; reason: RejectReason | 'ask_too_soon' | 'not_host'; retryAt?: number }
+  | { t: 'reject'; reason: RejectReason | 'ask_too_soon' | 'not_host' | 'canvas_unchanged'; retryAt?: number }
   | { t: 'round'; round: RoundView }
   | { t: 'judgement'; zone: ZoneId; guesses: string[]; confidence: number; matched: boolean }
   | { t: 'players'; count: number }

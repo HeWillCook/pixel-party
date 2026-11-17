@@ -23,7 +23,7 @@ function wsRoute(
 ) {
   return async (c: Context<AppContext>) => {
     const id = c.req.param('roomId') ?? c.req.param('docId') ?? c.req.param('scopeId')
-    if (!id) return new Response('Not found', { status: 404 })
+    if (!id || (roomConfig && !/^[A-Za-z0-9_-]{1,64}$/.test(id))) return new Response('Not found', { status: 404 })
     const url = new URL(c.req.url)
     const token = url.searchParams.get('token')
 

@@ -16,6 +16,7 @@ import {
 } from '../game/room-logic'
 import { cooldownMs } from '../game/rules'
 import { createServerTools } from './server-tools'
+import { utcDay, withTimeout } from './room-time'
 
 type RoomInit = Pick<RoomState, 'roomId' | 'mode' | 'isDefaultBoard'>
 type SavedRoom = { room_id: string; mode: string; is_default: number; state: string; resting_day: string | null }
@@ -41,13 +42,21 @@ function signedInId(userId: string | null | undefined): string | null {
   return userId && !isAnonymousUserId(userId) ? userId : null
 }
 
+function logAlarmError(): void {
+  console.warn('[PixelRoom] Alarm scheduling failed')
+}
+
 export function restorePixelState(json: string, init: RoomInit, now: number, rng: () => number): RoomState {
   try {
     const decoded = deserializeRoomState(json)
     const defaults = newRoomState(init, now, rng)
     const restored = roomStateSchema.parse({ ...defaults, ...decoded, ...init, recentWords: decoded.recentWords ?? [decoded.wordEntry.word], judgeInFlight: false })
     const config = MODES[restored.mode]
-    if (restored.grid.width !== config.width || restored.grid.height !== config.height || restored.grid.placedBy.length !== restored.grid.cells.length || restored.grid.cells.some(color => color >= PALETTE.length) || restored.wordEntry.word !== restored.round.word) {
+    const validDimensions = restored.grid.width === config.width && restored.grid.height === config.height
+    const validAttributions = restored.grid.placedBy.length === restored.grid.cells.length
+    const validColors = restored.grid.cells.every(color => color < PALETTE.length)
+    const validWord = restored.wordEntry.word === restored.round.word
+    if (!validDimensions || !validAttributions || !validColors || !validWord) {
       throw new Error('Invalid saved grid or word')
     }
     return restored
@@ -75,7 +84,7 @@ export class PixelRoom extends BaseRoom<Env> {
       this.game = restorePixelState(saved.state, { roomId: saved.room_id, mode: saved.mode === 'team' ? 'team' : 'coop', isDefaultBoard: saved.is_default === 1 }, Date.now(), Math.random)
       this.restingDay = saved.resting_day
       this.persist()
-      void this.state.blockConcurrencyWhile(() => this.armAlarm())
+      void this.state.blockConcurrencyWhile(() => this.armAlarm().catch(logAlarmError))
     }
   }
 
@@ -88,6 +97,7 @@ export class PixelRoom extends BaseRoom<Env> {
       this.game = newRoomState({ roomId, mode: mode as Mode, isDefaultBoard: isDefault === 'true' }, Date.now(), Math.random)
       this.persist()
     }
+    if (request.headers.get('Upgrade') === 'websocket' && this.game?.status === 'closed') return new Response('Room closed', { status: 410 })
     return super.fetch(request)
   }
 
@@ -97,45 +107,56 @@ export class PixelRoom extends BaseRoom<Env> {
   }
 
   protected override async onConnect(ws: WebSocket, user: UserAttachment): Promise<void> {
-    ws.serializeAttachment(user)
-    await this.transition(advance(this.game!, Date.now(), this.playerCount(), Math.random))
-    this.snapshot(ws)
-    this.broadcastGame({ t: 'players', count: this.playerCount() })
-    await this.armAlarm()
+    try {
+      ws.serializeAttachment(user)
+      await this.transition(advance(this.game!, Date.now(), this.playerCount(), Math.random), undefined, ws)
+      this.broadcastGame({ t: 'players', count: this.playerCount() })
+    } finally {
+      await this.armAlarm().catch(logAlarmError)
+    }
   }
 
   protected override async onMessage(ws: WebSocket, user: UserAttachment, message: { type: string; [key: string]: unknown }): Promise<void> {
-    const command = parseClientMsg(JSON.stringify(message))
-    if (!command || !this.game) return
-    const userId = signedInId(user.userId)
-    await this.transition(advance(this.game, Date.now(), this.playerCount(), Math.random))
-    if (command.t !== 'place' && !userId) {
-      this.sendGame(ws, { t: 'reject', reason: 'not_signed_in' })
-    } else if (command.t === 'place') {
-      await this.transition(applyPlacement(this.game, { ...command, userId }, Date.now(), this.playerCount()), ws)
-    } else if (command.t === 'ask') {
-      await this.judge('ask', ws)
-    } else if (command.t === 'next') {
-      const reason = nextCommandRejection(this.game, userId)
-      if (reason) this.sendGame(ws, { t: 'reject', reason })
-      else await this.transition(startNextRound(this.game, Date.now(), Math.random))
+    try {
+      const command = parseClientMsg(JSON.stringify(message))
+      if (!command || !this.game) return
+      const userId = signedInId(user.userId)
+      await this.transition(advance(this.game, Date.now(), this.playerCount(), Math.random))
+      if (command.t !== 'place' && !userId) {
+        this.sendGame(ws, { t: 'reject', reason: 'not_signed_in' })
+      } else if (command.t === 'place') {
+        await this.transition(applyPlacement(this.game, { ...command, userId }, Date.now(), this.playerCount()), ws)
+      } else if (command.t === 'ask') {
+        await this.judge('ask', ws)
+      } else if (command.t === 'next') {
+        const reason = nextCommandRejection(this.game, userId)
+        if (reason) this.sendGame(ws, { t: 'reject', reason })
+        else await this.transition(startNextRound(this.game, Date.now(), Math.random))
+      }
+    } finally {
+      await this.armAlarm().catch(logAlarmError)
     }
-    await this.armAlarm()
   }
 
   protected override async onDisconnect(ws: WebSocket): Promise<void> {
-    ws.close(1000, 'Disconnected')
-    if (!this.game) return
-    await this.transition(advance(this.game, Date.now(), this.playerCount(ws), Math.random))
-    this.broadcastGame({ t: 'players', count: this.playerCount(ws) })
-    await this.armAlarm()
+    try {
+      try { ws.close(1000, 'Disconnected') } catch {}
+      if (!this.game) return
+      await this.transition(advance(this.game, Date.now(), this.playerCount(ws), Math.random))
+      this.broadcastGame({ t: 'players', count: this.playerCount(ws) })
+    } finally {
+      await this.armAlarm().catch(logAlarmError)
+    }
   }
 
   protected override async onAlarm(): Promise<void> {
-    if (!this.game) return
-    await this.transition(advance(this.game, Date.now(), this.playerCount(), Math.random))
-    await this.judge('tick')
-    await this.armAlarm()
+    try {
+      if (!this.game) return
+      await this.transition(advance(this.game, Date.now(), this.playerCount(), Math.random))
+      await this.judge('tick')
+    } finally {
+      await this.armAlarm().catch(logAlarmError)
+    }
   }
 
   protected async onRoundEnded(_result: RoundEndedEvent): Promise<void> {}
@@ -169,7 +190,7 @@ export class PixelRoom extends BaseRoom<Env> {
       t: 'snapshot', mode: state.mode, width: state.grid.width, height: state.grid.height,
       cells: encodeCells(state.grid.cells), round: state.round, players,
       you: { userId, cooldownUntil: placedAt === undefined ? 0 : placedAt + cooldownMs(players) },
-      aiResting: this.restingDay === new Date().toISOString().slice(0, 10),
+      aiResting: this.restingDay === utcDay(Date.now()),
     })
   }
 
@@ -184,17 +205,23 @@ export class PixelRoom extends BaseRoom<Env> {
     else await this.state.storage.setAlarm(at)
   }
 
-  private async transition(transition: RoomTransition, sender?: WebSocket): Promise<void> {
+  private async transition(transition: RoomTransition, sender?: WebSocket, snapshotFirst?: WebSocket): Promise<void> {
+    const stateChanged = transition.state !== this.game
     const previousRound = this.game?.round
     this.game = transition.state
-    this.persist()
+    if (stateChanged || transition.events.some(event => event.type !== 'reject')) this.persist()
+    if (snapshotFirst) this.snapshot(snapshotFirst)
     for (const event of transition.events) {
       switch (event.type) {
         case 'cleared':
           for (const ws of this.liveSockets()) this.snapshot(ws)
           break
-        case 'roundEnded': await this.onRoundEnded(event.event); break
-        case 'roomStatus': await this.onRoomStatus(event.event); break
+        case 'roundEnded':
+          try { await this.onRoundEnded(event.event) } catch { console.warn('[PixelRoom] Round-ended hook failed') }
+          break
+        case 'roomStatus':
+          try { await this.onRoomStatus(event.event) } catch { console.warn('[PixelRoom] Room-status hook failed') }
+          break
         case 'reject': if (sender) this.sendGame(sender, { t: 'reject', reason: event.reason, ...(event.retryAt === undefined ? {} : { retryAt: event.retryAt }) }); break
         default: {
           const { type, ...payload } = event
@@ -209,12 +236,15 @@ export class PixelRoom extends BaseRoom<Env> {
 
   private async reserveBudget(): Promise<{ ok: boolean }> {
     try {
-      const namespace = this.env.BUDGET_ROOMS
-      const response = await namespace.get(namespace.idFromName('global')).fetch(new Request('https://budget/reserve', { method: 'POST' }))
-      if (!response.ok) return { ok: false }
-      const result = await response.json() as { ok?: unknown }
-      if (result.ok === true) this.restingDay = null
-      return { ok: result.ok === true }
+      const result = await withTimeout((async () => {
+        const namespace = this.env.BUDGET_ROOMS
+        const response = await namespace.get(namespace.idFromName('global')).fetch(new Request('https://budget/reserve', { method: 'POST' }))
+        if (!response.ok) return { ok: false }
+        const body = await response.json() as { ok?: unknown }
+        return { ok: body.ok === true }
+      })(), 5000, { ok: false })
+      if (result.ok) this.restingDay = null
+      return result
     } catch {
       return { ok: false }
     }
@@ -222,27 +252,38 @@ export class PixelRoom extends BaseRoom<Env> {
 
   private async judge(reason: 'tick' | 'ask', requester?: WebSocket): Promise<void> {
     if (!this.game) return
+    const previousRound = this.game.round
     const outcome = await runJudge({
       now: Date.now,
       reserve: () => this.reserveBudget(),
       persist: async () => { this.persist() },
       render: async (state, zone) => toBase64(await renderZonePng(state.grid, zone, JUDGE.renderPx)),
       callJudge: async (png) => {
-        const result = await createServerTools(this.env).integration('anthropic/chat-completion', buildJudgeBody(png))
-        return result.success ? extractText(result) : null
+        try {
+          return await withTimeout((async () => {
+            const result = await createServerTools(this.env).integration('anthropic/chat-completion', buildJudgeBody(png))
+            return result.success ? extractText(result) : null
+          })(), 20000, null)
+        } catch {
+          return null
+        }
       },
       getState: () => this.game!,
     }, this.game, reason, this.playerCount(), MODES[this.game.mode].zones[0])
-    if (outcome.kind === 'resting') this.restingDay = new Date().toISOString().slice(0, 10)
+    if (outcome.kind === 'resting') this.restingDay = utcDay(Date.now())
     if (outcome.kind === 'failed') console.warn('[PixelRoom] Judge attempt failed; retrying on the next eligible tick')
-    await this.transition(applyJudgeOutcome(this.game, outcome, Date.now()))
+    const transition = applyJudgeOutcome(this.game, outcome, Date.now())
+    if (previousRound.askAvailableAt !== transition.state.round.askAvailableAt && !transition.events.some(event => event.type === 'round' || event.type === 'cleared')) {
+      transition.events.push({ type: 'round', round: transition.state.round })
+    }
+    await this.transition(transition)
     if (requester && outcome.kind === 'skipped') {
-      if (outcome.why === 'not_playing') this.sendGame(requester, { t: 'reject', reason: 'round_inactive' })
+      if (outcome.why === 'unchanged') this.sendGame(requester, { t: 'reject', reason: 'canvas_unchanged' })
       else if (['too_soon', 'rate_cap', 'in_flight'].includes(outcome.why)) {
         const calls = this.game.judgeCalls.filter(time => time > Date.now() - 60000).sort((left, right) => left - right)
         const rateReady = calls.length >= JUDGE.maxPerMinute ? calls[calls.length - JUDGE.maxPerMinute] + 60000 : 0
         this.sendGame(requester, { t: 'reject', reason: 'ask_too_soon', retryAt: Math.max(this.game.round.askAvailableAt, rateReady) })
-      }
+      } else this.sendGame(requester, { t: 'reject', reason: 'round_inactive' })
     }
   }
 }

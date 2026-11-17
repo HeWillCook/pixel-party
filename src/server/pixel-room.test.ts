@@ -118,14 +118,18 @@ function socket(userId: string) {
 class TestPixelRoom extends PixelRoom {
   connect(connection: WebSocket) { return this.onConnect(connection, connection.deserializeAttachment()) }
   disconnect(connection: WebSocket) { return this.onDisconnect(connection) }
+  tick() { return this.onAlarm() }
+  command(connection: WebSocket, command: Record<string, unknown>) { return this.onMessage(connection, connection.deserializeAttachment(), { type: 'test', ...command }) }
+  override onRoundEnded = vi.fn(async () => {})
+  override onRoomStatus = vi.fn(async () => {})
 }
 
-function roomHarness(isDefaultBoard = false) {
+function roomHarness(isDefaultBoard = false, configure: (state: RoomState) => RoomState = state => state) {
   const database = new DatabaseSync(':memory:')
   const sockets: WebSocket[] = []
   const durable = durableState(database, sockets)
   const env = { BUDGET_ROOMS: { idFromName: vi.fn(() => 'global'), get: () => ({ fetch: reserve }) } } as unknown as Env
-  const initial = newRoomState({ ...init, isDefaultBoard }, Date.now(), () => 0)
+  const initial = configure(newRoomState({ ...init, isDefaultBoard }, Date.now(), () => 0))
   database.exec('CREATE TABLE pixel_state (id INTEGER PRIMARY KEY, room_id TEXT, mode TEXT, is_default INTEGER, state TEXT, resting_day TEXT)')
   database.prepare('INSERT INTO pixel_state VALUES (1, ?, ?, ?, ?, NULL)').run(init.roomId, init.mode, Number(isDefaultBoard), serializeRoomState(initial))
   const makeRoom = () => new TestPixelRoom(durable as unknown as DurableObjectState, env)
@@ -187,7 +191,7 @@ describe('durable room boundaries', () => {
     harness.database.close()
   })
 
-  it.each(['judged', 'failed', 'refused', 'reserve-error'])(
+  it.each(['judged', 'unmatched', 'failed', 'refused', 'reserve-error'])(
     'persists every judge outcome and reserves through the global stub: %s', async kind => {
       vi.useFakeTimers({ toFake: ['Date'] })
       vi.setSystemTime(1_800_000_000_000)
@@ -199,12 +203,13 @@ describe('durable room boundaries', () => {
       else reserve.mockImplementation(async () => Response.json({ ok: kind !== 'refused' }))
       integration.mockImplementation(async () => {
         expect(harness.saved()).toMatchObject({ judgeCalls: [Date.now()], lastJudgedAt: Date.now(), judgeInFlight: false })
-        return kind === 'failed' ? { success: false } : { success: true, data: { content: [{ type: 'text', text: '{"guesses":["house","home","cabin"],"confidence":0.9}' }] } }
+        return kind === 'failed' ? { success: false } : { success: true, data: { content: [{ type: 'text', text: JSON.stringify({ guesses: [kind === 'unmatched' ? 'sun' : 'house', 'home', 'cabin'], confidence: 0.9 }) }] } }
       })
       const log = vi.spyOn(console, 'warn').mockImplementation(() => {})
       await harness.room.webSocketMessage(owner.connection, '{"t":"ask"}')
       expect(reserve).toHaveBeenCalledOnce()
       expect(harness.saved()).toMatchObject({ lastJudgedAt: Date.now(), judgeInFlight: false, round: { askAvailableAt: Date.now() + JUDGE.askMinMs } })
+      expect(messages(owner).filter(message => message.t === 'round').at(-1)?.round.askAvailableAt).toBe(Date.now() + JUDGE.askMinMs)
       if (kind === 'refused' || kind === 'reserve-error') {
         expect(integration).not.toHaveBeenCalled()
         expect(harness.saved().judgeCalls).toEqual([])
@@ -213,12 +218,175 @@ describe('durable room boundaries', () => {
         expect(messages(fresh).find(message => message.t === 'snapshot').aiResting).toBe(true)
       } else {
         expect(integration).toHaveBeenCalledWith('anthropic/chat-completion', expect.objectContaining({ model: JUDGE.model }))
-        expect(harness.saved().lastJudgedVersion).toBe(kind === 'judged' ? 1 : 0)
+        expect(harness.saved().lastJudgedVersion).toBe(kind === 'failed' ? 0 : 1)
         expect(log).toHaveBeenCalledTimes(kind === 'failed' ? 1 : 0)
       }
       harness.database.close()
     },
   )
+
+  it.each(['reserve', 'integration'])('bounds a never-resolving %s, persists the outcome and releases the live guard', async upstream => {
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+    vi.setSystemTime(1_800_000_000_000)
+    const harness = roomHarness()
+    const owner = await harness.connect('owner')
+    await harness.room.command(owner.connection, { t: 'place', x: 2, y: 2, c: 6 })
+    vi.setSystemTime(Date.now() + JUDGE.askMinMs)
+    reserve.mockImplementation(async () => Response.json({ ok: true }))
+    integration.mockResolvedValue({ success: true, data: { content: [{ type: 'text', text: '{"guesses":["sun"],"confidence":0.9}' }] } })
+    let started!: () => void
+    const entered = new Promise<void>(resolve => { started = resolve })
+    const never = () => { started(); return new Promise<never>(() => {}) }
+    if (upstream === 'reserve') reserve.mockImplementation(never)
+    else integration.mockImplementation(never)
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    let finished = false
+    const pending = harness.room.command(owner.connection, { t: 'ask' }).then(() => { finished = true })
+    await entered
+    const deadline = upstream === 'reserve' ? 5000 : 20000
+    await vi.advanceTimersByTimeAsync(deadline - 1)
+    expect(finished).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(finished).toBe(true)
+    if (!finished) return
+    await pending
+    expect(harness.saved()).toMatchObject({ judgeInFlight: false, lastJudgedVersion: 0 })
+    if (upstream === 'reserve') {
+      expect(harness.saved().judgeCalls).toHaveLength(0)
+      expect(messages(owner)).toContainEqual({ t: 'ai_resting' })
+      expect(integration).not.toHaveBeenCalled()
+    } else expect(harness.saved().judgeCalls).toHaveLength(1)
+    reserve.mockImplementation(async () => Response.json({ ok: true }))
+    integration.mockResolvedValue({ success: true, data: { content: [{ type: 'text', text: '{"guesses":["sun"],"confidence":0.9}' }] } })
+    await vi.advanceTimersByTimeAsync(JUDGE.askMinMs)
+    await harness.room.command(owner.connection, { t: 'ask' })
+    expect(messages(owner)).toContainEqual({ t: 'judgement', zone: 'all', guesses: ['sun'], confidence: 0.9, matched: false })
+    expect(vi.getTimerCount()).toBe(0)
+    harness.database.close()
+  })
+
+  it('does not write SQLite for rejected placements or no-op command spam', async () => {
+    const harness = roomHarness()
+    const owner = await harness.connect('owner')
+    const spectator = await harness.connect('anon-spectator')
+    const sql = vi.spyOn(harness.durable.storage.sql, 'exec')
+    for (let index = 0; index < 3; index++) {
+      await harness.room.command(spectator.connection, { t: 'place', x: 1, y: 1, c: 6 })
+      await harness.room.command(owner.connection, { t: 'place', x: -1, y: 1, c: 6 })
+      await harness.room.command(owner.connection, { t: 'team', team: 'red' })
+      await harness.room.command(owner.connection, { t: 'ask' })
+    }
+    expect(messages(spectator).at(-1)).toEqual({ t: 'reject', reason: 'not_signed_in' })
+    expect(sql.mock.calls.filter(([query]) => query.startsWith('INSERT'))).toHaveLength(0)
+    harness.database.close()
+  })
+
+  it('contains throwing seams, broadcasts later events and re-arms the alarm', async () => {
+    const harness = roomHarness()
+    const owner = await harness.connect('owner')
+    const spectator = await harness.connect('anon-spectator')
+    const log = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    harness.room.onRoomStatus.mockRejectedValue(new Error('private upstream detail'))
+    spectator.send.mockClear()
+    harness.durable.storage.setAlarm.mockClear()
+    await expect(harness.room.disconnect(owner.connection)).resolves.toBeUndefined()
+    expect(messages(spectator)).toEqual([
+      { t: 'round', round: expect.objectContaining({ state: 'paused' }) },
+      { t: 'players', count: 0 },
+    ])
+    expect(harness.durable.storage.setAlarm).toHaveBeenCalledOnce()
+    expect(log).toHaveBeenCalledWith('[PixelRoom] Room-status hook failed')
+    harness.room.onRoomStatus.mockReset()
+    await harness.connect('owner-again')
+    harness.room.onRoundEnded.mockRejectedValue(new Error('private upstream detail'))
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(harness.saved().round.endsAt!)
+    await expect(harness.room.tick()).resolves.toBeUndefined()
+    expect(messages(spectator).filter(message => message.t === 'round').at(-1).round.state).toBe('intermission')
+    expect(log).toHaveBeenCalledWith('[PixelRoom] Round-ended hook failed')
+    harness.database.close()
+  })
+
+  it.each(['connect', 'message', 'disconnect', 'alarm'])('still arms an alarm after %s persistence fails', async handler => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(1_800_000_000_000)
+    const harness = roomHarness()
+    const owner = await harness.connect('owner')
+    if (handler === 'connect') await harness.room.disconnect(owner.connection)
+    if (handler === 'alarm') vi.setSystemTime(harness.saved().round.endsAt!)
+    vi.spyOn(harness.durable.storage.sql, 'exec').mockImplementation(() => { throw new Error('storage failed') })
+    harness.durable.storage.setAlarm.mockClear()
+    const pending = handler === 'connect' ? harness.connect('new-owner')
+      : handler === 'message' ? harness.room.command(owner.connection, { t: 'place', x: 1, y: 1, c: 6 })
+      : handler === 'disconnect' ? harness.room.disconnect(owner.connection)
+      : harness.room.tick()
+    await expect(pending).rejects.toThrow('storage failed')
+    expect(harness.durable.storage.setAlarm).toHaveBeenCalledOnce()
+    harness.database.close()
+  })
+
+  it('logs an alarm re-arm failure once rather than failing a successful handler', async () => {
+    const harness = roomHarness()
+    const owner = await harness.connect('owner')
+    const log = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    harness.durable.storage.setAlarm.mockRejectedValue(new Error('private upstream detail'))
+    await expect(harness.room.command(owner.connection, { t: 'team', team: 'red' })).resolves.toBeUndefined()
+    expect(log).toHaveBeenCalledExactlyOnceWith('[PixelRoom] Alarm scheduling failed')
+    harness.database.close()
+  })
+
+  it('returns 410 before upgrading a persisted closed room', async () => {
+    const harness = roomHarness(false, state => ({ ...state, status: 'closed', round: { ...state.round, state: 'paused' } }))
+    const response = await harness.room.fetch(new Request('https://room/ws', { headers: { Upgrade: 'websocket' } }))
+    expect(response.status).toBe(410)
+    harness.database.close()
+  })
+
+  it.each(['pause', 'resume'])('sends the connecting snapshot before %s round broadcasts', async transition => {
+    const harness = roomHarness()
+    if (transition === 'resume') {
+      const owner = await harness.connect('owner')
+      await harness.room.disconnect(owner.connection)
+    }
+    const client = await harness.connect(transition === 'pause' ? 'anon-spectator' : 'owner-again')
+    expect(messages(client)[0].t).toBe('snapshot')
+    expect(messages(client).some(message => message.t === 'round')).toBe(true)
+    harness.database.close()
+  })
+
+  it.each(['unchanged', 'too_soon', 'rate_cap', 'not_playing'])('always replies to a skipped ask: %s', async reason => {
+    const harness = roomHarness(false, state => ({
+      ...state,
+      version: reason === 'unchanged' ? 0 : 1,
+      lastJudgedAt: reason === 'rate_cap' ? Date.now() - JUDGE.askMinMs : Date.now(),
+      judgeCalls: reason === 'rate_cap' ? Array.from({ length: JUDGE.maxPerMinute }, () => Date.now()) : [],
+      status: reason === 'not_playing' ? 'intermission' : 'playing',
+      intermissionEndsAt: reason === 'not_playing' ? Date.now() + 8000 : null,
+      round: { ...state.round, state: reason === 'not_playing' ? 'intermission' : 'playing' },
+    }))
+    const owner = await harness.connect('owner')
+    owner.send.mockClear()
+    await harness.room.command(owner.connection, { t: 'ask' })
+    const rejection = messages(owner).at(-1)
+    const expected = reason === 'unchanged' ? 'canvas_unchanged' : reason === 'not_playing' ? 'round_inactive' : 'ask_too_soon'
+    expect(rejection).toMatchObject({ t: 'reject', reason: expected })
+    if (expected === 'ask_too_soon') expect(rejection.retryAt).toBeGreaterThanOrEqual(harness.initial.round.askAvailableAt)
+    expect(reserve).not.toHaveBeenCalled()
+    harness.database.close()
+  })
+
+  it('pauses and re-arms even if closing an already closed socket throws', async () => {
+    const harness = roomHarness()
+    const owner = await harness.connect('owner')
+    const spectator = await harness.connect('anon-spectator')
+    vi.spyOn(owner.connection, 'close').mockImplementation(() => { throw new Error('already closed') })
+    harness.durable.storage.setAlarm.mockClear()
+    await expect(harness.room.disconnect(owner.connection)).resolves.toBeUndefined()
+    expect(harness.saved().status).toBe('paused')
+    expect(messages(spectator).at(-1)).toEqual({ t: 'players', count: 0 })
+    expect(harness.durable.storage.setAlarm).toHaveBeenCalledOnce()
+    harness.database.close()
+  })
 
   it('enforces the atomic budget cap, survives restarts and rolls over at UTC midnight', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
