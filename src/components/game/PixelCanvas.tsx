@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { boardCellSize } from '../../game/board-size'
-import { canvasIntent } from '../../game/canvas-intent'
+import {
+  createStrokeSession,
+  strokePointerDown,
+  strokePointerEnd,
+  strokePointerMove,
+} from '../../game/canvas-intent'
 import { EMPTY_CANVAS, PALETTE } from '../../game/config'
 import type { Tool } from '../../game/tools'
 
@@ -44,8 +49,7 @@ export function PixelCanvas({
   children,
 }: PixelCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
-  const isPointerDownRef = useRef(false)
-  const lastDragCellRef = useRef<{ x: number; y: number } | null>(null)
+  const strokeRef = useRef(createStrokeSession())
   const [hoverCell, setHoverCell] = useState<{ x: number; y: number } | null>(null)
 
   const cellSize = boardCellSize({
@@ -77,6 +81,12 @@ export function PixelCanvas({
     }
   }, [width, height, cells])
 
+  useEffect(() => {
+    if (!canDraw && strokePointerEnd(strokeRef.current)) {
+      onStrokeEnd?.()
+    }
+  }, [canDraw, onStrokeEnd])
+
   const getCellFromEvent = useCallback(
     (clientX: number, clientY: number): { x: number; y: number } | null => {
       const canvas = canvasRef.current
@@ -93,71 +103,69 @@ export function PixelCanvas({
 
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (e.button !== 0 && e.pointerType === 'mouse') return
-    e.currentTarget.setPointerCapture(e.pointerId)
+    if (strokeRef.current.activePointerId !== null) return
     const cell = getCellFromEvent(e.clientX, e.clientY)
     if (!cell) return
-    setHoverCell(cell)
-    onHoverCell?.(cell)
-    const intent = canvasIntent({
-      tool,
-      phase: 'down',
+    const step = strokePointerDown(strokeRef.current, {
+      pointerId: e.pointerId,
       cell,
-      prevCell: null,
+      tool,
       activeColor,
       canDraw,
     })
-    if (intent.type === 'none') {
+    if (step.kind === 'ignore') return
+    setHoverCell(cell)
+    onHoverCell?.(cell)
+    if (step.kind === 'intent') {
       // Preserve click-to-sign-in / cooldown feedback for paint & erase when unable to draw
-      if (!canDraw && (tool === 'paint' || tool === 'erase')) {
+      if (step.intent.type === 'none' && !canDraw && (tool === 'paint' || tool === 'erase')) {
         onPlace(cell.x, cell.y, tool === 'erase' ? 0 : activeColor)
+      } else if (step.intent.type === 'fill') {
+        onFill?.(step.intent.x, step.intent.y)
+      } else if (step.intent.type === 'pick') {
+        onPick?.(step.intent.x, step.intent.y)
       }
       return
     }
-    if (intent.type === 'fill') {
-      onFill?.(intent.x, intent.y)
-      return
+    try {
+      e.currentTarget.setPointerCapture?.(e.pointerId)
+    } catch {
+      // Ignore capture errors for synthetic pointer events
     }
-    if (intent.type === 'pick') {
-      onPick?.(intent.x, intent.y)
-      return
-    }
-    isPointerDownRef.current = true
-    lastDragCellRef.current = cell
     onStrokeStart?.()
-    for (const point of intent.points) {
-      onPlace(point.x, point.y, intent.color)
+    for (const point of step.points) {
+      onPlace(point.x, point.y, step.color)
     }
   }
 
   const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const cell = getCellFromEvent(e.clientX, e.clientY)
-    setHoverCell(cell)
-    onHoverCell?.(cell)
-    if (!isPointerDownRef.current || !cell) return
-    const intent = canvasIntent({
-      tool,
-      phase: 'move',
+    const step = strokePointerMove(strokeRef.current, {
+      pointerId: e.pointerId,
       cell,
-      prevCell: lastDragCellRef.current,
+      tool,
       activeColor,
       canDraw,
     })
-    if (intent.type !== 'place') return
-    lastDragCellRef.current = cell
-    for (const point of intent.points) {
-      onPlace(point.x, point.y, intent.color)
+    if (step.kind === 'ignore') return
+    setHoverCell(step.cell)
+    onHoverCell?.(step.cell)
+    if (step.kind !== 'move') return
+    for (const point of step.points) {
+      onPlace(point.x, point.y, step.color)
     }
   }
 
-  const endStroke = () => {
-    if (!isPointerDownRef.current) return
-    isPointerDownRef.current = false
-    lastDragCellRef.current = null
+  const endStroke = (e?: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!strokePointerEnd(strokeRef.current, e?.pointerId)) return
     onStrokeEnd?.()
   }
 
-  const handlePointerLeave = () => {
-    endStroke()
+  const handlePointerLeave = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (strokeRef.current.activePointerId !== null && strokeRef.current.activePointerId !== e.pointerId) {
+      return
+    }
+    endStroke(e)
     setHoverCell(null)
     onHoverCell?.(null)
   }
@@ -190,6 +198,7 @@ export function PixelCanvas({
           onPointerMove={handlePointerMove}
           onPointerUp={endStroke}
           onPointerCancel={endStroke}
+          onLostPointerCapture={endStroke}
           onPointerLeave={handlePointerLeave}
           className={`pixelated block touch-none select-none ${
             canDraw ? 'cursor-crosshair' : 'cursor-not-allowed'

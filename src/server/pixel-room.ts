@@ -278,7 +278,7 @@ export class PixelRoom extends BaseRoom<Env> {
     const previousRound = this.game?.round
     if (this.game && (this.game.status !== transition.state.status || previousRound?.id !== transition.state.round.id)) this.withRoomStatus(transition, this.playerCount())
     this.game = transition.state
-    if (stateChanged || transition.events.some(event => event.type !== 'reject')) this.persist()
+    if (stateChanged || transition.events.some(event => event.type !== 'reject' && event.type !== 'noop')) this.persist()
     if (snapshotFirst) this.snapshot(snapshotFirst)
     for (const event of transition.events) {
       switch (event.type) {
@@ -295,6 +295,7 @@ export class PixelRoom extends BaseRoom<Env> {
           }).catch(() => { console.warn('[PixelRoom] Room-status hook failed') })
           await this.statusWrite
           break
+        case 'noop': if (sender) this.sendGame(sender, { t: 'noop', x: event.x, y: event.y }); break
         case 'reject': if (sender) this.sendGame(sender, { t: 'reject', reason: event.reason, x: event.x, y: event.y, ...(event.retryAt === undefined ? {} : { retryAt: event.retryAt }) }); break
         default: {
           const { type, ...payload } = event

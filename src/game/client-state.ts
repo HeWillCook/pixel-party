@@ -175,6 +175,23 @@ export function applyServerMsg(s: ClientState, m: ServerMsg, now: number = Date.
         you,
       }
     }
+    case 'noop': {
+      if (m.x < 0 || m.x >= s.width || m.y < 0 || m.y >= s.height) return s
+      const idx = m.y * s.width + m.x
+      const pending = new Map(s.pending)
+      pending.delete(idx)
+      let cells = s.cells
+      if (s.cells[idx] !== 0) {
+        cells = s.cells.slice()
+        cells[idx] = 0
+      }
+      return {
+        ...s,
+        cells,
+        pending,
+        you: { ...s.you, cooldownUntil: 0 },
+      }
+    }
     case 'reject': {
       const cells = s.cells.slice()
       const isPlacementReject =

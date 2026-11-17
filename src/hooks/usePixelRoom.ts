@@ -9,7 +9,7 @@ import {
   type ClientState,
 } from '../game/client-state'
 import { MAX_COLOR } from '../game/config'
-import { MAX_PLACE_BATCH, type Placement, type ClientMsg, type ServerMsg } from '../game/protocol'
+import { MAX_PLACE_BATCH, parseServerMsg, type Placement, type ClientMsg } from '../game/protocol'
 import { cooldownMs } from '../game/rules'
 import { pixelPreflight } from './pixelPreflight'
 
@@ -35,6 +35,7 @@ export function usePixelRoom(joinCode: string): UsePixelRoomResult {
   const queuedRef = useRef<Placement[]>([])
   const frameRef = useRef<number | null>(null)
   const lastSendAtRef = useRef<number>(0)
+  const provisionalRef = useRef<{ idx: number; prevLastSendAt: number } | null>(null)
 
   useEffect(() => {
     stateRef.current = state
@@ -66,6 +67,7 @@ export function usePixelRoom(joinCode: string): UsePixelRoomResult {
     frameRef.current = null
     setSessionExpired(false)
     lastSendAtRef.current = 0
+    provisionalRef.current = null
     if (!joinCode || typeof window === 'undefined') return
 
     let ws: WebSocket | null = null
@@ -144,26 +146,35 @@ export function usePixelRoom(joinCode: string): UsePixelRoomResult {
       socket.onmessage = (event) => {
         if (ws !== socket || !alive) return
         if (typeof event.data !== 'string') return
-        try {
-          const msg = JSON.parse(event.data) as ServerMsg
-          if (msg.t === 'closed') terminalError = true
-          if (msg.t === 'snapshot') {
-            receivedSnapshot = true
-            backoffMs = 500
-          }
-          if (msg.t === 'closed' || msg.t === 'snapshot' || (msg.t === 'round' && msg.round.id !== stateRef.current.round?.id)) {
-            queuedRef.current = []
-            if (frameRef.current !== null) cancelAnimationFrame(frameRef.current)
-            frameRef.current = null
-          }
-          setState((prev) => {
-            const updated = applyServerMsg(prev, msg)
-            stateRef.current = updated
-            return updated
-          })
-        } catch {
-          // Ignore malformed server payloads
+        const msg = parseServerMsg(event.data)
+        if (!msg) return
+        if (msg.t === 'closed') terminalError = true
+        if (msg.t === 'snapshot') {
+          receivedSnapshot = true
+          backoffMs = 500
+          provisionalRef.current = null
         }
+        if (msg.t === 'closed' || msg.t === 'snapshot' || (msg.t === 'round' && msg.round.id !== stateRef.current.round?.id)) {
+          queuedRef.current = []
+          if (frameRef.current !== null) cancelAnimationFrame(frameRef.current)
+          frameRef.current = null
+        }
+        if (msg.t === 'closed' || msg.t === 'reject') {
+          provisionalRef.current = null
+        } else if (msg.t === 'pixel' && msg.by === stateRef.current.you.userId) {
+          provisionalRef.current = null
+        } else if (msg.t === 'noop') {
+          const noopIdx = msg.y * stateRef.current.width + msg.x
+          if (provisionalRef.current?.idx === noopIdx) {
+            lastSendAtRef.current = provisionalRef.current.prevLastSendAt
+            provisionalRef.current = null
+          }
+        }
+        setState((prev) => {
+          const updated = applyServerMsg(prev, msg)
+          stateRef.current = updated
+          return updated
+        })
       }
 
       socket.onclose = (event) => {
@@ -244,6 +255,7 @@ export function usePixelRoom(joinCode: string): UsePixelRoomResult {
       const idx = y * current.width + x
       if (current.cells[idx] === c || current.pending.has(idx)) return
       if (wsRef.current?.readyState !== WebSocket.OPEN) return
+      provisionalRef.current = { idx, prevLastSendAt: lastSendAtRef.current }
       lastSendAtRef.current = now
       const optimistic = applyOptimisticPlace(current, x, y, c)
       const updated = { ...optimistic, you: { ...optimistic.you, cooldownUntil: Math.max(optimistic.you.cooldownUntil, now + cd) } }
@@ -258,6 +270,7 @@ export function usePixelRoom(joinCode: string): UsePixelRoomResult {
           for (let i = 0; i < queued.length; i += MAX_PLACE_BATCH) {
             const cells = queued.slice(i, i + MAX_PLACE_BATCH)
             if (!sendMsg({ t: 'place', cells })) {
+              provisionalRef.current = null
               setState(prev => {
                 let updated = prev
                 for (const cell of cells) updated = applyServerMsg(updated, { t: 'reject', reason: 'round_inactive', x: cell.x, y: cell.y })

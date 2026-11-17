@@ -553,3 +553,97 @@ test('eraser clears', async ({ page }) => {
   await expect.poll(async () => (await readStored())?.[4 * 32 + 4]).toBe(0)
   expect(errors).toEqual([])
 })
+
+test('no-op erase stroke does not create empty undo step or clear redo', async ({ page }) => {
+  const { errors, canvas, point, pixelColor } = await dailyPlayingSetup(page)
+
+  // Paint (2, 2), then undo -> Redo enabled, Undo disabled
+  const p1 = point(2, 2)
+  await canvas.dispatchEvent('pointerdown', { clientX: p1.x, clientY: p1.y, pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1 })
+  await canvas.dispatchEvent('pointerup', { pointerId: 1, pointerType: 'mouse' })
+  await expect.poll(() => pixelColor(2, 2)).toEqual([239, 68, 68, 255])
+  await page.getByTestId('tool-undo').click()
+  await expect.poll(() => pixelColor(2, 2)).toEqual([243, 234, 216, 255])
+  await expect(page.getByTestId('tool-redo')).toBeEnabled()
+  await expect(page.getByTestId('tool-undo')).toBeDisabled()
+
+  // Erase empty cells (6, 6) -> (7, 6) -> Redo stays enabled and Undo stays disabled
+  await page.getByTestId('tool-erase').click()
+  const e1 = point(6, 6)
+  const e2 = point(7, 6)
+  await canvas.dispatchEvent('pointerdown', { clientX: e1.x, clientY: e1.y, pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1 })
+  await canvas.dispatchEvent('pointermove', { clientX: e2.x, clientY: e2.y, pointerId: 1, pointerType: 'mouse', buttons: 1 })
+  await canvas.dispatchEvent('pointerup', { pointerId: 1, pointerType: 'mouse' })
+  await expect(page.getByTestId('tool-redo')).toBeEnabled()
+  await expect(page.getByTestId('tool-undo')).toBeDisabled()
+
+  // Clicking Redo restores (2, 2)
+  await page.getByTestId('tool-redo').click()
+  await expect.poll(() => pixelColor(2, 2)).toEqual([239, 68, 68, 255])
+  expect(errors).toEqual([])
+})
+
+test('undo and redo buttons and shortcuts are disabled mid-drag', async ({ page }) => {
+  const { errors, canvas, point, pixelColor } = await dailyPlayingSetup(page)
+
+  // Stroke 1 so Undo would otherwise be enabled
+  const p0 = point(1, 1)
+  await canvas.dispatchEvent('pointerdown', { clientX: p0.x, clientY: p0.y, pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1 })
+  await canvas.dispatchEvent('pointerup', { pointerId: 1, pointerType: 'mouse' })
+  await expect(page.getByTestId('tool-undo')).toBeEnabled()
+
+  // Start stroke 2 and keep pointer down
+  const s1 = point(4, 4)
+  const s2 = point(5, 4)
+  const s3 = point(6, 4)
+  await canvas.dispatchEvent('pointerdown', { clientX: s1.x, clientY: s1.y, pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1 })
+  await canvas.dispatchEvent('pointermove', { clientX: s2.x, clientY: s2.y, pointerId: 1, pointerType: 'mouse', buttons: 1 })
+  await expect(page.getByTestId('tool-undo')).toBeDisabled()
+  await expect(page.getByTestId('tool-redo')).toBeDisabled()
+
+  // Pressing Ctrl/Cmd+Z mid-drag does not undo (1, 1) or (4..5, 4)
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect.poll(() => pixelColor(4, 4)).toEqual([239, 68, 68, 255])
+  await expect.poll(() => pixelColor(5, 4)).toEqual([239, 68, 68, 255])
+
+  // Continuing and releasing completes stroke 2, then Undo reverts entire stroke 2
+  await canvas.dispatchEvent('pointermove', { clientX: s3.x, clientY: s3.y, pointerId: 1, pointerType: 'mouse', buttons: 1 })
+  await canvas.dispatchEvent('pointerup', { pointerId: 1, pointerType: 'mouse' })
+  await expect(page.getByTestId('tool-undo')).toBeEnabled()
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect.poll(() => pixelColor(6, 4)).toEqual([243, 234, 216, 255])
+  await expect.poll(() => pixelColor(4, 4)).toEqual([243, 234, 216, 255])
+  await expect.poll(() => pixelColor(1, 1)).toEqual([239, 68, 68, 255])
+  expect(errors).toEqual([])
+})
+
+test('lostpointercapture ends active stroke, ignores other pointers, and stops subsequent moves', async ({ page }) => {
+  const { errors, canvas, point, pixelColor } = await dailyPlayingSetup(page)
+
+  const p1 = point(2, 2)
+  const p2 = point(3, 2)
+  const p3 = point(5, 2)
+  const other = point(9, 9)
+
+  await canvas.dispatchEvent('pointerdown', { clientX: p1.x, clientY: p1.y, pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1 })
+  await canvas.dispatchEvent('pointermove', { clientX: p2.x, clientY: p2.y, pointerId: 1, pointerType: 'mouse', buttons: 1 })
+
+  // Secondary pointer is ignored while pointer 1 is active
+  await canvas.dispatchEvent('pointerdown', { clientX: other.x, clientY: other.y, pointerId: 2, pointerType: 'touch', button: 0, buttons: 1 })
+  await canvas.dispatchEvent('pointerup', { pointerId: 2, pointerType: 'touch' })
+  await expect.poll(() => pixelColor(9, 9)).toEqual([243, 234, 216, 255])
+  await expect(page.getByTestId('tool-undo')).toBeDisabled()
+
+  // Losing pointer capture ends stroke 1 and re-enables Undo; further moves paint nothing
+  await canvas.dispatchEvent('lostpointercapture', { pointerId: 1 })
+  await expect(page.getByTestId('tool-undo')).toBeEnabled()
+  await canvas.dispatchEvent('pointermove', { clientX: p3.x, clientY: p3.y, pointerId: 1, pointerType: 'mouse', buttons: 1 })
+  await expect.poll(() => pixelColor(4, 2)).toEqual([243, 234, 216, 255])
+  await expect.poll(() => pixelColor(5, 2)).toEqual([239, 227, 204, 255])
+  await expect.poll(() => pixelColor(2, 2)).toEqual([239, 68, 68, 255])
+  await expect.poll(() => pixelColor(3, 2)).toEqual([239, 68, 68, 255])
+
+  await page.getByTestId('tool-undo').click()
+  await expect.poll(() => pixelColor(2, 2)).toEqual([243, 234, 216, 255])
+  expect(errors).toEqual([])
+})

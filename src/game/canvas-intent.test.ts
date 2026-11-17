@@ -1,5 +1,11 @@
-import { describe, expect, it } from 'vitest'
-import { canvasIntent } from './canvas-intent'
+import { describe, expect, it, vi } from 'vitest'
+import {
+  canvasIntent,
+  createStrokeSession,
+  strokePointerDown,
+  strokePointerEnd,
+  strokePointerMove,
+} from './canvas-intent'
 
 describe('canvasIntent', () => {
   it('paint tool sends activeColor on down and interpolates on move', () => {
@@ -121,5 +127,79 @@ describe('canvasIntent', () => {
         ).toEqual({ type: 'none' })
       }
     }
+  })
+})
+
+describe('strokePointer session', () => {
+  it('tracks active pointerId, ignores other pointers, and ends cleanly once on capture loss', () => {
+    const session = createStrokeSession()
+    const onStrokeEnd = vi.fn()
+
+    expect(
+      strokePointerDown(session, {
+        pointerId: 1,
+        cell: { x: 1, y: 1 },
+        tool: 'paint',
+        activeColor: 4,
+        canDraw: true,
+      }),
+    ).toEqual({ kind: 'start', points: [{ x: 1, y: 1 }], color: 4 })
+
+    // Secondary pointer events are ignored while pointer 1 is active
+    expect(
+      strokePointerDown(session, {
+        pointerId: 2,
+        cell: { x: 9, y: 9 },
+        tool: 'paint',
+        activeColor: 4,
+        canDraw: true,
+      }),
+    ).toEqual({ kind: 'ignore' })
+    expect(
+      strokePointerMove(session, {
+        pointerId: 2,
+        cell: { x: 10, y: 9 },
+        tool: 'paint',
+        activeColor: 4,
+        canDraw: true,
+      }),
+    ).toEqual({ kind: 'ignore' })
+    if (strokePointerEnd(session, 2)) onStrokeEnd()
+    expect(onStrokeEnd).not.toHaveBeenCalled()
+
+    // Active pointer move interpolates normally
+    expect(
+      strokePointerMove(session, {
+        pointerId: 1,
+        cell: { x: 3, y: 1 },
+        tool: 'paint',
+        activeColor: 4,
+        canDraw: true,
+      }),
+    ).toEqual({
+      kind: 'move',
+      cell: { x: 3, y: 1 },
+      points: [{ x: 2, y: 1 }, { x: 3, y: 1 }],
+      color: 4,
+    })
+
+    // Losing pointer capture ends stroke and fires onStrokeEnd once
+    if (strokePointerEnd(session, 1)) onStrokeEnd()
+    expect(onStrokeEnd).toHaveBeenCalledTimes(1)
+
+    // Further moves after capture loss only hover and paint nothing
+    expect(
+      strokePointerMove(session, {
+        pointerId: 1,
+        cell: { x: 5, y: 1 },
+        tool: 'paint',
+        activeColor: 4,
+        canDraw: true,
+      }),
+    ).toEqual({ kind: 'hover', cell: { x: 5, y: 1 } })
+
+    // Trailing pointerup/cancel does not re-fire onStrokeEnd
+    if (strokePointerEnd(session, 1)) onStrokeEnd()
+    expect(onStrokeEnd).toHaveBeenCalledTimes(1)
   })
 })

@@ -599,3 +599,47 @@ test('room shows Paint, Erase and Pick colour; no Fill, Undo or Redo', async ({ 
   expect(errors).toEqual([])
 })
 
+test('party noop clears provisional cooldown so next paint sends immediately', async ({ page }) => {
+  const errors = await clientFixture(page, { signedIn: true })
+  const sent: { x: number; y: number; c: number }[][] = []
+  await page.routeWebSocket('**/api/pixel/**', socket => {
+    const state = snapshot('playing')
+    const cells = Buffer.alloc(1024)
+    cells[2 * 32 + 2] = 9
+    socket.send(JSON.stringify({ ...state, players: 2, cells: cells.toString('base64') }))
+    socket.onMessage(raw => {
+      const message = JSON.parse(String(raw))
+      if (message.t !== 'place') return
+      sent.push(message.cells)
+      for (const cell of message.cells as { x: number; y: number; c: number }[]) {
+        if (cell.c === 0) {
+          socket.send(JSON.stringify({ t: 'noop', x: cell.x, y: cell.y }))
+        } else {
+          socket.send(JSON.stringify({ t: 'pixel', x: cell.x, y: cell.y, c: cell.c, by: 'host' }))
+        }
+      }
+    })
+  })
+  await page.goto(`${origin}/r/AB2Z`)
+  const canvas = page.getByTestId('pixel-canvas')
+  await expect(canvas).toBeVisible()
+
+  const box = (await canvas.boundingBox())!
+  const point = (x: number, y: number) => ({ x: box.x + box.width * (x + 0.5) / 32, y: box.y + box.height * (y + 0.5) / 32 })
+
+  // Erase (2, 2); client starts provisional 2s cooldown, server responds noop
+  await page.getByTestId('tool-erase').click()
+  await canvas.dispatchEvent('pointerdown', { clientX: point(2, 2).x, clientY: point(2, 2).y, pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1 })
+  await canvas.dispatchEvent('pointerup', { pointerId: 1, pointerType: 'mouse' })
+  await expect.poll(() => sent.flat()).toContainEqual({ x: 2, y: 2, c: 0 })
+  await expect.poll(() => pixelColor(page, 2, 2)).toEqual([243, 234, 216, 255])
+
+  // Immediately paint (4, 4) without waiting 2s; succeeds because noop cleared provisional cooldown
+  await page.getByTestId('tool-paint').click()
+  await page.getByTestId('swatch-4').click()
+  await canvas.dispatchEvent('pointerdown', { clientX: point(4, 4).x, clientY: point(4, 4).y, pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1 })
+  await canvas.dispatchEvent('pointerup', { pointerId: 1, pointerType: 'mouse' })
+  await expect.poll(() => sent.flat()).toContainEqual({ x: 4, y: 4, c: 4 })
+  await expect.poll(() => pixelColor(page, 4, 4)).toEqual([239, 68, 68, 255])
+  expect(errors).toEqual([])
+})

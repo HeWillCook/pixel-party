@@ -347,3 +347,51 @@ it('host closure clears authorized board state and uses the terminal screen', ()
   expect(closed.round).toBeNull()
   expect(roomAccessView(closed)).toBe('closed')
 })
+
+it('noop clears pending empty erase and resets provisional cooldown, even after peer erase', () => {
+  const rawCells = new Uint8Array(32 * 32)
+  const idx = 5 * 32 + 4
+  rawCells[idx] = 6
+  let s = applyServerMsg(initialClientState(), {
+    t: 'snapshot',
+    mode: 'coop',
+    width: 32,
+    height: 32,
+    cells: encodeCells(rawCells),
+    round: makeRound('r1'),
+    you: { userId: 'user-a', cooldownUntil: 0 },
+    players: 2,
+    aiResting: false,
+  })
+
+  // Case 1: peer already erased before snapshot wasn't synced yet, optimistic erase starts cooldown, then noop arrives
+  s = applyOptimisticPlace(s, 4, 5, 0)
+  s = { ...s, you: { ...s.you, cooldownUntil: 9_999_999 } }
+  expect(s.pending.has(idx)).toBe(true)
+  s = applyServerMsg(s, { t: 'noop', x: 4, y: 5 })
+  expect(s.pending.has(idx)).toBe(false)
+  expect(s.cells[idx]).toBe(0)
+  expect(s.you.cooldownUntil).toBe(0)
+
+  // Case 2: peer's erase pixel arrives first (clearing pending), then sender's noop arrives
+  rawCells[idx] = 8
+  s = applyServerMsg(s, {
+    t: 'snapshot',
+    mode: 'coop',
+    width: 32,
+    height: 32,
+    cells: encodeCells(rawCells),
+    round: makeRound('r1'),
+    you: { userId: 'user-a', cooldownUntil: 0 },
+    players: 2,
+    aiResting: false,
+  })
+  s = applyOptimisticPlace(s, 4, 5, 0)
+  s = { ...s, you: { ...s.you, cooldownUntil: 9_999_999 } }
+  s = applyServerMsg(s, { t: 'pixel', x: 4, y: 5, c: 0, by: 'user-b' })
+  expect(s.pending.has(idx)).toBe(false)
+  expect(s.you.cooldownUntil).toBe(9_999_999)
+  s = applyServerMsg(s, { t: 'noop', x: 4, y: 5 })
+  expect(s.cells[idx]).toBe(0)
+  expect(s.you.cooldownUntil).toBe(0)
+})

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseClientMsg, type ServerMsg } from './protocol'
+import { parseClientMsg, parseServerMsg, type ServerMsg } from './protocol'
 
 describe('parseClientMsg', () => {
   it('types the unchanged-canvas rejection used to acknowledge ask commands', () => {
@@ -14,6 +14,22 @@ describe('parseClientMsg', () => {
   it('rejects malformed, oversized and unknown messages', () => {
     for (const raw of ['no', 'x'.repeat(300), '{"t":"nuke"}', '{"t":"place","x":"1","y":2,"c":3}', '{"t":"team","team":"green"}', 'null', '[]']) {
       expect(parseClientMsg(raw)).toBeNull()
+    }
+  })
+})
+
+describe('parseServerMsg', () => {
+  it('parses noop messages and rejects malformed noop or unknown tags', () => {
+    expect(parseServerMsg(JSON.stringify({ t: 'noop', x: 3, y: 4 }))).toEqual({ t: 'noop', x: 3, y: 4 })
+    for (const bad of [
+      'not-json',
+      'null',
+      '{"t":"unknown"}',
+      '{"t":"noop"}',
+      '{"t":"noop","x":"3","y":4}',
+      '{"t":"noop","x":3,"y":null}',
+    ]) {
+      expect(parseServerMsg(bad)).toBeNull()
     }
   })
 })

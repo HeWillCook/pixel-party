@@ -112,12 +112,15 @@ export default function DailyHomePage() {
   const [activeColor, setActiveColor] = useState<number>(4)
   const [tool, setTool] = useState<Tool>('paint')
   const [history, setHistory] = useState<History>(() => emptyHistory())
+  const [strokeActive, setStrokeActive] = useState(false)
   const [starting, setStarting] = useState(false)
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [now, setNow] = useState<number>(() => Date.now())
 
   const cellsRef = useRef(cells)
   const historyRef = useRef(history)
+  const strokeActiveRef = useRef(false)
+  const strokeSnapshotRef = useRef<Uint8Array | null>(null)
 
   useEffect(() => {
     cellsRef.current = cells
@@ -131,6 +134,9 @@ export default function DailyHomePage() {
     const reset = emptyHistory()
     historyRef.current = reset
     setHistory(reset)
+    strokeSnapshotRef.current = null
+    strokeActiveRef.current = false
+    setStrokeActive(false)
   }, [state.day, state.startedAt])
 
   useEffect(() => {
@@ -145,12 +151,49 @@ export default function DailyHomePage() {
   const canDraw = isSignedIn && canPaintDaily(state, now)
   const canAsk = isSignedIn && canAskDaily(state, now)
 
+  useEffect(() => {
+    if (canDraw) return
+    strokeSnapshotRef.current = null
+    if (strokeActiveRef.current) {
+      strokeActiveRef.current = false
+      setStrokeActive(false)
+    }
+  }, [canDraw])
+
   const handleStrokeStart = useCallback(() => {
     if (!canDraw) return
-    const nextHistory = record(historyRef.current, cellsRef.current)
-    historyRef.current = nextHistory
-    setHistory(nextHistory)
+    strokeSnapshotRef.current = new Uint8Array(cellsRef.current)
+    strokeActiveRef.current = true
+    setStrokeActive(true)
   }, [canDraw])
+
+  const handleStrokeEnd = useCallback(() => {
+    strokeSnapshotRef.current = null
+    if (!strokeActiveRef.current) return
+    strokeActiveRef.current = false
+    setStrokeActive(false)
+  }, [])
+
+  const handlePlace = useCallback(
+    (x: number, y: number, color: number) => {
+      if (!canDraw) return
+      if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || x >= 32 || y < 0 || y >= 32) return
+      if (!Number.isInteger(color) || color < 0 || color > MAX_COLOR) return
+      const idx = y * 32 + x
+      if (cellsRef.current[idx] === color) return
+      if (strokeSnapshotRef.current) {
+        const nextHistory = record(historyRef.current, strokeSnapshotRef.current)
+        historyRef.current = nextHistory
+        setHistory(nextHistory)
+        strokeSnapshotRef.current = null
+      }
+      const next = cellsRef.current.slice()
+      next[idx] = color
+      cellsRef.current = next
+      paint(x, y, color)
+    },
+    [canDraw, paint],
+  )
 
   const handleFill = useCallback(
     (x: number, y: number) => {
@@ -177,7 +220,7 @@ export default function DailyHomePage() {
   }, [])
 
   const handleUndo = useCallback(() => {
-    if (!canDraw) return
+    if (!canDraw || strokeActiveRef.current) return
     const result = undo(historyRef.current, cellsRef.current)
     if (!result) return
     historyRef.current = result.history
@@ -187,7 +230,7 @@ export default function DailyHomePage() {
   }, [canDraw, replaceCells])
 
   const handleRedo = useCallback(() => {
-    if (!canDraw) return
+    if (!canDraw || strokeActiveRef.current) return
     const result = redo(historyRef.current, cellsRef.current)
     if (!result) return
     historyRef.current = result.history
@@ -199,8 +242,8 @@ export default function DailyHomePage() {
   useToolShortcuts({
     tools: DAILY_TOOLS,
     onSelect: setTool,
-    onUndo: handleUndo,
-    onRedo: handleRedo,
+    onUndo: strokeActive ? undefined : handleUndo,
+    onRedo: strokeActive ? undefined : handleRedo,
     enabled: isSignedIn && state.loaded && state.status === 'playing' && canDraw && !showAuthModal,
   })
 
@@ -411,8 +454,8 @@ export default function DailyHomePage() {
                 onSelect={setTool}
                 onUndo={handleUndo}
                 onRedo={handleRedo}
-                canUndo={history.past.length > 0}
-                canRedo={history.future.length > 0}
+                canUndo={!strokeActive && history.past.length > 0}
+                canRedo={!strokeActive && history.future.length > 0}
                 disabled={!canDraw}
               />
             </div>
@@ -429,10 +472,11 @@ export default function DailyHomePage() {
                 tool={tool}
                 canDraw={canDraw}
                 word={state.prompt}
-                onPlace={paint}
+                onPlace={handlePlace}
                 onFill={handleFill}
                 onPick={handlePick}
                 onStrokeStart={handleStrokeStart}
+                onStrokeEnd={handleStrokeEnd}
               />
 
               <div ref={paletteRef}>

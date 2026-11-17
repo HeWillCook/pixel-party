@@ -45,3 +45,90 @@ export function canvasIntent(input: {
     color: tool === 'erase' ? 0 : activeColor,
   }
 }
+
+export interface StrokeSession {
+  activePointerId: number | null
+  lastCell: GridPoint | null
+}
+
+export function createStrokeSession(): StrokeSession {
+  return { activePointerId: null, lastCell: null }
+}
+
+export type StrokeDownStep =
+  | { kind: 'ignore' }
+  | { kind: 'start'; points: GridPoint[]; color: number }
+  | { kind: 'intent'; intent: CanvasIntent }
+
+export function strokePointerDown(
+  session: StrokeSession,
+  input: {
+    pointerId: number
+    cell: GridPoint
+    tool: Tool
+    activeColor: number
+    canDraw: boolean
+  },
+): StrokeDownStep {
+  if (session.activePointerId !== null) {
+    return { kind: 'ignore' }
+  }
+  const intent = canvasIntent({
+    tool: input.tool,
+    phase: 'down',
+    cell: input.cell,
+    prevCell: null,
+    activeColor: input.activeColor,
+    canDraw: input.canDraw,
+  })
+  if (intent.type !== 'place') {
+    return { kind: 'intent', intent }
+  }
+  session.activePointerId = input.pointerId
+  session.lastCell = input.cell
+  return { kind: 'start', points: intent.points, color: intent.color }
+}
+
+export type StrokeMoveStep =
+  | { kind: 'ignore' }
+  | { kind: 'hover'; cell: GridPoint | null }
+  | { kind: 'move'; cell: GridPoint; points: GridPoint[]; color: number }
+
+export function strokePointerMove(
+  session: StrokeSession,
+  input: {
+    pointerId: number
+    cell: GridPoint | null
+    tool: Tool
+    activeColor: number
+    canDraw: boolean
+  },
+): StrokeMoveStep {
+  if (session.activePointerId !== null && session.activePointerId !== input.pointerId) {
+    return { kind: 'ignore' }
+  }
+  if (session.activePointerId === null || !input.cell) {
+    return { kind: 'hover', cell: input.cell }
+  }
+  const intent = canvasIntent({
+    tool: input.tool,
+    phase: 'move',
+    cell: input.cell,
+    prevCell: session.lastCell,
+    activeColor: input.activeColor,
+    canDraw: input.canDraw,
+  })
+  if (intent.type !== 'place') {
+    return { kind: 'hover', cell: input.cell }
+  }
+  session.lastCell = input.cell
+  return { kind: 'move', cell: input.cell, points: intent.points, color: intent.color }
+}
+
+export function strokePointerEnd(session: StrokeSession, pointerId?: number): boolean {
+  if (session.activePointerId === null) return false
+  if (pointerId !== undefined && session.activePointerId !== pointerId) return false
+  session.activePointerId = null
+  session.lastCell = null
+  return true
+}

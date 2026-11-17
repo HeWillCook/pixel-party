@@ -751,11 +751,13 @@ describe('durable room boundaries', () => {
     await harness.room.command(alice.connection, { t: 'place', x: 3, y: 3, c: 17 })
     expect(messages(alice).at(-1)).toMatchObject({ t: 'reject', reason: 'bad_color', x: 3, y: 3 })
 
-    // During cooldown (players=2 -> 2000ms): erasing empty is a silent no-op, erasing non-empty is rejected
+    // During cooldown (players=2 -> 2000ms): erasing empty sends sender-only noop without persisting; erasing non-empty is rejected
     const sql = vi.spyOn(harness.durable.storage.sql, 'exec')
     alice.send.mockClear()
+    bob.send.mockClear()
     await harness.room.command(alice.connection, { t: 'place', x: 9, y: 9, c: 0 })
-    expect(messages(alice)).toEqual([])
+    expect(messages(alice)).toEqual([{ t: 'noop', x: 9, y: 9 }])
+    expect(messages(bob)).toEqual([])
     expect(sql.mock.calls.filter(([query]) => query.startsWith('INSERT'))).toHaveLength(0)
 
     await harness.room.command(alice.connection, { t: 'place', x: 2, y: 2, c: 0 })
