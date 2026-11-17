@@ -84,13 +84,26 @@ Will picked B: "no need to host everything the same way, we only need the server
 Two Haiku calls per grade:
 1. **Blind guess.** Haiku sees only the drawing, rendered to PNG as today, and is never told the prompt. It returns
    its best guess as a short phrase. The player sees this as a reveal: "Haiku thinks: a candle on a rock."
-2. **Score.** Haiku sees the drawing, the prompt, and the blind guess. It returns `{score: 0–100, reason: one short
-   line}`. The score weighs two things:
-   - whether the main subject is recognisable without being told, using the blind guess as evidence;
-   - how well the full prompt (subject plus detail) is shown.
+2. **Score.** Haiku sees the drawing, the prompt, the prompt's main `subject`, and the blind guess. It returns
+   `{fit: 0–100, recognition: 0–100, reason: one short line}`:
+   - `fit` measures how well the full prompt (subject plus detail) is shown;
+   - `recognition` measures how close the blind guess was to the main subject. Exact or a synonym is about 100,
+     related is about 50, wrong is 0.
 
-Both outputs are strict JSON, parsed defensively like `parseJudgeText`. If either call fails, that grade does not
-count and does not use up an Ask-now.
+**Grade score, out of 1000** (decided with Will). It is built from parts so there are fewer ties than a raw model
+number would give:
+
+| Part | Points | Formula |
+|---|---|---|
+| Prompt fit | 0–500 | `fit × 5` |
+| Blind recognition | 0–400 | `recognition × 4` |
+| Speed | 0–100 | `round(100 × (1 − elapsedMs / 600000))`, from the moment that grade was taken (2:00 → 80, 9:50 → 2) |
+
+Prompt fit and recognition are deliberately weighted close together (Will). Speed rewards an early Ask-now when the
+drawing already reads, and it spreads out ties. The player sees all three parts for each grade.
+
+Both outputs are strict JSON, parsed defensively like `parseJudgeText`. A failed call is retried once automatically.
+If it still fails, that grade doesn't count and doesn't use up an Ask-now.
 
 ### 5.3 Prompts
 A hand-written list of harder prompts kept **server-side only**, not in the client bundle. Today's prompt is picked
@@ -101,8 +114,8 @@ doesn't repeat during the review window and beyond.
 ### 5.4 Profiles and leaderboard
 - **Every** player's daily result goes on their profile: the best snapshot, the prompt, the score, Haiku's guess, and
   the date. The gallery is public, and a profile is reached by clicking a name on the leaderboard.
-- **Daily leaderboard**: best score descending. Ties go to whoever reached that score earlier, measured as time since
-  start. Medals go to ranks 1–3. Today's board plus a way to see previous days (at least yesterday).
+- **Daily leaderboard**: best score (out of 1000) descending. Exact ties go to the lower elapsed time of the
+  best grade. Medals go to ranks 1–3. Today's board plus a way to see previous days (at least yesterday).
 - **Spoiler rule:** today's prompt and drawings are hidden from anyone who hasn't finished today's attempt, or who
   isn't signed in. Ranks, names and scores are visible to everyone.
 
@@ -149,11 +162,12 @@ existing `test_integration_disabled` test path so that tests prove no paid call 
 - **Midnight:** an attempt belongs to the UTC day it **started** on. Its prompt and leaderboard are fixed at start.
   Finishing after midnight doesn't use up the next day's attempt. The daily cron that awards medals runs after the
   latest possible end, so 00:15 UTC.
-- **No successful grade** (every grade failed, or the player left before minute 2): the attempt still ends and still
-  lifts the spoiler for that player. A gallery entry is written with the last grid the server received (if any)
-  marked "unscored". It is not ranked.
-- **Tie-break:** the elapsed milliseconds from `startedAt` to the grade that set the best score. Lower wins. An equal
-  later score never replaces the best snapshot. The server, the board and the tests all use this one definition.
+- **Every attempt is on the leaderboard and profile** (Will). There is no "unscored" state. The best grade is saved.
+  A player who closed the tab before any grade ran (before 2:00, with no Ask-now) gets 0 with whatever grid the
+  server last received, or a blank one. Ending an attempt, by any route, lifts the spoiler for that player.
+- **Tie-break:** speed is already part of the score. For exact ties, the lower elapsed time of the best grade wins.
+  An equal later score never replaces the best snapshot. The server, the board and the tests all use this one
+  definition.
 - **Prompts:** a child agent drafts about 80 prompts (format `{ prompt, subject }`, where `subject` is the main noun
   the blind-guess check looks for), screened so each one can actually be drawn at 32×32. Will skims the list before
   launch.
