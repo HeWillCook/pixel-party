@@ -57,7 +57,7 @@ describe('PixelRoom route configuration', () => {
     expect(forwarded.headers.get('X-Room-Default')).toBe(String(roomId === 'play'))
     expect(forwarded.headers.get('X-Room-Host')).toBe(roomId === 'play' ? '' : 'host')
     expect(forwarded.headers.get('X-User-Id')).toBeNull()
-    expect(forwarded.headers.get('X-Room-Lobby')).toBe('false')
+    expect(forwarded.headers.get('X-Room-Lobby')).toBe(String(roomId === 'play'))
     expect(new URL(forwarded.url).searchParams.has('userId')).toBe(false)
   })
 

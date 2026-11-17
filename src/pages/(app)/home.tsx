@@ -18,6 +18,7 @@ import {
   Sparkles,
   Users,
 } from 'lucide-react'
+import { DeleteRoomButton } from '../../components/game/DeleteRoomButton'
 import {
   Badge,
   Button,
@@ -40,7 +41,7 @@ interface RoomRecord {
 
 export default function HomePage() {
   const navigate = useNavigate()
-  const { isSignedIn } = useAuthProfileReady({ requireUser: false })
+  const { isSignedIn, user } = useAuthProfileReady({ requireUser: false })
   const { ready: mutationsReady } = useMutations('rooms')
   const { error: toastError, success: toastSuccess } = useToast()
 
@@ -57,10 +58,12 @@ export default function HomePage() {
   const [joinCodeInput, setJoinCodeInput] = useState('')
   const [joining, setJoining] = useState(false)
   const [showAuthModal, setShowAuthModal] = useState(false)
+  const [deletedRooms, setDeletedRooms] = useState<string[]>([])
 
   const livePublicRooms = rooms.filter(
     (room) =>
       room.data.status !== 'closed' &&
+      !deletedRooms.includes(room.recordId) &&
       room.data.visibility === 'public' &&
       !room.data.isDefaultBoard &&
       room.data.joinCode !== 'play',
@@ -267,11 +270,11 @@ export default function HomePage() {
               </div>
             ) : (
               livePublicRooms.map((room) => (
+                <div key={room.recordId} className="pp-panel flex items-center gap-3 pr-4">
                 <Link
-                  key={room.recordId}
                   to={`/r/${room.data.joinCode}`}
                   data-testid={`room-card-${room.data.joinCode}`}
-                  className="pp-panel group flex items-center justify-between gap-4 p-4 transition-colors hover:border-[var(--sunset-1)]"
+                  className="group min-w-0 flex-1 flex items-center justify-between gap-4 p-4 transition-colors hover:border-[var(--sunset-1)]"
                 >
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
@@ -295,6 +298,8 @@ export default function HomePage() {
                     <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-1 group-hover:text-[var(--sunset-1)]" />
                   </div>
                 </Link>
+                {user?.id === room.data.hostId && <DeleteRoomButton joinCode={room.data.joinCode} onDeleted={() => setDeletedRooms(previous => [...previous, room.recordId])} />}
+                </div>
               ))
             )}
           </div>
@@ -412,9 +417,10 @@ export default function HomePage() {
                 />
                 <Input
                   data-testid="join-code-input"
-                  placeholder="Enter 10-char code"
+                  placeholder="Enter 4-char code"
+                  maxLength={64}
                   value={joinCodeInput}
-                  onChange={(e) => setJoinCodeInput(e.target.value)}
+                  onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
                   disabled={joining}
                   className="pl-8 uppercase"
                 />

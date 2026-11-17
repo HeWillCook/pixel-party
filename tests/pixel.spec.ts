@@ -37,6 +37,10 @@ test('two painters sync, respect cooldown, and allow spectators', async ({ users
   })
   await Promise.all([a.page.goto('/r/play'), b.page.goto('/r/play'), page.goto('/r/play')])
   for (const p of [a.page, b.page]) await expect(p.getByTestId('round-players')).toHaveText('2 painters', { timeout: 15000 })
+  // The shared board may be new or waiting on results; every start is explicit.
+  const start = a.page.getByTestId('host-start-button')
+  if (await start.isVisible()) await start.click()
+  else if (await a.page.getByRole('button', { name: 'New game', exact: true }).first().isVisible()) await a.page.getByRole('button', { name: 'New game', exact: true }).first().click()
   await expect(page.getByTestId('spectator-banner')).toBeVisible()
   const red = [239, 68, 68, 255]
   await clickCell(a.page, 4, 4)

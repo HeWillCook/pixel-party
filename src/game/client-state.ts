@@ -25,6 +25,7 @@ export interface ClientState {
   snapshotLoaded: boolean
   snapshotSeq: number
   connectError: ConnectError | null
+  closedByHost: boolean
   mode: Mode
   width: number
   height: number
@@ -49,6 +50,7 @@ export function initialClientState(): ClientState {
     snapshotLoaded: false,
     snapshotSeq: 0,
     connectError: null,
+    closedByHost: false,
     mode: 'coop',
     width,
     height,
@@ -118,6 +120,7 @@ export function applyOptimisticPlace(
 
 export function applyServerMsg(s: ClientState, m: ServerMsg, now: number = Date.now()): ClientState {
   switch (m.t) {
+    case 'closed': return { ...applyConnectError(initialClientState(), 'closed'), closedByHost: true }
     case 'snapshot': {
       const cells = decodeCells(m.cells, m.width * m.height)
       const isNewRound = !s.round || s.round.id !== m.round.id

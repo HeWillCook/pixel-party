@@ -73,7 +73,7 @@ export function RoundBar({
         </span>
       ) : round?.state === 'intermission' ? (
         <span data-testid="round-timer" className="uppercase text-[var(--sunset-3)]">
-          NEXT ROUND SOON
+          ROUND OVER
         </span>
       ) : (
         <span data-testid="round-timer" title="Time remaining in round">

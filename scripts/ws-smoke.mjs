@@ -104,12 +104,19 @@ try {
   const owner = await connect(token)
   token = null
   const spectator = await connect()
-  const snapshot = await owner.wait(message => message.t === 'snapshot')
+  let snapshot = await owner.wait(message => message.t === 'snapshot')
   const anonymous = await spectator.wait(message => message.t === 'snapshot')
   assert.equal(snapshot.you.userId, account.userId)
   assert.equal(anonymous.you.userId, null)
   assert.equal(anonymous.players, 1)
   record('signed-in and anonymous snapshots', { userId: snapshot.you.userId, anonymousUserId: anonymous.you.userId, players: anonymous.players })
+
+  if (snapshot.round.state !== 'playing') {
+    const after = owner.messages.length
+    owner.send({ t: 'next' })
+    snapshot = await owner.wait(message => message.t === 'snapshot' && message.round.state === 'playing', after)
+    record('explicitly started the waiting board', { roundId: snapshot.round.id })
+  }
 
   const before = local ? budgetUsage() : null
   if (before) record('budget before', before)
@@ -170,9 +177,9 @@ try {
   await owner.close()
   const fresh = await connect()
   const paused = await fresh.wait(message => message.t === 'snapshot')
-  assert.equal(paused.round.state, 'paused')
+  assert(['paused', 'intermission'].includes(paused.round.state))
   assert.equal(paused.players, 0)
-  record('last signed-in disconnect pauses the room', { roundId: paused.round.id, state: paused.round.state, players: paused.players })
+  record('last signed-in disconnect pauses drawing or retains results', { roundId: paused.round.id, state: paused.round.state, players: paused.players })
 
   if (before) {
     const after = budgetUsage()

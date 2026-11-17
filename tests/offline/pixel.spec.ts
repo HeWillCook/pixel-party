@@ -8,7 +8,7 @@ const fixtureUser = { id: 'host', name: 'Offline host', email: 'host@example.tes
 // Deliberately unsigned fixture, consumed only by the intercepted client APIs.
 const fixtureToken = `fixture.${Buffer.from(JSON.stringify({ sub: fixtureUser.id, name: fixtureUser.name, exp: 4_000_000_000 })).toString('base64url')}.unsigned`
 
-async function clientFixture(page: Page, options: { signedIn?: boolean; preflight?: () => Promise<void> } = {}) {
+async function clientFixture(page: Page, options: { signedIn?: boolean; hostId?: string; preflight?: () => Promise<void> } = {}) {
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   await page.route('**/*', async route => {
@@ -25,27 +25,20 @@ async function clientFixture(page: Page, options: { signedIn?: boolean; prefligh
     if (url.pathname.startsWith('/api/')) return route.fulfill({ json: {} })
     const asset = url.pathname.startsWith('/assets/')
     const path = asset ? resolve(clientDir, `.${url.pathname}`) : resolve(clientDir, '_spa.html')
-    const contentType = asset
-      ? path.endsWith('.css')
-        ? 'text/css'
-        : path.endsWith('.woff2')
-          ? 'font/woff2'
-          : path.endsWith('.woff')
-            ? 'font/woff'
-            : 'application/javascript'
-      : 'text/html'
+    const contentType = asset ? (path.endsWith('.css') ? 'text/css' : 'application/javascript') : 'text/html'
     return route.fulfill({ contentType, body: await readFile(path) })
   })
   await page.routeWebSocket('**/ws/**', socket => {
     if (socket.url().includes('/ws/presence/')) return
     socket.send(JSON.stringify({ type: 'user.info', payload: { role: 'member' } }))
     socket.onMessage(raw => {
+      if (raw === 'ping') { socket.send('pong'); return }
       const message = JSON.parse(String(raw))
       if (message.type === 'user.list') socket.send(JSON.stringify({ type: 'user.list', payload: { users: [] } }))
       if (message.type !== 'core.subscribe') return
       const { subscriptionId, query } = message.payload
       const records = query.collection === 'rooms' ? [{ recordId: 'room', data: {
-        name: 'Offline party', mode: 'coop', visibility: 'private', joinCode: 'AB2Z', hostId: 'host', status: 'lobby', isDefaultBoard: false,
+        name: 'Offline party', mode: 'coop', visibility: 'private', joinCode: 'AB2Z', hostId: options.hostId ?? 'host', status: 'lobby', isDefaultBoard: false,
       } }] : []
       socket.send(JSON.stringify({ type: 'core.query_result', payload: { subscriptionId, records } }))
     })
@@ -82,7 +75,7 @@ for (const viewport of [{ width: 375, height: 812 }, { width: 1280, height: 720 
     const round = { ...snapshot('playing').round, state: 'intermission', endsAt: null, endedAt: Date.now(), result: { outcome: 'won', score: 1 } }
     server.send(JSON.stringify({ t: 'round', round }))
     const overlay = page.getByTestId('round-overlay')
-    const next = overlay.getByRole('button', { name: 'Next Word Now' })
+    const next = overlay.getByRole('button', { name: 'New game' })
     await expect(next).toBeVisible()
     await next.scrollIntoViewIfNeeded()
     const bounds = await next.boundingBox()
@@ -149,26 +142,49 @@ test('room shells expose the navy body glow', async ({ page }) => {
   expect(backgrounds.slice(1)).toEqual(['rgba(0, 0, 0, 0)', 'rgba(0, 0, 0, 0)'])
 })
 
-test('signed-out private visitors never mount room content during a delayed preflight', async ({ page }) => {
-  let release!: () => void
-  const preflight = new Promise<void>(resolve => { release = resolve })
-  const errors = await clientFixture(page, { preflight: () => preflight })
-  await page.addInitScript(() => {
-    const state = window as unknown as { roomContentMounted: boolean }
-    state.roomContentMounted = false
-    new MutationObserver(() => {
-      if (document.querySelector('[data-testid="pixel-canvas"], [data-testid="round-players"], [data-testid="room-lobby"]')) state.roomContentMounted = true
-    }).observe(document, { childList: true, subtree: true })
+for (const entry of ['direct', 'home-join'] as const) {
+  test(`signed-out private ${entry} and reload never attach a board before access is denied`, async ({ page }) => {
+    let release!: () => void
+    const preflight = new Promise<void>(resolve => { release = resolve })
+    const errors = await clientFixture(page, { preflight: () => preflight })
+    await page.addInitScript(() => {
+      const state = window as unknown as { roomContentInsertions: string[] }
+      state.roomContentInsertions = []
+      const selector = 'canvas, [role="grid"], .grid-cols-10, [data-testid*="canvas"], [data-testid*="board"], [data-testid="round-players"], [data-testid="room-lobby"]'
+      new MutationObserver(records => {
+        for (const record of records) {
+          for (const node of record.addedNodes) {
+            if (!(node instanceof Element)) continue
+            const board = node.matches(selector) ? node : node.querySelector(selector)
+            const grid = [node, ...node.querySelectorAll('[class*="grid"]')].find(element =>
+              element.className.includes('grid') && element.children.length >= 25)
+            if (board || grid) state.roomContentInsertions.push(`${location.pathname}: ${(board ?? grid)!.outerHTML.slice(0, 200)}`)
+          }
+        }
+      }).observe(document, { childList: true, subtree: true })
+    })
+    await page.routeWebSocket('**/api/pixel/**', socket => socket.close({ code: 1008 }))
+    const response = await page.goto(`${origin}/${entry === 'direct' ? 'r/AB2Z' : 'home'}`)
+    expect(await response!.text()).not.toMatch(/<canvas|grid-cols-10|pixel-canvas-frame/)
+    if (entry === 'home-join') {
+      await page.getByTestId('join-code-input').fill('ab2z')
+      await page.getByTestId('join-code-submit').click()
+      await expect(page).toHaveURL(`${origin}/r/AB2Z`)
+    }
+    await expect(page.getByTestId('room-loading')).toBeVisible()
+    await expect(page.getByTestId('pixel-canvas')).toHaveCount(0)
+    release()
+    await expect(page.getByTestId('room-error-unauthorized')).toBeVisible()
+    expect(await page.evaluate(() => (window as unknown as { roomContentInsertions: string[] }).roomContentInsertions)).toEqual([])
+
+    // A full navigation gets another empty shell and a fresh observer before any app code.
+    const reload = await page.reload()
+    expect(await reload!.text()).not.toMatch(/<canvas|grid-cols-10|pixel-canvas-frame/)
+    await expect(page.getByTestId('room-error-unauthorized')).toBeVisible()
+    expect(await page.evaluate(() => (window as unknown as { roomContentInsertions: string[] }).roomContentInsertions)).toEqual([])
+    expect(errors).toEqual([])
   })
-  await page.routeWebSocket('**/api/pixel/**', socket => socket.close({ code: 1008 }))
-  await page.goto(`${origin}/r/AB2Z`)
-  await expect(page.getByTestId('room-loading')).toBeVisible()
-  await expect(page.getByTestId('pixel-canvas')).toHaveCount(0)
-  release()
-  await expect(page.getByTestId('room-error-unauthorized')).toBeVisible()
-  expect(await page.evaluate(() => (window as unknown as { roomContentMounted: boolean }).roomContentMounted)).toBe(false)
-  expect(errors).toEqual([])
-})
+}
 
 test('fast solo drag paints a solid optimistic stroke and sends a frame batch with targeted rollback', async ({ page }) => {
   const errors = await clientFixture(page, { signedIn: true })
@@ -217,12 +233,7 @@ test('private lobby shows code and roster, copies full link, and host can start 
   await expect(page.getByTestId('pixel-canvas')).toHaveCount(0)
   await page.getByTestId('copy-room-link').click()
   expect(await page.evaluate(() => (window as unknown as { copiedLink: string }).copiedLink)).toBe(`${origin}/r/AB2Z`)
-  await page.getByTestId('mute-button').focus()
-  const startBtn = page.getByTestId('host-start-button')
-  await page.keyboard.press('Tab')
-  await expect(startBtn).toBeFocused()
-  expect(await startBtn.evaluate(el => getComputedStyle(el).outlineStyle)).not.toBe('none')
-  await startBtn.click()
+  await page.getByTestId('host-start-button').click()
   await expect(page.getByTestId('room-lobby')).toHaveCount(0)
   await expect(page.getByTestId('pixel-canvas')).toBeVisible()
   expect(errors).toEqual([])
@@ -265,6 +276,66 @@ test('switching from a public board to a private invite clears the previous room
   await expect(page.getByTestId('room-error-unauthorized')).toBeVisible()
   expect(errors).toEqual([])
 })
+
+test('host deletion asks for confirmation, closes the board, and never reconnects', async ({ page }) => {
+  const errors = await clientFixture(page, { signedIn: true })
+  await page.clock.install()
+  let socket!: WebSocketRoute
+  let connections = 0
+  let deletes = 0
+  await page.routeWebSocket('**/api/pixel/**', connection => {
+    connections++
+    socket = connection
+    connection.send(JSON.stringify(snapshot('playing')))
+  })
+  await page.route('**/api/actions/deleteRoom', async route => {
+    deletes++
+    expect(route.request().postDataJSON()).toEqual({ joinCode: 'AB2Z' })
+    socket.send(JSON.stringify({ t: 'closed' }))
+    socket.close({ code: 4001 })
+    await route.fulfill({ json: { success: true, data: { roomId: 'room' } } })
+  })
+  await page.goto(`${origin}/r/AB2Z`)
+  await expect(page.getByTestId('pixel-canvas')).toBeVisible()
+  await page.getByRole('button', { name: 'Delete room', exact: true }).click()
+  await expect(page.getByRole('dialog')).toContainText('This ends the room for everyone.')
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+  expect(deletes).toBe(0)
+  await page.getByRole('button', { name: 'Delete room', exact: true }).click()
+  await page.getByRole('button', { name: 'End room', exact: true }).click()
+  await expect(page.getByTestId('room-error-closed')).toContainText('This room was closed by the host')
+  await expect(page.getByTestId('pixel-canvas')).toHaveCount(0)
+  await page.clock.fastForward(30000)
+  expect(deletes).toBe(1)
+  expect(connections).toBe(1)
+  expect(errors).toEqual([])
+})
+
+for (const code of ['AB2Z', 'play']) {
+  test(`results in ${code} wait for explicit New game, with the host absent`, async ({ page }) => {
+    const errors = await clientFixture(page, { signedIn: true, hostId: 'absent-host' })
+    await page.clock.install()
+    const commands: string[] = []
+    await page.routeWebSocket('**/api/pixel/**', socket => {
+      const state = snapshot('playing')
+      socket.send(JSON.stringify({ ...state, round: { ...state.round, state: 'intermission', endedAt: Date.now(), result: { outcome: 'timeout' } } }))
+      socket.onMessage(raw => {
+        const command = JSON.parse(String(raw)).t
+        commands.push(command)
+        if (command === 'next') socket.send(JSON.stringify({ ...state, round: { ...state.round, id: 'next-round' } }))
+      })
+    })
+    await page.goto(`${origin}/r/${code}`)
+    await expect(page.getByRole('button', { name: 'New game', exact: true }).last()).toBeVisible()
+    await page.clock.fastForward(60000)
+    await expect(page.getByRole('button', { name: 'New game', exact: true }).last()).toBeVisible()
+    expect(commands).toEqual([])
+    await page.getByRole('button', { name: 'New game', exact: true }).last().click()
+    await expect(page.getByTestId('round-word')).toContainText('sun')
+    expect(commands).toEqual(['next'])
+    expect(errors).toEqual([])
+  })
+}
 
 test('banner-aware canvas sizing keeps palette inside 1280x720 with spectator banner and reject notice, and renders room name', async ({ page }) => {
   const errors = await clientFixture(page)

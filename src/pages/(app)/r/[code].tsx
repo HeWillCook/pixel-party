@@ -22,6 +22,7 @@ import {
   Users,
   XCircle,
 } from 'lucide-react'
+import { DeleteRoomButton } from '../../../components/game/DeleteRoomButton'
 import { AskAiButton } from '../../../components/game/AskAiButton'
 import { GuessFeed } from '../../../components/game/GuessFeed'
 import { MuteButton } from '../../../components/game/MuteButton'
@@ -33,7 +34,6 @@ import { RoundBar } from '../../../components/game/RoundBar'
 import { useGameSounds } from '../../../components/game/useGameSounds'
 import { Button } from '../../../components/ui'
 import { roomAccessView, type RejectMsg } from '../../../game/client-state'
-import { MODES } from '../../../game/config'
 import { contributorLabel } from '../../../game/contributor-label'
 import { cooldownMs } from '../../../game/rules'
 import { usePixelRoom } from '../../../hooks/usePixelRoom'
@@ -80,7 +80,7 @@ function rejectMessage(reject: RejectMsg | null, now: number): string | null {
     case 'round_inactive':
       return 'Round is not currently active.'
     case 'not_host':
-      return 'Only the room host can skip to the next round.'
+      return 'The host starts the next round while connected.'
     case 'out_of_bounds':
       return 'That spot is outside the canvas.'
     case 'bad_color':
@@ -276,6 +276,11 @@ export default function RoomPage() {
     joinCode !== 'play' &&
     roomDoc?.data.hostId === user?.id
 
+  const hostConnected = state.roster.some(player => player.userId === roomDoc?.data.hostId)
+  const canStart = Boolean(state.connected && state.you.userId) && (
+    joinCode === 'play' || isHost || (Boolean(roomDoc?.data.hostId) && !hostConnected)
+  )
+
   const handlePlace = useCallback(
     (x: number, y: number, color: number) => {
       if (isSpectator) {
@@ -312,12 +317,6 @@ export default function RoomPage() {
       fallbackText: 'No pixels placed this round.',
     }
   }, [currentRoundDoc, getName, pixelsCount, state.round?.result?.contributorCount, user])
-
-  const intermissionRemainingSec = useMemo(() => {
-    if (state.round?.state !== 'intermission' || !state.round.endedAt) return 0
-    const endsAt = state.round.endedAt + MODES[state.mode].intermissionMs
-    return Math.max(0, Math.ceil((endsAt - now) / 1000))
-  }, [state.round, state.mode, now])
 
   const showOverlay =
     state.round?.state === 'intermission' &&
@@ -435,7 +434,7 @@ export default function RoomPage() {
             </div>
             <div className="space-y-1">
               <h1 className="text-2xl uppercase text-[var(--sunset-2)]">
-                This Room Has Closed
+                {state.closedByHost ? 'This room was closed by the host' : 'This Room Has Closed'}
               </h1>
               <p className="text-base text-muted-foreground">
                 Room <span className="text-[var(--sunset-1)]">{joinCode}</span> has ended. Head
@@ -499,7 +498,8 @@ export default function RoomPage() {
         <span className="pp-chip uppercase">
           {state.players} {state.players === 1 ? 'PLAYER' : 'PLAYERS'}
         </span>
-        {isHost && state.round?.state !== 'lobby' && (
+        {isHost && <DeleteRoomButton joinCode={joinCode} />}
+        {canStart && state.round?.state !== 'lobby' && (state.round?.state === 'intermission' || isHost) && (
           <Button
             type="button"
             variant="secondary"
@@ -509,7 +509,7 @@ export default function RoomPage() {
             className="pp-btn h-8 gap-1.5 px-3 text-base uppercase"
           >
             <FastForward className="h-3.5 w-3.5 text-[var(--sunset-1)]" aria-hidden />
-            Skip Round
+            {state.round?.state === 'intermission' ? 'New game' : 'Skip Round'}
           </Button>
         )}
         <MuteButton muted={muted} onToggle={toggleMute} />
@@ -548,7 +548,7 @@ export default function RoomPage() {
           <p data-testid="round-watching" className="text-base text-muted-foreground">
             {state.watching} watching
           </p>
-          {isHost ? (
+          {canStart ? (
             <Button
               data-testid="host-start-button"
               disabled={!state.connected}
@@ -770,7 +770,7 @@ export default function RoomPage() {
                     </div>
 
                     <div className="mt-1 flex w-full flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
-                      <span>Next word in {intermissionRemainingSec}s…</span>
+                      <span>{canStart ? 'Ready when you are.' : 'Waiting for the host to start a new game.'}</span>
                       <div className="flex items-center gap-2">
                         <Button
                           type="button"
@@ -785,14 +785,14 @@ export default function RoomPage() {
                           <Eye className="h-3.5 w-3.5" aria-hidden />
                           View Canvas
                         </Button>
-                        {isHost && (
+                        {canStart && (
                           <Button
                             type="button"
                             size="sm"
                             onClick={next}
                             className="pp-btn h-8 px-3 text-sm uppercase"
                           >
-                            Next Word Now
+                            New game
                           </Button>
                         )}
                       </div>
