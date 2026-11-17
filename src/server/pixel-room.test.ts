@@ -360,6 +360,35 @@ describe('durable room boundaries', () => {
     harness.database.close()
   })
 
+  it('catches persist errors during reserveBudget and yields resting instead of failed', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(1_800_000_000_000)
+    const harness = roomHarness()
+    harness.database.prepare('UPDATE pixel_state SET resting_day = ?').run('2027-01-15')
+    const wakingRoom = harness.makeRoom()
+    const owner = await harness.connect('owner', wakingRoom)
+    await wakingRoom.command(owner.connection, { t: 'place', x: 2, y: 2, c: 6 })
+    vi.setSystemTime(Date.now() + JUDGE.askMinMs)
+
+    reserve.mockResolvedValue(Response.json({ ok: true }))
+    const originalExec = harness.durable.storage.sql.exec
+    let failNextInsert = true
+    vi.spyOn(harness.durable.storage.sql, 'exec').mockImplementation((query: string, ...values: (string | number | null)[]) => {
+      if (failNextInsert && query.startsWith('INSERT')) {
+        failNextInsert = false
+        throw new Error('sqlite write failed')
+      }
+      return originalExec(query, ...values)
+    })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    await wakingRoom.command(owner.connection, { t: 'ask' })
+    expect(integration).not.toHaveBeenCalled()
+    expect(warn).not.toHaveBeenCalled()
+    expect(messages(owner)).toContainEqual({ t: 'ai_resting' })
+    harness.database.close()
+  })
+
   it.each(['reserve', 'integration'])('bounds a never-resolving %s, persists the outcome and releases the live guard', async upstream => {
     vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
     vi.setSystemTime(1_800_000_000_000)

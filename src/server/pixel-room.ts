@@ -282,12 +282,16 @@ export class PixelRoom extends BaseRoom<Env> {
   }
 
   private async reserveBudget(): Promise<{ ok: boolean }> {
-    const ok = await reserveBudget(this.env)
-    if (ok && this.restingDay !== null) {
-      this.restingDay = null
-      this.persist()
+    try {
+      const ok = await reserveBudget(this.env)
+      if (ok && this.restingDay !== null) {
+        this.restingDay = null
+        this.persist()
+      }
+      return { ok }
+    } catch {
+      return { ok: false }
     }
-    return { ok }
   }
 
   private async judge(reason: 'tick' | 'ask', requester?: WebSocket): Promise<void> {
