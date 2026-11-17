@@ -109,6 +109,30 @@ AI image generation (the point is humans draw), ElevenLabs announcer (gimmick).
   runtime in plan Task 1.
 - **2026-11-16: Implementation plan written:** `docs/superpowers/plans/2026-11-16-pixel-party.md` (11 tasks; tasks 9-10 are should-ship).
 
+- **2026-11-16: Task 1 BLOCKED before platform probes (Codex).** Scaffolded DeepSpace 0.44.2 into the repo,
+  preserved existing project files, installed dependencies, and added the requested verify script and CI workflow.
+  Owner login confirmed; Node v26.9.0 / npm 11.19.1. The current scaffold requires registration before committing
+  its app id. `npx deepspace app init --json` exited 1 with the exact response below. No app was undeployed,
+  no deployment/push was attempted, and no dev server was started. Stopped under the task's blocker rule.
+  - (a) Identity: **NOT RUN / unproven** (registration blocked runtime startup).
+  - (b) Integration from custom DO: **NOT RUN / unproven**; no response fixture exists.
+  - (c) Record create/delete from custom DO: **NOT RUN / unproven**.
+  - `npm run verify` with login and without login: **NOT RUN** after the blocking refusal; CI remains unverified.
+  - Exact registration refusal: `{"ok":false,"code":"app_quota_exceeded","error":"Active app quota exceeded. Registered apps hold a slot even before their first deploy — `deepspace app list` shows them all; free a slot with `deepspace app undeploy <id> --yes` (works on never-deployed apps too) or upgrade your plan."}`
+  - Controller/Will must resolve app quota (choose an app to retire or upgrade); then resume Task 1.
+
+- **2026-11-16: Free plan = one active app.** Task 1 hit `app_quota_exceeded`: the scratch app spike 2 accidentally
+  registered held the only slot (registered apps hold a slot even before deploying). Will approved
+  `deepspace app undeploy` on it (never deployed, nothing lost); Pixel Party then registered as
+  `app_01M7KJMT00JNWA2AWC31SC73N8`. New rule in every agent brief: never run `dev start`/`app init` outside this repo.
+
+- **2026-11-16: Task 1 resumed after quota resolution.** Will retired the scratch app and registered Pixel Party
+  in this repo as `app_01M7KJMT00JNWA2AWC31SC73N8` (production). No registration command was re-run by the implementer.
+  Scaffold `npm run verify` passed (lint, TypeScript, 3 unit tests, Worker/client production build), both normally
+  and under `sandbox-exec` denying reads of the CLI credential directory. `auth whoami --json` under that same
+  sandbox exited 1 with `credential_unreadable` / EPERM, confirming CLI credentials were inaccessible.
+  CI retains full `npm run verify` without login. Platform probes follow in Step 2.
+
 ## Spikes (throwaway tests)
 
 | # | Question | Status | Result |
