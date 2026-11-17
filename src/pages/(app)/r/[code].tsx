@@ -472,14 +472,16 @@ export default function RoomPage() {
         <span className="pp-logo text-[28px] leading-none sm:text-[32px]">
           Pixel Party
         </span>
-        {roomDoc?.data.name && (
-          <span
-            data-testid="room-name"
-            className="text-xl uppercase text-[var(--soft-text)]"
-          >
-            {roomDoc.data.name}
-          </span>
-        )}
+        {roomDoc?.data.name &&
+          roomDoc.data.name.trim() !== '' &&
+          roomDoc.data.name.trim().toLowerCase() !== 'pixel party' && (
+            <span
+              data-testid="room-name"
+              className="text-xl uppercase text-[var(--soft-text)]"
+            >
+              {roomDoc.data.name}
+            </span>
+          )}
       </div>
 
       <div className="flex flex-wrap items-center gap-2 text-base">

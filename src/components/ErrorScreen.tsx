@@ -107,37 +107,37 @@ export function ErrorScreen({ error, onReset }: ErrorScreenProps) {
       data-testid="ds-error-boundary"
       className="flex h-full min-h-[60vh] flex-col items-center justify-center bg-background px-4 py-10 text-foreground"
     >
-      <div className="w-full max-w-lg text-center">
+      <div className="pp-panel w-full max-w-lg p-6 text-center">
         <div className="mb-4 flex justify-center">
-          <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+          <span className="pp-chip inline-flex h-12 w-12 items-center justify-center text-destructive">
             <AlertTriangle className="h-6 w-6" aria-hidden />
           </span>
         </div>
 
-        <h1 className="text-lg font-semibold tracking-tight">
+        <h1 className="text-2xl uppercase tracking-wider text-[var(--sunset-2)]">
           {decoded?.title ?? 'Something went wrong'}
         </h1>
         {decoded?.explanation && (
-          <p className="mt-1.5 text-sm text-muted-foreground">{decoded.explanation}</p>
+          <p className="mt-1.5 text-base text-muted-foreground">{decoded.explanation}</p>
         )}
 
         {decoded?.hint && (
-          <div className="mt-4 rounded-lg border border-warning/30 bg-warning/10 px-4 py-3 text-left">
-            <p className="text-sm font-medium text-warning">How to fix</p>
-            <p className="mt-1 text-sm text-muted-foreground">{decoded.hint}</p>
+          <div className="mt-4 border border-border bg-secondary/60 px-4 py-3 text-left">
+            <p className="text-base uppercase text-[var(--sunset-1)]">How to fix</p>
+            <p className="mt-1 text-base text-muted-foreground">{decoded.hint}</p>
           </div>
         )}
 
         {rawMessage && (
-          <pre className="mt-4 overflow-x-auto rounded-lg border bg-muted/40 px-3 py-2 text-left text-xs text-muted-foreground">
+          <pre className="mt-4 overflow-x-auto border border-border bg-secondary/40 px-3 py-2 text-left text-sm text-muted-foreground">
             {rawMessage}
           </pre>
         )}
 
         {stack && (
           <details className="mt-2 text-left">
-            <summary className="cursor-pointer text-xs text-muted-foreground">Show stack trace</summary>
-            <pre className="mt-1 max-h-60 overflow-auto rounded-lg border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+            <summary className="cursor-pointer text-sm uppercase text-muted-foreground">Show stack trace</summary>
+            <pre className="mt-1 max-h-60 overflow-auto border border-border bg-secondary/40 px-3 py-2 text-sm text-muted-foreground">
               {stack}
             </pre>
           </details>
@@ -146,7 +146,7 @@ export function ErrorScreen({ error, onReset }: ErrorScreenProps) {
         <div className="mt-6 flex items-center justify-center gap-3">
           <button
             onClick={reset}
-            className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow transition-opacity hover:opacity-90"
+            className="pp-btn inline-flex items-center gap-2 px-4 py-1.5 text-lg uppercase focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <RefreshCw className="h-4 w-4" aria-hidden />
             Reload
@@ -156,7 +156,7 @@ export function ErrorScreen({ error, onReset }: ErrorScreenProps) {
               href={decoded.docsUrl}
               target="_blank"
               rel="noreferrer"
-              className="text-sm text-muted-foreground underline-offset-4 hover:underline"
+              className="text-base text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
             >
               React error #{decoded.code} reference
             </a>

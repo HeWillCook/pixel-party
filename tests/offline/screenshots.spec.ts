@@ -106,25 +106,45 @@ async function setupClient(page: Page) {
       if (message.type !== 'core.subscribe') return
       const { subscriptionId, query } = message.payload
       if (query.collection === 'rooms') {
+        const allRooms = [
+          {
+            recordId: 'room',
+            data: {
+              name: "Will's Room",
+              mode: 'coop',
+              visibility: 'public',
+              joinCode: 'QX3J',
+              hostId: 'host',
+              status: 'playing',
+              playerCount: 3,
+              lastActiveAt: Date.now(),
+              isDefaultBoard: false,
+            },
+          },
+          {
+            recordId: 'default-board',
+            data: {
+              name: 'Pixel Party',
+              mode: 'coop',
+              visibility: 'public',
+              joinCode: 'play',
+              hostId: 'system',
+              status: 'playing',
+              playerCount: 5,
+              lastActiveAt: Date.now() - 1000,
+              isDefaultBoard: true,
+            },
+          },
+        ]
+        const filtered = query.where?.joinCode
+          ? allRooms.filter((r) => r.data.joinCode === query.where.joinCode)
+          : allRooms
         socket.send(
           JSON.stringify({
             type: 'core.query_result',
             payload: {
               subscriptionId,
-              records: [
-                {
-                  recordId: 'room',
-                  data: {
-                    name: "Will's Room",
-                    mode: 'coop',
-                    visibility: 'public',
-                    joinCode: 'QX3J',
-                    hostId: 'host',
-                    status: 'playing',
-                    isDefaultBoard: false,
-                  },
-                },
-              ],
+              records: filtered,
             },
           }),
         )
@@ -164,7 +184,7 @@ async function setupClient(page: Page) {
   })
 }
 
-test('capture playing room at 1440x900, 1280x720, 375x812, lobby and overlay at 1440x900', async ({
+test('capture playing room, lobby, overlay, landing, and home screenshots', async ({
   page,
 }) => {
   await mkdir(screenshotsDir, { recursive: true })
@@ -345,4 +365,39 @@ test('capture playing room at 1440x900, 1280x720, 375x812, lobby and overlay at 
   )
   await expect(page.getByTestId('room-lobby')).toBeVisible()
   await page.screenshot({ path: resolve(screenshotsDir, 'room-lobby-1440x900.png') })
+
+  // 6. Landing (/) at 1440x900 and 375x812
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto(`${origin}/`)
+  await expect(page.getByTestId('static-landing')).toBeVisible()
+  await page.evaluate(() => document.fonts.ready)
+  await page.screenshot({ path: resolve(screenshotsDir, 'landing-1440x900.png') })
+
+  await page.setViewportSize({ width: 375, height: 812 })
+  await page.waitForTimeout(150)
+  const landing375 = await page.evaluate(() => ({
+    docScrollWidth: document.documentElement.scrollWidth,
+    bodyScrollWidth: document.body.scrollWidth,
+  }))
+  expect(landing375.docScrollWidth).toBeLessThanOrEqual(375)
+  expect(landing375.bodyScrollWidth).toBeLessThanOrEqual(375)
+  await page.screenshot({ path: resolve(screenshotsDir, 'landing-375x812.png') })
+
+  // 7. Home (/home) at 1440x900 and 375x812
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto(`${origin}/home`)
+  await expect(page.getByTestId('lobby-page')).toBeVisible()
+  await expect(page.getByTestId('room-card-QX3J')).toBeVisible()
+  await page.evaluate(() => document.fonts.ready)
+  await page.screenshot({ path: resolve(screenshotsDir, 'home-1440x900.png') })
+
+  await page.setViewportSize({ width: 375, height: 812 })
+  await page.waitForTimeout(150)
+  const home375 = await page.evaluate(() => ({
+    docScrollWidth: document.documentElement.scrollWidth,
+    bodyScrollWidth: document.body.scrollWidth,
+  }))
+  expect(home375.docScrollWidth).toBeLessThanOrEqual(375)
+  expect(home375.bodyScrollWidth).toBeLessThanOrEqual(375)
+  await page.screenshot({ path: resolve(screenshotsDir, 'home-375x812.png') })
 })

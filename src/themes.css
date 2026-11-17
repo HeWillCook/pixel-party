@@ -48,11 +48,6 @@
   image-rendering: crisp-edges;
 }
 
-.font-pixel {
-  font-family: 'VT323', ui-monospace, monospace;
-  letter-spacing: 0.04em;
-}
-
 .pp-logo {
   text-transform: uppercase;
   letter-spacing: 1px;
@@ -63,8 +58,7 @@
   filter: drop-shadow(2px 2px 0 #14061f);
 }
 
-.pp-panel,
-.arcade-card {
+.pp-panel {
   background: var(--panel-bg, #14061fd9);
   border: 3px solid var(--sunset-3, #ec4899);
   border-radius: 0;
@@ -86,8 +80,7 @@
   color: var(--sunset-1, #fde68a);
 }
 
-.pp-btn,
-.arcade-btn {
+.pp-btn {
   background: var(--button-gradient, linear-gradient(180deg,#fb923c,#db2777));
   color: #ffffff;
   border: 2px solid #fff4;
@@ -96,8 +89,7 @@
   transition: transform 80ms ease, box-shadow 80ms ease;
 }
 
-.pp-btn:active:not(:disabled),
-.arcade-btn:active:not(:disabled) {
+.pp-btn:active:not(:disabled) {
   transform: translateY(2px);
   box-shadow: 0 2px 0 #000a;
 }
