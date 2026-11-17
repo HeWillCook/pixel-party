@@ -388,7 +388,7 @@ export default function RoomPage() {
       <div className="flex flex-wrap items-center gap-2">
         {(roomDoc?.data.visibility === 'private' || state.round?.state === 'lobby') && <InviteBadge code={roomDoc?.data.joinCode ?? joinCode} />}
         {isHost && <DeleteRoomButton joinCode={joinCode} />}
-        {canStart && state.round?.state !== 'lobby' && (
+        {canStart && state.round?.state !== 'lobby' && (state.round?.state === 'intermission' || isHost) && (
           <Button
             type="button"
             variant="secondary"

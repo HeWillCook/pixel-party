@@ -212,7 +212,14 @@ describe('private waiting room', () => {
 
 
 describe('explicit next permissions', () => {
-  it.each(['lobby', 'playing', 'intermission'] as const)('requires a connected signed-in caller in %s', status => {
+  it('only lets the host skip a live round', () => {
+    const state = { ...room(), status: 'playing' as const }
+    expect(nextRoundRejection(state, 'host', 'host', ['host', 'guest'])).toBeNull()
+    expect(nextRoundRejection(state, 'guest', 'host', ['guest'])).toBe('not_host')
+    expect(nextRoundRejection({ ...state, isDefaultBoard: true }, 'guest', null, ['guest'])).toBe('not_host')
+  })
+
+  it.each(['lobby', 'intermission'] as const)('requires a connected signed-in caller in %s', status => {
     const state = { ...room(), status }
     expect(nextRoundRejection(state, null, 'host', ['host'])).toBe('not_signed_in')
     expect(nextRoundRejection(state, 'guest', 'host', ['host'])).toBe('not_signed_in')

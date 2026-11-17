@@ -185,6 +185,9 @@ export function applyPlacements(state: RoomState, cells: Placement[], userId: st
 /** Identities are normalized by the socket boundary; only live players can start. */
 export function nextRoundRejection(state: RoomState, userId: string | null, hostId: string | null, connectedIds: string[]): 'not_signed_in' | 'not_host' | null {
   if (!userId || !connectedIds.includes(userId)) return 'not_signed_in'
-  if (state.isDefaultBoard || userId === hostId || (hostId && !connectedIds.includes(hostId))) return null
+  if (userId === hostId && !state.isDefaultBoard) return null
+  // Skipping a live round wipes everyone's canvas: host only (nobody on the default board).
+  if (state.status === 'playing') return 'not_host'
+  if (state.isDefaultBoard || (hostId && !connectedIds.includes(hostId))) return null
   return 'not_host'
 }

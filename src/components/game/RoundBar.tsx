@@ -100,7 +100,7 @@ export function RoundBar({
             data-testid="round-timer"
             className="font-pixel inline-flex items-center gap-1 rounded bg-pink-500/20 px-2 py-1 text-xs font-bold text-pink-300"
           >
-            NEXT ROUND SOON
+            ROUND OVER
           </span>
         ) : (
           <span

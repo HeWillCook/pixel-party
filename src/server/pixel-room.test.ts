@@ -85,6 +85,7 @@ describe('next authorization seam', () => {
     expect(nextCommandRejection(state, 'anon-socket')).toBe('not_signed_in')
   })
   it('denies unknown hosts, allows default-board players and recovers when a host leaves', () => {
+    const state = { ...newRoomState(init, 100, () => 0), status: 'intermission' as const }
     expect(nextCommandRejection(state, 'owner', null, ['owner'])).toBe('not_host')
     expect(nextCommandRejection({ ...state, isDefaultBoard: true }, 'owner', null, ['owner'])).toBeNull()
     expect(nextCommandRejection({ ...state, isDefaultBoard: true }, 'owner', 'owner', ['owner'])).toBeNull()
