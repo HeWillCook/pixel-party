@@ -51,7 +51,7 @@ export default function ApiStatusPage() {
             <button
               type="button"
               onClick={catalog.reload}
-              className="pp-btn w-fit px-4 py-1.5 text-base uppercase focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="pp-btn w-fit px-4 py-1.5 text-base uppercase"
             >
               Retry
             </button>
@@ -82,7 +82,7 @@ export default function ApiStatusPage() {
           <button
             type="button"
             onClick={catalog.reload}
-            className="pp-btn mt-4 px-4 py-1.5 text-base uppercase focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="pp-btn mt-4 px-4 py-1.5 text-base uppercase"
           >
             Refresh
           </button>

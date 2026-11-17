@@ -94,6 +94,14 @@
   box-shadow: 0 2px 0 #000a;
 }
 
+.pp-btn:focus-visible,
+.pp-chip:focus-visible,
+a.pp-panel:focus-visible,
+[data-testid="palette"] button:focus-visible {
+  outline: 3px solid var(--sunset-1, #fde68a);
+  outline-offset: 2px;
+}
+
 .pp-word {
   color: var(--sunset-1, #fde68a);
   text-shadow: 3px 3px 0 var(--word-shadow, #be185d);

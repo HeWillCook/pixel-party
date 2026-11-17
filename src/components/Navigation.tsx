@@ -92,7 +92,7 @@ export default function Navigation() {
                 render={
                   <button
                     aria-label="Account menu"
-                    className="pp-chip group flex items-center gap-2 py-1 pl-1.5 pr-2.5 text-base transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="pp-chip group flex items-center gap-2 py-1 pl-1.5 pr-2.5 text-base transition-colors hover:bg-secondary"
                   >
                     <Avatar className="h-6 w-6 ring-1 ring-inset ring-border">
                       <AvatarImage src={user.imageUrl ?? undefined} referrerPolicy="no-referrer" />
@@ -136,7 +136,7 @@ export default function Navigation() {
             <button
               data-testid="nav-sign-in-button"
               onClick={() => setShowAuthModal(true)}
-              className="pp-btn px-3 py-1 text-base uppercase tracking-wider focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="pp-btn px-3 py-1 text-base uppercase tracking-wider"
             >
               Sign in
             </button>

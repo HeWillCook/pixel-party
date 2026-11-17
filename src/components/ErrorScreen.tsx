@@ -146,7 +146,7 @@ export function ErrorScreen({ error, onReset }: ErrorScreenProps) {
         <div className="mt-6 flex items-center justify-center gap-3">
           <button
             onClick={reset}
-            className="pp-btn inline-flex items-center gap-2 px-4 py-1.5 text-lg uppercase focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="pp-btn inline-flex items-center gap-2 px-4 py-1.5 text-lg uppercase"
           >
             <RefreshCw className="h-4 w-4" aria-hidden />
             Reload
