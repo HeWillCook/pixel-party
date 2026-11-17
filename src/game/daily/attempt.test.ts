@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { cellsHash, completeGrade, endAttempt, isEnded, reserveGrade, startAttempt } from './attempt'
+import { DAILY } from '../config'
 import type { AttemptRow, GradeKind } from './attempt'
 
 const now = Date.UTC(2026, 10, 18, 12)
@@ -27,7 +28,7 @@ describe('daily attempt', () => {
   it('enforces auto timing and limits', () => {
     expect(reserveGrade(initial(), 'auto', 'h', now + 60_000)).toEqual({ ok: false, reason: 'too_soon' })
     const row = reserve(initial(), 'auto', 'h', now + 120_000)
-    const graded = completeGrade(row, { total: 100, elapsedMs: 120_000 }, 'h', 'cells', now + 120_000).row
+    const graded = completeGrade(row, { total: 100, elapsedMs: 120_000 }, 'h', 'cells', now + 120_000, now + 120_000).row
     expect(reserveGrade(graded, 'auto', 'other', now + 180_000)).toEqual({ ok: false, reason: 'too_soon' })
     expect(reserveGrade({ ...graded, autoUsed: 4 }, 'auto', 'other', now + 300_000)).toEqual({ ok: false, reason: 'no_auto_left' })
   })
@@ -52,17 +53,34 @@ describe('daily attempt', () => {
   it('refunds failures and keeps the best successful result', () => {
     for (const kind of ['ask', 'auto', 'final'] as const) {
       const pending = reserve(initial(), kind, 'h', now + 120_000)
-      const failed = completeGrade(pending, null, 'h', 'cells', now + 120_001).row
+      const failed = completeGrade(pending, null, 'h', 'cells', now + 120_001, now + 120_000).row
       expect(failed).toMatchObject({ asksUsed: 0, autoUsed: 0, finalUsed: false, inFlightSince: null, inFlightKind: null, bestScore: 0 })
     }
-    let row = completeGrade(reserve(initial(), 'ask', 'h', now + 5_000), { total: 700, elapsedMs: 5_000 }, 'h', 'cells', now + 5_001)
+    let row = completeGrade(reserve(initial(), 'ask', 'h', now + 5_000), { total: 700, elapsedMs: 5_000 }, 'h', 'cells', now + 5_001, now + 5_000)
     expect(row.improved).toBe(true)
     expect(row.row).toMatchObject({ lastGradeAt: now + 5_001, lastGradedHash: 'h', lastCells: 'cells' })
-    row = completeGrade(reserve(row.row, 'ask', 'h', now + 30_000), { total: 600, elapsedMs: 30_000 }, 'h', 'next', now + 30_001)
+    row = completeGrade(reserve(row.row, 'ask', 'h', now + 30_000), { total: 600, elapsedMs: 30_000 }, 'h', 'next', now + 30_001, now + 30_000)
     expect(row.improved).toBe(false)
-    row = completeGrade(reserve(row.row, 'ask', 'h', now + 55_000), { total: 700, elapsedMs: 55_000 }, 'h', 'last', now + 55_001)
+    row = completeGrade(reserve(row.row, 'ask', 'h', now + 55_000), { total: 700, elapsedMs: 55_000 }, 'h', 'last', now + 55_001, now + 55_000)
     expect(row.row).toMatchObject({ bestScore: 700, bestElapsedMs: 5_000 })
     expect(cellsHash('abc')).toBe(cellsHash('abc'))
     expect(cellsHash('abc')).not.toBe(cellsHash('abd'))
+  })
+  it('ignores stale completions and accepts the current reservation', () => {
+    const firstTime = now + 5_000
+    const secondTime = firstTime + DAILY.inFlightStaleMs + 1
+    const first = reserve(initial(), 'ask', 'first', firstTime)
+    const second = reserve(first, 'ask', 'second', secondTime)
+    const stale = completeGrade(second, { total: 900, elapsedMs: 5_000 }, 'first', 'old', secondTime + 1, firstTime)
+    expect(stale).toEqual({ row: second, improved: false })
+    expect(stale.row).toBe(second)
+    expect(stale.row).toMatchObject({ inFlightSince: secondTime, bestScore: 0 })
+    const current = completeGrade(stale.row, { total: 700, elapsedMs: secondTime - now }, 'second', 'new', secondTime + 2, secondTime)
+    expect(current).toMatchObject({ improved: true, row: { inFlightSince: null, bestScore: 700, lastCells: 'new' } })
+  })
+  it('ignores completions when nothing is in flight', () => {
+    const row = initial()
+    expect(completeGrade(row, { total: 900, elapsedMs: 1 }, 'h', 'cells', now + 1, now)).toEqual({ row, improved: false })
+    expect(completeGrade(row, null, 'h', 'cells', now + 1, now).row).toBe(row)
   })
 })
