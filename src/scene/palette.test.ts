@@ -1,4 +1,5 @@
 import { expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
 import { P } from './palette'
 
 function luminance(hex: string): number {
@@ -14,5 +15,20 @@ it('orders every palette ramp from dark to light', () => {
     for (let index = 1; index < ramp.length; index++) {
       expect(luminance(ramp[index])).toBeGreaterThan(luminance(ramp[index - 1]))
     }
+  }
+})
+
+it('keeps button and logo text at AA contrast against their palette fills', () => {
+  const css = readFileSync(new URL('../themes.css', import.meta.url), 'utf8')
+  const button = css.match(/\.pp-btn\s*\{([^}]*)\}/)![1]
+  const logo = css.match(/\.pp-logo\s*\{([^}]*)\}/)![1]
+  const color = (rule: string, property: string) => rule.match(new RegExp(`(?:^|;)\\s*${property}:\\s*(#[0-9a-f]{6})`, 'i'))![1].toLowerCase()
+  const palette = Object.values(P).flat() as readonly string[]
+  const pairs = [[color(button, 'color'), color(button, 'background')], [color(logo, 'color'), P.paper[4]], [color(logo, 'color'), P.sky[5]]]
+  for (const [foreground, background] of pairs) {
+    expect(palette).toContain(foreground)
+    expect(palette).toContain(background)
+    const [light, dark] = [luminance(foreground), luminance(background)].sort((first, second) => second - first)
+    expect((light + 0.05) / (dark + 0.05)).toBeGreaterThanOrEqual(4.5)
   }
 })

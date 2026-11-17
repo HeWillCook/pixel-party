@@ -4,6 +4,7 @@ import { useSceneClock } from './useSceneClock'
 import './scene.css'
 
 export const SceneComposition = createContext<Composition>('landscape')
+const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect
 
 type Draw = (ctx: CanvasRenderingContext2D, frame: number, composition: Composition) => void
 
@@ -37,7 +38,7 @@ export function PixelScene({ draw, camera = { x: 0, y: 0, zoom: 1 }, zoomMs = 60
   const size = sceneSize(composition)
   const scale = integerScale(viewport.w, viewport.h, composition)
 
-  useLayoutEffect(() => {
+  useIsomorphicLayoutEffect(() => {
     const element = root.current
     if (!element) return
     const measure = () => {

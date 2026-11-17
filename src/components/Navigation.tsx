@@ -53,7 +53,10 @@ function SpriteImage({ sprite, className = '' }: { sprite: Sprite; className?: s
   const ref = useRef<HTMLCanvasElement>(null)
   useEffect(() => {
     const ctx = ref.current?.getContext('2d')
-    if (ctx) drawSprite(ctx, sprite, 0, 0)
+    if (ctx) {
+      ctx.clearRect(0, 0, sprite.w, sprite.h)
+      drawSprite(ctx, sprite, 0, 0)
+    }
   }, [sprite])
   return <canvas ref={ref} className={`porch-sprite ${className}`} width={sprite.w} height={sprite.h} style={{ width: `calc(var(--px) * ${sprite.w})`, height: `calc(var(--px) * ${sprite.h})` }} aria-hidden="true" />
 }
@@ -75,7 +78,7 @@ export default function Navigation() {
     const gallery = item.label === 'Gallery'
     const path = gallery && user ? `/u/${encodeURIComponent(user.id)}` : item.path
     const active = location.pathname === item.path || (gallery && location.pathname.startsWith('/u/'))
-    return <Link key={item.label} to={path} onClick={gallery && !isSignedIn ? (event) => { event.preventDefault(); setShowAuthModal(true) } : undefined} aria-current={active ? 'page' : undefined} className="porch-nav__sign">
+    return <Link key={item.label} to={path} onClick={gallery && !isSignedIn ? (event) => { event.preventDefault(); setMobileMenuOpen(false); setShowAuthModal(true) } : undefined} aria-current={active ? 'page' : undefined} className="porch-nav__sign">
       <SpriteImage sprite={active ? activeSign : sign} /><span>{item.label}</span>{active && <SpriteImage sprite={lantern} className="porch-nav__lantern" />}
     </Link>
   }

@@ -87,6 +87,24 @@ test('signed-out mailbox raises its flag', async ({ page }) => {
   await expect(flag).toHaveAttribute('height', '7')
 })
 
+test('signed-out Gallery closes the mobile drawer before opening sign-in', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 })
+  await setup(page, true)
+  await page.goto(`${origin}/party`)
+  const toggle = page.getByRole('button', { name: 'Toggle menu' })
+  await toggle.click()
+  await page.getByRole('link', { name: 'Gallery', exact: true }).click()
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+})
+
+test('the logo has a 44px mobile target', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 })
+  await setup(page)
+  await page.goto(`${origin}/party`)
+  const logo = page.getByRole('link', { name: 'Pixel Party', exact: true })
+  expect((await logo.boundingBox())!.height).toBeGreaterThanOrEqual(44)
+})
+
 test('reduced motion keeps the focused sign still', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await setup(page)
