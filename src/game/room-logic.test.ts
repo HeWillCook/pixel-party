@@ -193,7 +193,8 @@ describe('private waiting room', () => {
   it('closes after the empty timeout, resets it on reconnect and never auto-starts', () => {
     const empty = advance(lobby(), 2000, 0, () => 0).state
     expect(empty.status).toBe('lobby')
-    expect(nextAlarmAt(empty, 2000)).toBe(2000 + ROOMS.closeAfterEmptyMs)
+    expect(lobby().emptySince).toBe(1000)
+    expect(nextAlarmAt(empty, 2000)).toBe(1000 + ROOMS.closeAfterEmptyMs)
     const joined = advance(empty, 3000, 1, () => 0).state
     expect(joined.emptySince).toBeNull()
     expect(nextAlarmAt(joined, 3000)).toBeNull()

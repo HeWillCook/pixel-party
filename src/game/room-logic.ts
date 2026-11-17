@@ -59,7 +59,7 @@ export function newRoomState(init: { roomId: string; mode: Mode; isDefaultBoard:
     roomId: init.roomId, mode: init.mode, isDefaultBoard: init.isDefaultBoard, grid: createGrid(config.width, config.height), version: 0,
     round: { id: `${now}-0`, word: lobby ? '' : wordEntry.word, state: lobby ? 'lobby' : 'playing', startedAt: lobby ? 0 : now, endsAt: lobby ? null : now + config.capMs, askAvailableAt: now + JUDGE.askMinMs },
     wordEntry, recentWords: lobby ? [] : [wordEntry.word], lastGuesses: [], roundCounter: 0, lastPlacedAt: {}, soloBuckets: {}, judgeCalls: [],
-    lastJudgedVersion: 0, lastJudgedAt: now, judgeInFlight: false, emptySince: null,
+    lastJudgedVersion: 0, lastJudgedAt: now, judgeInFlight: false, emptySince: lobby ? now : null,
     intermissionEndsAt: null, pausedAt: null, pausedFrom: null, status: lobby ? 'lobby' : 'playing',
   }
 }

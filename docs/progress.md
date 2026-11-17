@@ -238,6 +238,14 @@ AI image generation (the point is humans draw), ElevenLabs announcer (gimmick).
 
 - Quick play / matchmaking once there is real traffic.
 - In-game currency earned by playing, spent on extra "Ask the AI" requests.
+- **Daily puzzle (tabled 2026-11-17, ranked first).** Wordle-style: one word per UTC day for everyone, chosen
+  deterministically from the date. Solo canvas; score = fewest pixels (and judge calls) before Haiku guesses it.
+  Shareable emoji result grid plus a public daily results board. AI cost bounded by a few judgements per player
+  per day, inside the existing app-wide budget. Reuses the solo canvas, judge and scoring.
+- **Earned currency + cosmetics (tabled 2026-11-17).** Coins from wins, daily streaks and puzzle results; spent on
+  palettes, cursor trails, name colours, canvas frames. Earned only, never paid. Mostly new records and UI; stronger
+  once the daily puzzle exists to drive streaks.
+- **Pixel-themed redesign (next, Will's request).** Pixel font/borders, larger centered canvas while drawing.
 
 ## Open questions
 
@@ -300,3 +308,6 @@ AI image generation (the point is humans draw), ElevenLabs announcer (gimmick).
 - Optional failed-join rate limiting was skipped: there is no simple atomic per-user storage seam in the current
   action; an isolate-local counter would not be durable. No dependencies, permission changes, deployments or pushes.
 - Provider: implementation and verification by Codex; no nested agents (implementation sub-agent assignment).
+- Opus review follow-up: Gemini Argon review verdict Ship (0 Critical / 0 Important / 2 Minor). Applied Minor 2:
+  a new lobby arms its 30-minute close timer at creation (`emptySince = now`), so a lobby nobody ever connects to
+  still closes. Minor 1 (legacy mixed-case codes) is moot: old codes were generated uppercase.
