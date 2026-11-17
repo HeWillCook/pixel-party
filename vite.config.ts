@@ -10,6 +10,7 @@ import { prerender } from './prerender.ts'
 const appDir = fileURLToPath(new URL('.', import.meta.url))
 
 export default defineConfig({
+  define: { __PIXEL_PARTY_TEST__: JSON.stringify(process.env.PIXEL_PARTY_TEST === '1') },
   plugins: [
     react(),
     generouted(),

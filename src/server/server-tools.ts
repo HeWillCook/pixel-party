@@ -2,6 +2,8 @@ import { apiWorkerFetch, normalizeApiError, splitIntegrationEndpoint } from 'dee
 import type { ActionResult, ActionTools } from 'deepspace/worker'
 import type { Env } from '../../worker.js'
 
+declare const __PIXEL_PARTY_TEST__: boolean
+
 export type ServerTools = Pick<ActionTools, 'create' | 'update' | 'get'> & {
   query<T extends Record<string, unknown> = Record<string, unknown>>(
     collection: string,
@@ -58,6 +60,10 @@ export function createServerTools(env: Env): ServerTools {
 
   async function integration<T>(endpoint: string, body: unknown): Promise<ActionResult<T>> {
     try {
+      // Tests exercise the app normally but must never call a paid external integration.
+      if (typeof __PIXEL_PARTY_TEST__ !== 'undefined' && __PIXEL_PARTY_TEST__) {
+        return { success: false, code: 'test_integration_disabled', error: 'External integrations disabled in tests' }
+      }
       // Validate before attaching the owner credential: never allow arbitrary API paths.
       const target = splitIntegrationEndpoint(endpoint)
       if (!target) {
