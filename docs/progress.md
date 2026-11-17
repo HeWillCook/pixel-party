@@ -320,3 +320,4 @@ AI image generation (the point is humans draw), ElevenLabs announcer (gimmick).
   unknown code 404; lobby snapshot has no word and no timer; painting in lobby rejected `round_inactive`; no judge
   in lobby; host Start begins a 5:00 round; a 20-cell batch was fully acked in 91 ms with no rate limiting;
   leaving and rejoining keeps the same round.
+- **2026-11-17: Pixel redesign direction agreed with Will** (visual companion mockups). VT323 everywhere, Navy glow background, Sunset accents in mockup A's design language, bigger centered canvas, chiptune SFX for four events (no per-pixel sound, no music) with a mute button, running guess log, and a watcher count (Will's call; the one server addition). Design: `docs/superpowers/specs/2026-11-17-pixel-redesign-design.md`; builder check by OpenCode DeepSeek Flash, 5 points settled by me, 2 by Will.
