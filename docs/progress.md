@@ -269,3 +269,34 @@ AI image generation (the point is humans draw), ElevenLabs announcer (gimmick).
 | 2026-11-16 | Codex GPT-6.1 Sol | Task 5 collections, permissions, room actions, route access, record-writing seams; two-user Playwright specs | Reviewed by Gemini Argon (checked SDK runtime: per-row member lists are the only way to get public+private reads); 1 Important fixed, re-reviewed by OpenCode DeepSeek; I re-ran verify (183/183), deployed, and ran live checks myself |
 | 2026-11-17 | Antigravity Gemini 4 Argon | Task 6 UI: lobby, room page, canvas, guess feed, Ask button, presence cursors; 1 fix round | I viewed the screenshots and caught an impossible win score (staged state not disclosed) and wrong copy; Sonnet confirmed no state-injection hook ships; 6 Important fixed (connect-error screens, copy, a11y, signed-out join, contributor display); re-reviewed; I re-ran verify |
 | 2026-11-17 | Codex GPT-6.1 Terra | Task 7 two-user Playwright spec (sync, spectator, cooldown, private room), refreshed smoke script, carried fixes; 1 fix round | Sonnet found a flaky cooldown step, a vacuous spectator assertion, a fail-open test guard, and possible cleartext JWT in the smoke script; fixed; spec stable 3 runs in a row; re-reviewed by OpenCode DeepSeek; I re-ran verify, CI green |
+
+## 2026-11-17: Solo drawing and private-room fix batch
+
+- Solo cooldown is zero; pointer segments use Bresenham interpolation. The client paints immediately and batches
+  at most 64 cells per WebSocket frame once per animation frame. The server validates each cell, persists the
+  batch once, and enforces a persisted per-user token bucket (60-cell burst, 60 cells/second refill). Multiplayer
+  cooldown scaling stays unchanged; duplicate tabs share the same user's bucket. Rejections identify their cell
+  so partial batch rejection rolls back only that optimistic cell. Legacy single-cell `place` remains accepted.
+- New private rooms use four crypto-generated characters from `ABCDEFGHJKLMNPQRSTUVWXYZ23456789`, with ten
+  collision attempts and the collection's existing unique index protecting concurrent creators. Public rooms
+  keep ten characters. Closed codes remain reserved to preserve old links and the existing unique constraint.
+  Lookup canonicalizes uppercase (except `play`) and pages legacy records on a canonical miss for mixed-case codes.
+- New private rooms start in `lobby`, with no visible word/timer/canvas or paid judge calls. The host's existing
+  `next` command starts the first round with one or more players. The WebSocket carries a deduplicated signed-in
+  roster; empty lobbies retain the 30-minute close alarm. Existing persisted playing rooms and the default board
+  retain their lifecycle. The rooms schema and home list already support `lobby`; no schema migration was needed.
+- Room rendering waits for an authorized snapshot. Route/auth/session changes mask old state immediately,
+  before effect cleanup; terminal 401/404/410 screens retain priority. Private headers show a code badge and
+  copy the full invite URL. Verified anonymous JWTs cannot enter private rooms.
+- Unit coverage locks zero integration calls (and zero reservations/renders) for both tick and Ask in lobby,
+  anonymous-only, paused, empty, and unchanged-canvas states. Additional tests cover batch caps/refill/restart,
+  targeted rollback, legacy state restoration, code collisions/casing, lobby alarms, host authorization and starts.
+- Verification: `npm run verify` PASS (221 tests, lint, TypeScript, Worker/client builds, prerender).
+  `npx playwright test --config tests/offline.playwright.config.ts` PASS (5 tests). This suite serves the built
+  client through Playwright HTTP/WebSocket interception, with unsigned local fixtures and no server or credentials:
+  delayed private access never mounts game UI; solid optimistic drag/batching/rollback; lobby/copy/solo Start;
+  public spectator sign-in; same-component public-to-private navigation. The live-runtime private-room spec was
+  updated but not run: its harness requires DeepSpace test accounts and a running auth service.
+- Optional failed-join rate limiting was skipped: there is no simple atomic per-user storage seam in the current
+  action; an isolate-local counter would not be durable. No dependencies, permission changes, deployments or pushes.
+- Provider: implementation and verification by Codex; no nested agents (implementation sub-agent assignment).

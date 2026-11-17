@@ -20,6 +20,7 @@ const BASE_URL = `http://127.0.0.1:${PORT}`
 export default defineConfig({
   testDir: '.',
   testMatch: '**/*.spec.ts',
+  testIgnore: '**/offline/**',
   timeout: 30_000,
   retries: 0,
   use: {
