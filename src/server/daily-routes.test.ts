@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import worker from '../../worker.js'
 import type { Env } from '../../worker.js'
 import { encodeCells } from '../game/grid'
@@ -23,6 +23,7 @@ import { createServerTools } from './server-tools'
 const env = {} as Env
 const ctx = { waitUntil: vi.fn(), passThroughOnException: vi.fn() } as unknown as ExecutionContext
 const cells = encodeCells(new Uint8Array(1024))
+const day = () => new Date().toISOString().slice(0, 10)
 
 function request(path: string, method = 'GET', body?: unknown, token: string | null = 'valid') {
   return worker.request(`/api/daily/${path}`, {
@@ -33,10 +34,12 @@ function request(path: string, method = 'GET', body?: unknown, token: string | n
 }
 
 describe('daily HTTP routes', () => {
+  afterEach(() => { vi.useRealTimers() })
   beforeEach(() => {
-    vi.mocked(doAttemptStore).mockReturnValue(memoryAttemptStore())
+    const records = memoryTools()
+    vi.mocked(doAttemptStore).mockReturnValue(memoryAttemptStore(records.tools))
     vi.mocked(createDailyJudge).mockReturnValue(fakeDailyJudge())
-    vi.mocked(createServerTools).mockReturnValue(memoryTools().tools)
+    vi.mocked(createServerTools).mockReturnValue(records.tools)
   })
 
   it.each([['start', 'POST'], ['grade', 'POST'], ['end', 'POST'], ['me', 'GET'], ['today/drawings', 'GET']])('requires a verified bearer token on %s', async (path, method) => {
@@ -62,24 +65,48 @@ describe('daily HTTP routes', () => {
     const start = await request('start', 'POST')
     expect(start.status).toBe(200)
     expect(await start.json()).toMatchObject({ status: 'playing' })
-    const grade = await request('grade', 'POST', { kind: 'ask', cells, userId: 'attacker' })
+    const grade = await request('grade', 'POST', { day: day(), kind: 'ask', cells, userId: 'attacker' })
     expect(grade.status).toBe(200)
     expect(await grade.json()).toMatchObject({ ok: true, state: { asksUsed: 1 } })
     expect(await (await request('me')).json()).toMatchObject({ asksUsed: 1, lastCells: cells })
-    expect(await (await request('end', 'POST', { cells })).json()).toMatchObject({ status: 'ended' })
+    expect(await (await request('end', 'POST', { day: day(), cells })).json()).toMatchObject({ status: 'ended' })
     const drawings = await request('today/drawings')
     expect(drawings.status).toBe(200)
     expect(await drawings.json()).toMatchObject({ ok: true, drawings: [{ data: { userId: 'alice', displayName: 'Alice' } }] })
   })
 
   it('returns business rejections at 200 and permits omitted end cells', async () => {
-    const grade = await request('grade', 'POST', { kind: 'ask', cells: 'bad' })
+    const grade = await request('grade', 'POST', { day: day(), kind: 'ask', cells: 'bad' })
     expect(grade.status).toBe(200)
     expect(await grade.json()).toMatchObject({ ok: false, reason: 'bad_cells' })
-    expect((await request('end', 'POST', {})).status).toBe(200)
+    expect((await request('end', 'POST', { day: day() })).status).toBe(200)
   })
 
   it.each([null, [], { cells: 123 }].map(body => [body]))('rejects malformed end bodies: %j', async body => {
     expect((await request('end', 'POST', body)).status).toBe(400)
+  })
+
+  it.each([undefined, 123, 'not-a-day'])('I3 requires an explicit day for grade and end: %j', async value => {
+    expect((await request('grade', 'POST', { day: value, kind: 'ask', cells })).status).toBe(400)
+    expect((await request('end', 'POST', { day: value, cells })).status).toBe(400)
+  })
+
+  it('I3 routes yesterday and today independently and rejects invalid or expired days', async () => {
+    vi.useFakeTimers()
+    const late = Date.UTC(2026, 10, 17, 23, 55)
+    vi.setSystemTime(late)
+    await request('start', 'POST')
+    vi.setSystemTime(late + 360_000)
+    const yesterday = '2026-11-17'
+    expect(await (await request('me')).json()).toMatchObject({ day: yesterday, status: 'playing' })
+    await request('start', 'POST')
+    expect(await (await request('grade', 'POST', { day: yesterday, kind: 'ask', cells })).json())
+      .toMatchObject({ ok: true, grade: { elapsedMs: 360_000 }, state: { day: yesterday } })
+    expect(await (await request('end', 'POST', { day: yesterday, cells })).json()).toMatchObject({ day: yesterday, status: 'ended' })
+    expect(await (await request('me')).json()).toMatchObject({ day: '2026-11-18', status: 'playing', asksUsed: 0 })
+    for (const invalidDay of [yesterday, '2026-11-16', '2026-11-19', '2026-99-99']) {
+      expect(await (await request('grade', 'POST', { day: invalidDay, kind: 'ask', cells })).json()).toMatchObject({ ok: false, reason: 'invalid_day' })
+      expect((await request('end', 'POST', { day: invalidDay, cells })).status).toBe(400)
+    }
   })
 })

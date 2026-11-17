@@ -7,6 +7,7 @@ import {
   canPaintDaily,
   dailyReducer,
   initialDailyClientState,
+  needsDailyDayRefresh,
   shouldFireAutoGrade,
   shouldFinalGrade,
   type DailyAction,
@@ -127,11 +128,9 @@ export function useDailyAttempt(): {
         setCells(fromLocal)
         return
       }
-      const fromServer = decodeValidCells(serverState.lastCells)
-      if (fromServer) {
-        cellsRef.current = fromServer
-        setCells(fromServer)
-      }
+      const fromServer = decodeValidCells(serverState.lastCells) ?? new Uint8Array(GRID_CELLS)
+      cellsRef.current = fromServer
+      setCells(fromServer)
     },
     [],
   )
@@ -159,7 +158,10 @@ export function useDailyAttempt(): {
     }
 
     let cancelled = false
+    let loading = false
     const loadMe = async () => {
+      if (loading) return
+      loading = true
       try {
         const headers = await authHeaders()
         const res = await fetch('/api/daily/me', { method: 'GET', headers })
@@ -176,12 +178,18 @@ export function useDailyAttempt(): {
         }
       } catch {
         // Ignore transient network errors on initial load
+      } finally {
+        loading = false
       }
     }
     void loadMe()
+    const rollover = setInterval(() => {
+      if (needsDailyDayRefresh(stateRef.current, Date.now())) void loadMe()
+    }, 1000)
 
     return () => {
       cancelled = true
+      clearInterval(rollover)
     }
   }, [isSignedIn, userId, restoreCanvas, dispatch])
 
@@ -200,6 +208,7 @@ export function useDailyAttempt(): {
       }
 
       const encoded = encodedOverride ?? encodeCells(cellsRef.current)
+      const day = stateRef.current.day
       const hash = cellsHash(encoded)
       dispatch({ type: 'grade_start', kind })
 
@@ -209,8 +218,9 @@ export function useDailyAttempt(): {
           const res = await fetch('/api/daily/grade', {
             method: 'POST',
             headers,
-            body: JSON.stringify({ kind, cells: encoded }),
+            body: JSON.stringify({ day, kind, cells: encoded }),
           })
+          if (stateRef.current.day !== day) return
           const now = Date.now()
           if (!res.ok) {
             dispatch({
@@ -260,13 +270,15 @@ export function useDailyAttempt(): {
 
   const sendEnd = useCallback(
     async (encodedCells: string): Promise<boolean> => {
+      const day = stateRef.current.day
       try {
         const headers = await authHeaders()
         const res = await fetch('/api/daily/end', {
           method: 'POST',
           headers,
-          body: JSON.stringify({ cells: encodedCells }),
+          body: JSON.stringify({ day, cells: encodedCells }),
         })
+        if (stateRef.current.day !== day) return false
         if (!res.ok) {
           dispatch({
             type: 'end_failed',

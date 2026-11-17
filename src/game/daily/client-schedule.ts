@@ -59,6 +59,10 @@ export function initialDailyClientState(day = ''): DailyClientState {
   }
 }
 
+export function needsDailyDayRefresh(state: DailyStateView, now: number): boolean {
+  return state.status !== 'playing' && state.day !== new Date(now).toISOString().slice(0, 10)
+}
+
 export function nextAutoAt(
   startedAt: number,
   autoUsed: number,
@@ -142,6 +146,7 @@ function rejectErrorMessage(reason: DailyRejectReason): string | null {
 }
 
 function mergeServerState(prev: DailyClientState, next: DailyStateView): DailyClientState {
+  if (prev.day !== next.day) return { ...initialDailyClientState(next.day), ...next }
   const isNowEnded = next.status === 'ended'
   const isNewStart = prev.status === 'not_started' && next.status === 'playing'
   return {
@@ -154,7 +159,7 @@ function mergeServerState(prev: DailyClientState, next: DailyStateView): DailyCl
     autoUsed: next.autoUsed,
     asksUsed: next.asksUsed,
     finalUsed: next.finalUsed,
-    best: Math.max(prev.best, next.best),
+    best: next.best,
     nextAutoAt: next.nextAutoAt,
     lastCells: next.lastCells,
     finalizing: isNowEnded || isNewStart ? false : prev.finalizing,
@@ -175,7 +180,7 @@ export function dailyReducer(state: DailyClientState, action: DailyAction): Dail
       const merged = mergeServerState(state, action.state)
       return {
         ...merged,
-        best: action.state.status === 'not_started' ? action.state.best : Math.max(state.best, action.state.best),
+        best: action.state.best,
         lastError: action.preserveError ? state.lastError : null,
       }
     }
@@ -205,7 +210,7 @@ export function dailyReducer(state: DailyClientState, action: DailyAction): Dail
       return {
         ...merged,
         latest: action.grade,
-        best: Math.max(state.best, action.state?.best ?? 0, action.grade.total),
+        best: action.state?.best ?? Math.max(state.best, action.grade.total),
         grading: false,
         lastError: null,
         lastGradedHash: action.cellsHash ?? state.lastGradedHash ?? null,
@@ -223,7 +228,7 @@ export function dailyReducer(state: DailyClientState, action: DailyAction): Dail
         merged.nextAutoAt === state.nextAutoAt
       return {
         ...merged,
-        best: state.best,
+        best: merged.best,
         grading: false,
         lastError: rejectErrorMessage(action.reason),
         lastGradedHash:

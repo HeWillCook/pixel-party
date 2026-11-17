@@ -16,6 +16,7 @@ import {
 } from '../game/room-logic'
 import { cooldownMs } from '../game/rules'
 import { reserveBudget } from './budget'
+import { configuredJudgeMode } from './daily-judge'
 import { createServerTools } from './server-tools'
 import { utcDay, withTimeout } from './room-time'
 import type { RoomData } from './rooms'
@@ -303,6 +304,7 @@ export class PixelRoom extends BaseRoom<Env> {
       persist: async () => { this.persist() },
       render: async (state, zone) => toBase64(await renderZonePng(state.grid, zone, JUDGE.renderPx)),
       callJudge: async (png) => {
+        if (configuredJudgeMode() !== 'real') return '{"guesses":["sun"],"confidence":0.5}'
         try {
           return await withTimeout((async () => {
             const result = await createServerTools(this.env).integration('anthropic/chat-completion', buildJudgeBody(png))

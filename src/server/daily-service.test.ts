@@ -21,7 +21,7 @@ function setup(initialNow = startedAt) {
   const judge = fakeDailyJudge()
   const deps: DailyDeps = {
     now: () => now,
-    store: memoryAttemptStore(),
+    store: memoryAttemptStore(records.tools),
     judge: { blind: vi.fn(judge.blind), score: vi.fn(judge.score) },
     tools: records.tools,
     reserveBudget: vi.fn(async () => true),
@@ -185,15 +185,15 @@ describe('daily service', () => {
     expect(await gradeDaily(deps, user, 'ask', cells)).toMatchObject({ ok: false, reason: 'ended' })
   })
 
-  it('keeps midnight grading and ending on the original attempt day, while me uses today', async () => {
+  it('resumes the original attempt after midnight until it ends', async () => {
     const late = Date.UTC(2026, 10, 17, 23, 55)
     const { deps, records, at } = setup(late)
     await startDaily(deps, user)
     at(late + 360_000)
-    expect(await gradeDaily(deps, user, 'ask', cells)).toMatchObject({ ok: true, state: { day, status: 'playing' } })
+    expect(await gradeDaily(deps, user, 'ask', cells, day)).toMatchObject({ ok: true, state: { day, status: 'playing' } })
     expect(onlyRow(records, 'dailyScores')).toMatchObject({ day })
-    expect(await dailyState(deps, user.userId)).toMatchObject({ day: '2026-11-18', status: 'not_started' })
-    expect(await endDaily(deps, user, cells)).toMatchObject({ day, status: 'ended' })
+    expect(await dailyState(deps, user.userId)).toMatchObject({ day, status: 'playing' })
+    expect(await endDaily(deps, user, cells, day)).toMatchObject({ day, status: 'ended' })
     expect(await todaysDrawings(deps, user.userId)).toEqual({ ok: false })
   })
 
@@ -230,7 +230,8 @@ describe('daily service', () => {
     expect((await gradeDaily(deps, user, 'ask', otherCells)).ok).toBe(true)
     const saved = { ...onlyRow(records, 'dailyScores') }
     resolveBlind({ guess: 'stale' })
-    await pending
+    expect(await pending).toMatchObject({ ok: false, reason: 'stale' })
+    expect(deps.judge.score).toHaveBeenCalledTimes(1)
     expect(onlyRow(records, 'dailyScores')).toEqual(saved)
     expect(onlyRow(records, 'dailyDrawings').cells).toBe(otherCells)
     expect((await dailyState(deps, user.userId)).lastCells).toBe(otherCells)
@@ -250,8 +251,8 @@ describe('daily service', () => {
     const newGrade = gradeDaily(deps, user, 'ask', otherCells)
     await vi.waitFor(() => expect(deps.judge.blind).toHaveBeenCalledTimes(2))
     rejectOld(new Error('old request timed out'))
-    expect(await oldGrade).toMatchObject({ ok: false, reason: 'judge_resting', state: { asksUsed: 1 } })
-    expect(await deps.store.get(user.userId, day)).toMatchObject({ inFlightSince: startedAt + 60_000, inFlightKind: 'ask', asksUsed: 1 })
+    expect(await oldGrade).toMatchObject({ ok: false, reason: 'stale', state: { asksUsed: 1 } })
+    expect(await deps.store.get(user.userId, day)).toMatchObject({ inFlightSince: startedAt + DAILY.inFlightStaleMs, inFlightKind: 'ask', asksUsed: 1 })
     resolveNew({ guess: 'new' })
     expect(await newGrade).toMatchObject({ ok: true, state: { asksUsed: 1, lastCells: otherCells } })
   })

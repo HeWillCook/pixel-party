@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Env } from '../../worker.js'
 import { encodeCells } from '../game/grid'
-import { createDailyJudge, fakeDailyJudge, renderCellsPng } from './daily-judge'
+import { configuredJudgeMode, createDailyJudge, fakeDailyJudge, renderCellsPng } from './daily-judge'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -47,6 +47,9 @@ describe('fakeDailyJudge', () => {
 })
 
 describe('createDailyJudge', () => {
+  it('I4 shares the build-time fake mode with party judging by default', () => {
+    expect(configuredJudgeMode()).toBe('fake')
+  })
   it('never calls env integration or bindings in fake mode', async () => {
     const fetchBomb = vi.fn(() => { throw new Error('Must not call env in fake mode') })
     const env = {

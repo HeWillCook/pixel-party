@@ -1,9 +1,15 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { BUDGET, JUDGE } from '../game/config'
 import { newRoomState, serializeRoomState } from '../game/room-logic'
 import type { RoomState } from '../game/room-logic'
 import type { Env } from '../../worker.js'
 import { PixelRoom, nextCommandRejection, restorePixelState } from './pixel-room'
+import { configuredJudgeMode } from './daily-judge'
+
+vi.mock('./daily-judge', async importOriginal => {
+  const original = await importOriginal<typeof import('./daily-judge')>()
+  return { ...original, configuredJudgeMode: vi.fn(original.configuredJudgeMode) }
+})
 import { BudgetRoom } from './budget-room'
 import { BaseRoom } from 'deepspace/worker'
 
@@ -158,12 +164,32 @@ const reserve = vi.fn()
 const messages = (client: ReturnType<typeof socket>) => client.send.mock.calls.map(([message]) => JSON.parse(message))
 
 describe('durable room boundaries', () => {
+  beforeEach(() => { vi.mocked(configuredJudgeMode).mockReturnValue('real') })
   afterEach(() => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
     vi.useRealTimers()
     integration.mockReset()
     reserve.mockReset()
+  })
+
+  it('I4 never calls a paid integration for party judging in normal dev fake mode', async () => {
+    vi.mocked(configuredJudgeMode).mockReturnValue('fake')
+    vi.useFakeTimers()
+    vi.setSystemTime(10_000)
+    vi.stubGlobal('__PIXEL_PARTY_TEST__', false)
+    const harness = roomHarness()
+    try {
+      const owner = await harness.connect('owner')
+      await harness.room.webSocketMessage(owner.connection, '{"t":"place","x":2,"y":2,"c":6}')
+      vi.setSystemTime(Date.now() + JUDGE.askMinMs)
+      reserve.mockResolvedValue(Response.json({ ok: true }))
+      integration.mockResolvedValue({ success: false })
+      await harness.room.webSocketMessage(owner.connection, '{"t":"ask"}')
+      expect(integration).not.toHaveBeenCalled()
+    } finally {
+      harness.database.close()
+    }
   })
 
   it('persists the trusted host header and enforces it after wake', async () => {

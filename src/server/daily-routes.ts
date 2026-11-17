@@ -3,7 +3,7 @@ import type { AppContext, Env } from '../../worker.js'
 import { reserveBudget } from './budget'
 import { createDailyJudge, renderCellsPng } from './daily-judge'
 import { doAttemptStore } from './daily-room'
-import { dailyState, endDaily, gradeDaily, startDaily, todaysDrawings } from './daily-service'
+import { dailyState, endDaily, gradeDaily, InvalidAttemptDay, startDaily, todaysDrawings } from './daily-service'
 import type { DailyDeps, DailyUser } from './daily-service'
 import { resolveAuth } from './http-routes'
 import { createServerTools } from './server-tools'
@@ -23,6 +23,10 @@ function objectBody(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
+function dayBody(value: unknown): value is string {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
+}
+
 export function registerDailyRoutes(app: Hono<AppContext>): void {
   const daily = new Hono<AppContext & { Variables: { dailyUser: DailyUser } }>()
   daily.use('*', async (c, next) => {
@@ -35,15 +39,20 @@ export function registerDailyRoutes(app: Hono<AppContext>): void {
   daily.post('/start', async c => c.json(await startDaily(dependencies(c.env), c.get('dailyUser'))))
   daily.post('/grade', async c => {
     const body: unknown = await c.req.json().catch(() => null)
-    if (!objectBody(body) || (body.kind !== 'auto' && body.kind !== 'ask' && body.kind !== 'final') || typeof body.cells !== 'string') {
+    if (!objectBody(body) || !dayBody(body.day) || (body.kind !== 'auto' && body.kind !== 'ask' && body.kind !== 'final') || typeof body.cells !== 'string') {
       return c.json({ error: 'bad_request' }, 400)
     }
-    return c.json(await gradeDaily(dependencies(c.env), c.get('dailyUser'), body.kind, body.cells))
+    return c.json(await gradeDaily(dependencies(c.env), c.get('dailyUser'), body.kind, body.cells, body.day))
   })
   daily.post('/end', async c => {
     const body: unknown = await c.req.json().catch(() => null)
-    if (!objectBody(body) || (body.cells !== undefined && typeof body.cells !== 'string')) return c.json({ error: 'bad_request' }, 400)
-    return c.json(await endDaily(dependencies(c.env), c.get('dailyUser'), body.cells as string | undefined ?? null))
+    if (!objectBody(body) || !dayBody(body.day) || (body.cells !== undefined && typeof body.cells !== 'string')) return c.json({ error: 'bad_request' }, 400)
+    try {
+      return c.json(await endDaily(dependencies(c.env), c.get('dailyUser'), body.cells as string | undefined ?? null, body.day))
+    } catch (error) {
+      if (error instanceof InvalidAttemptDay) return c.json({ error: error.message }, 400)
+      throw error
+    }
   })
   daily.get('/me', async c => c.json(await dailyState(dependencies(c.env), c.get('dailyUser').userId)))
   daily.get('/today/drawings', async c => {

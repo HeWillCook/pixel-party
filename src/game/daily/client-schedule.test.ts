@@ -50,7 +50,7 @@ describe('client-schedule', () => {
     expect(shouldFinalGrade(s + 650_000, s)).toBe(true)
   })
 
-  it('updates latest and best = max on grade_ok', () => {
+  it('updates latest while taking the accepted best from server state', () => {
     const initial: DailyClientState = {
       ...initialDailyClientState('2026-11-17'),
       ...baseState,
@@ -63,7 +63,7 @@ describe('client-schedule', () => {
       state: { ...baseState, asksUsed: 1, best: 700 },
     })
     expect(afterFirst.latest).toEqual(sampleGrade)
-    expect(afterFirst.best).toBe(800)
+    expect(afterFirst.best).toBe(700)
     expect(afterFirst.grading).toBe(false)
     expect(afterFirst.lastError).toBeNull()
 

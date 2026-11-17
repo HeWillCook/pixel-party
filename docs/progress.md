@@ -334,3 +334,26 @@ The fake judge is selected by default in dev and tests so those runs make no pai
   unknown code 404; lobby snapshot has no word and no timer; painting in lobby rejected `round_inactive`; no judge
   in lobby; host Start begins a 5:00 round; a 20-cell batch was fully acked in 91 ms with no rate limiting;
   leaving and rejoining keeps the same round.
+
+## 2026-11-17: Daily mode final-review fixes
+
+- Fixed I1–I5 plus FIX-BEFORE-MERGE minors M3/M13; other review minors remain deferred.
+  Full per-finding changes, covering tests, and TDD evidence are in
+  `.superpowers/sdd/2026-11-17-daily-mode/final-fix-report.md`.
+- The referee persists the complete winning grade/image and display profile. The
+  DO serializes current-best collection publication per player/day; start, grade,
+  end, and state reads can repair a failed projection. No background queue was added;
+  publication preserves existing visibility and medals.
+- Grade/end carry the server-issued attempt day. `/me` resumes a live yesterday
+  attempt through grace even when today's row exists. The client refreshes idle/
+  ended pages across midnight and resets new-day drawing/results/scheduling.
+- Party and daily share the build-time fake/real policy, with no paid party call
+  in fake/local mode. Stale completions explicitly reject; client best is the
+  referee best. A five-minute lease covers bounded retries, and later phases check
+  ownership. Ending an ended attempt cannot change its cells; the first accepted
+  zero-point grade now saves its actual snapshot.
+- Final validation: focused Vitest **149/149**, `npm run verify` PASS (**333 unit
+  tests**, lint, type-check, build/prerender), offline Playwright **8/8**, real
+  test-worker API Playwright **4/4**, `git diff --check` PASS. Known runner warnings
+  remain unchanged. No real AI calls, `DAILY_JUDGE` override, deployment, or push.
+- Provider: Codex implementation, self-review, and verification; no nested agents.

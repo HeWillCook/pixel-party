@@ -303,24 +303,37 @@ React + generouted pages, vitest, Playwright (offline config).
     startedAt?: number; endsAt?: number; autoUsed: number; asksUsed: number; finalUsed: boolean; best: number;
     nextAutoAt?: number; lastCells?: string }
   export function startDaily(deps: DailyDeps, user: DailyUser): Promise<DailyStateView>
-  export function gradeDaily(deps: DailyDeps, user: DailyUser, kind: GradeKind, cells: string):
+  export function gradeDaily(deps: DailyDeps, user: DailyUser, kind: GradeKind, cells: string, day: string):
     Promise<{ ok: true; grade: GradeView; state: DailyStateView } | { ok: false; reason: GradeReject | 'judge_resting' | 'bad_cells'; state: DailyStateView }>
-  export function endDaily(deps: DailyDeps, user: DailyUser, cells: string | null): Promise<DailyStateView>
+  export function endDaily(deps: DailyDeps, user: DailyUser, cells: string | null, day: string): Promise<DailyStateView>
   export function dailyState(deps: DailyDeps, userId: string): Promise<DailyStateView>
   export function todaysDrawings(deps: DailyDeps, userId: string): Promise<{ ok: true; drawings: unknown[] } | { ok: false }>
   export function registerDailyRoutes(app: Hono<AppContext>): void
   // Routes (all JSON; 401 { error: 'sign_in_required' } without a valid Bearer token):
   // POST /api/daily/start            → DailyStateView
-  // POST /api/daily/grade { kind, cells } → gradeDaily result (HTTP 200 for ok:false too; 400 on malformed body)
-  // POST /api/daily/end   { cells? } → DailyStateView
+  // POST /api/daily/grade { day, kind, cells } → gradeDaily result (HTTP 200 for ok:false too; 400 on malformed body)
+  // POST /api/daily/end   { day, cells? } → DailyStateView (400 for an invalid attempt day)
   // GET  /api/daily/me               → DailyStateView
   // GET  /api/daily/today/drawings   → todaysDrawings (403 when caller hasn't ended today)
   ```
-  Day for every operation:
-  - `start` and `me` use `utcDay(now)`.
-  - `grade` and `end` use the day of the caller's in-progress attempt: look it up for `utcDay(now)`, and if there is
-    none, for the previous day.
-  - So a 23:55 start keeps grading against its own day.
+  Day for every operation (final-review amendment, November 17, 2026):
+  - `start` explicitly starts/resumes today's row; yesterday does not consume today's attempt.
+  - `me` resumes yesterday first only while that attempt is still in progress (through `endsAt + grace`),
+    even if today's row also exists. Otherwise it returns today's row or today's `not_started` state.
+  - `grade` and `end` require the start-day returned by the server in the JSON body. The server permits today,
+    or yesterday only if that player's yesterday attempt is still live. It never guesses from whichever row exists.
+  - The hook retains a live old-day canvas, then refetches `me` after ending across midnight (or when an idle
+    page crosses midnight). Changing days resets the canvas, latest/best results, and scheduling state.
+  - Today's spoiler access is still checked against today's ended row, independently of finishing yesterday.
+
+  Authority/publication amendment: persist the full winning grade and its cells in the DO row, including the
+  first accepted zero-point result. `publish` is a per-player/day ordered writer inside the DO that rereads the
+  current winning row, never a caller-supplied grade. Start, later grades, end, and state reads republish it to
+  repair record failures; existing visibility and medals are not reset. No background queue is introduced.
+  Completion returns `applied: false` for stale reservations and the HTTP result is `ok: false, reason: 'stale'`.
+  The lease is five minutes (longer than four bounded one-minute local calls), and each subsequent judge phase
+  checks reservation ownership before spending budget/calling a model. Both daily and party use the build-time
+  fake/real judge selection; only production's real mode reaches the party integration.
 
 - [ ] **Step 1: Write failing tests** (`daily-service.test.ts`, using `memoryAttemptStore`, `memoryTools`,
   `fakeDailyJudge`, a controllable `now`, and `reserveBudget` as a `vi.fn` returning true; cells = `encodeCells` of a

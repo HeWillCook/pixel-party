@@ -1,9 +1,9 @@
 import { DAILY } from '../game/config'
 import { cellsHash, isEnded } from '../game/daily/attempt'
-import type { AttemptRow, GradeKind, GradeReject } from '../game/daily/attempt'
+import type { AttemptRow, GradeKind, GradeReject, GradeResult } from '../game/daily/attempt'
 import { promptForDay } from '../game/daily/prompts'
 import { gradeScore } from '../game/daily/scoring'
-import { decodeCells, encodeCells } from '../game/grid'
+import { decodeCells } from '../game/grid'
 import type { DailyJudge } from './daily-judge'
 import type { AttemptStore } from './daily-room'
 import { utcDay } from './room-time'
@@ -19,15 +19,7 @@ export interface DailyDeps {
   reserveBudget(): Promise<boolean>
   render(cells: string): Promise<string>
 }
-export interface GradeView {
-  guess: string
-  reason: string
-  fit: number
-  recognition: number
-  speed: number
-  total: number
-  elapsedMs: number
-}
+export type GradeView = GradeResult
 export interface DailyStateView {
   day: string
   status: 'not_started' | 'playing' | 'ended'
@@ -64,10 +56,19 @@ function stateView(day: string, row: AttemptRow | null, now: number): DailyState
 
 async function activeDay(deps: DailyDeps, userId: string, now: number): Promise<string> {
   const today = utcDay(now)
-  if (await deps.store.get(userId, today)) return today
   const yesterday = utcDay(now - 86_400_000)
-  return await deps.store.get(userId, yesterday) ? yesterday : today
+  const previous = await deps.store.get(userId, yesterday)
+  return previous && !isEnded(previous, now) ? yesterday : today
 }
+
+async function allowedDay(deps: DailyDeps, userId: string, day: string, now: number): Promise<boolean> {
+  if (day === utcDay(now)) return true
+  if (day !== utcDay(now - 86_400_000)) return false
+  const row = await deps.store.get(userId, day)
+  return row !== null && !isEnded(row, now)
+}
+
+export class InvalidAttemptDay extends Error {}
 
 function validCells(cells: string): boolean {
   try {
@@ -77,68 +78,54 @@ function validCells(cells: string): boolean {
   }
 }
 
-async function upsert(deps: DailyDeps, collection: string, day: string, userId: string, data: Record<string, unknown>, onlyMissing = false): Promise<void> {
-  const found = await deps.tools.query(collection, { where: { day, userId }, limit: 1 })
-  if (!found.success) throw new Error(found.error)
-  const record = found.data.records[0]
-  if (record && onlyMissing) return
-  const result = record
-    ? await deps.tools.update(collection, record.recordId, data)
-    : await deps.tools.create(collection, { ...data, day, userId })
-  if (!result.success) throw new Error(result.error)
-}
-
 export async function dailyState(deps: DailyDeps, userId: string): Promise<DailyStateView> {
   const now = deps.now()
-  const day = utcDay(now)
+  const day = await activeDay(deps, userId, now)
+  const yesterday = utcDay(now - 86_400_000)
+  if (day !== yesterday) await deps.store.publish(userId, yesterday, now)
+  await deps.store.publish(userId, day, now)
   return stateView(day, await deps.store.get(userId, day), now)
 }
 
 export async function startDaily(deps: DailyDeps, user: DailyUser): Promise<DailyStateView> {
   const now = deps.now()
   const day = utcDay(now)
-  const { row } = await deps.store.start(user.userId, day, now)
-  await upsert(deps, 'dailyScores', day, user.userId, {
-    displayName: user.name, avatarUrl: user.image, score: row.bestScore,
-    fit: 0, recognition: 0, speed: 0, bestElapsedMs: row.bestElapsedMs ?? 0,
-    ended: Number(isEnded(row, now)), medal: 0,
-  }, true)
-  await upsert(deps, 'dailyDrawings', day, user.userId, {
-    displayName: user.name, prompt: promptForDay(day).prompt,
-    cells: row.lastCells ?? encodeCells(new Uint8Array(1024)), guess: '', reason: '',
-    score: row.bestScore, visibility: 'private',
-  }, true)
-  return stateView(day, row, now)
+  await deps.store.start(user.userId, day, now, { name: user.name, image: user.image })
+  await deps.store.publish(user.userId, day, now)
+  return stateView(day, await deps.store.get(user.userId, day), deps.now())
 }
 
-async function judgeCall<Value>(deps: DailyDeps, call: () => Promise<Value | null>): Promise<Value | null> {
+async function judgeCall<Value>(deps: DailyDeps, ownsReservation: () => Promise<boolean>, call: () => Promise<Value | null>): Promise<Value | null> {
   for (let attempt = 0; attempt < 2; attempt++) {
+    if (!await ownsReservation()) return null
     if (!await deps.reserveBudget()) return null
+    if (!await ownsReservation()) return null
     const value = await call()
     if (value !== null) return value
   }
   return null
 }
 
-export async function gradeDaily(deps: DailyDeps, user: DailyUser, kind: GradeKind, cells: string): Promise<
+export async function gradeDaily(deps: DailyDeps, user: DailyUser, kind: GradeKind, cells: string, day = utcDay(deps.now())): Promise<
   { ok: true; grade: GradeView; state: DailyStateView }
   | { ok: false; reason: GradeReject | 'judge_resting' | 'bad_cells'; state: DailyStateView }
 > {
   const now = deps.now()
-  const day = await activeDay(deps, user.userId, now)
+  if (!await allowedDay(deps, user.userId, day, now)) return { ok: false, reason: 'invalid_day', state: stateView(utcDay(now), null, now) }
   const state = async () => stateView(day, await deps.store.get(user.userId, day), deps.now())
   if (!validCells(cells)) return { ok: false, reason: 'bad_cells', state: await state() }
   const hash = cellsHash(cells)
   const reservation = await deps.store.reserve(user.userId, day, kind, hash, now)
   if (!reservation.ok) return { ok: false, reason: reservation.reason, state: await state() }
   const reservedAt = reservation.row.inFlightSince!
+  const ownsReservation = async () => (await deps.store.get(user.userId, day))?.inFlightSince === reservedAt
   let grade: GradeView | null = null
   try {
     const png = await deps.render(cells)
-    const blind = await judgeCall(deps, () => deps.judge.blind(png))
+    const blind = await judgeCall(deps, ownsReservation, () => deps.judge.blind(png))
     if (blind) {
       const prompt = promptForDay(day)
-      const scored = await judgeCall(deps, () => deps.judge.score(png, prompt.prompt, prompt.subject, blind.guess))
+      const scored = await judgeCall(deps, ownsReservation, () => deps.judge.score(png, prompt.prompt, prompt.subject, blind.guess))
       if (scored) grade = {
         guess: blind.guess, reason: scored.reason,
         ...gradeScore({ ...scored, elapsedMs: reservation.elapsedMs }), elapsedMs: reservation.elapsedMs,
@@ -148,30 +135,19 @@ export async function gradeDaily(deps: DailyDeps, user: DailyUser, kind: GradeKi
     grade = null
   }
   const completed = await deps.store.complete(user.userId, day, grade, hash, cells, deps.now(), reservedAt)
+  if (!completed.applied) return { ok: false, reason: 'stale', state: stateView(day, completed.row, deps.now()) }
+  await deps.store.publish(user.userId, day, deps.now())
   if (!grade) return { ok: false, reason: 'judge_resting', state: stateView(day, completed.row, deps.now()) }
-  if (completed.improved) {
-    await upsert(deps, 'dailyScores', day, user.userId, {
-      displayName: user.name, avatarUrl: user.image, score: grade.total,
-      fit: grade.fit, recognition: grade.recognition, speed: grade.speed, bestElapsedMs: grade.elapsedMs,
-    })
-    await upsert(deps, 'dailyDrawings', day, user.userId, {
-      displayName: user.name, prompt: promptForDay(day).prompt, cells,
-      guess: grade.guess, reason: grade.reason, score: grade.total,
-    })
-  }
-  return { ok: true, grade, state: stateView(day, completed.row, deps.now()) }
+  return { ok: true, grade, state: await state() }
 }
 
-export async function endDaily(deps: DailyDeps, user: DailyUser, cells: string | null): Promise<DailyStateView> {
+export async function endDaily(deps: DailyDeps, user: DailyUser, cells: string | null, day = utcDay(deps.now())): Promise<DailyStateView> {
   const now = deps.now()
-  const day = await activeDay(deps, user.userId, now)
+  if (!await allowedDay(deps, user.userId, day, now)) throw new InvalidAttemptDay('invalid_attempt_day')
   const row = await deps.store.end(user.userId, day, cells !== null && validCells(cells) ? cells : null, now)
   if (!row) return stateView(day, null, now)
-  await upsert(deps, 'dailyScores', day, user.userId, { ended: 1 })
-  if (row.lastGradeAt === null && row.lastCells !== null) {
-    await upsert(deps, 'dailyDrawings', day, user.userId, { cells: row.lastCells })
-  }
-  return stateView(day, row, now)
+  await deps.store.publish(user.userId, day, now)
+  return stateView(day, await deps.store.get(user.userId, day), deps.now())
 }
 
 export async function todaysDrawings(deps: DailyDeps, userId: string): Promise<{ ok: true; drawings: unknown[] } | { ok: false }> {

@@ -10,6 +10,10 @@ import { createServerTools } from './server-tools'
 
 declare const __DAILY_JUDGE__: 'fake' | 'local' | 'real' | undefined
 
+export function configuredJudgeMode(): 'fake' | 'local' | 'real' {
+  return typeof __DAILY_JUDGE__ !== 'undefined' ? __DAILY_JUDGE__ : 'fake'
+}
+
 export interface DailyJudge {
   blind(png: string): Promise<{ guess: string } | null>
   score(png: string, prompt: string, subject: string, guess: string): Promise<{ fit: number; recognition: number; reason: string } | null>
@@ -91,7 +95,7 @@ async function callLocal(body: DailyJudgeBody): Promise<string | null> {
 
 export function createDailyJudge(
   env: Env,
-  mode: 'fake' | 'local' | 'real' = typeof __DAILY_JUDGE__ !== 'undefined' ? __DAILY_JUDGE__ : 'fake',
+  mode: 'fake' | 'local' | 'real' = configuredJudgeMode(),
 ): DailyJudge {
   if (mode === 'local') {
     return {
