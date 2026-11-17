@@ -103,7 +103,7 @@ export function redo(h: History, current: Uint8Array): { history: History; cells
   - **fill:** a single `onFill` on pointer-down; no drag.
   - **pick:** a single `onPick` on pointer-down.
   - `onStrokeStart` and `onStrokeEnd` wrap each paint or erase drag.
-  - The pointer-down handler must respect `canDraw` (today it places regardless; see :80).
+  - Fill and pick must respect `canDraw`. For paint and erase, first read `handlePlace` in `src/pages/(app)/r/[code].tsx` and the `tests/offline/pixel.spec.ts` assertions: if clicks while unable to draw are what trigger the sign-in and cooldown notices, keep that behaviour for paint and erase and gate only fill and pick.
   - The hover preview shows the cream colour for erase.
 - `ToolBar({ tools, active, onSelect, onUndo?, onRedo?, canUndo?, canRedo?, disabled? })`: a vertical list of buttons, each with an icon and label (`Paint`, `Erase`, `Fill`, `Pick colour`, `Undo`, `Redo`), `aria-pressed` on the active tool, and `data-testid="tool-<name>"`. Undo and Redo render only when their handlers are given. No shortcut text.
 - `useToolShortcuts({ tools, onSelect, onUndo?, onRedo?, enabled })`: keydown listener; ignores events from inputs and textareas.
