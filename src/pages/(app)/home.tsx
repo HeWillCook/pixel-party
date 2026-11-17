@@ -7,10 +7,10 @@ import {
   LogIn,
   Play,
   Sparkles,
-  Trophy,
   Users,
 } from 'lucide-react'
 import { DailyTimer } from '../../components/daily/DailyTimer'
+import { Leaderboard } from '../../components/daily/Leaderboard'
 import { GradePanel } from '../../components/daily/GradePanel'
 import { Palette } from '../../components/game/Palette'
 import { PixelCanvas } from '../../components/game/PixelCanvas'
@@ -56,30 +56,6 @@ function decodeSnapshotOrFallback(encoded: string | undefined, fallback: Uint8Ar
     // Ignore invalid base64
   }
   return fallback
-}
-
-function LeaderboardSlot({ day }: { day: string }) {
-  return (
-    <section
-      data-testid="daily-leaderboard-slot"
-      className="arcade-card flex flex-col gap-3 rounded-xl bg-card p-5"
-    >
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Trophy className="h-4 w-4 text-amber-400" aria-hidden />
-          <h2 className="font-pixel text-base font-extrabold uppercase tracking-wider text-foreground">
-            Today&apos;s Leaderboard
-          </h2>
-        </div>
-        <Badge variant="secondary" className="font-pixel text-[10px] uppercase">
-          {day || 'Today'}
-        </Badge>
-      </div>
-      <p className="text-xs text-muted-foreground">
-        Daily rankings and gallery entries appear here.
-      </p>
-    </section>
-  )
 }
 
 export default function DailyHomePage() {
@@ -225,8 +201,7 @@ export default function DailyHomePage() {
             </div>
           </section>
 
-          {/* Task 7 Leaderboard slot */}
-          <LeaderboardSlot day={state.day} />
+          <Leaderboard day={state.day} ended={false} />
         </div>
       )}
 
@@ -437,8 +412,7 @@ export default function DailyHomePage() {
             </div>
           </div>
 
-          {/* Task 7 Leaderboard slot */}
-          <LeaderboardSlot day={state.day} />
+          <Leaderboard day={state.day} ended={state.status === 'ended'} />
         </div>
       )}
 
