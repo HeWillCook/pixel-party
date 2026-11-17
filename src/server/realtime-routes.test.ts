@@ -28,6 +28,12 @@ function harness(visibility = 'public', status = 'playing', members = ['host']) 
 }
 
 describe('PixelRoom route configuration', () => {
+  it.each(['/ws/yjs/doc', '/ws/canvas/doc'])('does not expose the scaffold route %s', async path => {
+    const app = new Hono<AppContext>()
+    registerRealtimeRoutes(app)
+    expect((await app.request(path)).status).toBe(404)
+  })
+
   it.each(['%E2%9C%93', 'a'.repeat(65)])('rejects invalid room id %s before accessing its namespace', async roomId => {
     const namespace = { idFromName: vi.fn(), get: vi.fn() }
     const app = new Hono<AppContext>()

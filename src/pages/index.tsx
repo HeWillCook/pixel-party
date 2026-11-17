@@ -76,7 +76,7 @@ export default function Landing() {
               <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-pink-500/40 bg-pink-500/15 px-3.5 py-1 text-xs font-bold text-pink-300">
                 <Sparkles className="h-3.5 w-3.5" aria-hidden />
                 <span className="font-pixel uppercase tracking-wider">
-                  Multiplayer Pixel Pictionary vs. Claude Haiku
+                  Multiplayer pixel drawing game vs. Claude Haiku
                 </span>
               </div>
 

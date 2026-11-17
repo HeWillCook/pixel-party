@@ -53,6 +53,7 @@ export class AppRecordRoom extends RecordRoom<Env> {
   }
 }
 
+// Retained scaffold Durable Objects have no routes.
 export class AppYjsRoom extends YjsRoom<Env> {}
 export class AppCanvasRoom extends CanvasRoom<Env> {}
 export class AppPresenceRoom extends PresenceRoom<Env> {}
@@ -153,8 +154,7 @@ app.use('*', async (c, next) => {
 registerAuthAndIntegrationRoutes(app)
 registerRealtimeRoutes(app)
 registerActionRoutes(app, resolveAuth)
-// Pixel Party has no website chat or local/browser agent surface. Leave
-// registerAgent unmounted so these routes cannot bypass the game's AI budget.
+// Pixel Party has no website chat or local/browser agent surface.
 registerPlatformProxyRoutes(app)
 registerStaticRoutes(app)
 

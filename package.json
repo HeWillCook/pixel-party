@@ -33,7 +33,6 @@
     "@base-ui/react": "~1.6.0",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.0",
-    "ai": "7.0.107",
     "deepspace": "0.44.2",
     "hono": "^4.13.7",
     "lucide-react": "^0.460.0",

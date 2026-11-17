@@ -1,5 +1,6 @@
 import { Sparkles, CheckCircle2, HelpCircle, Moon } from 'lucide-react'
 import type { ZoneId } from '../../game/config'
+import { JUDGE } from '../../game/config'
 import type { ZoneGuess } from '../../game/client-state'
 import { cn } from '../../lib/utils'
 
@@ -68,7 +69,7 @@ export function GuessFeed({ guesses, aiResting }: GuessFeedProps) {
       ) : items.length === 0 ? (
         <div className="flex items-center gap-2 py-1 text-sm text-muted-foreground">
           <HelpCircle className="h-4 w-4 shrink-0 text-pink-400/70" aria-hidden />
-          <span>Place some pixels! Claude Haiku checks the canvas every 15s or when you press Ask.</span>
+          <span>Place some pixels! Claude Haiku checks the canvas every {JUDGE.tickMs / 1000}s or when you press Ask.</span>
         </div>
       ) : (
         <div
