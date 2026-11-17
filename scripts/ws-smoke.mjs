@@ -121,12 +121,13 @@ try {
     assert.deepEqual(pixel, { t: 'pixel', x: 16, y: 16, c: 6, by: account.userId })
   }
   record('signed-in placement broadcasts to both')
-  const cooldown = await owner.wait(message => message.t === 'reject' && message.reason === 'cooldown')
-  record('immediate second placement rejected', cooldown)
+  const second = await owner.wait(message => message.t === 'pixel' && message.x === 17 && message.y === 16)
+  record('solo has no cooldown: immediate second placement accepted', second)
   for (const command of [{ t: 'place', x: 0, y: 0, c: 1 }, { t: 'ask' }, { t: 'next' }, { t: 'team', team: 'red' }]) {
     const after = spectator.messages.length
     spectator.send(command)
-    assert.deepEqual(await spectator.wait(message => message.t === 'reject', after), { t: 'reject', reason: 'not_signed_in' })
+    const rejection = await spectator.wait(message => message.t === 'reject', after)
+    assert.equal(rejection.reason, 'not_signed_in')
   }
   record('anonymous placement, ask, next and team rejected')
 
@@ -141,7 +142,7 @@ try {
     for (const otherSign of [-1, 1]) points.push([16 + sign * 4, 16 + otherSign * 4])
   }
   for (const [pixelX, pixelY] of points) {
-    await delay(225)
+    await delay(20)
     const after = owner.messages.length
     owner.send({ t: 'place', x: pixelX, y: pixelY, c: 6 })
     const response = await owner.wait(message => message.t === 'pixel' || message.t === 'reject', after)
@@ -149,13 +150,22 @@ try {
   }
   record('filled sun drawn', { pixels: points.length + 1 })
   await delay(Math.max(0, snapshot.round.askAvailableAt - Date.now() + 100))
-  const askedAfter = owner.messages.length
-  owner.send({ t: 'ask' })
-  const judgement = await owner.wait(message => message.t === 'judgement' || message.t === 'ai_resting' || message.t === 'reject', askedAfter)
+  const ask = async () => {
+    const askedAfter = owner.messages.length
+    owner.send({ t: 'ask' })
+    return owner.wait(message => message.t === 'judgement' || message.t === 'ai_resting' || message.t === 'reject', askedAfter, 30_000)
+  }
+  let judgement = await ask()
+  if (judgement.t === 'reject' && judgement.reason === 'ask_too_soon') {
+    // An automatic judge tick landed while drawing; Asks need a 10 s gap after any judgement.
+    record('ask throttled after automatic judgement (expected)')
+    await delay(10_500)
+    judgement = await ask()
+  }
   assert.equal(judgement.t, 'judgement', `Expected a real Haiku judgement, got ${judgement.t}:${judgement.reason ?? ''}`)
   assert(judgement.guesses.length > 0)
   record('real Haiku judgement after ask', judgement)
-  assert.deepEqual(await spectator.wait(message => message.t === 'judgement'), judgement)
+  assert.deepEqual(await spectator.wait(message => message.t === 'judgement' && JSON.stringify(message) === JSON.stringify(judgement)), judgement)
 
   await owner.close()
   const fresh = await connect()

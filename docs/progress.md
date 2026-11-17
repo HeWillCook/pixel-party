@@ -311,3 +311,12 @@ AI image generation (the point is humans draw), ElevenLabs announcer (gimmick).
 - Opus review follow-up: Gemini Argon review verdict Ship (0 Critical / 0 Important / 2 Minor). Applied Minor 2:
   a new lobby arms its 30-minute close timer at creation (`emptySince = now`), so a lobby nobody ever connects to
   still closes. Minor 1 (legacy mixed-case codes) is moot: old codes were generated uppercase.
+- **2026-11-17 live verification (Opus), release after cbeabc4:** deployed; `scripts/ws-smoke.mjs` updated for the
+  new rules (solo second placement now accepted instantly; rejections carry cell coords; Ask retried once after
+  an automatic judge tick consumes the 10 s Ask gap; spectator compares the matching judgement) and passes every
+  check through a real Haiku Ask ("sun, star, asterisk" for the drawn sun). Its final pause check could not pass
+  because a real signed-in browser tab (Will) was on the public board, which correctly keeps it running.
+  Private-room live run (room `QX3J`): 4-char code; signed-out request 401; lowercase code connects (101);
+  unknown code 404; lobby snapshot has no word and no timer; painting in lobby rejected `round_inactive`; no judge
+  in lobby; host Start begins a 5:00 round; a 20-cell batch was fully acked in 91 ms with no rate limiting;
+  leaving and rejoining keeps the same round.
