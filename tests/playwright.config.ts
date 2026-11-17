@@ -32,13 +32,10 @@ export default defineConfig({
     // Bind the local test server directly. A bare `--host` asks Vite to
     // enumerate every interface, which fails in restricted containers before
     // the app can start (`uv_interface_addresses`).
-    command: `npx vite --port ${PORT} --strictPort --host 127.0.0.1`,
+    command: `node -e "if (process.env.PIXEL_PARTY_TEST !== '1') { console.error('PIXEL_PARTY_TEST must be 1'); process.exit(1) }" && npx vite --port ${PORT} --strictPort --host 127.0.0.1`,
     cwd: '..',
-    // Readiness gates on the auth plane, not just vite: /api/auth/ok only
-    // answers once workerd behind /api/* has booted, so no test starts
-    // against a half-up server. Playwright keeps polling through non-OK
-    // responses and fails setup with its own clear error at the timeout.
-    url: `${BASE_URL}/api/auth/ok`,
+    // The worker verifies both the integration guard and auth readiness before tests start.
+    url: `${BASE_URL}/api/__test/ready`,
     reuseExistingServer: false,
     timeout: 60_000,
     stdout: 'pipe',

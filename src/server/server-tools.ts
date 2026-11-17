@@ -60,7 +60,7 @@ export function createServerTools(env: Env): ServerTools {
 
   async function integration<T>(endpoint: string, body: unknown): Promise<ActionResult<T>> {
     try {
-      // Tests exercise the app normally but must never call a paid external integration.
+      // Vite defines this as false in production, preserving normal integrations there.
       if (typeof __PIXEL_PARTY_TEST__ !== 'undefined' && __PIXEL_PARTY_TEST__) {
         return { success: false, code: 'test_integration_disabled', error: 'External integrations disabled in tests' }
       }

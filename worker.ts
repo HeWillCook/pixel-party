@@ -9,6 +9,7 @@ import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import {
   armCronRoom,
+  authWorkerFetch,
   CanvasRoom,
   CronRoom,
   JobRoom,
@@ -22,6 +23,7 @@ import type { DOBindings, DOManifest, Job, JobContext } from 'deepspace/worker'
 import { tasks as cronTasks, runTask as runCronTask } from './src/cron.js'
 import { runJob } from './src/jobs.js'
 import { schemas } from './src/schemas.js'
+import { createServerTools } from './src/server/server-tools.js'
 import { registerActionRoutes } from './src/server/action-routes.js'
 import {
   registerAuthAndIntegrationRoutes,
@@ -123,7 +125,20 @@ export interface Env extends DOBindings<typeof __DO_MANIFEST__> {
 
 export type AppContext = { Bindings: Env }
 
+declare const __PIXEL_PARTY_TEST__: boolean
+
 const app = new Hono<AppContext>()
+// Only the test build exposes this readiness check; it refuses to start tests
+// until the worker's paid-integration guard and auth service are both active.
+if (typeof __PIXEL_PARTY_TEST__ !== 'undefined' && __PIXEL_PARTY_TEST__) {
+  app.get('/api/__test/ready', async c => {
+    const result = await createServerTools(c.env).integration('invalid-endpoint', {})
+    if (result.success || result.code !== 'test_integration_disabled') return c.json({ error: 'test guard inactive' }, 503)
+    const auth = await authWorkerFetch(c.env, '/api/auth/ok')
+    if (!auth.ok) return c.json({ error: 'auth unavailable' }, 503)
+    return c.json({ code: result.code })
+  })
+}
 app.use('/api/*', cors())
 // A Durable Object exists only once something fetches it, and the CronRoom
 // arms its alarm in that first fetch — so wake it from the request path, or a

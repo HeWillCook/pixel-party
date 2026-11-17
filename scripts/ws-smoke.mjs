@@ -9,7 +9,9 @@ import { setTimeout as delay } from 'node:timers/promises'
 const base = process.argv[2] ?? 'http://127.0.0.1:5197'
 const target = new URL(base)
 assert(['http:', 'https:'].includes(target.protocol), 'Pass an HTTP(S) base URL')
-const local = ['localhost', '127.0.0.1', '[::1]'].includes(target.hostname)
+const local = ['localhost', '127.0.0.1'].includes(target.hostname)
+assert(target.protocol === 'https:' || local, 'Remote targets require HTTPS to protect the JWT')
+assert(local || process.argv.includes('--yes'), 'Remote smoke draws on the shared board and makes a paid AI call; pass --yes to confirm')
 const roomId = 'play'
 const clients = []
 const evidence = { base: target.origin, roomId, checks: [], judgements: [] }

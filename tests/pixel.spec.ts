@@ -15,11 +15,20 @@ async function clickCell(page: Page, x: number, y: number) {
 
 test('two painters sync, respect cooldown, and allow spectators', async ({ users, page }) => {
   const [a, b] = await users(2)
+  const spectatorPlacements: string[] = []
+  page.on('websocket', socket => {
+    if (socket.url().includes('/api/pixel/')) socket.on('framesent', frame => {
+      if (typeof frame.payload === 'string' && JSON.parse(frame.payload).t === 'place') spectatorPlacements.push(frame.payload)
+    })
+  })
   let confirmed!: () => void
   const firstConfirmed = new Promise<void>(resolve => { confirmed = resolve })
   a.page.on('websocket', socket => {
     if (socket.url().includes('/api/pixel/')) socket.on('framereceived', frame => {
-      if (typeof frame.payload === 'string' && JSON.parse(frame.payload).t === 'pixel') confirmed()
+      if (typeof frame.payload === 'string') {
+        const message = JSON.parse(frame.payload)
+        if (message.t === 'pixel' && message.x === 4 && message.y === 4 && message.c === 4) confirmed()
+      }
     })
   })
   await a.page.addInitScript(() => {
@@ -32,21 +41,28 @@ test('two painters sync, respect cooldown, and allow spectators', async ({ users
   const red = [239, 68, 68, 255]
   await clickCell(a.page, 4, 4)
   await firstConfirmed
-  await expect.poll(() => color(b.page, 4, 4), { timeout: 2000 }).toEqual(red)
-  await expect.poll(() => color(page, 4, 4), { timeout: 2000 }).toEqual(red)
+  const synced = expect.poll(() => color(b.page, 4, 4), { timeout: 2000 }).toEqual(red)
   // Simulate a fast client clock to exercise authoritative rejection and rollback.
   await a.page.evaluate(() => sessionStorage.setItem('clockOffset', '5000'))
   await clickCell(a.page, 6, 6)
   await expect(a.page.getByTestId('reject-notice')).toContainText('Brush cooling down')
+  await synced
+  await expect.poll(() => color(page, 4, 4), { timeout: 2000 }).toEqual(red)
   await expect.poll(() => color(a.page, 6, 6)).toEqual([255, 255, 255, 255])
   await expect.poll(() => color(b.page, 6, 6)).toEqual([255, 255, 255, 255])
+  const spectatorBefore = await color(page, 5, 5)
+  const painterBefore = await color(a.page, 5, 5)
+  expect(painterBefore).toEqual(spectatorBefore)
   await clickCell(page, 5, 5)
   await expect(page.getByTestId('spectator-banner')).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Sign in to DeepSpace' })).toBeVisible()
-  await expect.poll(() => color(b.page, 5, 5)).toEqual([255, 255, 255, 255])
+  expect(spectatorPlacements).toEqual([])
+  await expect.poll(() => color(a.page, 5, 5)).toEqual(painterBefore)
+  await expect.poll(() => color(page, 5, 5)).toEqual(spectatorBefore)
 })
 
 test('private room invite requires sign-in and admits the invited painter', async ({ users, page }) => {
+  // The rooms API suite fills the first account's five-room quota.
   const [b, a] = await users(2)
   await a.page.goto('/home')
   await a.page.getByTestId('create-room-name').fill('Private pixel test')
@@ -55,7 +71,7 @@ test('private room invite requires sign-in and admits the invited painter', asyn
   await expect(a.page).toHaveURL(/\/r\/[a-z0-9]+$/i, { timeout: 15000 })
   const invite = a.page.url()
   await page.goto(invite)
-  await expect(page.getByTestId('room-error-unauthorized').or(page.getByTestId('room-error-not-found'))).toBeVisible({ timeout: 15000 })
+  await expect(page.getByTestId('room-error-unauthorized')).toBeVisible({ timeout: 15000 })
   await b.page.goto(invite)
   await expect(b.page.getByTestId('round-players')).toHaveText('2 painters', { timeout: 15000 })
 })

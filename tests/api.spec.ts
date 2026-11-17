@@ -1,6 +1,11 @@
 import { test, expect } from '@playwright/test'
 
 test.describe('API tests', () => {
+  test('test worker blocks paid integrations', async ({ request }) => {
+    const response = await request.get('/api/__test/ready')
+    expect(response.ok()).toBe(true)
+    expect(await response.json()).toEqual({ code: 'test_integration_disabled' })
+  })
   test('auth proxy forwards to auth worker', async ({ request }) => {
     const res = await request.get('/api/auth/ok')
     expect(res.ok()).toBeTruthy()
