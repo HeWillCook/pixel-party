@@ -6,6 +6,7 @@ import { matchGuess } from './words'
 export type JudgeDeps = {
   now(): number
   reserve(): Promise<{ ok: boolean }>
+  persist(): Promise<void>
   render(s: RoomState, zone: Zone): Promise<string>
   callJudge(pngBase64: string): Promise<string | null>
   getState(): RoomState
@@ -25,15 +26,26 @@ export async function runJudge(deps: JudgeDeps, s: RoomState, reason: 'tick' | '
   s.judgeInFlight = true
   const roundId = s.round.id
   try {
-    const reservation = await deps.reserve()
-    if (!reservation.ok) return { kind: 'resting' }
+    let reservation: { ok: boolean }
+    try {
+      reservation = await deps.reserve()
+    } catch {
+      const current = deps.getState()
+      if (current.round.id !== roundId || current.status !== 'playing' || current.round.state !== 'playing') return { kind: 'stale' }
+      const now = deps.now()
+      current.lastJudgedAt = now
+      current.round = { ...current.round, askAvailableAt: now + JUDGE.askMinMs }
+      return { kind: 'failed' }
+    }
     const current = deps.getState()
     if (current.round.id !== roundId || current.status !== 'playing' || current.round.state !== 'playing') return { kind: 'stale' }
     const now = deps.now()
-    current.judgeCalls = [...current.judgeCalls.filter(time => time > now - 60000), now]
     current.lastJudgedAt = now
     current.round = { ...current.round, askAvailableAt: now + JUDGE.askMinMs }
+    if (!reservation.ok) return { kind: 'resting' }
+    current.judgeCalls = [...current.judgeCalls.filter(time => time > now - 60000), now]
     const version = current.version
+    await deps.persist()
     const png = await deps.render(current, zone)
     const text = await deps.callJudge(png)
     const after = deps.getState()

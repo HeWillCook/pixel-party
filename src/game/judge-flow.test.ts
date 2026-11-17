@@ -1,13 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
-import { MODES } from './config'
+import { JUDGE, MODES } from './config'
 import { runJudge } from './judge-flow'
-import { newRoomState, shouldJudge } from './room-logic'
+import { newRoomState, nextAlarmAt, shouldJudge } from './room-logic'
 
 function setup() {
   const state = newRoomState({ roomId: 'r', mode: 'coop', isDefaultBoard: false }, 0, () => 0)
   state.version = 1
   let now = 15000
-  const deps = { now: () => now, reserve: vi.fn(async () => ({ ok: true })), render: vi.fn(async () => 'png'), callJudge: vi.fn(async (): Promise<string | null> => '{"guesses":["home"],"confidence":0.8}'), getState: () => state }
+  const deps = { now: () => now, reserve: vi.fn(async () => ({ ok: true })), persist: vi.fn(async () => {}), render: vi.fn(async () => 'png'), callJudge: vi.fn(async (): Promise<string | null> => '{"guesses":["home"],"confidence":0.8}'), getState: () => state }
   return { state, deps, setNow: (value: number) => { now = value } }
 }
 const zone = MODES.coop.zones[0]
@@ -29,6 +29,36 @@ describe('runJudge', () => {
     expect(await runJudge(deps, state, 'tick', 1, zone)).toEqual({ kind: 'resting' })
     expect(deps.callJudge).not.toHaveBeenCalled()
     expect(state.judgeCalls).toEqual([])
+  })
+  it.each(['refused', 'throws'])('throttles after reservation %s', async mode => {
+    const { state, deps } = setup()
+    if (mode === 'refused') deps.reserve.mockResolvedValueOnce({ ok: false })
+    else deps.reserve.mockRejectedValueOnce(new Error('unavailable'))
+    expect(await runJudge(deps, state, 'tick', 1, zone)).toEqual({ kind: mode === 'refused' ? 'resting' : 'failed' })
+    expect(state.judgeCalls).toEqual([])
+    expect(state.round.askAvailableAt).toBe(15000 + JUDGE.askMinMs)
+    expect(shouldJudge(state, 15001, 1, 'ask')).toEqual({ ok: false, why: 'too_soon' })
+    expect(nextAlarmAt(state, 15000)).toBeGreaterThanOrEqual(15000 + JUDGE.tickMs)
+    expect(deps.callJudge).not.toHaveBeenCalled()
+  })
+  it('persists the recorded attempt before rendering or calling the judge', async () => {
+    const { state, deps } = setup()
+    deps.persist.mockImplementationOnce(async () => { expect(state.judgeCalls).toEqual([15000]); expect(state.lastJudgedAt).toBe(15000) })
+    expect(await runJudge(deps, state, 'tick', 1, zone)).toMatchObject({ kind: 'judged' })
+    expect(deps.persist).toHaveBeenCalledOnce()
+    expect(deps.persist.mock.invocationCallOrder[0]).toBeLessThan(deps.render.mock.invocationCallOrder[0])
+    expect(deps.persist.mock.invocationCallOrder[0]).toBeLessThan(deps.callJudge.mock.invocationCallOrder[0])
+  })
+  it('fails safely when persistence fails', async () => {
+    const { state, deps } = setup(); deps.persist.mockRejectedValueOnce(new Error('storage'))
+    expect(await runJudge(deps, state, 'tick', 1, zone)).toEqual({ kind: 'failed' })
+    expect(deps.render).not.toHaveBeenCalled()
+    expect(deps.callJudge).not.toHaveBeenCalled()
+  })
+  it('treats a null response as failure and allows a later retry', async () => {
+    const { state, deps } = setup(); deps.callJudge.mockResolvedValueOnce(null)
+    expect(await runJudge(deps, state, 'tick', 1, zone)).toEqual({ kind: 'failed' })
+    expect(shouldJudge(state, 30000, 1, 'tick')).toEqual({ ok: true })
   })
   it.each(['error', 'invalid'])('allows retry on unchanged grid after %s', async failure => {
     const { state, deps, setNow } = setup()

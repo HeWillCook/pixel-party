@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { JUDGE, ROOMS } from './config'
+import { JUDGE, MODES, ROOMS } from './config'
 import { applyJudgeOutcome, applyPlacement, advance, countPlayers, deserializeRoomState, newRoomState, nextAlarmAt, serializeRoomState, shouldJudge, startNextRound } from './room-logic'
+import { WORDS } from './words'
+import { createGrid } from './grid'
 
 const room = () => newRoomState({ roomId: 'room', mode: 'coop', isDefaultBoard: false }, 1000, () => 0)
 const judged = { kind: 'judged' as const, zone: 'all' as const, result: { guesses: ['house'], confidence: 0.9 }, matched: true }
@@ -91,5 +93,64 @@ describe('room logic', () => {
     const s = room(); s.version++
     expect(nextAlarmAt(s, 2000)).toBe(1000 + JUDGE.tickMs)
     expect(nextAlarmAt(s, 20000)).toBe(20000)
+  })
+  it('resumes at the exact window and does not close one millisecond early', () => {
+    const paused = advance(room(), 2000, 0, () => 0).state
+    const resumed = advance(paused, 2000 + ROOMS.resumeWindowMs, 1, () => 0).state
+    expect(resumed.round.id).toBe(paused.round.id)
+    expect(resumed.round.startedAt).toBe(paused.round.startedAt + ROOMS.resumeWindowMs)
+    expect(advance(paused, 2000 + ROOMS.closeAfterEmptyMs - 1, 0, () => 0).state.status).toBe('paused')
+  })
+  it('resumes a player arriving after the empty close deadline', () => {
+    const paused = advance(room(), 2000, 0, () => 0).state
+    const resumed = advance(paused, 2000 + ROOMS.closeAfterEmptyMs, 1, () => 0)
+    expect(resumed.state.status).toBe('playing')
+    expect(resumed.state.round.id).not.toBe(paused.round.id)
+  })
+  it('expires calls exactly at the 60 second window boundary', () => {
+    const state = room(); state.version = 1; state.judgeCalls = [10000, 10001, 10002, 10003, 10004, 10005]
+    expect(shouldJudge(state, 69999, 1, 'tick')).toEqual({ ok: false, why: 'rate_cap' })
+    expect(nextAlarmAt(state, 69999)).toBe(70000)
+    expect(shouldJudge(state, 70000, 1, 'tick')).toEqual({ ok: true })
+    expect(nextAlarmAt(state, 70000)).toBe(70000)
+  })
+  it('records the last writer per cell and keeps cooldowns per user', () => {
+    const original = room()
+    const first = applyPlacement(original, { x: 0, y: 0, c: 1, userId: 'a' }, 2000, 2).state
+    const second = applyPlacement(first, { x: 0, y: 0, c: 2, userId: 'b' }, 2001, 2).state
+    expect(second.grid.cells[0]).toBe(2)
+    expect(second.grid.placedBy[0]).toBe('b')
+    expect(second.version).toBe(original.version + 2)
+    expect(applyPlacement(second, { x: 1, y: 0, c: 1, userId: 'a' }, 2002, 2).events[0]).toMatchObject({ reason: 'cooldown' })
+    expect(applyPlacement(second, { x: 1, y: 0, c: 1, userId: 'c' }, 2002, 2).events[0]).toMatchObject({ type: 'pixel' })
+  })
+  it('prunes placement timestamps older than the maximum cooldown on a successful write', () => {
+    const state = room(); state.lastPlacedAt = { old: 9999, boundary: 10000, recent: 19999 }
+    const next = applyPlacement(state, { x: 0, y: 0, c: 1, userId: 'new' }, 20000, 1).state
+    expect(next.lastPlacedAt).toEqual({ boundary: 10000, recent: 19999, new: 20000 })
+    expect(state.lastPlacedAt.old).toBe(9999)
+  })
+  it('excludes all ten recent words and retains only ten', () => {
+    const state = room(); state.recentWords = WORDS.slice(0, 10).map(entry => entry.word)
+    const next = startNextRound(state, 2000, () => 0).state
+    expect(state.recentWords).not.toContain(next.round.word)
+    expect(next.recentWords).toHaveLength(10)
+    expect(next.recentWords.at(-1)).toBe(next.round.word)
+  })
+  it('preserves last guesses for a timeout and clears them for the next round', () => {
+    const s = room()
+    const seen = applyJudgeOutcome(s, { ...judged, result: { guesses: ['tree', 'plant'], confidence: 0.2 }, matched: false }, 3000).state
+    expect(seen.lastGuesses).toEqual(['tree', 'plant'])
+    const timeout = advance(seen, s.round.startedAt + MODES.coop.capMs, 1, () => 0)
+    expect(timeout.events).toContainEqual(expect.objectContaining({ type: 'roundEnded', event: expect.objectContaining({ finalGuesses: ['tree', 'plant'] }) }))
+    expect(startNextRound(timeout.state, 400000, () => 0).state.lastGuesses).toEqual([])
+  })
+  it('uses grid size for score and the winning judgement for final guesses', () => {
+    const s = room(); s.grid = createGrid(2, 2)
+    const placed = applyPlacement(s, { x: 0, y: 0, c: 1, userId: 'a' }, 2000, 1).state
+    const result = applyJudgeOutcome(placed, judged, 1000)
+    expect(result.state.round.result?.score).toBe(875)
+    expect(result.state.lastGuesses).toEqual(['house'])
+    expect(result.events).toContainEqual(expect.objectContaining({ type: 'roundEnded', event: expect.objectContaining({ finalGuesses: ['house'] }) }))
   })
 })

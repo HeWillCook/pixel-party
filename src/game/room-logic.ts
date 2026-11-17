@@ -15,6 +15,7 @@ export interface RoomState {
   round: RoundView
   wordEntry: WordEntry
   recentWords: string[]
+  lastGuesses: string[]
   roundCounter: number
   lastPlacedAt: Record<string, number>
   judgeCalls: number[]
@@ -55,7 +56,7 @@ export function newRoomState(init: { roomId: string; mode: Mode; isDefaultBoard:
   return {
     ...init, grid: createGrid(config.width, config.height), version: 0,
     round: { id: `${now}-0`, word: wordEntry.word, state: 'playing', startedAt: now, endsAt: now + config.capMs, askAvailableAt: now + JUDGE.askMinMs },
-    wordEntry, recentWords: [wordEntry.word], roundCounter: 0, lastPlacedAt: {}, judgeCalls: [],
+    wordEntry, recentWords: [wordEntry.word], lastGuesses: [], roundCounter: 0, lastPlacedAt: {}, judgeCalls: [],
     lastJudgedVersion: 0, lastJudgedAt: now, judgeInFlight: false, emptySince: null,
     intermissionEndsAt: null, pausedAt: null, pausedFrom: null, status: 'playing',
   }
@@ -67,7 +68,8 @@ export function applyPlacement(s: RoomState, p: { x: number; y: number; c: numbe
   const grid = { ...s.grid, cells: s.grid.cells.slice(), placedBy: [...s.grid.placedBy] }
   const userId = p.userId!
   setPixel(grid, p.x, p.y, p.c, userId)
-  return { state: { ...s, grid, version: s.version + 1, lastPlacedAt: { ...s.lastPlacedAt, [userId]: now } }, events: [{ type: 'pixel', x: p.x, y: p.y, c: p.c, by: userId }] }
+  const lastPlacedAt = Object.fromEntries(Object.entries(s.lastPlacedAt).filter(([, time]) => time >= now - 10000))
+  return { state: { ...s, grid, version: s.version + 1, lastPlacedAt: { ...lastPlacedAt, [userId]: now } }, events: [{ type: 'pixel', x: p.x, y: p.y, c: p.c, by: userId }] }
 }
 
 export function shouldJudge(s: RoomState, now: number, signedInConnected: number, reason: 'tick' | 'ask'): { ok: true } | { ok: false; why: 'not_playing' | 'unchanged' | 'no_players' | 'too_soon' | 'rate_cap' } {
@@ -82,7 +84,7 @@ export function shouldJudge(s: RoomState, now: number, signedInConnected: number
 function endRound(s: RoomState, now: number, outcome: 'won' | 'timeout', guesses: string[]): RoomTransition {
   const used = pixelsUsed(s.grid)
   const durationMs = now - s.round.startedAt
-  const score = outcome === 'won' ? coopScore({ pixelsUsed: used, totalCells: 1024, durationMs, capMs: MODES[s.mode].capMs }) : undefined
+  const score = outcome === 'won' ? coopScore({ pixelsUsed: used, totalCells: s.grid.width * s.grid.height, durationMs, capMs: MODES[s.mode].capMs }) : undefined
   const result: RoundView['result'] = score === undefined ? { outcome } : { outcome, score }
   const round: RoundView = { ...s.round, state: 'intermission', endedAt: now, result }
   const state: RoomState = { ...s, round, status: 'intermission', intermissionEndsAt: now + MODES[s.mode].intermissionMs }
@@ -94,8 +96,10 @@ export function applyJudgeOutcome(s: RoomState, outcome: JudgeOutcome, now: numb
   if (outcome.kind === 'resting') return { state: s, events: [{ type: 'ai_resting' }] }
   if (outcome.kind !== 'judged' || s.status !== 'playing' || s.round.state !== 'playing') return { state: s, events: [] }
   const judgement: RoomEvent = { type: 'judgement', zone: outcome.zone, guesses: outcome.result.guesses, confidence: outcome.result.confidence, matched: outcome.matched }
-  if (!outcome.matched) return { state: s, events: [judgement] }
-  const ended = endRound(s, now, 'won', outcome.result.guesses)
+  // runJudge advances lastJudgedVersion to the rendered version; doing so here could mark newer pixels as judged.
+  const state = { ...s, lastGuesses: [...outcome.result.guesses] }
+  if (!outcome.matched) return { state, events: [judgement] }
+  const ended = endRound(state, now, 'won', state.lastGuesses)
   return { state: ended.state, events: [judgement, ...ended.events] }
 }
 
@@ -104,7 +108,7 @@ export function startNextRound(s: RoomState, now: number, rng: () => number): Ro
   const wordEntry = pickWord(rng, s.recentWords)
   const roundCounter = s.roundCounter + 1
   const round: RoundView = { id: `${now}-${roundCounter}`, word: wordEntry.word, state: 'playing', startedAt: now, endsAt: now + MODES[s.mode].capMs, askAvailableAt: now + JUDGE.askMinMs }
-  const state: RoomState = { ...s, grid: createGrid(s.grid.width, s.grid.height), version: 0, lastJudgedVersion: 0, lastJudgedAt: now, wordEntry, recentWords: [...s.recentWords, wordEntry.word].slice(-10), roundCounter, round, status: 'playing', intermissionEndsAt: null, pausedAt: null, pausedFrom: null, emptySince: null }
+  const state: RoomState = { ...s, grid: createGrid(s.grid.width, s.grid.height), version: 0, lastJudgedVersion: 0, lastJudgedAt: now, wordEntry, recentWords: [...s.recentWords, wordEntry.word].slice(-10), lastGuesses: [], roundCounter, round, status: 'playing', intermissionEndsAt: null, pausedAt: null, pausedFrom: null, emptySince: null }
   return { state, events: [{ type: 'cleared' }, { type: 'round', round }] }
 }
 
@@ -113,7 +117,7 @@ function statusEvent(s: RoomState, now: number, playerCount: number): RoomEvent 
 }
 
 export function advance(s: RoomState, now: number, signedInConnected: number, rng: () => number): RoomTransition {
-  if (!s.isDefaultBoard && s.status === 'paused' && s.emptySince !== null && now - s.emptySince >= ROOMS.closeAfterEmptyMs) {
+  if (signedInConnected === 0 && !s.isDefaultBoard && s.status === 'paused' && s.emptySince !== null && now - s.emptySince >= ROOMS.closeAfterEmptyMs) {
     const state: RoomState = { ...s, status: 'closed' }
     return { state, events: [statusEvent(state, now, signedInConnected)] }
   }
@@ -132,7 +136,7 @@ export function advance(s: RoomState, now: number, signedInConnected: number, rn
     const state: RoomState = { ...s, status: restored, round, intermissionEndsAt: s.intermissionEndsAt === null ? null : s.intermissionEndsAt + elapsed, lastJudgedAt: s.lastJudgedAt + elapsed, pausedAt: null, pausedFrom: null, emptySince: null }
     return { state, events: [{ type: 'round', round }, statusEvent(state, now, signedInConnected)] }
   }
-  if (s.status === 'playing' && now >= s.round.startedAt + MODES[s.mode].capMs) return endRound(s, now, 'timeout', [])
+  if (s.status === 'playing' && now >= s.round.startedAt + MODES[s.mode].capMs) return endRound(s, now, 'timeout', s.lastGuesses)
   if (s.status === 'intermission' && s.intermissionEndsAt !== null && now >= s.intermissionEndsAt) return startNextRound(s, now, rng)
   return { state: s, events: [] }
 }
