@@ -22,7 +22,7 @@ export function AskAiButton({
   const waitSec = Math.ceil(waitMs / 1000)
   const isDisabled = isSpectator || aiResting || !roundPlaying || waitMs > 0
 
-  let label = 'Ask the AI now'
+  let label = 'Ask the AI'
   if (aiResting) {
     label = 'The AI is resting — back tomorrow'
   } else if (isSpectator) {
@@ -39,7 +39,7 @@ export function AskAiButton({
       data-testid="ask-ai-button"
       disabled={isDisabled}
       onClick={onAsk}
-      className="arcade-btn font-pixel w-full gap-2 bg-pink-600 px-4 py-2.5 text-xs font-extrabold uppercase tracking-wider text-white hover:bg-pink-500 disabled:opacity-60 sm:w-auto sm:text-sm"
+      className="pp-btn h-auto w-full gap-2 whitespace-normal px-3 py-1.5 text-[22px] leading-tight uppercase tracking-wider text-white disabled:opacity-60"
     >
       {aiResting ? (
         <Moon className="h-4 w-4 shrink-0" aria-hidden />
@@ -47,7 +47,7 @@ export function AskAiButton({
         <Bot className="h-4 w-4 shrink-0" aria-hidden />
       )}
       <span>{label}</span>
-      {!isDisabled && <Sparkles className="h-3.5 w-3.5 shrink-0 text-amber-300" aria-hidden />}
+      {!isDisabled && <Sparkles className="h-3.5 w-3.5 shrink-0 text-[var(--sunset-1)]" aria-hidden />}
     </Button>
   )
 }

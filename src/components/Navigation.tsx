@@ -58,8 +58,8 @@ export default function Navigation() {
         to={item.path}
         aria-current={active ? 'page' : undefined}
         className={cn(
-          'px-3 py-1.5 text-sm',
-          active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
+          'px-3 py-1 text-lg uppercase tracking-wider transition-colors',
+          active ? 'text-[var(--sunset-1)]' : 'text-muted-foreground hover:text-foreground',
         )}
       >
         {item.label}
@@ -71,7 +71,7 @@ export default function Navigation() {
     <>
       <nav data-testid="app-navigation" className="border-b border-border bg-background">
         <div className="mx-auto flex h-12 max-w-7xl items-center gap-4 px-4">
-          <Link to="/home" className="text-sm font-semibold text-foreground">
+          <Link to="/home" className="pp-logo text-2xl leading-none">
             {APP_NAME}
           </Link>
 
@@ -82,9 +82,9 @@ export default function Navigation() {
           {!isLoaded ? null : isSignedIn && !profileReady ? (
             /* Signed in, profile still loading — skeleton pill, never the
                Sign in button (that would offer sign-in to a signed-in user). */
-            <div className="flex items-center gap-2 rounded-full border border-border bg-card/60 py-1 pl-1 pr-2.5">
-              <div className="h-6 w-6 animate-pulse rounded-full bg-muted" />
-              <div className="hidden h-4 w-20 animate-pulse rounded-md bg-muted sm:block" />
+            <div className="pp-chip flex items-center gap-2 py-1 pl-1 pr-2.5">
+              <div className="h-6 w-6 animate-pulse bg-muted" />
+              <div className="hidden h-4 w-20 animate-pulse bg-muted sm:block" />
             </div>
           ) : isSignedIn && user ? (
             <DropdownMenu>
@@ -92,11 +92,11 @@ export default function Navigation() {
                 render={
                   <button
                     aria-label="Account menu"
-                    className="group flex items-center gap-2 rounded-full border border-border bg-card/60 py-1 pl-1 pr-2.5 text-sm transition-colors hover:bg-card"
+                    className="pp-chip group flex items-center gap-2 py-1 pl-1.5 pr-2.5 text-base transition-colors hover:bg-secondary"
                   >
                     <Avatar className="h-6 w-6 ring-1 ring-inset ring-border">
                       <AvatarImage src={user.imageUrl ?? undefined} referrerPolicy="no-referrer" />
-                      <AvatarFallback className="text-[11px]">
+                      <AvatarFallback className="text-xs">
                         {(user.name?.[0] ?? user.email?.[0] ?? '?').toUpperCase()}
                       </AvatarFallback>
                     </Avatar>
@@ -115,12 +115,12 @@ export default function Navigation() {
               />
               <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuLabel>
-                  <div className="truncate font-medium text-foreground">
+                  <div className="truncate text-base text-foreground">
                     {user.name || 'Signed in'}
                   </div>
                   <div
                     data-testid="nav-user-email"
-                    className="truncate text-xs font-normal text-muted-foreground"
+                    className="truncate text-sm text-muted-foreground"
                   >
                     {user.email}
                   </div>
@@ -136,7 +136,7 @@ export default function Navigation() {
             <button
               data-testid="nav-sign-in-button"
               onClick={() => setShowAuthModal(true)}
-              className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90"
+              className="pp-btn px-3 py-1 text-base uppercase tracking-wider"
             >
               Sign in
             </button>

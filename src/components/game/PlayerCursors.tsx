@@ -56,7 +56,7 @@ export function PlayerCursors({ peers, width, height }: PlayerCursorsProps) {
               style={{ borderColor: color }}
             />
             <span
-              className="font-pixel absolute -top-5 left-0 whitespace-nowrap rounded px-1 py-0.5 text-[9px] font-bold text-slate-950 shadow"
+              className="absolute -top-5 left-0 whitespace-nowrap px-1 py-0.5 text-xs text-background shadow"
               style={{ backgroundColor: color }}
             >
               {label}

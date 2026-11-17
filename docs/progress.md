@@ -320,6 +320,8 @@ AI image generation (the point is humans draw), ElevenLabs announcer (gimmick).
   unknown code 404; lobby snapshot has no word and no timer; painting in lobby rejected `round_inactive`; no judge
   in lobby; host Start begins a 5:00 round; a 20-cell batch was fully acked in 91 ms with no rate limiting;
   leaving and rejoining keeps the same round.
+- **2026-11-17: Pixel redesign direction agreed with Will** (visual companion mockups). VT323 everywhere, Navy glow background, Sunset accents in mockup A's design language, bigger centered canvas, chiptune SFX for four events (no per-pixel sound, no music) with a mute button, running guess log, and a watcher count (Will's call; the one server addition). Design: `docs/superpowers/specs/2026-11-17-pixel-redesign-design.md`; builder check by OpenCode DeepSeek Flash, 5 points settled by me, 2 by Will.
+- **2026-11-17: Pixel redesign built** (branch `t3/pixel-redesign-direction`, plan `docs/superpowers/plans/2026-11-17-pixel-redesign.md`, subagent-driven). Watcher count, per-round guess log, chiptune SFX + mute (Codex GPT-6.1 Terra); theme tokens + VT323, room page with big centered canvas (672px at 1440×900), other pages (Antigravity Gemini 4 Argon). Per-task reviews by Gemini 4 Hydrogen / Codex Sol, scoped re-reviews by OpenCode DeepSeek Flash; final whole-branch review Codex Sol xhigh → one fix wave (Codex Terra). Verify 247/247, offline Playwright 11 passed. Open: mobile results overlay hides its buttons below a scroll (375px).
 
 ## 2026-11-17: Room codes, host shutdown, explicit starts, and initial HTML
 
@@ -380,3 +382,23 @@ AI image generation (the point is humans draw), ElevenLabs announcer (gimmick).
   prerender); `npx playwright test --config tests/offline.playwright.config.ts` PASS (9 tests, 3.1s).
   The four fewer unit tests are the removed routing-workaround cases. No deploy or push commands were run.
 - Provider: investigation, focused rollback, coverage and verification by Codex (implementation sub-agent).
+
+## 2026-11-17: Redesign merged with main and review findings closed
+
+- Merged `origin/main` (`fb45ffd`) into the redesign branch with merge commit `3fb7ba5`.
+  Resolved six textual conflicts by preserving main's room-code, lifecycle, permission,
+  routing and explicit-start behavior alongside the redesign's layout and state additions.
+- Results now keep View Canvas/New game in a fixed, non-scrolling card footer with compact
+  narrow-board content. Countdown audio waits for a fresh reconnect snapshot; disconnected
+  and terminal states stay silent. Preserved main's four-character invite copy and removed
+  the dead RoundBar room-name prop; canvas measurement now accounts for document/main scroll.
+- Delete-room controls/dialog, mobile host-room cards and nav/logo/toggle focus are consistent
+  with VT323, square panels and Sunset tokens. Protected palette, judge, scoring and budget
+  files are unchanged from main. The dependency lockfile was unchanged, so no reinstall.
+- Verification: `npm run verify` PASS (lint, TypeScript, 263 unit tests across 24 files,
+  Worker/client builds and prerender); offline Playwright PASS (19 tests, 1 intentionally
+  gated screenshot capture); explicit screenshot run PASS with all 13 captures inspected.
+  Both 375×812 and 1280×720 results-control bounds tests run in the ordinary offline suite.
+- Full conflict audit, per-finding tests, logs and screenshot list:
+  `.superpowers/sdd/2026-11-17-pixel-redesign/merge-and-fix-report.md`.
+- No push, deployment, PR or nested agents. Implementation and verification by Codex.

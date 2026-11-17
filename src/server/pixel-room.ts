@@ -134,7 +134,7 @@ export class PixelRoom extends BaseRoom<Env> {
       }
       ws.serializeAttachment(user)
       await this.transition(this.withRoomStatus(advance(this.game!, Date.now(), this.playerCount(), Math.random), this.playerCount()), undefined, ws)
-      this.broadcastGame({ t: 'players', count: this.playerCount(), roster: this.playerRoster() })
+      this.broadcastGame({ t: 'players', count: this.playerCount(), roster: this.playerRoster(), watching: this.watcherCount() })
     } finally {
       await this.armAlarm().catch(logAlarmError)
     }
@@ -167,7 +167,7 @@ export class PixelRoom extends BaseRoom<Env> {
       try { ws.close(1000, 'Disconnected') } catch {}
       if (!this.game || this.game.status === 'closed') return
       await this.transition(this.withRoomStatus(advance(this.game, Date.now(), this.playerCount(ws), Math.random), this.playerCount(ws)))
-      this.broadcastGame({ t: 'players', count: this.playerCount(ws), roster: this.playerRoster(ws) })
+      this.broadcastGame({ t: 'players', count: this.playerCount(ws), roster: this.playerRoster(ws), watching: this.watcherCount(ws) })
     } finally {
       await this.armAlarm().catch(logAlarmError)
     }
@@ -223,6 +223,10 @@ export class PixelRoom extends BaseRoom<Env> {
     return countPlayers(this.liveSockets(exclude).map(ws => ({ userId: signedInId(this.getAttachment(ws)?.userId) })))
   }
 
+  private watcherCount(exclude?: WebSocket): number {
+    return this.liveSockets(exclude).filter(ws => signedInId(this.getAttachment(ws)?.userId) === null).length
+  }
+
   private playerRoster(exclude?: WebSocket): { userId: string; name: string }[] {
     const players = new Map<string, { userId: string; name: string }>()
     for (const ws of this.liveSockets(exclude)) {
@@ -250,7 +254,7 @@ export class PixelRoom extends BaseRoom<Env> {
     const players = this.playerCount()
     this.sendGame(ws, {
       t: 'snapshot', mode: state.mode, width: state.grid.width, height: state.grid.height,
-      cells: encodeCells(state.grid.cells), round: state.round, players, roster: this.playerRoster(),
+      cells: encodeCells(state.grid.cells), round: state.round, players, roster: this.playerRoster(), watching: this.watcherCount(),
       you: { userId, cooldownUntil: placedAt === undefined ? 0 : placedAt + cooldownMs(players) },
       aiResting: this.restingDay === utcDay(Date.now()),
     })

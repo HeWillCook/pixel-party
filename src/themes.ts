@@ -4,16 +4,6 @@ export const THEMES = [
     label: 'Arcade Night',
     description: 'Deep midnight indigo with warm amber, magenta, and crisp 16-color pixel contrast.',
   },
-  {
-    id: 'slate',
-    label: 'Slate',
-    description: 'Neutral dark theme.',
-  },
-  {
-    id: 'paper',
-    label: 'Warm Paper',
-    description: 'Light cream studio theme.',
-  },
 ] as const
 
 export type ThemeId = (typeof THEMES)[number]['id']

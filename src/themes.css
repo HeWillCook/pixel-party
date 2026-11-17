@@ -4,84 +4,154 @@
 
 [data-theme="arcade"] {
   color-scheme: dark;
-  --color-background: #0d0b14;
+  --sunset-1: #fde68a;
+  --sunset-2: #fb923c;
+  --sunset-3: #ec4899;
+  --sunset-4: #8b5cf6;
+  --word-shadow: #be185d;
+  --soft-text: #fbcfe8;
+  --text: #fef3c7;
+  --panel-bg: #14061fd9;
+  --sunset-gradient: linear-gradient(180deg,#fde68a,#fb923c 55%,#ec4899);
+  --frame-gradient: linear-gradient(135deg,#fde68a,#fb923c,#ec4899,#8b5cf6);
+  --button-gradient: linear-gradient(180deg,#fb923c,#db2777);
+
+  --color-background: #0a0814;
   --color-foreground: #fef3c7;
-  --color-card: #171426;
+  --color-card: #14061fd9;
   --color-card-foreground: #fef3c7;
-  --color-popover: #1e1933;
+  --color-popover: #14061f;
   --color-popover-foreground: #fef3c7;
-  --color-primary: #f59e0b;
-  --color-primary-foreground: #0d0b14;
-  --color-secondary: #251f3d;
+  --color-primary: #fb923c;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #1e1b4b;
   --color-secondary-foreground: #fde68a;
-  --color-muted: #1e1933;
-  --color-muted-foreground: #a79ec4;
+  --color-muted: #1e1b4b;
+  --color-muted-foreground: #fbcfe8;
   --color-accent: #ec4899;
   --color-accent-foreground: #ffffff;
   --color-destructive: #ef4444;
   --color-destructive-foreground: #ffffff;
-  --color-border: #362e59;
-  --color-input: #2c254a;
-  --color-ring: #f59e0b;
-  --radius: 0.375rem;
-  --shadow-card: 0 4px 0 0 rgba(0, 0, 0, 0.45);
-  --shadow-card-hover: 0 6px 0 0 rgba(0, 0, 0, 0.55);
-  --color-shell: #09080f;
-  --color-shell-panel: #171426;
+  --color-border: #ec4899;
+  --color-input: #f472b6;
+  --color-ring: #fde68a;
+  --radius: 0;
+  --shadow-card: 0 5px 0 #0009;
+  --shadow-card-hover: 0 6px 0 #000a;
+  --color-shell: #0a0814;
+  --color-shell-panel: #14061fd9;
 }
 
-[data-theme="paper"] {
-  color-scheme: light;
-  --color-background: #fffbeb;
-  --color-foreground: #1c1917;
-  --color-card: #ffffff;
-  --color-card-foreground: #1c1917;
-  --color-popover: #ffffff;
-  --color-popover-foreground: #1c1917;
-  --color-primary: #d97706;
-  --color-primary-foreground: #ffffff;
-  --color-secondary: #fef3c7;
-  --color-secondary-foreground: #1c1917;
-  --color-muted: #fef3c7;
-  --color-muted-foreground: #78716c;
-  --color-accent: #fde68a;
-  --color-accent-foreground: #1c1917;
-  --color-destructive: #dc2626;
-  --color-destructive-foreground: #ffffff;
-  --color-border: #e7e5e4;
-  --color-input: #e7e5e4;
-  --color-ring: #d97706;
-  --shadow-card: 0 2px 0 0 rgba(28, 25, 23, 0.12);
-  --shadow-card-hover: 0 4px 0 0 rgba(28, 25, 23, 0.18);
-  --color-shell: #fef3c7;
-  --color-shell-panel: #ffffff;
-}
-
-/* Crisp pixel art utility classes */
+/* Crisp pixel art & synthwave arcade building blocks */
 .pixelated {
   image-rendering: pixelated;
   image-rendering: crisp-edges;
 }
 
-.font-pixel {
-  font-family: ui-monospace, 'Cascadia Mono', 'SFMono-Regular', Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
-  letter-spacing: 0.04em;
+.pp-logo {
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  background: var(--sunset-gradient, linear-gradient(180deg,#fde68a,#fb923c 55%,#ec4899));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(2px 2px 0 #14061f);
 }
 
-.arcade-card {
-  border: 2px solid var(--color-border);
-  box-shadow: 0 4px 0 0 rgba(0, 0, 0, 0.45);
+.pp-panel {
+  background: var(--panel-bg, #14061fd9);
+  border: 3px solid var(--sunset-3, #ec4899);
+  border-radius: 0;
+  box-shadow: 0 5px 0 #0009;
 }
 
-.arcade-btn {
-  border: 2px solid rgba(255, 255, 255, 0.14);
-  box-shadow: 0 3px 0 0 rgba(0, 0, 0, 0.5);
+.pp-frame {
+  padding: 10px;
+  background: var(--frame-gradient, linear-gradient(135deg,#fde68a,#fb923c,#ec4899,#8b5cf6));
+  border-radius: 0;
+  box-shadow: 0 10px 0 #0009;
+}
+
+.pp-chip {
+  padding: 2px 8px;
+  background: #14061fcc;
+  border: 2px solid #f472b6;
+  border-radius: 0;
+  color: var(--sunset-1, #fde68a);
+}
+
+.pp-danger {
+  color: var(--sunset-3);
+  border-color: var(--sunset-3);
+}
+
+.pp-danger-solid {
+  background: var(--sunset-3);
+  color: var(--color-background);
+}
+
+.pp-btn {
+  background: var(--button-gradient, linear-gradient(180deg,#fb923c,#db2777));
+  color: #ffffff;
+  border: 2px solid #fff4;
+  border-radius: 0;
+  box-shadow: 0 4px 0 #000a;
   transition: transform 80ms ease, box-shadow 80ms ease;
 }
 
-.arcade-btn:active:not(:disabled) {
+.pp-btn:active:not(:disabled) {
   transform: translateY(2px);
-  box-shadow: 0 1px 0 0 rgba(0, 0, 0, 0.5);
+  box-shadow: 0 2px 0 #000a;
+}
+
+.pp-btn:focus-visible,
+.pp-chip:focus-visible,
+a.pp-panel:focus-visible,
+[data-testid^="room-card-"]:focus-visible,
+a.pp-logo:focus-visible,
+nav a:focus-visible,
+nav button:focus-visible,
+[data-testid="visibility-public"]:focus-visible,
+[data-testid="visibility-private"]:focus-visible,
+[data-testid="palette"] button:focus-visible {
+  outline: 3px solid var(--sunset-1);
+  outline-offset: 2px;
+}
+
+@container (max-width: 400px) {
+  .pp-results {
+    padding: 8px;
+  }
+
+  .pp-results-body {
+    gap: 6px;
+    padding: 8px;
+  }
+
+  .pp-results-icon {
+    display: none;
+  }
+
+  .pp-results-word {
+    font-size: 24px;
+    line-height: 1;
+  }
+
+  .pp-results-body #overlay-heading {
+    font-size: 14px;
+    letter-spacing: 1px;
+  }
+
+  .pp-results-footer {
+    gap: 4px;
+    padding: 8px;
+  }
+}
+
+.pp-word {
+  color: var(--sunset-1, #fde68a);
+  text-shadow: 3px 3px 0 var(--word-shadow, #be185d);
+  letter-spacing: 2px;
 }
 
 @keyframes guess-pop {

@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  body { margin:0; background:#0d0b14; color:#fef3c7; font-family:-apple-system,system-ui,sans-serif; padding:24px 16px 48px; }
+  h1 { font-size:18px; margin:0 0 4px; }
+  .sub { color:#a79ec4; margin:0 0 20px; font-size:14px; max-width:900px; line-height:1.45; }
+  .option { margin-bottom:28px; cursor:pointer; border:3px solid transparent; max-width:1100px; }
+  .option.selected { border-color:#f472b6; }
+  .label { font-size:14px; color:#a79ec4; padding:8px 4px; line-height:1.45; }
+  .label strong { color:#fef3c7; font-size:16px; }
+  .tag { display:inline-block; background:#f472b6; color:#0d0b14; font-weight:800; padding:0 6px; margin-right:6px; }
+
+  .room { font-family:'VT323',monospace; font-size:20px; position:relative; overflow:hidden; padding:14px 18px 22px; }
+  .top { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
+  .logo { font-size:32px; text-transform:uppercase; letter-spacing:1px;
+    background:linear-gradient(180deg,#fde68a,#fb923c 55%,#ec4899); -webkit-background-clip:text; background-clip:text; color:transparent; filter:drop-shadow(2px 2px 0 #14061f); }
+  .chips span { margin-left:8px; padding:2px 8px; background:#14061fcc; border:2px solid #f472b6; color:#fde68a; }
+  .stage { display:grid; grid-template-columns:1fr auto 1fr; gap:18px; align-items:start; }
+  .roundbar { display:flex; gap:22px; justify-content:center; align-items:baseline; margin-bottom:10px; font-size:24px; color:#fbcfe8; }
+  .word { font-size:34px; letter-spacing:2px; color:#fde68a; text-shadow:3px 3px 0 #be185d; }
+  .canvaswrap { padding:10px; background:linear-gradient(135deg,#fde68a,#fb923c,#ec4899,#8b5cf6); box-shadow:0 10px 0 #0009; }
+  canvas { display:block; width:400px; height:400px; image-rendering:pixelated; }
+  .palette { display:flex; gap:4px; justify-content:center; margin-top:12px; flex-wrap:wrap; max-width:420px; }
+  .palette i { width:22px; height:22px; display:block; border:2px solid #0d0b14; }
+  .palette i.on { outline:3px solid #fde68a; }
+  .panel { background:#14061fd9; border:3px solid #ec4899; box-shadow:0 5px 0 #0009; padding:10px 12px; font-size:19px; line-height:1.15; }
+  .panel h4 { margin:0 0 6px; font-weight:400; font-size:22px; text-transform:uppercase; color:#fb923c; }
+  .panel p { margin:5px 0; }
+  .panel b { color:#f472b6; font-weight:400; }
+  .ask { display:block; text-align:center; margin-top:10px; padding:6px 10px; font-size:24px; text-transform:uppercase;
+    background:linear-gradient(180deg,#fb923c,#db2777); color:#fff; border:2px solid #fff4; box-shadow:0 4px 0 #000a; }
+
+  .bg1 { background:radial-gradient(ellipse at 50% 0%,#1e1b4b 0%,#0a0814 60%), #0a0814; }
+  .bg2 { background:linear-gradient(180deg,#0a0814 0%,#160a26 55%,#2a0b35 100%); }
+  .bg2::after { content:""; position:absolute; left:0; right:0; bottom:0; height:3px; background:linear-gradient(90deg,#fde68a,#fb923c,#ec4899,#8b5cf6); }
+</style>
+</head>
+<body>
+  <h1>Pixel Party redesign: agreed look (reference)</h1>
+  <p class="sub">Approved by Will on 2026-11-17. VT323 throughout, Navy glow background, Sunset accents, A's design language (gradient logo, gradient canvas frame, pink-bordered panels with hard shadows, gradient Ask button). The canvas is drawn at 400px here only to fit the mockup; the real canvas follows the sizing rule in the design doc. Drawing colors are the unchanged game PALETTE.</p>
+  <div class="room bg1"></div>
+<script>
+const PAL=['#ffffff','#000000','#9ca3af','#4b5563','#ef4444','#f97316','#eab308','#22c55e','#15803d','#06b6d4','#3b82f6','#1d4ed8','#a855f7','#ec4899','#92400e','#fde68a'];
+const roomHTML=`
+  <div class="top"><div class="logo">Pixel Party</div><div class="chips"><span>ROOM QX3J</span><span>3 PLAYERS</span></div></div>
+  <div class="roundbar"><span>DRAW:</span><span class="word">LIGHTHOUSE</span><span>0:42</span><span>87 PX</span></div>
+  <div class="stage">
+    <div class="panel"><h4>Players</h4><p>&gt; WILL</p><p>&gt; ALEX</p><p>&gt; SAM</p><p style="opacity:.6">2 watching</p></div>
+    <div><div class="canvaswrap"><canvas width="32" height="32"></canvas></div>
+      <div class="palette">${PAL.map((c,i)=>`<i class="${i===4?'on':''}" style="background:${c}"></i>`).join('')}</div></div>
+    <div class="panel"><h4>Haiku says</h4><p><b>0:15</b> tower, rocket?</p><p><b>0:30</b> lighthouse, tower</p><span class="ask">Ask the AI</span></div>
+  </div>`;
+function draw(cv){const x=cv.getContext('2d');x.fillStyle='#ffffff';x.fillRect(0,0,32,32);
+  x.fillStyle='#1d4ed8';x.fillRect(0,0,32,20);x.fillStyle='#fde68a';x.fillRect(4,3,2,2);x.fillRect(25,5,1,1);x.fillRect(20,2,1,1);
+  x.fillStyle='#06b6d4';x.fillRect(0,24,32,8);x.fillStyle='#3b82f6';for(let i=0;i<32;i+=4)x.fillRect(i,26,2,1);
+  x.fillStyle='#92400e';x.fillRect(0,21,32,3);
+  for(let r=0;r<14;r++){const w=6+Math.floor(r/3);x.fillStyle=(Math.floor(r/3)%2)?'#ffffff':'#ef4444';x.fillRect(16-Math.floor(w/2),8+r,w,1);}
+  x.fillStyle='#000000';x.fillRect(13,4,6,4);x.fillStyle='#eab308';x.fillRect(14,5,4,2);
+  x.fillStyle='#fde68a';x.globalAlpha=.6;x.beginPath();x.moveTo(18,5);x.lineTo(31,1);x.lineTo(31,10);x.closePath();x.fill();x.globalAlpha=1;
+  x.fillStyle='#ef4444';x.fillRect(12,3,8,1);x.fillRect(15,2,2,1);}
+document.querySelectorAll('.room').forEach(el=>{el.innerHTML=roomHTML;draw(el.querySelector('canvas'));});
+</script>
+</body>
+</html>
