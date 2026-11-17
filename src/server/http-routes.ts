@@ -419,6 +419,20 @@ export function registerStaticRoutes(app: Hono<AppContext>): void {
 
   app.get('*', async (c) => {
     const url = new URL(c.req.url)
+    // A navigation fallback may answer /r/:code with the prerendered landing
+    // at 200. Room URLs must never paint its demo grid before authorization.
+    if (url.pathname === '/r' || url.pathname.startsWith('/r/')) {
+      url.pathname = SPA_SHELL_PATH
+      let shell = await c.env.ASSETS.fetch(new Request(url.toString(), c.req.raw))
+      // Local dev has no prerender pass or _spa asset; its index is empty.
+      if (shell.status === 404) {
+        url.pathname = '/'
+        shell = await c.env.ASSETS.fetch(new Request(url.toString(), c.req.raw))
+      }
+      const html = await shell.text()
+      if (html.includes('data-prerendered=')) return new Response('App shell unavailable', { status: 503 })
+      return new Response(html, shell)
+    }
     const response = await c.env.ASSETS.fetch(c.req.raw)
     if (response.status !== 404) return response
 

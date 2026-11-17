@@ -320,3 +320,40 @@ AI image generation (the point is humans draw), ElevenLabs announcer (gimmick).
   unknown code 404; lobby snapshot has no word and no timer; painting in lobby rejected `round_inactive`; no judge
   in lobby; host Start begins a 5:00 round; a 20-cell batch was fully acked in 91 ms with no rate limiting;
   leaving and rejoining keeps the same round.
+
+## 2026-11-17: Room codes, host shutdown, explicit starts, and initial HTML
+
+- All newly created public and private rooms use four characters from the existing crypto alphabet, retaining
+  ten collision attempts and unique-index race retries. Closed codes remain reserved. The join field uppercases
+  input and advertises four characters; its 64-character ceiling and the permissive server pattern preserve
+  legacy ten-character links/codes and `play`.
+- Hosts can confirm Delete room in the room header and on their public-room cards in the home list. The new
+  authenticated action checks host ownership, refuses the default board, closes the record without deleting it,
+  and sends an internal shutdown request to its PixelRoom. Shutdown persists a tombstone (including rooms never
+  opened), broadcasts a terminal host-closed message, closes sockets, and deletes the alarm. Status writes are
+  serialized so a pending playing/paused update cannot overwrite closed. Further judge calls stop; results of
+  an already issued integration call are discarded. The client displays “This room was closed by the host” and
+  does not reconnect. The existing non-closed-room quota filter frees the host slot; action tests verify this.
+- Round results now wait indefinitely for explicit New game, with no intermission alarm or countdown. Legacy
+  intermission deadlines are discarded on restore. A long pause resumes the same frozen round rather than
+  generating another word. Empty custom rooms still expire after 30 minutes, including rooms waiting on results.
+  The `next` command requires a connected signed-in caller: host while connected; any such player when the host
+  is absent; any such player on `play`. Unknown legacy hosts remain denied conservatively. Fresh public/private
+  rooms and a fresh default board wait in lobby; corrupt-state recovery also waits for Start. Valid persisted
+  playing rounds retain their state. Explicit Skip Round remains available under the same authorization rules.
+- Flash root reproduced offline: the static worker accepted a navigation asset fallback returning the prerendered
+  landing at HTTP 200 for `/r/AB2Z`. That landing includes the mushroom preview grid (`src/pages/index.tsx`), which
+  paints before React loads the actual private route. The prior offline fixture unconditionally served `_spa.html`,
+  hiding this path; the existing authorized-snapshot guard already kept the React canvas out. Room URLs now run
+  worker-first and explicitly request the empty shell, rejecting prerendered fallback HTML if the shell is missing.
+  Local dev can still use an empty index. This reproduction models the asset fallback; no live deployment was
+  inspected or changed. The strengthened test uses the real static route, checks the first response HTML, and
+  observes added DOM nodes from navigation onward for any canvas, board frame, or demo grid. It failed first on
+  the landing grid and passes after the fix; delayed auth and same-component room changes remain covered.
+- Verification: `npm run verify` PASS (lint, TypeScript, 239 unit tests across 21 files, Worker/client builds,
+  prerender). `npx playwright test --config tests/offline.playwright.config.ts` PASS (8 tests, 3.2s). New coverage
+  also checks confirm/cancel deletion, no reconnect after closure, and explicit starts on custom/default results
+  when the host is absent. The smoke script explicitly starts a waiting board and accepts retained results after
+  disconnect; live smoke/account suites were updated where needed but not run. No dependencies or schema migrations.
+  No deploy, DeepSpace push, or Git push commands were run.
+- Provider: implementation, self-review, and verification by Codex; no nested agents (implementation sub-agent assignment).

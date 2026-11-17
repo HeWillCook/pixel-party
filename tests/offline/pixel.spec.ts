@@ -1,6 +1,9 @@
 import { expect, test, type Page, type WebSocketRoute } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { Hono } from 'hono'
+import { registerStaticRoutes } from '../../src/server/http-routes'
+import type { AppContext, Env } from '../../worker'
 
 const origin = 'http://pixel.test'
 const clientDir = resolve(import.meta.dirname, '../../dist/client')
@@ -8,7 +11,7 @@ const fixtureUser = { id: 'host', name: 'Offline host', email: 'host@example.tes
 // Deliberately unsigned fixture, consumed only by the intercepted client APIs.
 const fixtureToken = `fixture.${Buffer.from(JSON.stringify({ sub: fixtureUser.id, name: fixtureUser.name, exp: 4_000_000_000 })).toString('base64url')}.unsigned`
 
-async function clientFixture(page: Page, options: { signedIn?: boolean; preflight?: () => Promise<void> } = {}) {
+async function clientFixture(page: Page, options: { signedIn?: boolean; hostId?: string; preflight?: () => Promise<void>; navigationFallback?: boolean } = {}) {
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   await page.route('**/*', async route => {
@@ -24,6 +27,17 @@ async function clientFixture(page: Page, options: { signedIn?: boolean; prefligh
     }
     if (url.pathname.startsWith('/api/')) return route.fulfill({ json: {} })
     const asset = url.pathname.startsWith('/assets/')
+    if (!asset && options.navigationFallback) {
+      // Exercise the real worker fallback with a navigation asset layer that
+      // answers unknown paths with the prerendered index (200, not 404).
+      const app = new Hono<AppContext>()
+      registerStaticRoutes(app)
+      const response = await app.request(url.href, undefined, { ASSETS: {
+        fetch: async (request: Request) => new Response(await readFile(resolve(clientDir,
+          new URL(request.url).pathname === '/_spa' ? '_spa.html' : 'index.html')), { headers: { 'Content-Type': 'text/html' } }),
+      } } as unknown as Env)
+      return route.fulfill({ status: response.status, contentType: 'text/html', body: await response.text() })
+    }
     const path = asset ? resolve(clientDir, `.${url.pathname}`) : resolve(clientDir, '_spa.html')
     const contentType = asset ? (path.endsWith('.css') ? 'text/css' : 'application/javascript') : 'text/html'
     return route.fulfill({ contentType, body: await readFile(path) })
@@ -32,12 +46,13 @@ async function clientFixture(page: Page, options: { signedIn?: boolean; prefligh
     if (socket.url().includes('/ws/presence/')) return
     socket.send(JSON.stringify({ type: 'user.info', payload: { role: 'member' } }))
     socket.onMessage(raw => {
+      if (raw === 'ping') { socket.send('pong'); return }
       const message = JSON.parse(String(raw))
       if (message.type === 'user.list') socket.send(JSON.stringify({ type: 'user.list', payload: { users: [] } }))
       if (message.type !== 'core.subscribe') return
       const { subscriptionId, query } = message.payload
       const records = query.collection === 'rooms' ? [{ recordId: 'room', data: {
-        name: 'Offline party', mode: 'coop', visibility: 'private', joinCode: 'AB2Z', hostId: 'host', status: 'lobby', isDefaultBoard: false,
+        name: 'Offline party', mode: 'coop', visibility: 'private', joinCode: 'AB2Z', hostId: options.hostId ?? 'host', status: 'lobby', isDefaultBoard: false,
       } }] : []
       socket.send(JSON.stringify({ type: 'core.query_result', payload: { subscriptionId, records } }))
     })
@@ -61,16 +76,19 @@ async function pixelColor(page: Page, x: number, y: number) {
 test('signed-out private visitors never mount room content during a delayed preflight', async ({ page }) => {
   let release!: () => void
   const preflight = new Promise<void>(resolve => { release = resolve })
-  const errors = await clientFixture(page, { preflight: () => preflight })
+  const errors = await clientFixture(page, { preflight: () => preflight, navigationFallback: true })
   await page.addInitScript(() => {
     const state = window as unknown as { roomContentMounted: boolean }
     state.roomContentMounted = false
-    new MutationObserver(() => {
-      if (document.querySelector('[data-testid="pixel-canvas"], [data-testid="round-players"], [data-testid="room-lobby"]')) state.roomContentMounted = true
+    const selector = 'canvas, [role="grid"], .grid-cols-10, [data-testid="pixel-canvas-frame"], [data-testid="round-players"], [data-testid="room-lobby"]'
+    new MutationObserver(records => {
+      if (records.some(record => [...record.addedNodes].some(node => node instanceof Element && (node.matches(selector) || node.querySelector(selector)))) || document.querySelector(selector)) state.roomContentMounted = true
     }).observe(document, { childList: true, subtree: true })
   })
   await page.routeWebSocket('**/api/pixel/**', socket => socket.close({ code: 1008 }))
-  await page.goto(`${origin}/r/AB2Z`)
+  const response = await page.goto(`${origin}/r/AB2Z`)
+  const html = await response!.text()
+  expect(html).not.toMatch(/<canvas|grid-cols-10|pixel-canvas-frame/)
   await expect(page.getByTestId('room-loading')).toBeVisible()
   await expect(page.getByTestId('pixel-canvas')).toHaveCount(0)
   release()
@@ -169,3 +187,63 @@ test('switching from a public board to a private invite clears the previous room
   await expect(page.getByTestId('room-error-unauthorized')).toBeVisible()
   expect(errors).toEqual([])
 })
+
+test('host deletion asks for confirmation, closes the board, and never reconnects', async ({ page }) => {
+  const errors = await clientFixture(page, { signedIn: true })
+  await page.clock.install()
+  let socket!: WebSocketRoute
+  let connections = 0
+  let deletes = 0
+  await page.routeWebSocket('**/api/pixel/**', connection => {
+    connections++
+    socket = connection
+    connection.send(JSON.stringify(snapshot('playing')))
+  })
+  await page.route('**/api/actions/deleteRoom', async route => {
+    deletes++
+    expect(route.request().postDataJSON()).toEqual({ joinCode: 'AB2Z' })
+    socket.send(JSON.stringify({ t: 'closed' }))
+    socket.close({ code: 4001 })
+    await route.fulfill({ json: { success: true, data: { roomId: 'room' } } })
+  })
+  await page.goto(`${origin}/r/AB2Z`)
+  await expect(page.getByTestId('pixel-canvas')).toBeVisible()
+  await page.getByRole('button', { name: 'Delete room', exact: true }).click()
+  await expect(page.getByRole('dialog')).toContainText('This ends the room for everyone.')
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+  expect(deletes).toBe(0)
+  await page.getByRole('button', { name: 'Delete room', exact: true }).click()
+  await page.getByRole('button', { name: 'End room', exact: true }).click()
+  await expect(page.getByTestId('room-error-closed')).toContainText('This room was closed by the host')
+  await expect(page.getByTestId('pixel-canvas')).toHaveCount(0)
+  await page.clock.fastForward(30000)
+  expect(deletes).toBe(1)
+  expect(connections).toBe(1)
+  expect(errors).toEqual([])
+})
+
+for (const code of ['AB2Z', 'play']) {
+  test(`results in ${code} wait for explicit New game, with the host absent`, async ({ page }) => {
+    const errors = await clientFixture(page, { signedIn: true, hostId: 'absent-host' })
+    await page.clock.install()
+    const commands: string[] = []
+    await page.routeWebSocket('**/api/pixel/**', socket => {
+      const state = snapshot('playing')
+      socket.send(JSON.stringify({ ...state, round: { ...state.round, state: 'intermission', endedAt: Date.now(), result: { outcome: 'timeout' } } }))
+      socket.onMessage(raw => {
+        const command = JSON.parse(String(raw)).t
+        commands.push(command)
+        if (command === 'next') socket.send(JSON.stringify({ ...state, round: { ...state.round, id: 'next-round' } }))
+      })
+    })
+    await page.goto(`${origin}/r/${code}`)
+    await expect(page.getByRole('button', { name: 'New game', exact: true }).last()).toBeVisible()
+    await page.clock.fastForward(60000)
+    await expect(page.getByRole('button', { name: 'New game', exact: true }).last()).toBeVisible()
+    expect(commands).toEqual([])
+    await page.getByRole('button', { name: 'New game', exact: true }).last().click()
+    await expect(page.getByTestId('round-word')).toContainText('sun')
+    expect(commands).toEqual(['next'])
+    expect(errors).toEqual([])
+  })
+}
