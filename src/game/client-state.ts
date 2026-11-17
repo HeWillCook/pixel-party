@@ -24,6 +24,7 @@ export interface ClientState {
   pending: Map<number, number>
   round: RoundView | null
   guesses: Record<ZoneId, ZoneGuess | undefined>
+  roster: { userId: string; name: string }[]
   players: number
   you: SnapshotYou
   aiResting: boolean
@@ -44,6 +45,7 @@ export function initialClientState(): ClientState {
     round: null,
     guesses: {} as Record<ZoneId, ZoneGuess | undefined>,
     players: 0,
+    roster: [],
     you: { userId: null, cooldownUntil: 0 },
     aiResting: false,
     lastReject: null,
@@ -118,6 +120,7 @@ export function applyServerMsg(s: ClientState, m: ServerMsg): ClientState {
           ? ({} as Record<ZoneId, ZoneGuess | undefined>)
           : s.guesses,
         players: m.players,
+        roster: m.roster ?? [],
         you: m.you,
         aiResting: m.aiResting,
         lastReject: null,
@@ -157,12 +160,16 @@ export function applyServerMsg(s: ClientState, m: ServerMsg): ClientState {
         m.reason === 'round_inactive' ||
         m.reason === 'out_of_bounds' ||
         m.reason === 'bad_color' ||
-        m.reason === 'cooldown'
+        m.reason === 'cooldown' ||
+        m.reason === 'rate_limited'
 
       const pending = new Map(s.pending)
       if (isPlacementReject && pending.size > 0) {
-        // M4: Roll back only the oldest unconfirmed pending cell (FIFO) corresponding to this rejected placement
-        const firstEntry = pending.entries().next().value as [number, number] | undefined
+        // Batches identify the rejected cell; retain FIFO compatibility with older servers.
+        const idx = m.x === undefined || m.y === undefined ? undefined : m.y * s.width + m.x
+        const firstEntry = idx === undefined
+          ? pending.entries().next().value as [number, number] | undefined
+          : pending.has(idx) ? [idx, pending.get(idx)!] : undefined
         if (firstEntry) {
           const [idx, prevColor] = firstEntry
           cells[idx] = prevColor
@@ -171,7 +178,7 @@ export function applyServerMsg(s: ClientState, m: ServerMsg): ClientState {
       }
 
       const you =
-        m.reason === 'cooldown' && m.retryAt !== undefined
+        (m.reason === 'cooldown' || m.reason === 'rate_limited') && m.retryAt !== undefined
           ? { ...s.you, cooldownUntil: m.retryAt }
           : s.you
 
@@ -219,6 +226,7 @@ export function applyServerMsg(s: ClientState, m: ServerMsg): ClientState {
       return {
         ...s,
         players: m.count,
+        roster: m.roster ?? s.roster,
       }
     }
     case 'ai_resting': {
@@ -228,4 +236,9 @@ export function applyServerMsg(s: ClientState, m: ServerMsg): ClientState {
       }
     }
   }
+}
+
+/** A socket opening is not authorization; only its first snapshot unlocks room UI. */
+export function roomAccessView(state: ClientState): 'loading' | 'room' | ConnectError {
+  return state.connectError ?? (state.snapshotLoaded ? 'room' : 'loading')
 }

@@ -9,7 +9,7 @@ import {
   type ClientState,
 } from '../game/client-state'
 import { PALETTE } from '../game/config'
-import type { ClientMsg, ServerMsg } from '../game/protocol'
+import { MAX_PLACE_BATCH, type Placement, type ClientMsg, type ServerMsg } from '../game/protocol'
 import { cooldownMs } from '../game/rules'
 import { pixelPreflight } from './pixelPreflight'
 
@@ -26,10 +26,14 @@ const REJECT_DISPLAY_MS = 4000
 
 export function usePixelRoom(joinCode: string): UsePixelRoomResult {
   const { isSignedIn, userId, sessionId } = useAuthStatus()
+  const connectionKey = JSON.stringify([joinCode, isSignedIn, userId, sessionId])
+  const [stateKey, setStateKey] = useState(connectionKey)
   const [state, setState] = useState<ClientState>(() => initialClientState())
   const [sessionExpired, setSessionExpired] = useState(false)
   const wsRef = useRef<WebSocket | null>(null)
   const stateRef = useRef<ClientState>(state)
+  const queuedRef = useRef<Placement[]>([])
+  const frameRef = useRef<number | null>(null)
   const lastSendAtRef = useRef<number>(0)
 
   useEffect(() => {
@@ -54,7 +58,12 @@ export function usePixelRoom(joinCode: string): UsePixelRoomResult {
   }, [state.lastReject])
 
   useEffect(() => {
-    setState(initialClientState())
+    setStateKey(connectionKey)
+    stateRef.current = initialClientState()
+    setState(stateRef.current)
+    queuedRef.current = []
+    if (frameRef.current !== null) cancelAnimationFrame(frameRef.current)
+    frameRef.current = null
     setSessionExpired(false)
     lastSendAtRef.current = 0
     if (!joinCode || typeof window === 'undefined') return
@@ -141,7 +150,16 @@ export function usePixelRoom(joinCode: string): UsePixelRoomResult {
             receivedSnapshot = true
             backoffMs = 500
           }
-          setState((prev) => applyServerMsg(prev, msg))
+          if (msg.t === 'snapshot' || (msg.t === 'round' && msg.round.id !== stateRef.current.round?.id)) {
+            queuedRef.current = []
+            if (frameRef.current !== null) cancelAnimationFrame(frameRef.current)
+            frameRef.current = null
+          }
+          setState((prev) => {
+            const updated = applyServerMsg(prev, msg)
+            stateRef.current = updated
+            return updated
+          })
         } catch {
           // Ignore malformed server payloads
         }
@@ -185,8 +203,11 @@ export function usePixelRoom(joinCode: string): UsePixelRoomResult {
         ws.close()
       }
       wsRef.current = null
+      queuedRef.current = []
+      if (frameRef.current !== null) cancelAnimationFrame(frameRef.current)
+      frameRef.current = null
     }
-  }, [joinCode, isSignedIn, userId, sessionId])
+  }, [joinCode, isSignedIn, userId, sessionId, connectionKey])
 
   const sendMsg = useCallback((msg: ClientMsg): boolean => {
     const ws = wsRef.current
@@ -207,7 +228,7 @@ export function usePixelRoom(joinCode: string): UsePixelRoomResult {
       if (!Number.isInteger(c) || c < 1 || c >= PALETTE.length) return
 
       // M3: Gate placement on active playing state and signed-in snapshot identity
-      if (!current.you.userId || current.round?.state !== 'playing') return
+      if (!current.connected || !current.you.userId || current.round?.state !== 'playing') return
 
       const now = Date.now()
       const cd = cooldownMs(Math.max(1, current.players))
@@ -216,22 +237,32 @@ export function usePixelRoom(joinCode: string): UsePixelRoomResult {
       if (now - lastSendAtRef.current < cd) return
 
       const idx = y * current.width + x
-      if (current.cells[idx] === c) return
-
-      if (!sendMsg({ t: 'place', x, y, c })) return
+      if (current.cells[idx] === c || current.pending.has(idx)) return
+      if (wsRef.current?.readyState !== WebSocket.OPEN) return
       lastSendAtRef.current = now
-
-      setState((prev) => {
-        const next = applyOptimisticPlace(prev, x, y, c)
-        if (!prev.you.userId) return next
-        return {
-          ...next,
-          you: {
-            ...next.you,
-            cooldownUntil: Math.max(next.you.cooldownUntil, now + cd),
-          },
-        }
-      })
+      const optimistic = applyOptimisticPlace(current, x, y, c)
+      const updated = { ...optimistic, you: { ...optimistic.you, cooldownUntil: Math.max(optimistic.you.cooldownUntil, now + cd) } }
+      stateRef.current = updated
+      setState(updated)
+      queuedRef.current.push({ x, y, c })
+      if (frameRef.current === null) {
+        frameRef.current = requestAnimationFrame(() => {
+          frameRef.current = null
+          const queued = queuedRef.current
+          queuedRef.current = []
+          for (let i = 0; i < queued.length; i += MAX_PLACE_BATCH) {
+            const cells = queued.slice(i, i + MAX_PLACE_BATCH)
+            if (!sendMsg({ t: 'place', cells })) {
+              setState(prev => {
+                let updated = prev
+                for (const cell of cells) updated = applyServerMsg(updated, { t: 'reject', reason: 'round_inactive', x: cell.x, y: cell.y })
+                stateRef.current = updated
+                return updated
+              })
+            }
+          }
+        })
+      }
     },
     [sendMsg],
   )
@@ -251,5 +282,5 @@ export function usePixelRoom(joinCode: string): UsePixelRoomResult {
     [sendMsg],
   )
 
-  return { state, sessionExpired, place, ask, next, chooseTeam }
+  return { state: stateKey === connectionKey ? state : initialClientState(), sessionExpired, place, ask, next, chooseTeam }
 }

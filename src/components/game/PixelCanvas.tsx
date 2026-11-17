@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { strokeCells } from '../../game/stroke'
 import { PALETTE } from '../../game/config'
 
 export interface PixelCanvasProps {
@@ -79,11 +80,13 @@ export function PixelCanvas({
     const cell = getCellFromEvent(e.clientX, e.clientY)
     setHoverCell(cell)
     onHoverCell?.(cell)
-    if (!isPointerDownRef.current || !cell) return
+    if (!canDraw || !isPointerDownRef.current || !cell) return
     const prev = lastDragCellRef.current
     if (prev && prev.x === cell.x && prev.y === cell.y) return
     lastDragCellRef.current = cell
-    onPlace(cell.x, cell.y, activeColor)
+    for (const point of prev ? strokeCells(prev, cell).slice(1) : [cell]) {
+      onPlace(point.x, point.y, activeColor)
+    }
   }
 
   const handlePointerUpOrCancel = () => {

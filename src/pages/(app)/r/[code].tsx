@@ -12,6 +12,7 @@ import {
   ArrowLeft,
   Award,
   Clock,
+  Copy,
   Eye,
   FastForward,
   Lock,
@@ -29,7 +30,7 @@ import { PixelCanvas } from '../../../components/game/PixelCanvas'
 import { PlayerCursors } from '../../../components/game/PlayerCursors'
 import { RoundBar } from '../../../components/game/RoundBar'
 import { Button } from '../../../components/ui'
-import type { RejectMsg } from '../../../game/client-state'
+import { roomAccessView, type RejectMsg } from '../../../game/client-state'
 import { MODES } from '../../../game/config'
 import { contributorLabel } from '../../../game/contributor-label'
 import { cooldownMs } from '../../../game/rules'
@@ -62,6 +63,8 @@ function rejectMessage(reject: RejectMsg | null, now: number): string | null {
   switch (reject.reason) {
     case 'not_signed_in':
       return 'Sign in to place pixels or ask the AI.'
+    case 'rate_limited':
+      return 'Painting too quickly — try again in a moment.'
     case 'cooldown': {
       const wait = reject.retryAt ? Math.max(0.1, (reject.retryAt - now) / 1000) : 0.2
       return `Brush cooling down — ready in ${wait.toFixed(1)}s`
@@ -85,9 +88,30 @@ function rejectMessage(reject: RejectMsg | null, now: number): string | null {
   }
 }
 
+function InviteBadge({ code }: { code: string }) {
+  const [copyStatus, setCopyStatus] = useState('Copy link')
+  return (
+    <div className="flex items-center gap-2">
+      <span data-testid="room-code" className="font-pixel rounded-md border-2 border-amber-400 bg-amber-400/10 px-3 py-1 text-lg font-extrabold tracking-widest text-amber-300" aria-label={`Room code ${code}`}>
+        {code}
+      </span>
+      <Button type="button" variant="secondary" size="sm" className="arcade-btn gap-1.5" data-testid="copy-room-link" onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(new URL(`/r/${encodeURIComponent(code)}`, window.location.origin).href)
+          setCopyStatus('Copied!')
+        } catch { setCopyStatus('Could not copy') }
+      }}>
+        <Copy className="h-3.5 w-3.5" aria-hidden />
+        <span aria-live="polite">{copyStatus}</span>
+      </Button>
+    </div>
+  )
+}
+
 export default function RoomPage() {
   const { code = 'play' } = useParams<{ code: string }>()
-  const joinCode = code.trim() || 'play'
+  const rawCode = code.trim() || 'play'
+  const joinCode = rawCode.toLowerCase() === 'play' ? 'play' : rawCode.toUpperCase()
 
   const { isSignedIn, user } = useAuthProfileReady({ requireUser: false })
   const { getName } = useUserLookup()
@@ -238,6 +262,11 @@ export default function RoomPage() {
     }
   }, [showOverlay])
 
+  const accessView = roomAccessView(state)
+  if (accessView === 'loading') {
+    return <div role="status" data-testid="room-loading" className="mx-auto max-w-2xl px-4 py-10 text-center text-muted-foreground">Connecting…</div>
+  }
+
   // Terminal connection states (401 private room, 404 unknown room, 410 closed room)
   if (state.connectError) {
     return (
@@ -347,37 +376,60 @@ export default function RoomPage() {
     )
   }
 
+  const header = (
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <Link
+        to="/home"
+        className="font-pixel inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
+        Back to Lobby
+      </Link>
+
+      <div className="flex flex-wrap items-center gap-2">
+        {(roomDoc?.data.visibility === 'private' || state.round?.state === 'lobby') && <InviteBadge code={roomDoc?.data.joinCode ?? joinCode} />}
+        {isHost && state.round?.state !== 'lobby' && (
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            data-testid="host-next-button"
+            onClick={next}
+            className="arcade-btn font-pixel h-8 gap-1.5 px-3 text-xs font-bold"
+          >
+            <FastForward className="h-3.5 w-3.5 text-amber-400" aria-hidden />
+            Skip Round
+          </Button>
+        )}
+      </div>
+    </div>
+  )
+
+  if (state.round?.state === 'lobby') {
+    return (
+      <div data-testid="room-page" className="mx-auto flex w-full max-w-2xl flex-col gap-4 px-4 py-6">
+        {header}
+        <div data-testid="room-lobby" className="arcade-card space-y-4 rounded-lg bg-card p-5">
+          <h1 className="font-pixel text-xl font-bold">{roomDoc?.data.name ?? 'Waiting room'}</h1>
+          <p className="text-sm text-muted-foreground">Share the room link and start whenever you’re ready.</p>
+          <h2 data-testid="round-players" className="font-pixel font-bold">{state.players} {state.players === 1 ? 'painter' : 'painters'}</h2>
+          <ul className="space-y-2" aria-label="Connected players">
+            {state.roster.map(player => <li key={player.userId} className="rounded bg-secondary px-3 py-2 text-sm">{player.name}{player.userId === roomDoc?.data.hostId ? ' (Host)' : ''}</li>)}
+          </ul>
+          {isHost ? (
+            <Button data-testid="host-start-button" disabled={!state.connected} onClick={next} className="arcade-btn font-pixel bg-amber-400 font-bold text-slate-950 hover:bg-amber-300">Start</Button>
+          ) : <p className="text-sm text-muted-foreground">Waiting for the host to start.</p>}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div
       data-testid="room-page"
       className="mx-auto flex w-full max-w-6xl flex-col gap-3 px-3 py-3 sm:gap-4 sm:px-6 sm:py-4"
     >
-      {/* Top breadcrumb & host controls */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <Link
-          to="/home"
-          className="font-pixel inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
-          Back to Lobby
-        </Link>
-
-        <div className="flex items-center gap-2">
-          {isHost && (
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              data-testid="host-next-button"
-              onClick={next}
-              className="arcade-btn font-pixel h-8 gap-1.5 px-3 text-xs font-bold"
-            >
-              <FastForward className="h-3.5 w-3.5 text-amber-400" aria-hidden />
-              Skip Round
-            </Button>
-          )}
-        </div>
-      </div>
+      {header}
 
       {/* Round Bar: Word, Timer, Players, Share */}
       <RoundBar

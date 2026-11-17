@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { encodeCells } from './grid'
 import type { RoundView, ServerMsg } from './protocol'
 import {
+  roomAccessView,
   applyConnectError,
   applyOptimisticPlace,
   applyServerMsg,
@@ -232,4 +233,24 @@ describe('client-state', () => {
     expect(s.connectError).toBe('not_found')
     expect(s.connected).toBe(false)
   })
+})
+
+it('hides all room content until an authorized snapshot and prioritizes terminal errors', () => {
+  const initial = initialClientState()
+  expect(roomAccessView(initial)).toBe('loading')
+  expect(roomAccessView({ ...initial, connected: true })).toBe('loading')
+  expect(roomAccessView({ ...initial, snapshotLoaded: true })).toBe('room')
+  for (const connectError of ['unauthorized', 'not_found', 'closed'] as const) {
+    expect(roomAccessView({ ...initial, snapshotLoaded: true, connectError })).toBe(connectError)
+  }
+})
+it('rolls back only the rejected batch cell, keeping accepted and later optimistic cells', () => {
+  let state = applyOptimisticPlace(initialClientState(), 0, 0, 4)
+  state = applyOptimisticPlace(state, 1, 0, 4)
+  state = applyOptimisticPlace(state, 2, 0, 4)
+  state = applyServerMsg(state, { t: 'pixel', x: 0, y: 0, c: 4, by: 'a' })
+  state = applyServerMsg(state, { t: 'reject', reason: 'rate_limited', retryAt: 1017, x: 1, y: 0 })
+  expect([...state.cells.slice(0, 3)]).toEqual([4, 0, 4])
+  expect([...state.pending.keys()]).toEqual([2])
+  expect(state.you.cooldownUntil).toBe(1017)
 })
