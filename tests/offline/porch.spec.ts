@@ -42,6 +42,19 @@ test('porch objects are present and labelled', async ({ page }) => {
   }
 })
 
+test('daily cover and account name remain legible', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await setup(page)
+  await page.goto(`${origin}/home`)
+  const cover = page.getByTestId('daily-start-button')
+  await expect(cover).toContainText('Today’s prompt')
+  await expect(cover).toContainText('10 minutes · your best grade counts')
+  await expect(cover).toContainText('Start painting')
+  const name = page.getByTestId('nav-user-name')
+  await expect(name).toHaveText('Offline host')
+  expect(await name.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
+})
+
 test('porch keyboard tour reaches objects with labels and focus rings', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 })
   await setup(page)
@@ -118,6 +131,14 @@ test('portrait porch keeps every object in view and tappable', async ({ page }) 
       return element.contains(document.elementFromPoint(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2))
     })
     expect(hit, await hotspot.getAttribute('aria-label') ?? '').toBe(true)
+  }
+  const labels = await hotspots.locator('.pixel-hotspot__label').all()
+  for (let index = 0; index < labels.length; index++) {
+    const first = (await labels[index].boundingBox())!
+    for (const other of labels.slice(index + 1)) {
+      const second = (await other.boundingBox())!
+      expect(first.x + first.width <= second.x || second.x + second.width <= first.x || first.y + first.height <= second.y || second.y + second.height <= first.y).toBe(true)
+    }
   }
 })
 

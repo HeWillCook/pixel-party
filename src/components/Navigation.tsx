@@ -90,7 +90,7 @@ export default function Navigation() {
         <div className="porch-nav__links">{visibleNav.map(navLink)}</div>
         <div className="porch-nav__spacer" />
         {!isLoaded || !profileReady ? null : isSignedIn && user ? <DropdownMenu>
-          <DropdownMenuTrigger render={<button aria-label="Account menu" className="porch-nav__mail"><span className="porch-nav__mail-art"><SpriteImage sprite={mailbox} /><SpriteImage sprite={flagDown} className="porch-nav__flag" /></span><span data-testid="nav-user-name" className="porch-nav__username">{user.name || user.email}</span></button>} />
+          <DropdownMenuTrigger render={<button aria-label={`Account menu: ${user.name || user.email}`} title={user.name || user.email} className="porch-nav__mail"><span className="porch-nav__mail-art"><SpriteImage sprite={mailbox} /><SpriteImage sprite={flagDown} className="porch-nav__flag" /></span><span data-testid="nav-user-name" className="porch-nav__username">{user.name || user.email}</span></button>} />
           <DropdownMenuContent align="end" className="w-56">
             <DropdownMenuLabel><div>{user.name || 'Signed in'}</div><div data-testid="nav-user-email" className="text-sm text-muted-foreground">{user.email}</div></DropdownMenuLabel>
             <DropdownMenuSeparator />

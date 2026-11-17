@@ -14,7 +14,7 @@ export const sprites = {
     '....d....d......', '.....d..d.......', '..dddddddddddd..', '.dwwwwwwwwwwwwd.', '.dmmmdhhhdmmmd..', '.dmhmdhphdmhmd..', '.dmmmdhhhdmmmd..', '.dwwwwwwwwwwwwd.', '..dddddddddddd..',
   ], colours),
   cat: defineSprite([
-    '.....nn...nn', '....nccn.nccn', '...nccccncccn......nnnn', '..nccccccccccn...nnccccnn', '..nccnccncccccnnccctttccn', '.ncccccccccccccccccttttcn', '.ncccctttttccccccccttttcn', '..ncccttttttccccccctttcn', '...ncccttttttcccccccccn', '....nncccttttttttttttn', '......nnccccccccccccn', '........nnnnnnnnnnnn',
+    '...nn...nn...................', '..nccn.nccn..................', '..ncccncccn......nnnnnn......', '.ncccccccccn...nnccccccnn....', '.nccccccccccnnnccccccccccn...', '.nccccccccccccccctttttcccn...', '..ncccccccccccctttttttcccn...', '..ncccccttttttttttttttccn....', '...ncccttttttttttttttccn.....', '....nncccttttttttttttnn......', '......nnccccccccccccn........', '........nnnnnnnnnnnn.........',
   ].map(row => row.padEnd(29, '.')), colours),
   plant: defineSprite([
     '....g...g....', '..ggfg.gfg...', '...gffgff....', '.gggffffgg...', '..ggffffg....', '....dffd.....', '..ddddddddd..', '...dwwwwwd...', '...dwwhwwd...', '....ddddd....',

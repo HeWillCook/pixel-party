@@ -79,6 +79,7 @@ export function drawPorch(ctx: CanvasRenderingContext2D, frame: number, opts: Po
   rect(board.x + 3, board.y + 8, 3, board.h - 4, P.wood[0]); rect(board.x + board.w - 6, board.y + 8, 3, board.h - 4, P.wood[0])
   rect(board.x, board.y, board.w, board.h - 10, P.wood[0]); rect(board.x + 2, board.y + 2, board.w - 4, board.h - 14, P.wood[3])
   rect(board.x + 5, board.y + 5, board.w - 10, board.h - 20, P.foliage[0])
+  for (let x = board.x + 8; x < board.x + board.w - 8; x += 7) rect(x, board.y + board.h - 24 + (x % 2), 1, 1, P.foliage[1])
   rect(board.x + 3, board.y + board.h - 12, board.w - 6, 3, P.wood[2])
 
   const scaledSprite = (key: 'mailbox' | 'radio' | 'plant' | 'lantern', x: number, y: number) => {
@@ -97,16 +98,18 @@ export function drawPorch(ctx: CanvasRenderingContext2D, frame: number, opts: Po
   scaledSprite('mailbox', layout.mailbox.x, layout.mailbox.y)
   rect(layout.mailbox.x + 7, layout.mailbox.y + 24, 4, Math.max(0, floor - layout.mailbox.y - 24), P.wood[1])
   rect(layout.plant.x, layout.plant.y + 20, 26, 2, P.wood[3])
-  rect(layout.plant.x + 3, layout.plant.y + 22, 2, Math.max(0, floor - layout.plant.y - 22), P.wood[1])
-  rect(layout.plant.x + 22, layout.plant.y + 22, 2, Math.max(0, floor - layout.plant.y - 22), P.wood[3])
+  if (portrait) {
+    rect(layout.plant.x + 3, layout.plant.y + 22, 2, Math.max(0, floor - layout.plant.y - 22), P.wood[1])
+    rect(layout.plant.x + 22, layout.plant.y + 22, 2, Math.max(0, floor - layout.plant.y - 22), P.wood[3])
+  }
   scaledSprite('plant', layout.plant.x, layout.plant.y)
   const lanternX = layout.lantern.x
   for (let y = 8; y < layout.lantern.y; y += 2) rect(lanternX + 9, y, 1, 1, P.wood[3])
   scaledSprite('lantern', lanternX, layout.lantern.y)
   const catY = layout.cat.y + (Math.floor(frame / 12) % 2)
   drawSprite(ctx, sprites.cat, layout.cat.x, catY)
-  rect(layout.cat.x + 5, catY + 5, 3, 1, P.fur[0])
-  rect(layout.cat.x + 16, catY + 9, 6, 1, P.fur[1])
+  rect(layout.cat.x + 4, catY + 5, 3, 1, P.fur[0])
+  rect(layout.cat.x + 19, catY + 8, 4, 1, P.fur[4])
   const note = layout.note
   rect(note.x, note.y, 13, 18, P.wood[0]); rect(note.x + 1, note.y + 1, 11, 15, P.paper[3]); rect(note.x + 6, note.y, 2, 2, P.flame[1])
   for (let y = 4; y < 13; y += 3) rect(note.x + 3, note.y + y, 7, 1, P.paper[0])

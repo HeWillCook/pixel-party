@@ -33,7 +33,7 @@ function Objects(props: PorchSceneProps) {
   return <>
     <Hotspot rect={rect.easel} label={props.easelLabel} href={props.landing ? '/home' : undefined} onClick={props.landing ? undefined : props.onEasel} testId={props.easelTestId} disabled={props.easelDisabled}><span className="porch-easel-copy">{props.easelText}</span></Hotspot>
     <Hotspot rect={rect.chalkboard} label="Today's scores" href="/scores" />
-    <div className="porch-scores" style={rectToPercent(rect.chalkboard, composition)}><strong>Today's top three</strong>{props.topThree.length ? props.topThree.map((score, index) => <div key={index}>{index + 1}. {score.name} {score.score}</div>) : <div>No scores yet</div>}</div>
+    <div className="porch-scores" style={rectToPercent(rect.chalkboard, composition)}><strong>Today's top three</strong>{props.topThree.length ? props.topThree.map((score, index) => <div key={index}>{index + 1}. {score.name} … {score.score}</div>) : <div>No scores yet</div>}</div>
     <Hotspot rect={rect.steps} label="Party beach" href="/party" testId={props.landing ? 'landing-browse-lobby' : undefined} />
     <Hotspot rect={rect.lighthouse} label="Public board" href="/r/play" />
     <Hotspot rect={rect.mailbox} label={props.signedIn ? 'Account menu' : 'Sign in'} onClick={props.onAccount} />
