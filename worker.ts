@@ -31,6 +31,7 @@ import {
 } from './src/server/http-routes.js'
 import { registerRealtimeRoutes } from './src/server/realtime-routes.js'
 export { PixelRoom } from './src/server/pixel-room.js'
+export { BudgetRoom } from './src/server/budget-room.js'
 
 // Dynamic deploy reads this manifest to create the app's DO bindings.
 export const __DO_MANIFEST__ = [
@@ -41,6 +42,7 @@ export const __DO_MANIFEST__ = [
   { binding: 'CRON_ROOMS', className: 'AppCronRoom', sqlite: true },
   { binding: 'JOB_ROOMS', className: 'AppJobRoom', sqlite: true },
   { binding: 'PIXEL_ROOMS', className: 'PixelRoom', sqlite: true },
+  { binding: 'BUDGET_ROOMS', className: 'BudgetRoom', sqlite: true },
 ] as const satisfies DOManifest
 
 export class AppRecordRoom extends RecordRoom<Env> {

@@ -19,6 +19,7 @@ function jwtConfig(env: Env): JwtVerifierConfig {
 function wsRoute(
   doNamespace: (env: Env) => DurableObjectNamespace,
   extraIdentity?: (auth: VerifyResult, env: Env) => { role?: string } | Promise<{ role?: string }>,
+  roomConfig?: (id: string) => Record<string, string>,
 ) {
   return async (c: Context<AppContext>) => {
     const id = c.req.param('roomId') ?? c.req.param('docId') ?? c.req.param('scopeId')
@@ -36,6 +37,7 @@ function wsRoute(
       auth,
       auth ? await extraIdentity?.(auth, c.env) : undefined,
     )
+    for (const [header, value] of Object.entries(roomConfig?.(id) ?? {})) roomRequest.headers.set(header, value)
 
     const namespace = doNamespace(c.env)
     const stub = namespace.get(namespace.idFromName(id))
@@ -121,7 +123,9 @@ async function resolveDocsYjsRole(
 }
 
 export function registerRealtimeRoutes(app: Hono<AppContext>): void {
-  app.get('/api/pixel/:roomId/ws', wsRoute((env) => env.PIXEL_ROOMS))
+  app.get('/api/pixel/:roomId/ws', wsRoute((env) => env.PIXEL_ROOMS, undefined, (id) => ({
+    'X-Room-Id': id, 'X-Room-Mode': 'coop', 'X-Room-Default': String(id === 'play'),
+  })))
 
   app.get(
     '/ws/:roomId',
