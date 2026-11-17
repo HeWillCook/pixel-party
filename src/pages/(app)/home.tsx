@@ -312,7 +312,7 @@ export default function DailyHomePage() {
   }
 
   if (!isLoaded || (isSignedIn && !state.loaded)) {
-    return <div data-testid="daily-page"><NeutralPorchLoading /></div>
+    return <div data-testid="daily-page" className="porch-home"><NeutralPorchLoading /></div>
   }
 
   if (!isSignedIn || state.status === 'not_started' || (state.status === 'ended' && resultDay !== state.day)) {
@@ -323,14 +323,16 @@ export default function DailyHomePage() {
     })
     const ended = isSignedIn && state.status === 'ended'
     const signedOut = !isSignedIn
-    return <div data-testid="daily-page">
-      <section data-testid={signedOut ? 'daily-signed-out' : ended ? 'daily-ended' : 'daily-not-started'}>
+    return <div data-testid="daily-page" className="porch-home">
+      <section className="porch-home__scene" data-testid={signedOut ? 'daily-signed-out' : ended ? 'daily-ended' : 'daily-not-started'}>
         <PorchScene easelState={signedOut ? 'signin' : ended ? 'finished' : 'cover'} easelLabel={signedOut ? 'Sign in to paint' : ended ? 'View result' : 'Start Daily Challenge'}
           easelTestId={signedOut ? 'daily-sign-in-button' : ended ? undefined : 'daily-start-button'} easelDisabled={starting}
-          easelText={signedOut ? 'Sign in to paint' : ended ? `View result: ${endedBestScore} / 1000` : <>Today’s prompt<br />Start daily</>}
+          easelText={signedOut ? 'Sign in to paint' : ended ? `View result: ${endedBestScore} / 1000` : <>Today’s prompt<br />10 minutes<br />Start daily</>}
           signedIn={!!isSignedIn} galleryHref={`/u/${encodeURIComponent(userId)}`} topThree={topThree} muted={muted}
           onEasel={() => { if (signedOut) setShowAuthModal(true); else if (ended) setResultDay(state.day); else void handleStart() }}
-          onAccount={() => { if (signedOut) setShowAuthModal(true); else setShowAccount(true) }} onToggleMute={toggleMute} />
+          onAccount={() => { if (signedOut) setShowAuthModal(true); else setShowAccount(true) }} onToggleMute={toggleMute}>
+          {state.lastError && <p className="porch-error pp-panel" role="status">{state.lastError}</p>}
+        </PorchScene>
       </section>
       {signedOut && <Leaderboard day={state.day} ended={false} />}
       {showAccount && <div role="dialog" aria-label="Account menu" className="porch-account pp-panel"><Link to={`/u/${encodeURIComponent(userId)}`}>My gallery</Link><Link to="/settings">Settings</Link><button onClick={() => signOut()}>Sign out</button><button onClick={() => setShowAccount(false)}>Close</button></div>}

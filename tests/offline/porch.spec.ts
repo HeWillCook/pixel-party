@@ -105,6 +105,9 @@ test('portrait porch keeps every object in view and tappable', async ({ page }) 
   await expect(hotspots).toHaveCount(8)
   for (const hotspot of await hotspots.all()) {
     await expect(hotspot.locator('.pixel-hotspot__label')).toBeVisible()
+    const labelBox = await hotspot.locator('.pixel-hotspot__label').boundingBox()
+    expect(labelBox!.x).toBeGreaterThanOrEqual(0)
+    expect(labelBox!.x + labelBox!.width).toBeLessThanOrEqual(375)
     const box = await hotspot.boundingBox()
     expect(box!.width).toBeGreaterThanOrEqual(44)
     expect(box!.height).toBeGreaterThanOrEqual(44)
@@ -116,6 +119,16 @@ test('portrait porch keeps every object in view and tappable', async ({ page }) 
     })
     expect(hit, await hotspot.getAttribute('aria-label') ?? '').toBe(true)
   }
+})
+
+test('porch and navigation share the scene pixel scale', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await setup(page)
+  await page.goto(`${origin}/home`)
+  await expect(page.getByTestId('daily-start-button')).toBeVisible()
+  await expect.poll(() => page.evaluate(() => [getComputedStyle(document.documentElement).getPropertyValue('--px'), getComputedStyle(document.querySelector('.pixel-scene')!).getPropertyValue('--px')])).toEqual(['5px', '5px'])
+  await page.locator('.porch-world').getByRole('link', { name: 'Party beach' }).click()
+  await expect.poll(() => page.evaluate(() => document.documentElement.style.getPropertyValue('--px'))).toBe('')
 })
 
 for (const viewport of [{ width: 1280, height: 720 }, { width: 375, height: 812 }]) {
@@ -227,3 +240,24 @@ test('capture home 1280', async ({ page }) => {
   await mkdir(dir, { recursive: true })
   await page.screenshot({ path: resolve(dir, 'home-1280x720.png'), fullPage: true })
 })
+
+for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720 }, { width: 375, height: 812 }]) {
+  for (const state of ['landing', 'signed-out', 'not-started', 'ended'] as const) {
+    test(`capture porch ${state} ${viewport.width}`, async ({ page }) => {
+      test.skip(process.env.SCREENSHOTS !== '1')
+      await page.setViewportSize(viewport)
+      await page.emulateMedia({ reducedMotion: 'reduce' })
+      await setup(page, state === 'signed-out')
+      if (state === 'ended') await page.route('**/api/daily/me', route => route.fulfill({ json: { day: '2026-11-17', status: 'ended', autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: true, best: 740, windows: [], nextAutoAt: null, serverNow: Date.now() } }))
+      await page.goto(`${origin}${state === 'landing' ? '/' : '/home'}`)
+      await expect(page.locator('.pixel-scene__canvas')).toBeVisible()
+      if (state === 'not-started') await expect(page.getByTestId('daily-start-button')).toBeVisible()
+      if (state === 'ended') await expect(page.getByTestId('daily-ended')).toBeVisible()
+      if (state === 'signed-out') await expect(page.getByTestId('daily-sign-in-button')).toBeVisible()
+      await page.evaluate(() => document.fonts.ready)
+      const dir = resolve(import.meta.dirname, '../../docs/superpowers/screenshots/2026-11-18-porch')
+      await mkdir(dir, { recursive: true })
+      await page.screenshot({ path: resolve(dir, `porch-${state}-${viewport.width}x${viewport.height}.png`) })
+    })
+  }
+}

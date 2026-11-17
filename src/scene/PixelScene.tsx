@@ -24,12 +24,13 @@ function SceneCanvas({ draw, composition }: { draw: Draw; composition: Compositi
   return <canvas ref={ref} width={size.w} height={size.h} className="pixel-scene__canvas" aria-hidden="true" />
 }
 
-export function PixelScene({ draw, camera = { x: 0, y: 0, zoom: 1 }, zoomMs = 600, children, className, 'data-testid': testId }: {
+export function PixelScene({ draw, camera = { x: 0, y: 0, zoom: 1 }, zoomMs = 600, children, className, syncScale = false, 'data-testid': testId }: {
   draw: Draw
   camera?: Camera
   zoomMs?: number
   children?: ReactNode
   className?: string
+  syncScale?: boolean
   'data-testid'?: string
 }) {
   const root = useRef<HTMLDivElement>(null)
@@ -50,6 +51,17 @@ export function PixelScene({ draw, camera = { x: 0, y: 0, zoom: 1 }, zoomMs = 60
     observer.observe(element)
     return () => observer.disconnect()
   }, [])
+
+  useIsomorphicLayoutEffect(() => {
+    if (!syncScale) return
+    const style = document.documentElement.style
+    const previous = style.getPropertyValue('--px')
+    return () => { if (previous) style.setProperty('--px', previous); else style.removeProperty('--px') }
+  }, [syncScale])
+
+  useIsomorphicLayoutEffect(() => {
+    if (syncScale && viewport.w && viewport.h) document.documentElement.style.setProperty('--px', `${scale}px`)
+  }, [syncScale, scale, viewport.w, viewport.h])
 
   const style = { '--px': `${scale}px`, '--scene-zoom-ms': `${zoomMs}ms` } as CSSProperties
   return (

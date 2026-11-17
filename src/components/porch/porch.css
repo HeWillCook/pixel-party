@@ -1,12 +1,28 @@
-.porch-world { position: relative; min-height: 640px; height: calc(100dvh - 96px); overflow: hidden; }
+.porch-home, .porch-home__scene { height: 100%; }
+.porch-world { position: relative; height: 100%; overflow: hidden; }
+.porch-world--landing { height: 100dvh; }
 .porch-world__scene { position: absolute; inset: 0; }
 .porch-loading { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 16px; }
+.porch-error { position: absolute; left: 50%; bottom: 8%; transform: translateX(-50%); padding: calc(var(--px) * 3); }
 .porch-rules { position: absolute; z-index: 4; left: 20%; top: 25%; width: min(60%, 380px); padding: 16px; color: var(--foreground); }
 .porch-rules h2 { font-size: 24px; }
 .porch-rules p { font-size: 18px; }
-.porch-easel-copy { position: absolute; left: 19%; top: 24%; width: 63%; color: #392a45; font-size: calc(var(--px) * 5); line-height: 1; white-space: normal; }
-.porch-scores { position: absolute; pointer-events: none; padding: calc(var(--px) * 7); color: #fff0cc; font-size: calc(var(--px) * 3); line-height: 1.15; overflow: hidden; }
+.porch-easel-copy { position: absolute; left: 19%; top: 24%; width: 63%; color: #392a45; background: #fff0cc; font-size: calc(var(--px) * 5); line-height: 1; white-space: normal; text-align: center; }
+.porch-scores { position: absolute; pointer-events: none; padding: calc(var(--px) * 7); color: #fff0cc; font-size: calc(var(--px) * 4); line-height: 1.15; overflow: hidden; }
 .porch-account { position: fixed; z-index: 20; top: 25%; right: 10%; display: grid; gap: 12px; padding: 20px; }
 .porch-landing-copy { margin: 0 auto; max-width: 60rem; padding: 20px; }
 .porch-landing-copy h1 { font-size: 28px; }
 .porch-landing-copy p { font-size: 20px; }
+html:has(.porch-home) .porch-nav__sign { font-size: calc(var(--px) * 7); }
+html:has(.porch-home) .porch-nav__username { font-size: calc(var(--px) * 6); max-width: calc(var(--px) * 22); }
+@media (min-width: 768px) { html:has(.porch-home) .porch-nav__mail-art { display: none; } }
+@media (max-width: 640px) {
+  .porch-world--landing { height: 100dvh; }
+  .pixel-hotspot[aria-label="Scoring rules"] .pixel-hotspot__label,
+  .pixel-hotspot[aria-label="Public board"] .pixel-hotspot__label { left: 0; transform: none; }
+  .pixel-hotspot[aria-label="My gallery"] .pixel-hotspot__label,
+  .pixel-hotspot[aria-label="Sign in for gallery"] .pixel-hotspot__label { left: auto; right: 0; top: auto; bottom: 100%; transform: none; }
+  .pixel-hotspot[aria-label="Mute sounds"] .pixel-hotspot__label,
+  .pixel-hotspot[aria-label="Unmute sounds"] .pixel-hotspot__label { left: auto; right: 0; transform: none; }
+  .pixel-hotspot[aria-label="Party beach"] .pixel-hotspot__label { top: auto; bottom: 100%; left: auto; right: 0; transform: none; }
+}

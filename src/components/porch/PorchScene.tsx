@@ -33,7 +33,7 @@ function Objects(props: PorchSceneProps) {
   return <>
     <Hotspot rect={rect.easel} label={props.easelLabel} href={props.landing ? '/home' : undefined} onClick={props.landing ? undefined : props.onEasel} testId={props.easelTestId} disabled={props.easelDisabled}><span className="porch-easel-copy">{props.easelText}</span></Hotspot>
     <Hotspot rect={rect.chalkboard} label="Today's scores" href="/scores" />
-    <div className="porch-scores" style={rectToPercent(rect.chalkboard, composition)} aria-hidden="true"><strong>Today's top three</strong>{props.topThree.length ? props.topThree.map((score, index) => <div key={index}>{index + 1}. {score.name} {score.score}</div>) : <div>No scores yet</div>}</div>
+    <div className="porch-scores" style={rectToPercent(rect.chalkboard, composition)}><strong>Today's top three</strong>{props.topThree.length ? props.topThree.map((score, index) => <div key={index}>{index + 1}. {score.name} {score.score}</div>) : <div>No scores yet</div>}</div>
     <Hotspot rect={rect.steps} label="Party beach" href="/party" testId={props.landing ? 'landing-browse-lobby' : undefined} />
     <Hotspot rect={rect.lighthouse} label="Public board" href="/r/play" />
     <Hotspot rect={rect.mailbox} label={props.signedIn ? 'Account menu' : 'Sign in'} onClick={props.onAccount} />
@@ -45,9 +45,9 @@ function Objects(props: PorchSceneProps) {
 }
 
 export function PorchScene(props: PorchSceneProps) {
-  const draw = useCallback((ctx: CanvasRenderingContext2D, frame: number) => drawPorch(ctx, frame, { easelState: props.easelState, bob: true }), [props.easelState])
-  return <div className="porch-world">
-    <PixelScene draw={draw} className="porch-world__scene"><Objects {...props} /></PixelScene>
+  const draw = useCallback((ctx: CanvasRenderingContext2D, frame: number) => drawPorch(ctx, frame, { easelState: props.easelState, bob: true, soundOn: !props.muted }), [props.easelState, props.muted])
+  return <div className={props.landing ? 'porch-world porch-world--landing' : 'porch-world'}>
+    <PixelScene draw={draw} className="porch-world__scene" syncScale><Objects {...props} /></PixelScene>
     {props.children}
   </div>
 }
@@ -59,5 +59,5 @@ export function NeutralPorchLoading() {
     drawSun(ctx, sun, horizon, 20, horizon)
     drawSea(ctx, width, horizon, height - horizon, sun, frame, mulberry32(394))
   }, [])
-  return <div className="porch-world"><PixelScene draw={draw} className="porch-world__scene" /><div data-testid="daily-loading" role="status" className="porch-loading pp-panel">Setting up your easel…</div></div>
+  return <div className="porch-world"><PixelScene draw={draw} className="porch-world__scene" syncScale /><div data-testid="daily-loading" role="status" className="porch-loading pp-panel">Setting up your easel…</div></div>
 }
