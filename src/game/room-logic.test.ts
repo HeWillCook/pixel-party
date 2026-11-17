@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { JUDGE, MODES, ROOMS } from './config'
-import { applyPlacements, applyJudgeOutcome, applyPlacement, advance, countPlayers, deserializeRoomState, newRoomState, nextAlarmAt, serializeRoomState, shouldJudge, startNextRound } from './room-logic'
+import { applyPlacements, applyJudgeOutcome, applyPlacement, advance, countPlayers, deserializeRoomState, newRoomState, nextAlarmAt, nextRoundRejection, serializeRoomState, shouldJudge, startNextRound } from './room-logic'
 import { WORDS } from './words'
 import { createGrid } from './grid'
 
@@ -56,27 +56,32 @@ describe('room logic', () => {
     expect(advance(paused, 2000 + ROOMS.closeAfterEmptyMs, 0, () => 0).state.status).toBe('closed')
     expect(nextAlarmAt({ ...paused, isDefaultBoard: true }, 2000)).toBeNull()
   })
-  it('starts a fresh round after a long pause', () => {
+  it('preserves the paused round after a long absence', () => {
     const paused = advance(room(), 2000, 0, () => 0).state
     const resumed = advance(paused, 2001 + ROOMS.resumeWindowMs, 1, () => 0)
-    expect(resumed.state.round.id).not.toBe(paused.round.id)
-    expect(resumed.state.round.word).not.toBe(paused.round.word)
+    expect(resumed.state.round.id).toBe(paused.round.id)
+    expect(resumed.state.round.word).toBe(paused.round.word)
     expect(resumed.state.status).toBe('playing')
   })
-  it('resumes an intermission with its deadline shifted', () => {
+  it('keeps intermission results while players leave and return', () => {
     const ended = applyJudgeOutcome(room(), judged, 4000).state
     const paused = advance(ended, 5000, 0, () => 0).state
     const resumed = advance(paused, 8000, 1, () => 0).state
     expect(resumed.status).toBe('intermission')
-    expect(resumed.intermissionEndsAt).toBe(15000)
+    expect(resumed.intermissionEndsAt).toBeNull()
     expect(resumed.round.state).toBe('intermission')
   })
-  it('times out and starts a new round excluding recent words', () => {
+  it('times out and waits indefinitely for an explicit next command', () => {
     const s = room()
     const timeout = advance(s, s.round.startedAt + 300000, 1, () => 0)
     expect(timeout.state.round.result?.outcome).toBe('timeout')
     expect(timeout.events).toContainEqual(expect.objectContaining({ type: 'roundEnded' }))
-    const next = advance(timeout.state, timeout.state.intermissionEndsAt!, 1, () => 0)
+    expect(advance(timeout.state, 900000, 1, () => 0).state.round).toEqual(timeout.state.round)
+    expect(nextAlarmAt(timeout.state, 900000)).toBeNull()
+    const legacy = { ...timeout.state, intermissionEndsAt: 1 }
+    expect(advance(legacy, 900000, 1, () => 0).state.round).toEqual(timeout.state.round)
+    expect(nextAlarmAt(legacy, 900000)).toBeNull()
+    const next = startNextRound(timeout.state, 900000, () => 0)
     expect(next.state.round.word).not.toBe(s.round.word)
     expect(next.events).toContainEqual({ type: 'cleared' })
     expect(startNextRound(next.state, 400000, () => 0).state.round.id).not.toBe(next.state.round.id)
@@ -86,7 +91,7 @@ describe('room logic', () => {
     const result = applyJudgeOutcome(s, judged, 4000)
     expect(result.state.round.result).toEqual({ outcome: 'won', score: 995, contributorCount: 1 })
     expect(result.events).toContainEqual(expect.objectContaining({ type: 'roundEnded', event: expect.objectContaining({ contributorIds: ['a'], finalGuesses: ['house'], pixelsUsed: 1 }) }))
-    expect(result.state.intermissionEndsAt).toBe(12000)
+    expect(result.state.intermissionEndsAt).toBeNull()
     expect(s.status).toBe('playing')
   })
   it('schedules the earliest pending deadline', () => {
@@ -105,7 +110,7 @@ describe('room logic', () => {
     const paused = advance(room(), 2000, 0, () => 0).state
     const resumed = advance(paused, 2000 + ROOMS.closeAfterEmptyMs, 1, () => 0)
     expect(resumed.state.status).toBe('playing')
-    expect(resumed.state.round.id).not.toBe(paused.round.id)
+    expect(resumed.state.round.id).toBe(paused.round.id)
   })
   it('expires calls exactly at the 60 second window boundary', () => {
     const state = room(); state.version = 1; state.judgeCalls = [10000, 10001, 10002, 10003, 10004, 10005]
@@ -202,5 +207,26 @@ describe('private waiting room', () => {
     expect(advance(left, 4000 + ROOMS.closeAfterEmptyMs - 1, 0, () => 0).state.status).toBe('lobby')
     expect(advance(left, 4000 + ROOMS.closeAfterEmptyMs, 0, () => 0).state.status).toBe('closed')
     expect(room().status).toBe('playing')
+  })
+})
+
+
+describe('explicit next permissions', () => {
+  it('only lets the host skip a live round', () => {
+    const state = { ...room(), status: 'playing' as const }
+    expect(nextRoundRejection(state, 'host', 'host', ['host', 'guest'])).toBeNull()
+    expect(nextRoundRejection(state, 'guest', 'host', ['guest'])).toBe('not_host')
+    expect(nextRoundRejection({ ...state, isDefaultBoard: true }, 'guest', null, ['guest'])).toBe('not_host')
+  })
+
+  it.each(['lobby', 'intermission'] as const)('requires a connected signed-in caller in %s', status => {
+    const state = { ...room(), status }
+    expect(nextRoundRejection(state, null, 'host', ['host'])).toBe('not_signed_in')
+    expect(nextRoundRejection(state, 'guest', 'host', ['host'])).toBe('not_signed_in')
+    expect(nextRoundRejection(state, 'guest', 'host', ['host', 'guest'])).toBe('not_host')
+    expect(nextRoundRejection(state, 'host', 'host', ['host', 'guest'])).toBeNull()
+    expect(nextRoundRejection(state, 'guest', 'host', ['guest'])).toBeNull()
+    expect(nextRoundRejection({ ...state, isDefaultBoard: true }, 'guest', null, ['guest'])).toBeNull()
+    expect(nextRoundRejection(state, 'guest', null, ['guest'])).toBe('not_host')
   })
 })

@@ -18,6 +18,7 @@ import {
   Sparkles,
   Users,
 } from 'lucide-react'
+import { DeleteRoomButton } from '../../components/game/DeleteRoomButton'
 import {
   Badge,
   Button,
@@ -40,7 +41,7 @@ interface RoomRecord {
 
 export default function HomePage() {
   const navigate = useNavigate()
-  const { isSignedIn } = useAuthProfileReady({ requireUser: false })
+  const { isSignedIn, user } = useAuthProfileReady({ requireUser: false })
   const { ready: mutationsReady } = useMutations('rooms')
   const { error: toastError, success: toastSuccess } = useToast()
 
@@ -57,10 +58,12 @@ export default function HomePage() {
   const [joinCodeInput, setJoinCodeInput] = useState('')
   const [joining, setJoining] = useState(false)
   const [showAuthModal, setShowAuthModal] = useState(false)
+  const [deletedRooms, setDeletedRooms] = useState<string[]>([])
 
   const livePublicRooms = rooms.filter(
     (room) =>
       room.data.status !== 'closed' &&
+      !deletedRooms.includes(room.recordId) &&
       room.data.visibility === 'public' &&
       !room.data.isDefaultBoard &&
       room.data.joinCode !== 'play',
@@ -267,34 +270,36 @@ export default function HomePage() {
               </div>
             ) : (
               livePublicRooms.map((room) => (
-                <Link
-                  key={room.recordId}
-                  to={`/r/${room.data.joinCode}`}
-                  data-testid={`room-card-${room.data.joinCode}`}
-                  className="arcade-card group flex items-center justify-between gap-4 rounded-lg bg-card p-4 transition-colors hover:border-pink-400/70"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-pixel truncate text-sm font-bold text-foreground group-hover:text-pink-300">
-                        {room.data.name}
-                      </span>
-                      <Badge variant="secondary" className="font-pixel text-[10px] uppercase">
-                        {room.data.status}
-                      </Badge>
+                <div key={room.recordId} className="arcade-card flex items-center gap-3 rounded-lg bg-card pr-4">
+                  <Link
+                    to={`/r/${room.data.joinCode}`}
+                    data-testid={`room-card-${room.data.joinCode}`}
+                    className="group flex min-w-0 flex-1 items-center justify-between gap-4 rounded-lg p-4 transition-colors hover:text-pink-300"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-pixel truncate text-sm font-bold text-foreground group-hover:text-pink-300">
+                          {room.data.name}
+                        </span>
+                        <Badge variant="secondary" className="font-pixel text-[10px] uppercase">
+                          {room.data.status}
+                        </Badge>
+                      </div>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        Code: <code className="font-pixel text-foreground">{room.data.joinCode}</code> • Co-op 32×32
+                      </p>
                     </div>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      Code: <code className="font-pixel text-foreground">{room.data.joinCode}</code> • Co-op 32×32
-                    </p>
-                  </div>
 
-                  <div className="flex items-center gap-3">
-                    <span className="font-pixel inline-flex items-center gap-1 rounded bg-secondary px-2.5 py-1 text-xs font-bold text-foreground">
-                      <Users className="h-3.5 w-3.5 text-cyan-400" aria-hidden />
-                      {room.data.playerCount ?? 0}
-                    </span>
-                    <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-1 group-hover:text-pink-300" />
-                  </div>
-                </Link>
+                    <div className="flex items-center gap-3">
+                      <span className="font-pixel inline-flex items-center gap-1 rounded bg-secondary px-2.5 py-1 text-xs font-bold text-foreground">
+                        <Users className="h-3.5 w-3.5 text-cyan-400" aria-hidden />
+                        {room.data.playerCount ?? 0}
+                      </span>
+                      <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-1 group-hover:text-pink-300" />
+                    </div>
+                  </Link>
+                  {user?.id === room.data.hostId && <DeleteRoomButton joinCode={room.data.joinCode} onDeleted={() => setDeletedRooms(previous => [...previous, room.recordId])} />}
+                </div>
               ))
             )}
           </div>
@@ -412,9 +417,10 @@ export default function HomePage() {
                 />
                 <Input
                   data-testid="join-code-input"
-                  placeholder="Enter 10-char code"
+                  placeholder="Enter 4-char code"
+                  maxLength={64}
                   value={joinCodeInput}
-                  onChange={(e) => setJoinCodeInput(e.target.value)}
+                  onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
                   disabled={joining}
                   className="font-pixel pl-8 uppercase"
                 />
