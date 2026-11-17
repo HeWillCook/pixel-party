@@ -69,7 +69,20 @@ export const JUDGE = {
 } as const
 
 export const BUDGET = {
-  dailyCalls: 3000,
+  dailyCalls: 1000,
+} as const
+
+export const DAILY = {
+  attemptMs: 600_000,
+  graceMs: 15_000,
+  firstAutoMs: 120_000,
+  autoEveryMs: 120_000,
+  autoMinGapMs: 100_000,
+  maxAuto: 4,
+  maxAsks: 3,
+  askMinGapMs: 20_000,
+  inFlightStaleMs: 60_000,
+  renderPx: 512,
 } as const
 
 export const ROOMS = {

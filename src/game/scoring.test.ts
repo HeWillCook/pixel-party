@@ -12,7 +12,7 @@ describe('constants', () => {
       askMinMs: 10_000,
       maxPerMinute: 6,
     })
-    expect(BUDGET).toEqual({ dailyCalls: 3000 })
+    expect(BUDGET).toEqual({ dailyCalls: 1000 })
     expect(ROOMS).toEqual({
       maxActivePerUser: 5,
       resumeWindowMs: 600_000,
