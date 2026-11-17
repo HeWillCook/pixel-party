@@ -21,7 +21,7 @@ import { Badge, Button } from '../../components/ui'
 import { DAILY } from '../../game/config'
 import { canAskDaily, canPaintDaily } from '../../game/daily/client-schedule'
 import { decodeCells } from '../../game/grid'
-import { useDailyAttempt } from '../../hooks/useDailyAttempt'
+import { useDaily } from '../../hooks/DailyAttemptProvider'
 import type { GradeView } from '../../server/daily-service'
 
 interface DailyDrawingRecord {
@@ -63,7 +63,7 @@ function decodeSnapshotOrFallback(encoded: string | undefined, fallback: Uint8Ar
 
 export default function DailyHomePage() {
   const { isLoaded, isSignedIn, user } = useAuthProfileReady({ requireUser: false })
-  const { state, cells, paint, start, askNow, done } = useDailyAttempt()
+  const { state, cells, paint, start, askNow, done } = useDaily()
   const { muted, toggleMute } = useDailySounds(state)
   const boardRef = useRef<HTMLDivElement>(null)
   const paletteRef = useRef<HTMLDivElement>(null)
@@ -189,6 +189,7 @@ export default function DailyHomePage() {
           {muted ? 'Sound off' : 'Sound on'}
         </Button>
       </div>
+      {isSignedIn && !state.loaded && <div data-testid="daily-loading" className="pp-panel p-6" aria-live="polite">Setting up your easel…</div>}
       {/* Signed out view */}
       {isLoaded && !isSignedIn && (
         <div className="flex flex-col gap-6">
@@ -238,7 +239,7 @@ export default function DailyHomePage() {
       )}
 
       {/* Signed in: Not started */}
-      {isSignedIn && state.status === 'not_started' && (
+      {isSignedIn && state.loaded && state.status === 'not_started' && (
         <section
           data-testid="daily-not-started"
           className="pp-panel mx-auto flex w-full max-w-2xl flex-col gap-5 border-2 border-border p-6 sm:p-8"
@@ -306,7 +307,7 @@ export default function DailyHomePage() {
       )}
 
       {/* Signed in: Playing */}
-      {isSignedIn && state.status === 'playing' && (
+      {isSignedIn && state.loaded && state.status === 'playing' && (
         <div data-testid="daily-playing" className="flex flex-col gap-4">
           {/* Top Bar: Prompt + Timer + Best */}
           <div className="pp-panel flex flex-wrap items-center justify-between gap-3 bg-card px-4 py-3">
@@ -354,6 +355,7 @@ export default function DailyHomePage() {
 
             {/* Right: Controls + GradePanel */}
             <div className="flex min-w-0 flex-col gap-4">
+              {state.notice && <div role="status" className="pp-panel p-4">{state.notice}</div>}
               <GradePanel
                 latest={state.latest}
                 best={state.best}
@@ -403,7 +405,7 @@ export default function DailyHomePage() {
       )}
 
       {/* Signed in: Ended */}
-      {isSignedIn && state.status === 'ended' && (
+      {isSignedIn && state.loaded && state.status === 'ended' && (
         <div data-testid="daily-ended" className="flex flex-col gap-6">
           <div className="pp-panel flex flex-wrap items-center justify-between gap-3 bg-card px-4 py-3">
             <div className="flex flex-wrap items-center gap-2">

@@ -82,6 +82,7 @@ export function useDailyAttempt(): {
   start(): Promise<void>
   askNow(): Promise<void>
   done(): Promise<void>
+  tick(): void
 } {
   const { isSignedIn, user } = useAuthProfileReady({ requireUser: false })
   const userId = user?.id ?? ''
@@ -90,6 +91,8 @@ export function useDailyAttempt(): {
     initialDailyClientState(new Date().toISOString().slice(0, 10)),
   )
   const [cells, setCells] = useState<Uint8Array>(() => new Uint8Array(GRID_CELLS))
+  const [loadedUserId, setLoadedUserId] = useState('')
+  const loadedUserIdRef = useRef('')
 
   const stateRef = useRef<DailyClientState>(state)
   const cellsRef = useRef<Uint8Array>(cells)
@@ -99,6 +102,8 @@ export function useDailyAttempt(): {
   const finishPromiseRef = useRef<Promise<void> | null>(null)
   const frozenFinalCellsRef = useRef<string | null>(null)
   const restoredKeyRef = useRef<string>('')
+  const loadMeRef = useRef<(() => void) | null>(null)
+  const missedRefreshAtRef = useRef(0)
 
   const dispatch = useCallback((action: DailyAction) => {
     stateRef.current = dailyReducer(stateRef.current, action)
@@ -139,6 +144,8 @@ export function useDailyAttempt(): {
   // Load GET /api/daily/me on mount (when signed in)
   useEffect(() => {
     if (!isSignedIn) {
+      loadedUserIdRef.current = ''
+      setLoadedUserId('')
       restoredKeyRef.current = ''
       finalizingRef.current = false
       finishPromiseRef.current = null
@@ -164,13 +171,16 @@ export function useDailyAttempt(): {
 
     let cancelled = false
     let loading = false
+    let retryTimer: ReturnType<typeof setTimeout> | null = null
+    let retryDelay = 1_000
     const loadMe = async () => {
       if (loading) return
       loading = true
       try {
         const headers = await authHeaders()
         const res = await fetch('/api/daily/me', { method: 'GET', headers })
-        if (!res.ok || cancelled) return
+        if (!res.ok) throw new Error('Daily state unavailable')
+        if (cancelled) return
         const serverState = (await res.json()) as DailyStateView
         if (cancelled) return
         if (serverState.status === 'ended' || stateRef.current.stale || serverState.day !== stateRef.current.day) {
@@ -178,15 +188,22 @@ export function useDailyAttempt(): {
           frozenFinalCellsRef.current = null
         }
         dispatch({ type: 'state_loaded', state: serverState })
+        loadedUserIdRef.current = userId
+        setLoadedUserId(userId)
+        retryDelay = 1_000
         if (userId) {
           restoreCanvas(serverState, userId)
         }
       } catch {
-        // Ignore transient network errors on initial load
+        if (!cancelled && (!stateRef.current.loaded || loadedUserIdRef.current !== userId)) {
+          retryTimer = setTimeout(() => { retryTimer = null; void loadMe() }, retryDelay)
+          retryDelay = Math.min(retryDelay * 2, 30_000)
+        }
       } finally {
         loading = false
       }
     }
+    loadMeRef.current = () => { void loadMe() }
     void loadMe()
     const rollover = setInterval(() => {
       if (needsDailyDayRefresh(stateRef.current, Date.now())) void loadMe()
@@ -194,6 +211,8 @@ export function useDailyAttempt(): {
 
     return () => {
       cancelled = true
+      loadMeRef.current = null
+      if (retryTimer !== null) clearTimeout(retryTimer)
       clearInterval(rollover)
     }
   }, [isSignedIn, userId, restoreCanvas, dispatch, state.stale])
@@ -245,7 +264,7 @@ export function useDailyAttempt(): {
             return
           }
           if ('skipped' in payload) {
-            dispatch({ type: 'grade_rejected', reason: 'too_soon', state: payload.state, kind, now })
+            dispatch({ type: 'grade_skipped', status: payload.skipped, window: payload.window, state: payload.state })
             return
           }
           if (payload.ok) {
@@ -379,12 +398,8 @@ export function useDailyAttempt(): {
     return promise
   }, [dispatch, sendGrade, sendEnd])
 
-  // 1s ticker while playing: triggers auto grades at nextAutoAt, final grade + end when time is up, and retries failed end
-  useEffect(() => {
-    if (state.status !== 'playing' || state.startedAt === undefined) return
-    const startedAt = state.startedAt
-
-    const interval = setInterval(() => {
+  const tick = useCallback(() => {
+      if (!userIdRef.current || loadedUserIdRef.current !== userIdRef.current) return
       const cur = stateRef.current
       if (cur.status !== 'playing' || cur.startedAt === undefined || cur.stale) return
       const now = Date.now()
@@ -394,7 +409,7 @@ export function useDailyAttempt(): {
         return
       }
 
-      if (shouldFinalGrade(now, startedAt)) {
+      if (shouldFinalGrade(now, cur.startedAt, cur.clockOffsetMs)) {
         if (!finishPromiseRef.current) {
           void finishAttempt()
         }
@@ -403,14 +418,18 @@ export function useDailyAttempt(): {
 
       if (finalizingRef.current || cur.finalizing || inFlightGradeRef.current) return
 
-      const currentHash = cellsHash(encodeCells(cellsRef.current))
-      if (shouldFireAutoGrade(cur, now, currentHash)) {
-        void sendGrade('auto')
+      if (cur.nextAutoAt != null && now + cur.clockOffsetMs - cur.nextAutoAt > DAILY.autoMissAfterMs) {
+        if (now >= missedRefreshAtRef.current) {
+          missedRefreshAtRef.current = now + 10_000
+          loadMeRef.current?.()
+        }
+        return
       }
-    }, 1000)
-
-    return () => clearInterval(interval)
-  }, [state.status, state.startedAt, finishAttempt, sendGrade])
+      const localCells = readLocalCells(cur.day, userIdRef.current)
+      if (shouldFireAutoGrade(cur, now, localCells !== null) && localCells) {
+        void sendGrade('auto', encodeCells(localCells))
+      }
+  }, [finishAttempt, sendGrade])
 
   const paint = useCallback((x: number, y: number, color: number) => {
     const now = Date.now()
@@ -473,5 +492,5 @@ export function useDailyAttempt(): {
     await finishAttempt()
   }, [finishAttempt])
 
-  return { state, cells, paint, start, askNow, done }
+  return { state: isSignedIn && (!userId || loadedUserId !== userId) ? { ...state, loaded: false } : state, cells, paint, start, askNow, done, tick }
 }

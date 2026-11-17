@@ -6,12 +6,10 @@ const origin = 'http://pixel.test'
 const clientDir = resolve(import.meta.dirname, '../../dist/client')
 
 for (const askFirst of [false, true]) test(askFirst ? 'auto-grade fires at 2:00 after an ask at 1:30' : 'auto-grade fires at 2:00 without asks', async ({ page }) => {
-  // Task 4 must un-fixme the reproduced manual-grade scheduling failure.
-  test.fixme(askFirst, 'Task 4 must restore fixed auto-grade scheduling')
   await page.clock.install({ time: new Date('2026-11-17T12:00:00Z') })
   await offlineClient(page, true)
   const startedAt = Date.parse('2026-11-17T12:00:00Z')
-  const playing = { day: '2026-11-17', status: 'playing', prompt: 'A tree', startedAt, endsAt: startedAt + 600_000, autoUsed: 0, asksUsed: 0, finalUsed: false, best: 0, nextAutoAt: startedAt + 120_000 }
+  const playing = { day: '2026-11-17', status: 'playing', prompt: 'A tree', startedAt, endsAt: startedAt + 600_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], serverNow: startedAt, nextAutoAt: startedAt + 120_000 }
   const grades: { body: unknown; status: number }[] = []
   page.on('response', response => {
     const request = response.request()
@@ -23,7 +21,8 @@ for (const askFirst of [false, true]) test(askFirst ? 'auto-grade fires at 2:00 
     if (path.endsWith('/start')) return route.fulfill({ json: playing })
     if (path.endsWith('/grade')) {
       const body = route.request().postDataJSON()
-      return route.fulfill({ status: 200, json: { ok: true, grade: { guess: 'tree', reason: 'tree', fit: 100, recognition: 100, speed: 10, total: 210, elapsedMs: 120_000 }, state: { ...playing, ...(body.kind === 'ask' ? { asksUsed: 1, nextAutoAt: startedAt + 190_000 } : { autoUsed: 1 }) } } })
+      if (body.kind === 'auto' && askFirst) return route.fulfill({ status: 200, json: { skipped: 'skipped_unchanged', window: 0, state: { ...playing, asksUsed: 1, asksLeft: 2, nextAutoAt: startedAt + 240_000, serverNow: startedAt + 120_000 } } })
+      return route.fulfill({ status: 200, json: { ok: true, grade: { guess: 'tree', reason: 'tree', fit: 100, recognition: 100, speed: 10, total: 210, elapsedMs: 120_000 }, state: { ...playing, ...(body.kind === 'ask' ? { asksUsed: 1, asksLeft: 2, serverNow: startedAt + 90_000 } : { autoUsed: 1, nextAutoAt: startedAt + 240_000 }) } } })
     }
     return route.fulfill({ json: {} })
   })
@@ -37,6 +36,98 @@ for (const askFirst of [false, true]) test(askFirst ? 'auto-grade fires at 2:00 
   }
   await page.clock.fastForward(askFirst ? 35_000 : 125_000)
   await expect.poll(() => grades.filter(grade => (grade.body as { kind: string }).kind === 'auto')).toMatchObject([{ body: { kind: 'auto' }, status: 200 }])
+  if (askFirst) await expect(page.getByText('Auto-grade skipped: no changes since your last grade')).toBeVisible()
+})
+
+test('ended user never sees start', async ({ page }) => {
+  await offlineClient(page, true)
+  let release!: () => void
+  const gate = new Promise<void>(resolve => { release = resolve })
+  await page.route('**/api/daily/me', async route => {
+    await gate
+    const now = Date.now()
+    await route.fulfill({ json: { day: new Date(now).toISOString().slice(0, 10), status: 'ended', startedAt: now - 600_000, endsAt: now, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: null, serverNow: now } })
+  })
+  await page.goto(`${origin}/home`)
+  await expect(page.getByTestId('daily-loading')).toBeVisible()
+  for (let sample = 0; sample < 15; sample++) {
+    await expect(page.getByTestId('daily-start-button')).toHaveCount(0)
+    await page.waitForTimeout(100)
+  }
+  release()
+  await expect(page.getByTestId('daily-ended')).toBeVisible()
+})
+
+test('me failure stays loading then recovers', async ({ page }) => {
+  await offlineClient(page, true)
+  let calls = 0
+  let release!: () => void
+  const gate = new Promise<void>(resolve => { release = resolve })
+  await page.route('**/api/daily/me', async route => {
+    calls++
+    if (calls === 1) return route.fulfill({ status: 500, json: {} })
+    await gate
+    const now = Date.now()
+    return route.fulfill({ json: { day: new Date(now).toISOString().slice(0, 10), status: 'playing', prompt: 'A tree', startedAt: now, endsAt: now + 600_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: now + 120_000, serverNow: now } })
+  })
+  await page.goto(`${origin}/home`)
+  await expect.poll(() => calls).toBeGreaterThan(0)
+  await expect(page.getByTestId('daily-loading')).toBeVisible()
+  await expect(page.getByTestId('daily-start-button')).toHaveCount(0)
+  release()
+  await expect(page.getByTestId('daily-playing')).toBeVisible({ timeout: 12_000 })
+})
+
+test('no local canvas, no auto', async ({ page }) => {
+  await page.clock.install({ time: new Date('2026-11-17T12:02:10Z') })
+  await offlineClient(page, true)
+  let grades = 0
+  const now = Date.parse('2026-11-17T12:02:10Z')
+  await page.route('**/api/daily/**', async route => {
+    if (new URL(route.request().url()).pathname.endsWith('/grade')) grades++
+    return route.fulfill({ json: { day: '2026-11-17', status: 'playing', prompt: 'A tree', startedAt: now - 130_000, endsAt: now + 470_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: now - 10_000, serverNow: now } })
+  })
+  await page.goto(`${origin}/home`)
+  await expect(page.getByTestId('daily-playing')).toBeVisible()
+  await page.clock.fastForward(10_000)
+  expect(grades).toBe(0)
+})
+
+test('auto-grade fires on another route', async ({ page }) => {
+  await page.clock.install({ time: new Date('2026-11-17T12:00:00Z') })
+  await offlineClient(page, true)
+  const now = Date.parse('2026-11-17T12:00:00Z')
+  const playing = { day: '2026-11-17', status: 'playing', prompt: 'A tree', startedAt: now, endsAt: now + 600_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: now + 120_000, serverNow: now }
+  let auto = 0
+  let sentCells = ''
+  await page.route('**/api/daily/**', async route => {
+    const path = new URL(route.request().url()).pathname
+    if (path.endsWith('/me')) return route.fulfill({ json: { ...playing, status: 'not_started' } })
+    if (path.endsWith('/start')) return route.fulfill({ json: playing })
+    if (path.endsWith('/grade')) {
+      if (route.request().postDataJSON().kind === 'auto') {
+        auto++
+        sentCells = route.request().postDataJSON().cells
+      }
+      return route.fulfill({ json: { skipped: 'skipped_unchanged', window: 0, state: { ...playing, nextAutoAt: now + 240_000 } } })
+    }
+    return route.fulfill({ json: {} })
+  })
+  await page.goto(`${origin}/home`)
+  await page.getByTestId('daily-start-button').click()
+  await page.getByTestId('pixel-canvas').click({ position: { x: 5, y: 5 } })
+  await page.getByRole('link', { name: 'Party mode', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Live Public Rooms' })).toBeVisible()
+  const latestCells = await page.evaluate(() => {
+    const cells = new Uint8Array(1024)
+    cells[50] = 7
+    const encoded = btoa(String.fromCharCode(...cells))
+    localStorage.setItem('daily:2026-11-17:host', encoded)
+    return encoded
+  })
+  await page.clock.fastForward(125_000)
+  await expect.poll(() => auto).toBe(1)
+  expect(sentCells).toBe(latestCells)
 })
 
 async function offlineClient(page: Page, signedIn = false) {
@@ -70,10 +161,13 @@ async function offlineClient(page: Page, signedIn = false) {
 
 test('signed-out home shows leaderboard and sign-in without revealing a prompt', async ({ page }) => {
   const errors = await offlineClient(page)
+  let meRequests = 0
+  await page.route('**/api/daily/me', async route => { meRequests++; await route.fulfill({ json: {} }) })
   await page.goto(`${origin}/home`)
   await expect(page.getByTestId('daily-sign-in-button')).toBeVisible()
   await expect(page.getByTestId('daily-leaderboard').getByRole('heading', { name: 'Leaderboard' })).toBeVisible()
   await expect(page.getByTestId('daily-prompt')).toHaveCount(0)
+  expect(meRequests).toBe(0)
   expect(errors).toEqual([])
 })
 
@@ -99,7 +193,7 @@ for (const invalidAt of ['grade', 'end'] as const) {
       const errors = await offlineClient(page, true)
       const today = new Date().toISOString().slice(0, 10)
       const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10)
-      const initial = { day: yesterday, status: 'playing', prompt: 'Yesterday scene', startedAt: Date.now() - 60_000, endsAt: Date.now() + 540_000, autoUsed: 0, asksUsed: 0, finalUsed: false, best: 123 }
+      const initial = { day: yesterday, status: 'playing', prompt: 'Yesterday scene', startedAt: Date.now() - 60_000, endsAt: Date.now() + 540_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 123, windows: [], nextAutoAt: Date.now() + 60_000, serverNow: Date.now() }
       const fresh = { ...initial, day: today, status: todayStatus, prompt: 'Today scene', best: 456 }
       let refreshes = 0
       let staleRejected = false
