@@ -151,8 +151,22 @@
     -moz-osx-font-smoothing: grayscale;
     font-size: 20px;
     color: var(--color-foreground);
-    background: linear-gradient(#f6bd91, #df917e 58%, #61989b);
+    background: linear-gradient(to bottom, #f6bd91 0 22%, #f2a878 22% 43%, #df917e 43% 63%, #d97c6d 63% 76%, #a2c1ae 76% 87%, #61989b 87% 100%);
   }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background-image: repeating-conic-gradient(#f2a878 0 25%, transparent 0 50%), repeating-conic-gradient(#df917e 0 25%, transparent 0 50%), repeating-conic-gradient(#d97c6d 0 25%, transparent 0 50%), repeating-conic-gradient(#a2c1ae 0 25%, transparent 0 50%), repeating-conic-gradient(#61989b 0 25%, transparent 0 50%);
+    background-size: calc(var(--px) * 2) calc(var(--px) * 2);
+    background-position: 0 22%, 0 43%, 0 63%, 0 76%, 0 87%;
+    background-repeat: repeat-x;
+  }
+
+  #root { position: relative; z-index: 1; }
 
   /* Scrollbar styling */
   ::-webkit-scrollbar {
