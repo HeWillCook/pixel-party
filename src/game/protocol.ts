@@ -15,7 +15,7 @@ export interface RoundView {
   endsAt: number | null
   askAvailableAt: number
   endedAt?: number
-  result?: { outcome: 'won' | 'timeout' | 'teamWin'; score?: number; winningTeam?: 'red' | 'blue' | 'draw' }
+  result?: { outcome: 'won' | 'timeout' | 'teamWin'; score?: number; contributorCount?: number; winningTeam?: 'red' | 'blue' | 'draw' }
 }
 
 export type ServerMsg =

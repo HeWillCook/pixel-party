@@ -29,7 +29,7 @@ const roomStateSchema = z.object({
   round: z.object({
     id: z.string().min(1), word: z.string().min(1), state: z.enum(['playing', 'intermission', 'paused']),
     startedAt: finite, endsAt: finite.nullable(), askAvailableAt: finite, endedAt: finite.optional(),
-    result: z.object({ outcome: z.enum(['won', 'timeout', 'teamWin']), score: finite.optional(), winningTeam: z.enum(['red', 'blue', 'draw']).optional() }).optional(),
+    result: z.object({ outcome: z.enum(['won', 'timeout', 'teamWin']), score: finite.optional(), contributorCount: finite.int().nonnegative().optional(), winningTeam: z.enum(['red', 'blue', 'draw']).optional() }).optional(),
   }),
   wordEntry: z.object({ word: z.string().min(1), synonyms: z.array(z.string()), tier: z.enum(['easy', 'medium']) }),
   recentWords: z.array(z.string()), lastGuesses: z.array(z.string()), roundCounter: finite.int().nonnegative(),
@@ -279,7 +279,10 @@ export class PixelRoom extends BaseRoom<Env> {
         const body = await response.json() as { ok?: unknown }
         return { ok: body.ok === true }
       })(), 5000, { ok: false })
-      if (result.ok) this.restingDay = null
+      if (result.ok && this.restingDay !== null) {
+        this.restingDay = null
+        this.persist()
+      }
       return result
     } catch {
       return { ok: false }

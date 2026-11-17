@@ -84,7 +84,7 @@ describe('room logic', () => {
   it('scores wins and includes contributors and final guesses', () => {
     const s = applyPlacement(room(), { x: 1, y: 1, c: 2, userId: 'a' }, 2000, 1).state
     const result = applyJudgeOutcome(s, judged, 4000)
-    expect(result.state.round.result).toEqual({ outcome: 'won', score: 995 })
+    expect(result.state.round.result).toEqual({ outcome: 'won', score: 995, contributorCount: 1 })
     expect(result.events).toContainEqual(expect.objectContaining({ type: 'roundEnded', event: expect.objectContaining({ contributorIds: ['a'], finalGuesses: ['house'], pixelsUsed: 1 }) }))
     expect(result.state.intermissionEndsAt).toBe(12000)
     expect(s.status).toBe('playing')

@@ -32,6 +32,7 @@ describe('PixelRoom persistence recovery', () => {
     state.grid.cells[2] = 6
     state.grid.placedBy[2] = 'owner'
     state.lastPlacedAt.owner = 400
+    state.round = { ...state.round, result: { outcome: 'won', contributorCount: 1 } }
     const saved = JSON.parse(serializeRoomState(state))
     delete saved.lastGuesses
     delete saved.recentWords
@@ -119,6 +120,7 @@ function socket(userId: string) {
 }
 
 class TestPixelRoom extends PixelRoom {
+  reserveForTest() { return (this as unknown as { reserveBudget(): Promise<{ ok: boolean }> }).reserveBudget() }
   connect(connection: WebSocket) { return this.onConnect(connection, connection.deserializeAttachment()) }
   disconnect(connection: WebSocket) { return this.onDisconnect(connection) }
   tick() { return this.onAlarm() }
@@ -295,6 +297,16 @@ describe('durable room boundaries', () => {
       harness.database.close()
     },
   )
+
+  it('persists a cleared resting day immediately after a successful reserve', async () => {
+    const harness = roomHarness()
+    harness.database.prepare('UPDATE pixel_state SET resting_day = ?').run('2027-01-15')
+    const wakingRoom = harness.makeRoom()
+    reserve.mockResolvedValue(Response.json({ ok: true }))
+    expect(await wakingRoom.reserveForTest()).toEqual({ ok: true })
+    expect(harness.database.prepare('SELECT resting_day FROM pixel_state').get()).toMatchObject({ resting_day: null })
+    harness.database.close()
+  })
 
   it.each(['reserve', 'integration'])('bounds a never-resolving %s, persists the outcome and releases the live guard', async upstream => {
     vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })

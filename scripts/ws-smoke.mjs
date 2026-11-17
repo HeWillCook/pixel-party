@@ -6,12 +6,13 @@ import { join, resolve } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { setTimeout as delay } from 'node:timers/promises'
 
-const port = Number(process.argv[2] ?? 5197)
-assert(Number.isInteger(port) && port > 0 && port < 65536, 'Pass a valid local dev port')
-const base = `http://127.0.0.1:${port}`
-const roomId = `task4b-smoke-${Date.now()}`
+const base = process.argv[2] ?? 'http://127.0.0.1:5197'
+const target = new URL(base)
+assert(['http:', 'https:'].includes(target.protocol), 'Pass an HTTP(S) base URL')
+const local = ['localhost', '127.0.0.1', '[::1]'].includes(target.hostname)
+const roomId = 'play'
 const clients = []
-const evidence = { port, roomId, checks: [], judgements: [] }
+const evidence = { base: target.origin, roomId, checks: [], judgements: [] }
 
 function sqliteFiles(directory) {
   try {
@@ -42,7 +43,7 @@ function budgetUsage() {
 function connect(token) {
   return new Promise((resolveClient, reject) => {
     const url = new URL(`/api/pixel/${roomId}/ws`, base)
-    url.protocol = 'ws:'
+    url.protocol = target.protocol === 'https:' ? 'wss:' : 'ws:'
     if (token) url.searchParams.set('token', token)
     const connection = new WebSocket(url)
     const messages = []
@@ -108,8 +109,8 @@ try {
   assert.equal(anonymous.players, 1)
   record('signed-in and anonymous snapshots', { userId: snapshot.you.userId, anonymousUserId: anonymous.you.userId, players: anonymous.players })
 
-  const before = budgetUsage()
-  record('budget before', before)
+  const before = local ? budgetUsage() : null
+  if (before) record('budget before', before)
   const firstPixel = { t: 'place', x: 16, y: 16, c: 6 }
   owner.send(firstPixel)
   owner.send({ ...firstPixel, x: 17 })
@@ -161,10 +162,12 @@ try {
   assert.equal(paused.players, 0)
   record('last signed-in disconnect pauses the room', { roundId: paused.round.id, state: paused.round.state, players: paused.players })
 
-  const after = budgetUsage()
-  assert.equal(after.day, before.day, 'Smoke crossed UTC midnight; rerun to verify daily budget delta')
-  assert.equal(after.used, before.used + 1, 'Exactly one paid judgement should reserve exactly one budget call')
-  record('budget after', { ...after, increment: after.used - before.used })
+  if (before) {
+    const after = budgetUsage()
+    assert.equal(after.day, before.day, 'Smoke crossed UTC midnight; rerun to verify daily budget delta')
+    assert.equal(after.used, before.used + 1, 'Exactly one paid judgement should reserve exactly one budget call')
+    record('budget after', { ...after, increment: after.used - before.used })
+  } else record('local budget assertion skipped for remote target')
   console.log(JSON.stringify({ status: 'PASS', ...evidence }))
 } catch (error) {
   const message = error instanceof assert.AssertionError ? error.message : 'Connection or runtime failure; credentials omitted'

@@ -85,7 +85,8 @@ function endRound(s: RoomState, now: number, outcome: 'won' | 'timeout', guesses
   const used = pixelsUsed(s.grid)
   const durationMs = now - s.round.startedAt
   const score = outcome === 'won' ? coopScore({ pixelsUsed: used, totalCells: s.grid.width * s.grid.height, durationMs, capMs: MODES[s.mode].capMs }) : undefined
-  const result: RoundView['result'] = score === undefined ? { outcome } : { outcome, score }
+  const contributorCount = contributors(s.grid).length
+  const result: RoundView['result'] = score === undefined ? { outcome, contributorCount } : { outcome, score, contributorCount }
   const round: RoundView = { ...s.round, state: 'intermission', endedAt: now, result }
   const state: RoomState = { ...s, round, status: 'intermission', intermissionEndsAt: now + MODES[s.mode].intermissionMs }
   const event: RoundEndedEvent = { roomId: s.roomId, roundId: round.id, mode: s.mode, word: round.word, startedAt: round.startedAt, endedAt: now, outcome, ...(score === undefined ? {} : { score }), pixelsUsed: used, durationMs, contributorIds: contributors(s.grid), finalGuesses: guesses }

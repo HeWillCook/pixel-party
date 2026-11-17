@@ -31,6 +31,7 @@ import { RoundBar } from '../../../components/game/RoundBar'
 import { Button } from '../../../components/ui'
 import type { RejectMsg } from '../../../game/client-state'
 import { MODES } from '../../../game/config'
+import { contributorLabel } from '../../../game/contributor-label'
 import { cooldownMs } from '../../../game/rules'
 import { usePixelRoom } from '../../../hooks/usePixelRoom'
 
@@ -91,7 +92,7 @@ export default function RoomPage() {
   const { isSignedIn, user } = useAuthProfileReady({ requireUser: false })
   const { getName } = useUserLookup()
 
-  const { state, place, ask, next } = usePixelRoom(joinCode)
+  const { state, sessionExpired, place, ask, next } = usePixelRoom(joinCode)
   const { peers, updateState: updatePresence } = usePresenceRoom(`pixel:${joinCode}`)
 
   const { records: roomRecords } = useQuery<RoomRecord>('rooms', {
@@ -207,17 +208,17 @@ export default function RoomPage() {
     }
     const usedPx = currentRoundDoc?.data.pixelsUsed ?? pixelsCount
     if (usedPx > 0) {
-      const painterCount = Math.max(1, state.players)
+      const painterCount = state.round?.result?.contributorCount ?? currentRoundDoc?.data.contributorIds?.length
       return {
         names: [] as string[],
-        fallbackText: `${painterCount} ${painterCount === 1 ? 'painter' : 'painters'} (${usedPx} px on canvas)`,
+        fallbackText: contributorLabel(painterCount, usedPx),
       }
     }
     return {
       names: [] as string[],
       fallbackText: 'No pixels placed this round.',
     }
-  }, [currentRoundDoc, getName, pixelsCount, state.players, user])
+  }, [currentRoundDoc, getName, pixelsCount, state.round?.result?.contributorCount, user])
 
   const intermissionRemainingSec = useMemo(() => {
     if (state.round?.state !== 'intermission' || !state.round.endedAt) return 0
@@ -388,6 +389,8 @@ export default function RoomPage() {
         roomName={roomDoc?.data.name}
         pixelsCount={pixelsCount}
       />
+
+      {sessionExpired && <div role="status" data-testid="session-expired">Your session expired — sign in again</div>}
 
       {/* Spectator Sign-In Banner */}
       {isSpectator && (

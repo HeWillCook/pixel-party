@@ -6,15 +6,16 @@ import {
   applyServerMsg,
   clearLastReject,
   initialClientState,
-  statusToConnectError,
   type ClientState,
 } from '../game/client-state'
 import { PALETTE } from '../game/config'
 import type { ClientMsg, ServerMsg } from '../game/protocol'
 import { cooldownMs } from '../game/rules'
+import { pixelPreflight } from './pixelPreflight'
 
 export interface UsePixelRoomResult {
   state: ClientState
+  sessionExpired: boolean
   place: (x: number, y: number, c: number) => void
   ask: () => void
   next: () => void
@@ -26,6 +27,7 @@ const REJECT_DISPLAY_MS = 4000
 export function usePixelRoom(joinCode: string): UsePixelRoomResult {
   const { isSignedIn, userId, sessionId } = useAuthStatus()
   const [state, setState] = useState<ClientState>(() => initialClientState())
+  const [sessionExpired, setSessionExpired] = useState(false)
   const wsRef = useRef<WebSocket | null>(null)
   const stateRef = useRef<ClientState>(state)
   const lastSendAtRef = useRef<number>(0)
@@ -53,6 +55,7 @@ export function usePixelRoom(joinCode: string): UsePixelRoomResult {
 
   useEffect(() => {
     setState(initialClientState())
+    setSessionExpired(false)
     lastSendAtRef.current = 0
     if (!joinCode || typeof window === 'undefined') return
 
@@ -61,6 +64,8 @@ export function usePixelRoom(joinCode: string): UsePixelRoomResult {
     let alive = true
     let backoffMs = 500
     let terminalError = false
+    let spectateWithoutToken = false
+    const probeAbort = new AbortController()
 
     const scheduleReconnect = () => {
       if (!alive || terminalError) return
@@ -71,13 +76,14 @@ export function usePixelRoom(joinCode: string): UsePixelRoomResult {
       }, delay)
     }
 
-    const probeHttpError = async (pathUrl: string): Promise<boolean> => {
+    const probeHttpError = async (pathUrl: string, hadToken: boolean): Promise<boolean> => {
       try {
-        const res = await fetch(pathUrl, {
-          method: 'GET',
-          credentials: 'same-origin',
-        })
-        const err = statusToConnectError(res.status)
+        const { error: err, expired } = await pixelPreflight(pathUrl, hadToken, probeAbort.signal)
+        if (expired && alive) {
+          spectateWithoutToken = true
+          setSessionExpired(true)
+          return false
+        }
         if (err && alive) {
           terminalError = true
           setState((prev) => applyConnectError(prev, err))
@@ -92,7 +98,7 @@ export function usePixelRoom(joinCode: string): UsePixelRoomResult {
     const connect = async () => {
       if (!alive || terminalError) return
       let token: string | null = null
-      if (isSignedIn) {
+      if (isSignedIn && !spectateWithoutToken) {
         try {
           token = await getAuthToken()
         } catch {
@@ -150,7 +156,7 @@ export function usePixelRoom(joinCode: string): UsePixelRoomResult {
 
         // I2: If the socket closed before receiving a snapshot, probe HTTP status for 401 / 404 / 410
         if (!receivedSnapshot) {
-          void probeHttpError(httpProbeUrl).then((isTerminal) => {
+          void probeHttpError(httpProbeUrl, Boolean(token)).then((isTerminal) => {
             if (!isTerminal) {
               scheduleReconnect()
             }
@@ -169,6 +175,7 @@ export function usePixelRoom(joinCode: string): UsePixelRoomResult {
 
     return () => {
       alive = false
+      probeAbort.abort()
       if (reconnectTimer) clearTimeout(reconnectTimer)
       if (ws) {
         ws.onopen = null
@@ -244,5 +251,5 @@ export function usePixelRoom(joinCode: string): UsePixelRoomResult {
     [sendMsg],
   )
 
-  return { state, place, ask, next, chooseTeam }
+  return { state, sessionExpired, place, ask, next, chooseTeam }
 }
