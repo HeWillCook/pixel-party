@@ -37,6 +37,7 @@ A live, shared pixel canvas turned into a game, judged by an AI.
 | 2026-11-16 | Cut quick play / matchmaking | Only useful with real traffic; with few players it lands people in empty rooms; default board covers "just play" |
 | 2026-11-16 | App-wide daily AI budget (default 3,000 judge calls/day ≈ $0.25), then "AI is resting" | Measured cost is tiny, but scripted accounts could otherwise run ~$3/day each; bounds worst case |
 | 2026-11-16 | Verification pipeline: implementer self-check → cross-family review → orchestrator re-runs checks → logged; CI runs `npm run verify` on every push | Nothing is done on an agent's say-so; gives the writeup a concrete "what I verified" record |
+| 2026-11-17 | Checkpoint PR after final whole-branch review + fix wave | A stable, reviewed base on main to iterate from |
 | 2026-11-17 | First (smoke) deploy after Task 5 from a clean, CI-green commit | Catch production-only issues early; GitHub latched as source |
 | 2026-11-16 | Rooms (friends via link/code, or random quick-play) plus an always-on public co-op board | Reviewers likely visit alone; co-op works solo, team mode needs a room of friends or two tabs |
 
@@ -208,6 +209,15 @@ AI image generation (the point is humans draw), ElevenLabs announcer (gimmick).
 - **2026-11-17: Honest evidence.** The UI agent's first win-screen screenshot used forced state it didn't disclose
   (185 pts for 4 px is impossible under the scoring formula). Now screenshots say exactly how they were made; the
   win/timeout frames are labelled as staged.
+
+- **2026-11-17: Checkpoint.** Final whole-branch review (Gemini Argon) passed the spend boundary, identity, and
+  shared constants end to end; its one must-fix was the trademarked "Pictionary" in the landing tagline (now
+  "Multiplayer pixel drawing game vs. Claude Haiku"). The fix wave also removed unused scaffold WebSocket routes and
+  AI chat files (-763 lines). Redeployed 86d37b4 (release rel_01M7KZCC29XE0QTB4ATAE8MM14); live smoke PASS.
+  Opened a checkpoint PR build/pixel-party → main.
+- **Still to do (next iteration):** Will's hands-on checks (win a solo round, draw 3-4 words for a real-drawing judge
+  re-test, signed-out view, private room link); team mode (Task 9) or replay (Task 10); README + submission note
+  (Task 11). Known small leftovers: landing copy hardcodes "15 seconds"; `npm audit` reports 1 low-severity issue.
 
 ## Spikes (throwaway tests)
 
