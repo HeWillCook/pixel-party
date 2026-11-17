@@ -12,6 +12,7 @@
   },
   "scripts": {
     "dev": "deepspace dev start",
+    "judge:local": "node scripts/local-judge.mjs",
     "build": "vite build",
     "login": "deepspace auth login",
     "deploy": "deepspace deploy",

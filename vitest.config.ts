@@ -20,7 +20,10 @@ const appDir = fileURLToPath(new URL('.', import.meta.url))
 export default defineConfig({
   // Same app id the bundle is built with, from the same wrangler config —
   // so a unit test importing src/constants.ts sees what the browser will.
-  define: appIdDefine({ appDir }),
+  define: {
+    ...appIdDefine({ appDir }),
+    __DAILY_JUDGE__: JSON.stringify('fake'),
+  },
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),

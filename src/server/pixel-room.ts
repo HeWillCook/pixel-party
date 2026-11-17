@@ -15,6 +15,7 @@ import {
   type RoomState, type RoomTransition, type RoundEndedEvent, type RoomStatusEvent,
 } from '../game/room-logic'
 import { cooldownMs } from '../game/rules'
+import { reserveBudget } from './budget'
 import { createServerTools } from './server-tools'
 import { utcDay, withTimeout } from './room-time'
 import type { RoomData } from './rooms'
@@ -281,22 +282,12 @@ export class PixelRoom extends BaseRoom<Env> {
   }
 
   private async reserveBudget(): Promise<{ ok: boolean }> {
-    try {
-      const result = await withTimeout((async () => {
-        const namespace = this.env.BUDGET_ROOMS
-        const response = await namespace.get(namespace.idFromName('global')).fetch(new Request('https://budget/reserve', { method: 'POST' }))
-        if (!response.ok) return { ok: false }
-        const body = await response.json() as { ok?: unknown }
-        return { ok: body.ok === true }
-      })(), 5000, { ok: false })
-      if (result.ok && this.restingDay !== null) {
-        this.restingDay = null
-        this.persist()
-      }
-      return result
-    } catch {
-      return { ok: false }
+    const ok = await reserveBudget(this.env)
+    if (ok && this.restingDay !== null) {
+      this.restingDay = null
+      this.persist()
     }
+    return { ok }
   }
 
   private async judge(reason: 'tick' | 'ask', requester?: WebSocket): Promise<void> {
