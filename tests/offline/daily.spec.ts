@@ -135,6 +135,40 @@ test('auto-grade fires on another route', async ({ page }) => {
   expect(sentCells).toBe(latestCells)
 })
 
+test('a delayed state refresh cannot overwrite a later grade', async ({ page }) => {
+  await page.clock.install({ time: new Date('2026-11-17T12:00:00Z') })
+  await offlineClient(page, true)
+  const now = Date.parse('2026-11-17T12:00:00Z')
+  const initial = { day: '2026-11-17', status: 'playing', prompt: 'A tree', startedAt: now, endsAt: now + 600_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: now + 120_000, serverNow: now }
+  let hold = false
+  let pending = 0
+  let release!: () => void
+  const gate = new Promise<void>(resolve => { release = resolve })
+  await page.route('**/api/daily/**', async route => {
+    const path = new URL(route.request().url()).pathname
+    if (path.endsWith('/me')) {
+      if (hold) { pending++; await gate }
+      return route.fulfill({ json: initial })
+    }
+    if (path.endsWith('/grade')) return route.fulfill({ json: { ok: true, grade: { guess: 'tree', reason: 'recognisable tree', fit: 300, recognition: 200, speed: 90, total: 590, elapsedMs: 181_000 }, state: { ...initial, asksUsed: 1, asksLeft: 2, best: 590, nextAutoAt: now + 240_000 } } })
+    return route.fulfill({ json: {} })
+  })
+  await page.goto(`${origin}/home`)
+  await expect(page.getByTestId('daily-playing')).toBeVisible()
+  hold = true
+  await page.clock.fastForward(181_000)
+  await expect.poll(() => pending).toBe(1)
+  await page.getByTestId('daily-ask-button').click()
+  await expect(page.getByTestId('daily-ask-button')).toHaveText(/Grade now \(2 left\)/)
+  await expect(page.getByTestId('daily-best-score')).toContainText('590')
+  const refreshResponse = page.waitForResponse(response => response.url().endsWith('/api/daily/me'))
+  release()
+  await refreshResponse
+  await page.waitForTimeout(100)
+  await expect(page.getByTestId('daily-ask-button')).toHaveText(/Grade now \(2 left\)/)
+  await expect(page.getByTestId('daily-best-score')).toContainText('590')
+})
+
 for (const action of ['exit confirm leaves to party', 'grade now and submit are separate'] as const) test(action, async ({ page }) => {
   await offlineClient(page, true)
   const now = Date.now()
@@ -288,6 +322,10 @@ for (const invalidAt of ['grade', 'end'] as const) {
         await expect(page.getByTestId('daily-ask-button')).toBeDisabled()
       } else {
         await expect(page.getByTestId(`daily-${todayStatus.replace('_', '-')}`)).toBeVisible()
+        if (invalidAt === 'grade' && todayStatus === 'not_started') {
+          await page.waitForTimeout(300)
+          expect(refreshes).toBe(1)
+        }
         if (todayStatus === 'playing') {
           await expect(page.getByTestId('daily-prompt')).toHaveText('Today scene')
           await expect(page.getByTestId('daily-done-button')).toBeEnabled()

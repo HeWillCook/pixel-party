@@ -104,6 +104,7 @@ export function useDailyAttempt(): {
   const restoredKeyRef = useRef<string>('')
   const loadMeRef = useRef<(() => void) | null>(null)
   const missedRefreshAtRef = useRef(0)
+  const mutationEpochRef = useRef(0)
   const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const dispatch = useCallback((action: DailyAction) => {
@@ -181,13 +182,14 @@ export function useDailyAttempt(): {
     const loadMe = async () => {
       if (loading) return
       loading = true
+      const epoch = mutationEpochRef.current
       try {
         const headers = await authHeaders()
         const res = await fetch('/api/daily/me', { method: 'GET', headers })
         if (!res.ok) throw new Error('Daily state unavailable')
         if (cancelled) return
         const serverState = (await res.json()) as DailyStateView
-        if (cancelled) return
+        if (cancelled || epoch !== mutationEpochRef.current) return
         if (serverState.status === 'ended' || stateRef.current.stale || serverState.day !== stateRef.current.day) {
           finalizingRef.current = false
           frozenFinalCellsRef.current = null
@@ -220,7 +222,7 @@ export function useDailyAttempt(): {
       if (retryTimer !== null) clearTimeout(retryTimer)
       clearInterval(rollover)
     }
-  }, [isSignedIn, userId, restoreCanvas, dispatch, state.stale])
+  }, [isSignedIn, userId, restoreCanvas, dispatch])
 
   // Restore from localStorage if userId resolved after state_loaded
   useEffect(() => {
@@ -240,6 +242,7 @@ export function useDailyAttempt(): {
       const encoded = encodedOverride ?? encodeCells(cellsRef.current)
       const day = stateRef.current.day
       const hash = cellsHash(encoded)
+      mutationEpochRef.current++
       dispatch({ type: 'grade_start', kind })
 
       const promise = (async () => {
@@ -301,6 +304,7 @@ export function useDailyAttempt(): {
             now: Date.now(),
           })
         } finally {
+          mutationEpochRef.current++
           inFlightGradeRef.current = null
         }
       })()
@@ -314,6 +318,7 @@ export function useDailyAttempt(): {
   const sendEnd = useCallback(
     async (day: string, encodedCells: string): Promise<boolean> => {
       if (stateRef.current.day !== day || stateRef.current.stale) return false
+      mutationEpochRef.current++
       try {
         const headers = await authHeaders()
         if (stateRef.current.day !== day || stateRef.current.stale) return false
@@ -357,6 +362,8 @@ export function useDailyAttempt(): {
           message: 'Network error while finishing attempt — press Retry submit to try again.',
         })
         return false
+      } finally {
+        mutationEpochRef.current++
       }
     },
     [dispatch],
@@ -459,6 +466,7 @@ export function useDailyAttempt(): {
   }, [])
 
   const start = useCallback(async (): Promise<void> => {
+    mutationEpochRef.current++
     try {
       const headers = await authHeaders()
       const res = await fetch('/api/daily/start', {
@@ -479,6 +487,8 @@ export function useDailyAttempt(): {
       }
     } catch {
       dispatch({ type: 'error', message: 'Network error while starting attempt.' })
+    } finally {
+      mutationEpochRef.current++
     }
   }, [restoreCanvas, dispatch])
 

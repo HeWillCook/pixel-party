@@ -209,6 +209,7 @@ export function dailyReducer(state: DailyClientState, action: DailyAction): Dail
     case 'grade_start':
       return {
         ...state,
+        notice: null,
         grading: true,
         finalizing: state.finalizing || action.kind === 'final',
         lastError: null,
@@ -217,6 +218,7 @@ export function dailyReducer(state: DailyClientState, action: DailyAction): Dail
       const merged = action.state ? mergeServerState(state, action.state) : state
       return {
         ...merged,
+        notice: null,
         latest: action.grade,
         best: action.state?.best ?? Math.max(state.best, action.grade.total),
         grading: false,

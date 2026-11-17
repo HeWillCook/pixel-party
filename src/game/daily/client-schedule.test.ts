@@ -75,6 +75,11 @@ describe('client-schedule', () => {
     expect(skipped).toMatchObject({ grading: false, notice, windows, nextAutoAt: 1_240_000 })
     expect(dailyReducer(skipped, { type: 'clear_notice' }).notice).toBeNull()
   })
+  it('clears a previous notice on grade start and success', () => {
+    const state = { ...initialDailyClientState(baseState.day), ...baseState, notice: 'old notice' }
+    expect(dailyReducer(state, { type: 'grade_start', kind: 'ask' }).notice).toBeNull()
+    expect(dailyReducer(state, { type: 'grade_ok', grade: sampleGrade, state: baseState }).notice).toBeNull()
+  })
   it('computes shouldFinalGrade when attempt window is reached', () => {
     const s = 1_000_000
     expect(shouldFinalGrade(s + 599_999, s)).toBe(false)
