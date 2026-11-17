@@ -15,7 +15,11 @@ export const PALETTE: readonly string[] = [
   '#ec4899', // 13: pink
   '#92400e', // 14: brown
   '#fde68a', // 15: cream
+  '#ffffff', // 16: white paint
 ]
+
+export const MAX_COLOR = PALETTE.length - 1
+export const EMPTY_CANVAS = ['#f3ead8', '#efe3cc'] as const
 
 export type Mode = 'coop' | 'team'
 export type ZoneId = 'all' | 'red' | 'blue'

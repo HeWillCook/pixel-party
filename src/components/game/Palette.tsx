@@ -2,6 +2,7 @@ import { PALETTE } from '../../game/config'
 import { cn } from '../../lib/utils'
 
 const COLOR_NAMES: Record<number, string> = {
+  16: 'White',
   1: 'Black',
   2: 'Light Gray',
   3: 'Dark Gray',
@@ -33,7 +34,7 @@ export function Palette({
   disabled = false,
   cooldownRemainingMs = 0,
 }: PaletteProps) {
-  const colorIndices = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+  const colorIndices = [16, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
   const isCoolingDown = cooldownRemainingMs > 0
 
   return (

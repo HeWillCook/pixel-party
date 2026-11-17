@@ -20,6 +20,7 @@ import { ExitDailyButton } from '../../components/daily/ExitDailyButton'
 import { Palette } from '../../components/game/Palette'
 import { PixelCanvas } from '../../components/game/PixelCanvas'
 import { Badge, Button } from '../../components/ui'
+import { MAX_COLOR } from '../../game/config'
 import { canAskDaily, canPaintDaily } from '../../game/daily/client-schedule'
 import { decodeCells } from '../../game/grid'
 import { useDaily } from '../../hooks/DailyAttemptProvider'
@@ -55,7 +56,7 @@ function decodeSnapshotOrFallback(encoded: string | undefined, fallback: Uint8Ar
   if (!encoded) return fallback
   try {
     const decoded = decodeCells(encoded, 1024)
-    if (decoded.every((c) => c <= 15)) return decoded
+    if (decoded.every((c) => c <= MAX_COLOR)) return decoded
   } catch {
     // Ignore invalid base64
   }

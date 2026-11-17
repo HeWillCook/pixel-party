@@ -217,12 +217,28 @@ describe('daily service', () => {
     expect(onlyRow(records, 'dailyDrawings')).toMatchObject({ cells, score: 1000 })
   })
 
-  it.each(['!', encodeCells(new Uint8Array(1023)), encodeCells(new Uint8Array(1024).fill(16))])('rejects invalid encoded grids before reserving', async invalid => {
+  it.each(['!', encodeCells(new Uint8Array(1023)), encodeCells(new Uint8Array(1024).fill(17))])('rejects invalid encoded grids before reserving (including 17)', async invalid => {
     const { deps } = setup()
     await startDaily(deps, user)
     expect(await gradeDaily(deps, user, 'ask', invalid)).toMatchObject({ ok: false, reason: 'bad_cells', state: { asksUsed: 0 } })
     expect(deps.reserveBudget).not.toHaveBeenCalled()
     expect(deps.render).not.toHaveBeenCalled()
+  })
+
+  it('white paint is accepted by daily validation', async () => {
+    const { deps } = setup()
+    await startDaily(deps, user)
+    const whiteCells = encodeCells(new Uint8Array(1024).fill(16))
+    expect(await gradeDaily(deps, user, 'ask', whiteCells)).toMatchObject({ ok: true, state: { lastCells: whiteCells } })
+  })
+
+  it('legacy cells still valid', async () => {
+    const { deps } = setup()
+    await startDaily(deps, user)
+    const raw = new Uint8Array(1024)
+    for (let i = 0; i < raw.length; i++) raw[i] = i % 16
+    const legacy = encodeCells(raw)
+    expect(await gradeDaily(deps, user, 'ask', legacy)).toMatchObject({ ok: true, state: { lastCells: legacy } })
   })
 
   it('enforces time limits including the final-only grace window', async () => {

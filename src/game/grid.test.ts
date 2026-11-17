@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MODES, PALETTE } from './config'
+import { EMPTY_CANVAS, MAX_COLOR, MODES, PALETTE } from './config'
 import {
   clearGrid,
   contributors,
@@ -11,9 +11,12 @@ import {
 } from './grid'
 
 describe('config', () => {
-  it('defines a 16-color palette with white at index 0', () => {
-    expect(PALETTE).toHaveLength(16)
+  it('defines a 17-entry palette with empty white at 0 and white paint at 16', () => {
+    expect(PALETTE).toHaveLength(17)
     expect(PALETTE[0]).toBe('#ffffff')
+    expect(PALETTE[16]).toBe('#ffffff')
+    expect(MAX_COLOR).toBe(16)
+    expect(EMPTY_CANVAS).toEqual(['#f3ead8', '#efe3cc'])
   })
 
   it('defines coop and team mode dimensions, zones, and timers', () => {
@@ -66,6 +69,12 @@ describe('grid', () => {
     setPixel(g, 3, 4, 15, 'u2')
     setPixel(g, 31, 31, 9, 'u3')
     expect(decodeCells(encodeCells(g.cells), 1024)).toEqual(g.cells)
+  })
+
+  it('legacy cells still valid', () => {
+    const legacy = new Uint8Array(1024)
+    for (let i = 0; i < legacy.length; i++) legacy[i] = i % 16
+    expect(decodeCells(encodeCells(legacy), 1024)).toEqual(legacy)
   })
 
   it('throws on decodeCells length mismatches (short or long payload)', () => {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { getAuthToken, useAuthProfileReady } from 'deepspace'
-import { DAILY, PALETTE } from '../game/config'
+import { DAILY, MAX_COLOR, PALETTE } from '../game/config'
 import type { GradeKind } from '../game/daily/attempt'
 import {
   canAskDaily,
@@ -36,7 +36,7 @@ function readLocalCells(day: string, userId: string): Uint8Array | null {
     const raw = window.localStorage.getItem(storageKey(day, userId))
     if (!raw) return null
     const decoded = decodeCells(raw, GRID_CELLS)
-    if (decoded.every((c) => c <= 15)) return decoded
+    if (decoded.every((c) => c <= MAX_COLOR)) return decoded
   } catch {
     // Ignore storage or decode errors
   }
@@ -56,7 +56,7 @@ function decodeValidCells(encoded: string | undefined): Uint8Array | null {
   if (!encoded) return null
   try {
     const decoded = decodeCells(encoded, GRID_CELLS)
-    if (decoded.every((c) => c <= 15)) return decoded
+    if (decoded.every((c) => c <= MAX_COLOR)) return decoded
   } catch {
     // Ignore invalid base64
   }

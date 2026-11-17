@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { boardCellSize } from '../../game/board-size'
-import { PALETTE } from '../../game/config'
+import { EMPTY_CANVAS, PALETTE } from '../../game/config'
 import { strokeCells } from '../../game/stroke'
 
 export interface PixelCanvasProps {
@@ -57,7 +57,10 @@ export function PixelCanvas({
       const rowOffset = y * width
       for (let x = 0; x < width; x++) {
         const colorIndex = cells[rowOffset + x] ?? 0
-        ctx.fillStyle = PALETTE[colorIndex] ?? PALETTE[0]
+        ctx.fillStyle =
+          colorIndex === 0
+            ? EMPTY_CANVAS[(x + y) % 2]
+            : (PALETTE[colorIndex] ?? EMPTY_CANVAS[(x + y) % 2])
         ctx.fillRect(x, y, 1, 1)
       }
     }

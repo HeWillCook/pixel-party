@@ -55,6 +55,15 @@ describe('renderZonePng', () => {
     const { width, height } = await decodePng(await renderZonePng(createGrid(4, 2), { id: 'all', x: 0, y: 0, w: 4, h: 2 }, 10))
     expect([width, height]).toEqual([8, 4])
   })
+
+  it('png renders 0 and 16 as white', async () => {
+    const grid = createGrid(2, 1)
+    setPixel(grid, 1, 0, 16, 'player')
+    const { width, pixels } = await decodePng(await renderZonePng(grid, { id: 'all', x: 0, y: 0, w: 2, h: 1 }, 4))
+    const pixel = (x: number, y: number) => [...pixels.slice(y * (width * 3 + 1) + 1 + x * 3, y * (width * 3 + 1) + 4 + x * 3)]
+    expect(pixel(0, 0)).toEqual([255, 255, 255])
+    expect(pixel(2, 0)).toEqual([255, 255, 255])
+  })
 })
 
 it('encodes bytes as base64', () => {

@@ -1,4 +1,4 @@
-import { DAILY } from '../game/config'
+import { DAILY, MAX_COLOR } from '../game/config'
 import { autoWindowAt, cellsHash, isBlankCells, isEnded } from '../game/daily/attempt'
 import type { AttemptRow, AutoWindowStatus, GradeKind, GradeReject, GradeResult } from '../game/daily/attempt'
 import { promptForDay } from '../game/daily/prompts'
@@ -83,7 +83,7 @@ export class InvalidAttemptDay extends Error {}
 
 function validCells(cells: string): boolean {
   try {
-    return decodeCells(cells, 1024).every(color => color <= 15)
+    return decodeCells(cells, 1024).every(color => color <= MAX_COLOR)
   } catch {
     return false
   }
