@@ -189,7 +189,7 @@ AI image generation (the point is humans draw), ElevenLabs announcer (gimmick).
 | Task | Commit | Commands run | Result | Reviewer | Will to check by hand |
 |---|---|---|---|---|---|
 | 1 | `9859338` | `npm run verify` normal + credentials denied; signed-out/signed-in JWT WebSockets; one Haiku call; record create/delete/query | PASS: 6 unit tests; all three platform probes; probe removed | Implementer self-check only; controller review follows | Optional browser OAuth UI smoke; signed-in WebSocket identity already verified with real login JWT |
-| 1 fix round 1 | `fix: close client integration proxy, harden server tools` (hash recorded after commit) | Covering tests; `npm run verify` normal + credentials denied | PASS: 31 covering tests; 34 full-suite tests; lint, type-check, Worker/client build | Implementer self-check; controller review follows | None added |
+| 1 fix round 1 | `add7097` — `fix: close client integration proxy, harden server tools` | Covering tests; `npm run verify` normal + credentials denied | PASS: 31 covering tests; 34 full-suite tests; lint, type-check, Worker/client build | Implementer self-check; controller review follows | None added |
 
 ## Agent log
 
