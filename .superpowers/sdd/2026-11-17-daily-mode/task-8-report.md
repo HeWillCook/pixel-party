@@ -3,7 +3,7 @@
 ## Implemented
 
 - Added offline Playwright checks for signed-out `/home` (sign-in button, leaderboard, no active prompt), public
-  `/u/offline-player` profile empty state, `/party` lobby, and an unauthenticated daily start response.
+  `/u/offline-player` profile empty state, and `/party` lobby. Real-worker auth checks were added in the review fix below.
 - Updated `docs/progress.md` with the 2026-11-17 daily-mode pivot decision, integrations as implemented, fake/local judge notes,
   the prompt-list future idea, and verification results.
 - Rewrote `README.md` with daily mode first and party mode second, including the 0–1000 score breakdown and judge
@@ -46,3 +46,17 @@
 ## Provider
 
 - Codex implementation and verification; no nested agents (per implementer contract).
+
+## Review fix
+
+- Removed the self-fulfilling route-stubbed 401 assertion from `tests/offline/daily.spec.ts`; the offline fixture now keeps
+  only the routes needed to render the UI.
+- Added real-worker API assertions in `tests/api.spec.ts`: unauthenticated `POST /api/daily/start` and `GET /api/daily/me`
+  each return HTTP 401 with `{ error: "sign_in_required" }`.
+- `npx playwright test --config tests/playwright.config.ts tests/api.spec.ts`: **4/4 passed**, including both daily auth
+  guards and `/api/__test/ready` (`test_integration_disabled`).
+- `npx playwright test --config tests/offline.playwright.config.ts`: **8/8 passed** (four daily UI checks plus four
+  existing pixel checks).
+- `npm run verify`: PASS — lint, type-check, **310 unit tests**, Worker/client build, and prerender. Build tail:
+  `✓ built in 818ms; [prerender] wrote 1 page(s) [/], _spa.html, robots.txt, sitemap.xml.`
+- No deployments, pushes, real model calls, or local judge helper runs.

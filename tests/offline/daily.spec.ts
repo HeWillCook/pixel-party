@@ -13,7 +13,6 @@ async function offlineClient(page: Page) {
     if (url.origin !== origin) return route.abort()
     if (url.pathname === '/api/auth/get-session') return route.fulfill({ json: null })
     if (url.pathname === '/api/auth/token') return route.fulfill({ json: { token: null } })
-    if (url.pathname === '/api/daily/start') return route.fulfill({ status: 401, body: 'Unauthorized' })
     if (url.pathname.startsWith('/api/')) return route.fulfill({ json: {} })
     const asset = url.pathname.startsWith('/assets/')
     const path = asset ? resolve(clientDir, `.${url.pathname}`) : resolve(clientDir, '_spa.html')
@@ -57,11 +56,4 @@ test('party route still renders the lobby', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Live Public Rooms' })).toBeVisible()
   await expect(page.getByTestId('lobby-play-now')).toBeVisible()
   expect(errors).toEqual([])
-})
-
-test('daily start endpoint rejects an unauthenticated request', async ({ page }) => {
-  await offlineClient(page)
-  await page.goto(`${origin}/home`)
-  const status = await page.evaluate(async () => (await fetch('/api/daily/start', { method: 'POST' })).status)
-  expect(status).toBe(401)
 })

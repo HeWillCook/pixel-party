@@ -6,6 +6,15 @@ test.describe('API tests', () => {
     expect(response.ok()).toBe(true)
     expect(await response.json()).toEqual({ code: 'test_integration_disabled' })
   })
+  test('daily routes reject unauthenticated requests', async ({ request }) => {
+    const start = await request.post('/api/daily/start')
+    expect(start.status()).toBe(401)
+    expect(await start.json()).toEqual({ error: 'sign_in_required' })
+
+    const me = await request.get('/api/daily/me')
+    expect(me.status()).toBe(401)
+    expect(await me.json()).toEqual({ error: 'sign_in_required' })
+  })
   test('auth proxy forwards to auth worker', async ({ request }) => {
     const res = await request.get('/api/auth/ok')
     expect(res.ok()).toBeTruthy()
