@@ -215,9 +215,17 @@ AI image generation (the point is humans draw), ElevenLabs announcer (gimmick).
   "Multiplayer pixel drawing game vs. Claude Haiku"). The fix wave also removed unused scaffold WebSocket routes and
   AI chat files (-763 lines). Redeployed 86d37b4 (release rel_01M7KZCC29XE0QTB4ATAE8MM14); live smoke PASS.
   Opened a checkpoint PR build/pixel-party → main.
-- **Still to do (next iteration):** Will's hands-on checks (win a solo round, draw 3-4 words for a real-drawing judge
-  re-test, signed-out view, private room link); team mode (Task 9) or replay (Task 10); README + submission note
-  (Task 11). Known small leftovers: landing copy hardcodes "15 seconds"; `npm audit` reports 1 low-severity issue.
+- **2026-11-17: Full round lifecycle proven live** (throwaway public room `52DVD9U7W8`, scripted owner client):
+  judge tick fired without Ask after 17 s; drew "sun" → Haiku guessed crab, bug, then **sun** → round `won`,
+  848 pts; next round timed out at exactly 5:00 → `timeout`; fresh round with an empty canvas 8 s later. Production
+  logs: 0 warnings/errors/"hook failed" entries; the lobby lists the room (record writes working).
+- **Proven live vs unit-tested only.** Live: spectator/signed-in sockets, validation, cooldown, fan-out, Ask, tick,
+  win + score, timeout, intermission, pause, lobby listing, connect-error screens. Unit/integration-tested only:
+  browser OAuth sign-in on the live site (Will to check), daily-budget exhaustion ("AI is resting"), 30-minute empty
+  room close, waking from hibernation mid-round, private-room history permissions with two real accounts live.
+- **Still to do (next iteration), in order:** (1) Will's hands-on checks, starting with signing in through the
+  browser on the live site; (2) README + submission note (Task 11, required deliverable); (3) team mode (Task 9) or
+  replay (Task 10), optional. Known small leftovers: landing copy hardcodes "15 seconds"; `npm audit` reports 1 low-severity issue.
 
 ## Spikes (throwaway tests)
 
