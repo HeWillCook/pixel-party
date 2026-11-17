@@ -38,7 +38,10 @@ export async function roomRecords(tools: ServerTools, collection: string, where:
 
 export async function addRoomMember(tools: ServerTools, room: RoomRecord, userId: string): Promise<ActionResult<{ roomId: string }>> {
   if (room.data.status === 'closed') return { success: false, code: 'not_found', error: 'Room not found' }
+  if (room.data.memberIds.includes(userId)) return { success: true, data: { roomId: room.recordId } }
   const memberIds = [...new Set([...room.data.memberIds, userId])]
+  const updated = await tools.update('rooms', room.recordId, { memberIds })
+  if (!updated.success) return updated
   for (const collection of ['rounds', 'teamMembers']) {
     if (room.data.visibility === 'public') continue
     const history = await roomRecords(tools, collection, { roomId: room.recordId })
@@ -49,10 +52,6 @@ export async function addRoomMember(tools: ServerTools, room: RoomRecord, userId
       const result = await tools.update(collection, record.recordId, { memberIds: [...new Set([...members, ...memberIds])] })
       if (!result.success) return result
     }
-  }
-  if (!room.data.memberIds.includes(userId)) {
-    const result = await tools.update('rooms', room.recordId, { memberIds })
-    if (!result.success) return result
   }
   return { success: true, data: { roomId: room.recordId } }
 }

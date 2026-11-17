@@ -76,6 +76,34 @@ describe('room actions', () => {
     expect(update.mock.calls.filter(([collection]) => collection === 'rooms')).toHaveLength(1)
   })
 
+  it('returns immediately for an existing member without scanning history', async () => {
+    const { tools, rows, query, update } = memoryTools()
+    rows('rooms').set('room', { joinCode: 'CODE', visibility: 'private', status: 'playing', memberIds: ['host', 'guest'] })
+    expect(await joinRoom(tools, 'guest', { joinCode: 'CODE' })).toEqual({ success: true, data: { roomId: 'room' } })
+    expect(query.mock.calls.map(([collection]) => collection)).toEqual(['rooms'])
+    expect(update).not.toHaveBeenCalled()
+  })
+
+  it('updates room membership before querying or updating historical ACLs', async () => {
+    const { tools, rows, query, update } = memoryTools()
+    rows('rooms').set('room', { joinCode: 'CODE', visibility: 'private', status: 'playing', memberIds: ['host'] })
+    rows('rounds').set('round', { roomId: 'room', memberIds: ['host'] })
+    rows('teamMembers').set('team', { roomId: 'room', memberIds: ['host'] })
+    expect(await joinRoom(tools, 'guest', { joinCode: 'CODE' })).toMatchObject({ success: true })
+    expect(update.mock.calls.map(([collection]) => collection)).toEqual(['rooms', 'rounds', 'teamMembers'])
+    expect(update.mock.invocationCallOrder[0]).toBeLessThan(query.mock.invocationCallOrder[1])
+    expect(update.mock.invocationCallOrder[0]).toBeLessThan(update.mock.invocationCallOrder[1])
+  })
+
+  it('does not scan history if the initial room membership write fails', async () => {
+    const { tools, rows, query, update } = memoryTools()
+    rows('rooms').set('room', { joinCode: 'CODE', visibility: 'private', status: 'playing', memberIds: ['host'] })
+    update.mockResolvedValueOnce({ success: false, error: 'offline' } as never)
+    expect(await joinRoom(tools, 'guest', { joinCode: 'CODE' })).toMatchObject({ success: false, error: 'offline' })
+    expect(query.mock.calls.map(([collection]) => collection)).toEqual(['rooms'])
+    expect(rows('rooms').get('room')!.memberIds).toEqual(['host'])
+  })
+
   it('hides missing/closed rooms and rejects malformed codes', async () => {
     const { tools, rows } = memoryTools()
     rows('rooms').set('closed', { joinCode: 'CLOSED', status: 'closed' })
@@ -85,9 +113,9 @@ describe('room actions', () => {
 
   it('does not overwrite an existing default board', async () => {
     const { tools, rows, create } = memoryTools()
-    expect(await ensureDefaultBoard(tools)).toMatchObject({ success: true })
+    expect(await ensureDefaultBoard(tools)).toMatchObject({ success: true, data: { recordId: 'default-board', data: { joinCode: 'play', visibility: 'public', isDefaultBoard: true, hostId: '' } } })
     rows('rooms').get('default-board')!.currentRoundId = 'existing'
-    await ensureDefaultBoard(tools)
+    expect(await ensureDefaultBoard(tools)).toMatchObject({ success: true, data: { recordId: 'default-board', data: { currentRoundId: 'existing' } } })
     expect(create).toHaveBeenCalledTimes(1)
     expect(rows('rooms').get('default-board')).toMatchObject({ joinCode: 'play', visibility: 'public', isDefaultBoard: true, hostId: '', currentRoundId: 'existing' })
   })

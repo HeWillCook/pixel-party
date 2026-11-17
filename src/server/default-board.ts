@@ -1,12 +1,15 @@
 import type { ActionResult } from 'deepspace/worker'
 import type { ServerTools } from './server-tools'
+import type { RoomData, RoomRecord } from './rooms'
 
-export async function ensureDefaultBoard(tools: ServerTools): Promise<ActionResult<{ recordId: string }>> {
-  const existing = await tools.get('rooms', 'default-board')
-  if (existing.success) return { success: true, data: { recordId: 'default-board' } }
+export async function ensureDefaultBoard(tools: ServerTools): Promise<ActionResult<RoomRecord>> {
+  const existing = await tools.get<RoomData>('rooms', 'default-board')
+  if (existing.success) return { success: true, data: existing.data.record }
   if (existing.error !== 'Record not found') return existing
-  return tools.create('rooms', {
+  const data: RoomData = {
     name: 'Pixel Party', mode: 'coop', visibility: 'public', joinCode: 'play', hostId: '', memberIds: [],
     status: 'playing', currentRoundId: '', playerCount: 0, lastActiveAt: Date.now(), isDefaultBoard: true,
-  }, 'default-board')
+  }
+  const created = await tools.create('rooms', data, 'default-board')
+  return created.success ? { success: true, data: { recordId: created.data.recordId, data } } : created
 }

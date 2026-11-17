@@ -80,6 +80,33 @@ describe('PixelRoom route configuration', () => {
     expect(test.forwarded()!.headers.get('X-Room-Default')).toBe(String(isDefaultBoard === 1))
   })
 
+  it.each([false, true])('uses the ensured default-board record without a query (existing: %s)', async existing => {
+    const test = harness()
+    if (existing) test.rows('rooms').set('default-board', { joinCode: 'play', hostId: '', mode: 'coop', visibility: 'public', status: 'playing', memberIds: [], isDefaultBoard: 1 })
+    expect((await test.request('play')).status).toBe(200)
+    expect(test.get).toHaveBeenCalledExactlyOnceWith('rooms', 'default-board')
+    expect(test.query).not.toHaveBeenCalled()
+    expect(test.create).toHaveBeenCalledTimes(existing ? 0 : 1)
+    expect(test.namespace.idFromName).toHaveBeenCalledWith('default-board')
+    expect(test.forwarded()!.headers.get('X-Room-Default')).toBe('true')
+  })
+
+  it('preserves a closed default board without querying or forwarding', async () => {
+    const test = harness()
+    test.rows('rooms').set('default-board', { status: 'closed' })
+    expect((await test.request('play')).status).toBe(410)
+    expect(test.query).not.toHaveBeenCalled()
+    expect(test.forwarded()).toBeUndefined()
+  })
+
+  it('fails closed without a query if default-board creation fails', async () => {
+    const test = harness()
+    test.create.mockResolvedValueOnce({ success: false, error: 'offline' } as never)
+    expect((await test.request('play')).status).toBe(503)
+    expect(test.query).not.toHaveBeenCalled()
+    expect(test.forwarded()).toBeUndefined()
+  })
+
   it('fails closed if lookup or membership persistence is unavailable', async () => {
     const test = harness('private')
     test.query.mockResolvedValueOnce({ success: false, error: 'offline' } as never)

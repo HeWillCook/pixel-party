@@ -128,11 +128,7 @@ export function registerRealtimeRoutes(app: Hono<AppContext>): void {
     const joinCode = context.req.param('joinCode')
     if (!joinCodePattern.test(joinCode)) return new Response('Not found', { status: 404 })
     const tools = createServerTools(context.env)
-    if (joinCode === 'play') {
-      const ensured = await ensureDefaultBoard(tools)
-      if (!ensured.success) return new Response('Room unavailable', { status: 503 })
-    }
-    const lookup = await findRoom(tools, joinCode)
+    const lookup = joinCode === 'play' ? await ensureDefaultBoard(tools) : await findRoom(tools, joinCode)
     if (!lookup.success) return new Response('Room unavailable', { status: 503 })
     if (!lookup.data) return new Response('Not found', { status: 404 })
     const room = lookup.data
