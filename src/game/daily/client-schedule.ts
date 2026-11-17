@@ -124,7 +124,7 @@ function rejectErrorMessage(reason: DailyRejectReason): string | null {
     case 'busy':
       return 'Grading already in progress'
     case 'no_asks_left':
-      return 'No Ask-nows left for this attempt'
+      return 'No manual grades left for this attempt'
     case 'no_auto_left':
     case 'final_used':
       return null

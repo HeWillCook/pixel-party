@@ -104,6 +104,7 @@ export function useDailyAttempt(): {
   const restoredKeyRef = useRef<string>('')
   const loadMeRef = useRef<(() => void) | null>(null)
   const missedRefreshAtRef = useRef(0)
+  const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const dispatch = useCallback((action: DailyAction) => {
     stateRef.current = dailyReducer(stateRef.current, action)
@@ -121,6 +122,10 @@ export function useDailyAttempt(): {
   useEffect(() => {
     userIdRef.current = userId
   }, [userId])
+
+  useEffect(() => () => {
+    if (noticeTimerRef.current !== null) clearTimeout(noticeTimerRef.current)
+  }, [])
 
   const restoreCanvas = useCallback(
     (serverState: DailyStateView, uid: string) => {
@@ -265,6 +270,8 @@ export function useDailyAttempt(): {
           }
           if ('skipped' in payload) {
             dispatch({ type: 'grade_skipped', status: payload.skipped, window: payload.window, state: payload.state })
+            if (noticeTimerRef.current !== null) clearTimeout(noticeTimerRef.current)
+            noticeTimerRef.current = setTimeout(() => { noticeTimerRef.current = null; dispatch({ type: 'clear_notice' }) }, 6_000)
             return
           }
           if (payload.ok) {
@@ -325,7 +332,7 @@ export function useDailyAttempt(): {
           }
           dispatch({
             type: 'end_failed',
-            message: 'Could not finish attempt — press Done to retry.',
+            message: 'Could not finish attempt — press Retry submit to try again.',
           })
           return false
         }
@@ -347,7 +354,7 @@ export function useDailyAttempt(): {
         if (stateRef.current.day !== day || stateRef.current.stale) return false
         dispatch({
           type: 'end_failed',
-          message: 'Network error while finishing attempt — press Done to retry.',
+          message: 'Network error while finishing attempt — press Retry submit to try again.',
         })
         return false
       }

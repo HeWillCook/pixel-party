@@ -36,7 +36,12 @@ for (const askFirst of [false, true]) test(askFirst ? 'auto-grade fires at 2:00 
   }
   await page.clock.fastForward(askFirst ? 35_000 : 125_000)
   await expect.poll(() => grades.filter(grade => (grade.body as { kind: string }).kind === 'auto')).toMatchObject([{ body: { kind: 'auto' }, status: 200 }])
-  if (askFirst) await expect(page.getByText('Auto-grade skipped: no changes since your last grade')).toBeVisible()
+  if (askFirst) {
+    const notice = page.getByText('Auto-grade skipped: no changes since your last grade')
+    await expect(notice).toBeVisible()
+    await page.clock.fastForward(6_000)
+    await expect(notice).toHaveCount(0)
+  }
 })
 
 test('ended user never sees start', async ({ page }) => {
@@ -128,6 +133,48 @@ test('auto-grade fires on another route', async ({ page }) => {
   await page.clock.fastForward(125_000)
   await expect.poll(() => auto).toBe(1)
   expect(sentCells).toBe(latestCells)
+})
+
+for (const action of ['exit confirm leaves to party', 'grade now and submit are separate'] as const) test(action, async ({ page }) => {
+  await offlineClient(page, true)
+  const now = Date.now()
+  const windows = [120_000, 240_000, 360_000, 480_000].map((offset, index) => ({ index, dueAt: now + offset, status: 'pending', score: null, late: false }))
+  const playing = { day: new Date(now).toISOString().slice(0, 10), status: 'playing', prompt: 'A tree', startedAt: now, endsAt: now + 600_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows, nextAutoAt: now + 120_000, serverNow: now }
+  let ends = 0
+  await page.route('**/api/daily/**', async route => {
+    const path = new URL(route.request().url()).pathname
+    if (path.endsWith('/me')) return route.fulfill({ json: playing })
+    if (path.endsWith('/grade')) return route.fulfill({ json: { ok: true, grade: { guess: 'tree', reason: 'recognisable tree', fit: 300, recognition: 200, speed: 90, total: 590, elapsedMs: 10_000 }, state: { ...playing, asksUsed: 1, asksLeft: 2, best: 590 } } })
+    if (path.endsWith('/end')) { ends++; return route.fulfill({ json: { ...playing, status: 'ended' } }) }
+    return route.fulfill({ json: {} })
+  })
+  await page.goto(`${origin}/home`)
+  await expect(page.getByTestId('daily-playing')).toBeVisible()
+  if (action === 'exit confirm leaves to party') {
+    await page.getByTestId('daily-exit').click()
+    const dialog = page.getByRole('dialog')
+    await expect(dialog.getByText('Leave the easel?')).toBeVisible()
+    await dialog.getByRole('button', { name: 'Keep painting' }).click()
+    await expect(page.getByTestId('daily-playing')).toBeVisible()
+    await page.getByTestId('daily-exit').click()
+    await page.getByRole('dialog').getByRole('button', { name: 'Exit', exact: true }).click()
+    await expect(page).toHaveURL(`${origin}/party`)
+    expect(ends).toBe(0)
+  } else {
+    await expect(page.getByTestId('daily-ask-button')).toHaveText(/Grade now \(3 left\)/)
+    await expect(page.getByTestId('daily-done-button')).toHaveText(/Submit & finish/)
+    await expect(page.getByTestId('daily-auto-timeline')).toContainText('2:00 in')
+    await page.getByTestId('daily-ask-button').click()
+    await expect(page.getByTestId('daily-playing')).toBeVisible()
+    await expect(page.getByTestId('daily-ask-button')).toHaveText(/Grade now \(2 left\)/)
+    await expect(page.getByTestId('daily-score-breakdown')).toContainText('Matches the prompt')
+    await expect(page.getByTestId('daily-score-breakdown')).toContainText('Easy to recognise')
+    await expect(page.getByTestId('grade-total')).toContainText('590 / 1000')
+    expect(ends).toBe(0)
+    await page.getByTestId('daily-done-button').click()
+    await expect(page.getByTestId('daily-ended')).toBeVisible()
+    expect(ends).toBe(1)
+  }
 })
 
 async function offlineClient(page: Page, signedIn = false) {
