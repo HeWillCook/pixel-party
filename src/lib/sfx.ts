@@ -1,7 +1,7 @@
 import type { SoundName } from '@/game/sound-events'
 
 export const MUTE_KEY = 'pixel-party:muted'
-export interface Sfx { play(name: SoundName): void; unlock(): void; isMuted(): boolean; setMuted(m: boolean): void }
+export interface Sfx { play(name: SoundName): void; unlock(): Promise<boolean>; isMuted(): boolean; setMuted(m: boolean): void }
 
 const tones: Record<SoundName, { notes: number[]; duration: number; wave: OscillatorType }> = {
   guess: { notes: [523.25, 659.25], duration: 0.09, wave: 'square' },
@@ -18,15 +18,22 @@ export function createSfx(opts: { audioContext?: () => AudioContext; storage?: P
     muted = storage?.getItem(MUTE_KEY) === '1'
   } catch { }
   let context: AudioContext | undefined
+  let master: GainNode | undefined
   return {
-    unlock() {
+    async unlock() {
       try {
         context ??= opts.audioContext ? opts.audioContext() : new AudioContext()
-        if (context.state === 'suspended') void context.resume().catch(() => {})
-      } catch { }
+        if (!master) {
+          master = context.createGain()
+          master.gain.value = 0.12
+          master.connect(context.destination)
+        }
+        if (context.state === 'suspended') await context.resume()
+        return context.state === 'running'
+      } catch { return false }
     },
     play(name) {
-      if (!context || muted || context.state !== 'running') return
+      if (!context || !master || muted || context.state !== 'running') return
       const tone = tones[name]
       tone.notes.forEach((frequency, index) => {
         const start = context!.currentTime + index * tone.duration
@@ -38,7 +45,7 @@ export function createSfx(opts: { audioContext?: () => AudioContext; storage?: P
         gain.gain.linearRampToValueAtTime(0.1, start + 0.01)
         gain.gain.exponentialRampToValueAtTime(0.0001, start + tone.duration)
         oscillator.connect(gain)
-        gain.connect(context!.destination)
+        gain.connect(master!)
         oscillator.start(start)
         oscillator.stop(start + tone.duration)
       })

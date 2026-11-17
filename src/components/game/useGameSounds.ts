@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ClientState } from '@/game/client-state'
-import { countdownTickSecond, soundEventsFor } from '@/game/sound-events'
+import { createCountdownGate, soundEventsFor } from '@/game/sound-events'
 import { createSfx } from '@/lib/sfx'
 
 export function useGameSounds(state: ClientState): { muted: boolean; toggleMute: () => void } {
@@ -16,31 +16,27 @@ export function useGameSounds(state: ClientState): { muted: boolean; toggleMute:
   }, [state, sfx])
 
   useEffect(() => {
+    let active = true
     const unlock = () => {
-      sfx.unlock()
-      window.removeEventListener('pointerdown', unlock)
-      window.removeEventListener('keydown', unlock)
+      void sfx.unlock().then(success => {
+        if (!active || !success) return
+        window.removeEventListener('pointerdown', unlock)
+        window.removeEventListener('keydown', unlock)
+      })
     }
     window.addEventListener('pointerdown', unlock)
     window.addEventListener('keydown', unlock)
     return () => {
+      active = false
       window.removeEventListener('pointerdown', unlock)
       window.removeEventListener('keydown', unlock)
     }
   }, [sfx])
 
   useEffect(() => {
-    let lastRoundId: string | undefined
-    let lastSecond: number | null = null
+    const shouldTick = createCountdownGate()
     const interval = window.setInterval(() => {
-      const round = current.current.round
-      if (round?.id !== lastRoundId) {
-        lastRoundId = round?.id
-        lastSecond = null
-      }
-      const second = countdownTickSecond(round, Date.now())
-      if (second !== null && second !== lastSecond) sfx.play('tick')
-      lastSecond = second
+      if (shouldTick(current.current, Date.now())) sfx.play('tick')
     }, 250)
     return () => window.clearInterval(interval)
   }, [sfx])

@@ -66,6 +66,89 @@ async function pixelColor(page: Page, x: number, y: number) {
     [...canvas.getContext('2d')!.getImageData(point.x, point.y, 1, 1).data], { x, y })
 }
 
+for (const viewport of [{ width: 375, height: 812 }, { width: 1280, height: 720 }]) {
+  test(`intermission controls remain reachable at ${viewport.width}x${viewport.height}`, async ({ page }) => {
+    await page.setViewportSize(viewport)
+    await clientFixture(page, { signedIn: true })
+    let server!: WebSocketRoute
+    const messages: string[] = []
+    await page.routeWebSocket('**/api/pixel/**', socket => {
+      server = socket
+      socket.send(JSON.stringify(snapshot('playing')))
+      socket.onMessage(raw => messages.push(String(raw)))
+    })
+    await page.goto(`${origin}/r/AB2Z`)
+    await expect(page.getByTestId('pixel-canvas')).toBeVisible()
+    const round = { ...snapshot('playing').round, state: 'intermission', endsAt: null, endedAt: Date.now(), result: { outcome: 'won', score: 1 } }
+    server.send(JSON.stringify({ t: 'round', round }))
+    const overlay = page.getByTestId('round-overlay')
+    const next = overlay.getByRole('button', { name: 'Next Word Now' })
+    await expect(next).toBeVisible()
+    await next.scrollIntoViewIfNeeded()
+    const bounds = await next.boundingBox()
+    const frame = await page.getByTestId('pixel-canvas').boundingBox()
+    expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(frame!.y + frame!.height)
+    await next.click()
+    await expect.poll(() => messages.some(message => JSON.parse(message).t === 'next')).toBe(true)
+    const dismiss = page.getByTestId('overlay-dismiss')
+    await dismiss.click()
+    await expect(overlay).toHaveCount(0)
+  })
+}
+
+test('selected swatch displays a separate keyboard focus outline', async ({ page }) => {
+  await clientFixture(page, { signedIn: true })
+  await page.routeWebSocket('**/api/pixel/**', socket => socket.send(JSON.stringify(snapshot('playing'))))
+  await page.goto(`${origin}/r/AB2Z`)
+  const selected = page.locator('[data-testid="palette"] button[aria-pressed="true"]')
+  await expect(selected).toBeVisible()
+  const before = await selected.evaluate(element => getComputedStyle(element).outlineOffset)
+  await page.keyboard.press('Tab')
+  await selected.focus()
+  await expect(selected).toHaveCSS('outline-offset', '2px')
+  expect(before).not.toBe('2px')
+})
+
+test('audio unlock retries on a later interaction until the context runs', async ({ page }) => {
+  await page.addInitScript(() => {
+    const state = window as unknown as { unlockAttempts: number; AudioContext: unknown }
+    state.unlockAttempts = 0
+    state.AudioContext = class {
+      state = 'suspended'
+      destination = {}
+      createGain() { return { gain: { value: 0 }, connect() {} } }
+      async resume() {
+        state.unlockAttempts++
+        if (state.unlockAttempts > 1) this.state = 'running'
+      }
+    }
+  })
+  await clientFixture(page, { signedIn: true })
+  await page.routeWebSocket('**/api/pixel/**', socket => socket.send(JSON.stringify(snapshot('playing'))))
+  await page.goto(`${origin}/r/AB2Z`)
+  await expect(page.getByTestId('pixel-canvas')).toBeVisible()
+  await page.keyboard.press('Shift')
+  await expect.poll(() => page.evaluate(() => (window as unknown as { unlockAttempts: number }).unlockAttempts)).toBe(1)
+  await page.keyboard.press('Shift')
+  await expect.poll(() => page.evaluate(() => (window as unknown as { unlockAttempts: number }).unlockAttempts)).toBe(2)
+  await page.keyboard.press('Shift')
+  expect(await page.evaluate(() => (window as unknown as { unlockAttempts: number }).unlockAttempts)).toBe(2)
+})
+
+test('room shells expose the navy body glow', async ({ page }) => {
+  await clientFixture(page, { signedIn: true })
+  await page.routeWebSocket('**/api/pixel/**', socket => socket.send(JSON.stringify(snapshot('playing'))))
+  await page.goto(`${origin}/r/AB2Z`)
+  await expect(page.getByTestId('pixel-canvas')).toBeVisible()
+  const backgrounds = await page.evaluate(() => {
+    const root = document.querySelector('[data-testid="app-root"]')!
+    const shell = root.querySelector('.h-screen')!
+    return [getComputedStyle(document.body).backgroundImage, getComputedStyle(root).backgroundColor, getComputedStyle(shell).backgroundColor]
+  })
+  expect(backgrounds[0]).toContain('radial-gradient')
+  expect(backgrounds.slice(1)).toEqual(['rgba(0, 0, 0, 0)', 'rgba(0, 0, 0, 0)'])
+})
+
 test('signed-out private visitors never mount room content during a delayed preflight', async ({ page }) => {
   let release!: () => void
   const preflight = new Promise<void>(resolve => { release = resolve })

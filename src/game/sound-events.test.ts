@@ -1,13 +1,27 @@
 import { describe, expect, it } from 'vitest'
 import { initialClientState } from './client-state'
 import type { RoundView } from './protocol'
-import { countdownTickSecond, soundEventsFor } from './sound-events'
+import { countdownTickSecond, createCountdownGate, soundEventsFor } from './sound-events'
 
 const round: RoundView = { id: 'r1', word: 'cat', state: 'playing', startedAt: 0, endsAt: 10000, askAvailableAt: 0 }
 const loaded = { ...initialClientState(), snapshotLoaded: true, round }
 const entry = { id: 1, atMs: 0, guesses: ['cat'], matched: false }
 
 describe('sound events', () => {
+  it('plays a new non-matching guess when the log rolls over', () => {
+    const log = Array.from({ length: 50 }, (_, index) => ({ ...entry, id: 50 - index }))
+    expect(soundEventsFor({ ...loaded, guessLog: log }, { ...loaded, guessLog: [{ ...entry, id: 51 }, ...log.slice(0, 49)] })).toEqual(['guess'])
+  })
+  it('silences loading and reconnects and resets the countdown baseline for snapshots', () => {
+    const tick = createCountdownGate()
+    const live = { ...loaded, connected: true, snapshotSeq: 1 }
+    expect(tick(live, 5000)).toBe(false)
+    expect(tick(live, 6000)).toBe(true)
+    expect(tick({ ...live, connected: false }, 7000)).toBe(false)
+    expect(tick({ ...live, snapshotLoaded: false }, 7000)).toBe(false)
+    expect(tick({ ...live, snapshotSeq: 2 }, 7000)).toBe(false)
+    expect(tick({ ...live, snapshotSeq: 2 }, 8000)).toBe(true)
+  })
   it('returns nothing on the first snapshot or a new round id', () => {
     expect(soundEventsFor(initialClientState(), { ...loaded, guessLog: [entry] })).toEqual([])
     expect(soundEventsFor(loaded, { ...loaded, round: { ...round, id: 'r2' }, guessLog: [entry] })).toEqual([])

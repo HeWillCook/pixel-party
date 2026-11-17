@@ -683,9 +683,9 @@ export default function RoomPage() {
                       setDismissedOverlayRoundId(state.round.id)
                     }
                   }}
-                  className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-background/90 p-4 text-center focus:outline-none"
+                  className="absolute inset-0 z-20 flex flex-col items-center overflow-y-auto bg-background/90 p-4 text-center focus:outline-none"
                 >
-                  <div className="pp-panel flex w-full max-w-sm flex-col items-center gap-3 p-5">
+                  <div className="pp-panel my-auto flex w-full max-w-sm shrink-0 flex-col items-center gap-3 p-5">
                     {outcome === 'won' ? (
                       <>
                         <div className="pp-chip flex h-12 w-12 items-center justify-center">

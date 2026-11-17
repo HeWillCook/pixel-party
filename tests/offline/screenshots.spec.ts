@@ -348,6 +348,10 @@ test('capture playing room, lobby, overlay, landing, and home screenshots', asyn
   )
   await expect(page.getByTestId('round-overlay')).toBeVisible()
   await page.screenshot({ path: resolve(screenshotsDir, 'room-overlay-1440x900.png') })
+  await page.setViewportSize({ width: 375, height: 812 })
+  await page.waitForTimeout(150)
+  await page.screenshot({ path: resolve(screenshotsDir, 'room-overlay-375x812.png') })
+  await page.setViewportSize({ width: 1440, height: 900 })
 
   // 5. Lobby at 1440x900
   server.send(
