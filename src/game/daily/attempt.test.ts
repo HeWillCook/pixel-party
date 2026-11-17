@@ -58,6 +58,11 @@ describe('daily attempt', () => {
     void windows; void lastAskAt; void inFlightWindow
     expect(normalizeRow(legacy as AttemptRow)).toMatchObject({ windows: Array.from({ length: 4 }, (_, index) => ({ index, status: 'pending', resolvedAt: null, score: null, late: false })), lastAskAt: null, inFlightWindow: null })
   })
+  it('does not reserve when auto capacity is exhausted', () => {
+    const row = initial()
+    expect(reserveGrade({ ...row, autoUsed: 4 }, 'auto', 'edited', now + 490_000, false)).toEqual({ ok: false, reason: 'no_auto_left' })
+    expect(reserveGrade({ ...row, windows: row.windows.map(window => ({ ...window, status: 'graded' })) }, 'auto', 'edited', now + 490_000, false)).toEqual({ ok: false, reason: 'no_auto_left' })
+  })
   it('starts once and rejects missing attempts', () => {
     const first = startAttempt(null, 'user', '2026-11-18', now)
     expect(first.created).toBe(true)

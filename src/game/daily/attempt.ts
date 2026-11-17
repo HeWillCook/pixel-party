@@ -61,6 +61,7 @@ export function reserveGrade(row: AttemptRow | null, kind: GradeKind, cellsHash:
   if (kind === 'ask' && current.lastAskAt !== null && now - current.lastAskAt < DAILY.askMinGapMs) return { ok: false, reason: 'too_soon' }
   let window: number | null = null
   if (kind === 'auto') {
+    if (current.autoUsed >= DAILY.autoWindowsMs.length || current.windows.every(item => item.status !== 'pending')) return { ok: false, reason: 'no_auto_left' }
     const before = current
     current = settleMissedWindows(current, now)
     window = dueAutoWindow(current, now)

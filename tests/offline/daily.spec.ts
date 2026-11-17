@@ -13,13 +13,16 @@ for (const askFirst of [false, true]) test(askFirst ? 'auto-grade fires at 2:00 
   const startedAt = Date.parse('2026-11-17T12:00:00Z')
   const playing = { day: '2026-11-17', status: 'playing', prompt: 'A tree', startedAt, endsAt: startedAt + 600_000, autoUsed: 0, asksUsed: 0, finalUsed: false, best: 0, nextAutoAt: startedAt + 120_000 }
   const grades: { body: unknown; status: number }[] = []
+  page.on('response', response => {
+    const request = response.request()
+    if (new URL(response.url()).pathname === '/api/daily/grade' && request.method() === 'POST') grades.push({ body: request.postDataJSON(), status: response.status() })
+  })
   await page.route('**/api/daily/**', async route => {
     const path = new URL(route.request().url()).pathname
     if (path.endsWith('/me')) return route.fulfill({ json: { ...playing, status: 'not_started' } })
     if (path.endsWith('/start')) return route.fulfill({ json: playing })
     if (path.endsWith('/grade')) {
       const body = route.request().postDataJSON()
-      grades.push({ body, status: 200 })
       return route.fulfill({ status: 200, json: { ok: true, grade: { guess: 'tree', reason: 'tree', fit: 100, recognition: 100, speed: 10, total: 210, elapsedMs: 120_000 }, state: { ...playing, ...(body.kind === 'ask' ? { asksUsed: 1, nextAutoAt: startedAt + 190_000 } : { autoUsed: 1 }) } } })
     }
     return route.fulfill({ json: {} })
