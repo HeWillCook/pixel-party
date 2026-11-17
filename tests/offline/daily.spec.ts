@@ -5,6 +5,37 @@ import { resolve } from 'node:path'
 const origin = 'http://pixel.test'
 const clientDir = resolve(import.meta.dirname, '../../dist/client')
 
+for (const askFirst of [false, true]) test(askFirst ? 'auto-grade fires at 2:00 after an ask at 1:30' : 'auto-grade fires at 2:00 without asks', async ({ page }) => {
+  // Task 4 must un-fixme the reproduced manual-grade scheduling failure.
+  test.fixme(askFirst, 'Task 4 must restore fixed auto-grade scheduling')
+  await page.clock.install({ time: new Date('2026-11-17T12:00:00Z') })
+  await offlineClient(page, true)
+  const startedAt = Date.parse('2026-11-17T12:00:00Z')
+  const playing = { day: '2026-11-17', status: 'playing', prompt: 'A tree', startedAt, endsAt: startedAt + 600_000, autoUsed: 0, asksUsed: 0, finalUsed: false, best: 0, nextAutoAt: startedAt + 120_000 }
+  const grades: { body: unknown; status: number }[] = []
+  await page.route('**/api/daily/**', async route => {
+    const path = new URL(route.request().url()).pathname
+    if (path.endsWith('/me')) return route.fulfill({ json: { ...playing, status: 'not_started' } })
+    if (path.endsWith('/start')) return route.fulfill({ json: playing })
+    if (path.endsWith('/grade')) {
+      const body = route.request().postDataJSON()
+      grades.push({ body, status: 200 })
+      return route.fulfill({ status: 200, json: { ok: true, grade: { guess: 'tree', reason: 'tree', fit: 100, recognition: 100, speed: 10, total: 210, elapsedMs: 120_000 }, state: { ...playing, ...(body.kind === 'ask' ? { asksUsed: 1, nextAutoAt: startedAt + 190_000 } : { autoUsed: 1 }) } } })
+    }
+    return route.fulfill({ json: {} })
+  })
+  await page.goto(`${origin}/home`)
+  await page.getByTestId('daily-start-button').click()
+  await page.getByTestId('pixel-canvas').click({ position: { x: 5, y: 5 } })
+  if (askFirst) {
+    await page.clock.fastForward(90_000)
+    await page.getByTestId('daily-ask-button').click()
+    await expect.poll(() => grades.length).toBe(1)
+  }
+  await page.clock.fastForward(askFirst ? 35_000 : 125_000)
+  await expect.poll(() => grades.filter(grade => (grade.body as { kind: string }).kind === 'auto')).toMatchObject([{ body: { kind: 'auto' }, status: 200 }])
+})
+
 async function offlineClient(page: Page, signedIn = false) {
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
@@ -23,6 +54,7 @@ async function offlineClient(page: Page, signedIn = false) {
     if (socket.url().includes('/ws/presence/')) return
     socket.send(JSON.stringify({ type: 'user.info', payload: { role: 'member' } }))
     socket.onMessage(raw => {
+      if (String(raw) === 'ping') return
       const message = JSON.parse(String(raw))
       if (message.type === 'user.list') socket.send(JSON.stringify({ type: 'user.list', payload: { users: signedIn ? [{ id: 'host', name: 'Will' }] : [] } }))
       if (message.type === 'core.subscribe') {
