@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { getAuthToken, useAuthProfileReady } from 'deepspace'
-import { PALETTE } from '../game/config'
+import { DAILY, PALETTE } from '../game/config'
 import { cellsHash, type GradeKind } from '../game/daily/attempt'
 import {
   canAskDaily,
@@ -24,6 +24,7 @@ const GRID_HEIGHT = 32
 type GradeResponse =
   | { ok: true; grade: GradeView; state: DailyStateView }
   | { ok: false; reason: DailyRejectReason; state: DailyStateView }
+  | { skipped: 'skipped_blank' | 'skipped_unchanged'; window: number; state: DailyStateView }
 
 function storageKey(day: string, userId: string): string {
   return `daily:${day}:${userId}`
@@ -152,6 +153,10 @@ export function useDailyAttempt(): {
           asksUsed: 0,
           finalUsed: false,
           best: 0,
+          windows: [],
+          asksLeft: DAILY.maxAsks,
+          nextAutoAt: null,
+          serverNow: Date.now(),
         },
       })
       return
@@ -235,8 +240,12 @@ export function useDailyAttempt(): {
           }
           const payload = (await res.json()) as GradeResponse
           if (stateRef.current.day !== day || stateRef.current.stale) return
-          if ((!payload.ok && payload.reason === 'invalid_day') || payload.state.day !== day) {
+          if ((!('skipped' in payload) && !payload.ok && payload.reason === 'invalid_day') || payload.state.day !== day) {
             dispatch({ type: 'grade_rejected', reason: 'invalid_day' })
+            return
+          }
+          if ('skipped' in payload) {
+            dispatch({ type: 'grade_rejected', reason: 'too_soon', state: payload.state, kind, now })
             return
           }
           if (payload.ok) {

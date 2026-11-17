@@ -21,6 +21,10 @@ const baseState: DailyStateView = {
   asksUsed: 0,
   finalUsed: false,
   best: 400,
+  windows: [],
+  asksLeft: 3,
+  nextAutoAt: null,
+  serverNow: 1_000_000,
 }
 
 const sampleGrade: GradeView = {

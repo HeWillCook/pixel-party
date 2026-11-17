@@ -41,6 +41,18 @@ describe('daily HTTP routes', () => {
     vi.mocked(createDailyJudge).mockReturnValue(fakeDailyJudge())
     vi.mocked(createServerTools).mockReturnValue(records.tools)
   })
+  it('returns a persisted blank auto skip and current server clock', async () => {
+    vi.useFakeTimers()
+    const start = Date.UTC(2026, 10, 17, 12)
+    vi.setSystemTime(start)
+    await request('start', 'POST')
+    vi.setSystemTime(start + 120_000)
+    const response = await request('grade', 'POST', { day: day(), kind: 'auto', cells })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ skipped: 'skipped_blank', window: 0, state: { serverNow: start + 120_000 } })
+    vi.setSystemTime(start + 121_000)
+    expect(await (await request('me')).json()).toMatchObject({ serverNow: start + 121_000, windows: [{ status: 'skipped_blank' }, {}, {}, {}] })
+  })
 
   it.each([['start', 'POST'], ['grade', 'POST'], ['end', 'POST'], ['me', 'GET'], ['today/drawings', 'GET']])('requires a verified bearer token on %s', async (path, method) => {
     for (const token of [null, 'invalid']) {

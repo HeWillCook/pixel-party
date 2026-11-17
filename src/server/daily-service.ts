@@ -1,6 +1,6 @@
 import { DAILY } from '../game/config'
-import { cellsHash, isEnded } from '../game/daily/attempt'
-import type { AttemptRow, GradeKind, GradeReject, GradeResult } from '../game/daily/attempt'
+import { autoWindowAt, cellsHash, isBlankCells, isEnded } from '../game/daily/attempt'
+import type { AttemptRow, AutoWindowStatus, GradeKind, GradeReject, GradeResult } from '../game/daily/attempt'
 import { promptForDay } from '../game/daily/prompts'
 import { gradeScore } from '../game/daily/scoring'
 import { decodeCells } from '../game/grid'
@@ -20,6 +20,7 @@ export interface DailyDeps {
   render(cells: string): Promise<string>
 }
 export type GradeView = GradeResult
+export interface AutoWindowView { index: number; dueAt: number; status: AutoWindowStatus; score: number | null; late: boolean }
 export interface DailyStateView {
   day: string
   status: 'not_started' | 'playing' | 'ended'
@@ -30,13 +31,17 @@ export interface DailyStateView {
   asksUsed: number
   finalUsed: boolean
   best: number
-  nextAutoAt?: number
+  windows: AutoWindowView[]
+  asksLeft: number
+  nextAutoAt: number | null
+  serverNow: number
   lastCells?: string
 }
 
 function stateView(day: string, row: AttemptRow | null, now: number): DailyStateView {
-  if (!row) return { day, status: 'not_started', autoUsed: 0, asksUsed: 0, finalUsed: false, best: 0 }
+  if (!row) return { day, status: 'not_started', autoUsed: 0, asksUsed: 0, finalUsed: false, best: 0, windows: [], asksLeft: DAILY.maxAsks, nextAutoAt: null, serverNow: now }
   const ended = isEnded(row, now)
+  const windows = row.windows.map(window => ({ index: window.index, dueAt: autoWindowAt(row.startedAt, window.index), status: window.status, score: window.score, late: window.late }))
   return {
     day,
     status: ended ? 'ended' : 'playing',
@@ -47,11 +52,17 @@ function stateView(day: string, row: AttemptRow | null, now: number): DailyState
     asksUsed: row.asksUsed,
     finalUsed: row.finalUsed,
     best: row.bestScore,
-    ...(!ended && row.autoUsed < DAILY.autoWindowsMs.length ? {
-      nextAutoAt: row.startedAt + DAILY.autoWindowsMs[row.autoUsed],
-    } : {}),
+    windows,
+    asksLeft: Math.max(0, DAILY.maxAsks - row.asksUsed),
+    nextAutoAt: ended ? null : windows.find(window => window.status === 'pending')?.dueAt ?? null,
+    serverNow: now,
     ...(row.lastCells !== null ? { lastCells: row.lastCells } : {}),
   }
+}
+
+async function readState(deps: DailyDeps, userId: string, day: string): Promise<DailyStateView> {
+  const now = deps.now()
+  return stateView(day, await deps.store.get(userId, day, now), now)
 }
 
 async function activeDay(deps: DailyDeps, userId: string, now: number): Promise<string> {
@@ -84,7 +95,7 @@ export async function dailyState(deps: DailyDeps, userId: string): Promise<Daily
   const yesterday = utcDay(now - 86_400_000)
   if (day !== yesterday) await deps.store.publish(userId, yesterday, now)
   await deps.store.publish(userId, day, now)
-  return stateView(day, await deps.store.get(userId, day), now)
+  return readState(deps, userId, day)
 }
 
 export async function startDaily(deps: DailyDeps, user: DailyUser): Promise<DailyStateView> {
@@ -92,7 +103,7 @@ export async function startDaily(deps: DailyDeps, user: DailyUser): Promise<Dail
   const day = utcDay(now)
   await deps.store.start(user.userId, day, now, { name: user.name, image: user.image })
   await deps.store.publish(user.userId, day, now)
-  return stateView(day, await deps.store.get(user.userId, day), deps.now())
+  return readState(deps, user.userId, day)
 }
 
 async function judgeCall<Value>(deps: DailyDeps, ownsReservation: () => Promise<boolean>, call: () => Promise<Value | null>): Promise<Value | null> {
@@ -108,16 +119,17 @@ async function judgeCall<Value>(deps: DailyDeps, ownsReservation: () => Promise<
 
 export async function gradeDaily(deps: DailyDeps, user: DailyUser, kind: GradeKind, cells: string, day = utcDay(deps.now())): Promise<
   { ok: true; grade: GradeView; state: DailyStateView }
+  | { ok?: never; reason?: never; skipped: 'skipped_blank' | 'skipped_unchanged'; window: number; state: DailyStateView }
   | { ok: false; reason: GradeReject | 'judge_resting' | 'bad_cells'; state: DailyStateView }
 > {
   const now = deps.now()
-  if (!await allowedDay(deps, user.userId, day, now)) return { ok: false, reason: 'invalid_day', state: stateView(day, await deps.store.get(user.userId, day), now) }
-  const state = async () => stateView(day, await deps.store.get(user.userId, day), deps.now())
+  if (!await allowedDay(deps, user.userId, day, now)) return { ok: false, reason: 'invalid_day', state: await readState(deps, user.userId, day) }
+  const state = () => readState(deps, user.userId, day)
   if (!validCells(cells)) return { ok: false, reason: 'bad_cells', state: await state() }
   const hash = cellsHash(cells)
-  const reservation = await deps.store.reserve(user.userId, day, kind, hash, now)
+  const reservation = await deps.store.reserve(user.userId, day, kind, hash, now, isBlankCells(decodeCells(cells, 1024)))
   if (!reservation.ok) return { ok: false, reason: reservation.reason, state: await state() }
-  if (reservation.ok === 'skipped') return { ok: false, reason: 'unchanged', state: await state() }
+  if (reservation.ok === 'skipped') return { skipped: reservation.status, window: reservation.window, state: await state() }
   const reservedAt = reservation.row.inFlightSince!
   const ownsReservation = async () => (await deps.store.get(user.userId, day))?.inFlightSince === reservedAt
   let grade: GradeView | null = null
@@ -136,9 +148,9 @@ export async function gradeDaily(deps: DailyDeps, user: DailyUser, kind: GradeKi
     grade = null
   }
   const completed = await deps.store.complete(user.userId, day, grade, hash, cells, deps.now(), reservedAt)
-  if (!completed.applied) return { ok: false, reason: 'stale', state: stateView(day, completed.row, deps.now()) }
+  if (!completed.applied) return { ok: false, reason: 'stale', state: await state() }
   await deps.store.publish(user.userId, day, deps.now())
-  if (!grade) return { ok: false, reason: 'judge_resting', state: stateView(day, completed.row, deps.now()) }
+  if (!grade) return { ok: false, reason: 'judge_resting', state: await state() }
   return { ok: true, grade, state: await state() }
 }
 
@@ -146,9 +158,9 @@ export async function endDaily(deps: DailyDeps, user: DailyUser, cells: string |
   const now = deps.now()
   if (!await allowedDay(deps, user.userId, day, now)) throw new InvalidAttemptDay('invalid_attempt_day')
   const row = await deps.store.end(user.userId, day, cells !== null && validCells(cells) ? cells : null, now)
-  if (!row) return stateView(day, null, now)
+  if (!row) return readState(deps, user.userId, day)
   await deps.store.publish(user.userId, day, now)
-  return stateView(day, await deps.store.get(user.userId, day), deps.now())
+  return readState(deps, user.userId, day)
 }
 
 export async function todaysDrawings(deps: DailyDeps, userId: string): Promise<{ ok: true; drawings: unknown[] } | { ok: false }> {
