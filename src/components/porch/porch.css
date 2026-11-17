@@ -1,0 +1,12 @@
+.porch-world { position: relative; min-height: 640px; height: calc(100dvh - 96px); overflow: hidden; }
+.porch-world__scene { position: absolute; inset: 0; }
+.porch-loading { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 16px; }
+.porch-rules { position: absolute; z-index: 4; left: 20%; top: 25%; width: min(60%, 380px); padding: 16px; color: var(--foreground); }
+.porch-rules h2 { font-size: 24px; }
+.porch-rules p { font-size: 18px; }
+.porch-easel-copy { position: absolute; left: 19%; top: 24%; width: 63%; color: #392a45; font-size: calc(var(--px) * 5); line-height: 1; white-space: normal; }
+.porch-scores { position: absolute; pointer-events: none; padding: calc(var(--px) * 7); color: #fff0cc; font-size: calc(var(--px) * 3); line-height: 1.15; overflow: hidden; }
+.porch-account { position: fixed; z-index: 20; top: 25%; right: 10%; display: grid; gap: 12px; padding: 20px; }
+.porch-landing-copy { margin: 0 auto; max-width: 60rem; padding: 20px; }
+.porch-landing-copy h1 { font-size: 28px; }
+.porch-landing-copy p { font-size: 20px; }

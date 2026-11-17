@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { AuthOverlay, useAuthProfileReady, useQuery } from 'deepspace'
+import { AuthOverlay, signOut, useAuthProfileReady, useQuery } from 'deepspace'
 import {
   Bot,
   CheckCircle2,
@@ -12,6 +12,8 @@ import {
   VolumeX,
 } from 'lucide-react'
 import { useDailySounds } from '../../components/daily/useDailySounds'
+import { NeutralPorchLoading, PorchScene } from '../../components/porch/PorchScene'
+import { rankScores } from '../../game/daily/rank'
 import { DailyTimer } from '../../components/daily/DailyTimer'
 import { Leaderboard } from '../../components/daily/Leaderboard'
 import { GradePanel } from '../../components/daily/GradePanel'
@@ -105,6 +107,9 @@ export default function DailyHomePage() {
     where: { day: queryDay, userId: queryUserId },
     limit: 1,
   })
+  const { records: todayScores } = useQuery<DailyScoreRecord>('dailyScores', {
+    where: { day: queryDay }, limit: 1000,
+  })
 
   const bestDrawingDoc = myDrawings[0]?.data
   const bestScoreDoc = myScores[0]?.data
@@ -115,6 +120,8 @@ export default function DailyHomePage() {
   const [strokeActive, setStrokeActive] = useState(false)
   const [starting, setStarting] = useState(false)
   const [showAuthModal, setShowAuthModal] = useState(false)
+  const [showAccount, setShowAccount] = useState(false)
+  const [resultDay, setResultDay] = useState('')
   const [now, setNow] = useState<number>(() => Date.now())
 
   const cellsRef = useRef(cells)
@@ -304,6 +311,33 @@ export default function DailyHomePage() {
     }
   }
 
+  if (!isLoaded || (isSignedIn && !state.loaded)) {
+    return <div data-testid="daily-page"><NeutralPorchLoading /></div>
+  }
+
+  if (!isSignedIn || state.status === 'not_started' || (state.status === 'ended' && resultDay !== state.day)) {
+    const scores = todayScores.map(record => record.data)
+    const topThree = rankScores(scores).slice(0, 3).map(({ userId: scoreUserId }) => {
+      const score = scores.find(item => item.userId === scoreUserId)!
+      return { name: score.displayName || 'Player', score: score.score }
+    })
+    const ended = isSignedIn && state.status === 'ended'
+    const signedOut = !isSignedIn
+    return <div data-testid="daily-page">
+      <section data-testid={signedOut ? 'daily-signed-out' : ended ? 'daily-ended' : 'daily-not-started'}>
+        <PorchScene easelState={signedOut ? 'signin' : ended ? 'finished' : 'cover'} easelLabel={signedOut ? 'Sign in to paint' : ended ? 'View result' : 'Start Daily Challenge'}
+          easelTestId={signedOut ? 'daily-sign-in-button' : ended ? undefined : 'daily-start-button'} easelDisabled={starting}
+          easelText={signedOut ? 'Sign in to paint' : ended ? `View result: ${endedBestScore} / 1000` : <>Today’s prompt<br />Start daily</>}
+          signedIn={!!isSignedIn} galleryHref={`/u/${encodeURIComponent(userId)}`} topThree={topThree} muted={muted}
+          onEasel={() => { if (signedOut) setShowAuthModal(true); else if (ended) setResultDay(state.day); else void handleStart() }}
+          onAccount={() => { if (signedOut) setShowAuthModal(true); else setShowAccount(true) }} onToggleMute={toggleMute} />
+      </section>
+      {signedOut && <Leaderboard day={state.day} ended={false} />}
+      {showAccount && <div role="dialog" aria-label="Account menu" className="porch-account pp-panel"><Link to={`/u/${encodeURIComponent(userId)}`}>My gallery</Link><Link to="/settings">Settings</Link><button onClick={() => signOut()}>Sign out</button><button onClick={() => setShowAccount(false)}>Close</button></div>}
+      {showAuthModal && <AuthOverlay onClose={() => setShowAuthModal(false)} />}
+    </div>
+  }
+
   return (
     <div
       data-testid="daily-page"
@@ -317,110 +351,6 @@ export default function DailyHomePage() {
         </Button>
       </div>
       {isSignedIn && !state.loaded && <div data-testid="daily-loading" className="pp-panel p-6" aria-live="polite">Setting up your easel…</div>}
-      {/* Signed out view */}
-      {isLoaded && !isSignedIn && (
-        <div className="flex flex-col gap-6">
-          <section
-            data-testid="daily-signed-out"
-            className="pp-panel relative overflow-hidden border-2 border-border p-5 sm:p-8"
-          >
-            <div className="relative z-10 flex flex-col justify-between gap-6 lg:flex-row lg:items-center">
-              <div className="max-w-xl space-y-2.5">
-                <div className="pp-chip inline-flex items-center gap-2 px-3 py-1 text-base">
-                  <Sparkles className="h-3.5 w-3.5" aria-hidden />
-                  <span className="uppercase tracking-wider">
-                    Solo Daily Pixel Challenge
-                  </span>
-                </div>
-                <h1 className="text-2xl uppercase tracking-tight text-foreground sm:text-4xl">
-                  One Prompt. 10 Minutes. Judged by Haiku.
-                </h1>
-                <p className="text-lg text-muted-foreground sm:text-xl">
-                  Everyone gets the same daily scene on a 32×32 canvas. You have 10 minutes, auto-grades every 2 minutes, and 3 manual grades. Your highest-scoring snapshot goes on today&apos;s leaderboard!
-                </p>
-              </div>
-
-              <div className="flex flex-col items-stretch gap-3 sm:flex-row lg:flex-col">
-                <Button
-                  type="button"
-                  data-testid="daily-sign-in-button"
-                  onClick={() => setShowAuthModal(true)}
-                  className="pp-btn inline-flex items-center justify-center gap-2.5 bg-secondary px-6 py-3.5 text-lg uppercase tracking-wider text-primary-foreground hover:bg-secondary sm:text-xl"
-                >
-                  <LogIn className="h-5 w-5" aria-hidden />
-                  Sign in to play
-                </Button>
-                <Link
-                  to="/party"
-                  className="pp-btn inline-flex items-center justify-center gap-2 bg-secondary px-5 py-2.5 text-base uppercase tracking-wider text-foreground hover:bg-secondary/80"
-                >
-                  <Users className="h-4 w-4 text-[var(--sunset-1)]" aria-hidden />
-                  Party mode
-                </Link>
-              </div>
-            </div>
-          </section>
-
-          <Leaderboard day={state.day} ended={false} />
-        </div>
-      )}
-
-      {/* Signed in: Not started */}
-      {isSignedIn && state.loaded && state.status === 'not_started' && (
-        <section
-          data-testid="daily-not-started"
-          className="pp-panel mx-auto flex w-full max-w-2xl flex-col gap-5 border-2 border-border p-6 sm:p-8"
-        >
-          <div className="space-y-2">
-            <div className="pp-chip inline-flex items-center gap-2 px-3 py-1 text-base">
-              <Sparkles className="h-3.5 w-3.5" aria-hidden />
-              <span className="uppercase tracking-wider">
-                Daily Challenge • {state.day}
-              </span>
-            </div>
-            <h1 className="text-2xl uppercase tracking-tight text-foreground sm:text-3xl">
-              Ready for Today&apos;s Prompt?
-            </h1>
-            <p className="text-lg text-muted-foreground">
-              Today&apos;s prompt is hidden until you start. Once you press Start, your 10-minute clock begins immediately.
-            </p>
-          </div>
-
-          <ul className="space-y-2 border border-border/60 bg-background/50 p-4 text-base text-muted-foreground sm:text-lg">
-            <li>Matches the prompt: up to 500</li>
-            <li>Easy to recognise: up to 400</li>
-            <li>Speed: up to 100</li>
-            <li>Auto-grades at 2, 4, 6 and 8 minutes · 3 manual grades · your best grade counts · Submit ends it</li>
-          </ul>
-
-          {state.lastError && (
-            <p role="status" className="text-base text-[var(--sunset-1)]">
-              {state.lastError}
-            </p>
-          )}
-
-          <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-            <Button
-              type="button"
-              data-testid="daily-start-button"
-              disabled={starting}
-              onClick={handleStart}
-              className="pp-btn inline-flex items-center gap-2.5 bg-secondary px-6 py-3.5 text-lg uppercase tracking-wider text-primary-foreground hover:bg-secondary sm:text-xl"
-            >
-              <Play className="h-5 w-5 fill-current" aria-hidden />
-              {starting ?'Starting…' : 'Start Daily Challenge'}
-            </Button>
-
-            <Link
-              to="/party"
-              className="text-base uppercase tracking-wider text-muted-foreground hover:text-foreground"
-            >
-              Or play Party mode →
-            </Link>
-          </div>
-        </section>
-      )}
-
       {/* Signed in: Playing */}
       {isSignedIn && state.loaded && state.status === 'playing' && (
         <div data-testid="daily-playing" className="flex flex-col gap-4">
