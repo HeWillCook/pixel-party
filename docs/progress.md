@@ -176,6 +176,18 @@ AI image generation (the point is humans draw), ElevenLabs announcer (gimmick).
   Now default-deny (403 unless an integration is flagged `client: true`; none are), and the unused in-app AI
   agent/chat surfaces are unmounted. All AI spend goes through PixelRoom, where the budget applies.
 
+- **2026-11-16: How the game room survives sleeping (Task 4b, interview-worthy).** DeepSpace's `BaseRoom` uses
+  Cloudflare's hibernatable WebSockets: the room's memory can be dropped between messages while sockets stay open.
+  So PixelRoom keeps nothing important in memory: the whole game state is one SQLite row reloaded on every wake,
+  player counts come from the live socket list (each socket carries its verified user id as an attachment), and
+  the room owns the Durable Object's single alarm for round timers and judge ticks.
+- **2026-11-16: Judge safety rules (Task 4).** One AI call at a time per room; attempts are counted and saved before
+  calling Claude (so crashes or failures can't bypass the 6/min cap); 20 s timeout on Claude, 5 s on the budget
+  check; a late answer after the round ended is discarded; a garbage reply doesn't count as judged so the next tick
+  retries; a budget refusal still throttles (no hot loop). Spectators and duplicate tabs don't count as players.
+- **2026-11-16: Smoke deploy approved by Will** for right after Task 5 (spec said deploy early; catches production-only
+  issues: custom DO migration, owner credential, alarms).
+
 ## Spikes (throwaway tests)
 
 | # | Question | Status | Result |
@@ -212,3 +224,6 @@ AI image generation (the point is humans draw), ElevenLabs announcer (gimmick).
 | 2026-11-16 | Claude Opus (me) | Checked AI integration schemas, found Claude-only vision | Ran `deepspace integrations info` myself |
 | 2026-11-16 | Codex GPT-6.1 Sol | Task 1 scaffold/CI, custom DO platform probes, fixture, cleanup; fix round closing the integrations proxy | Reviewed by Antigravity Sonnet (+ scoped re-review); I re-ran verify (34/34), read the proxy route myself and escalated M1, checked CI green |
 | 2026-11-16 | Antigravity Gemini 4 Hydrogen | Task 2 game core (grid, rules, words, scoring) + 1 fix round | Reviewed by Codex Terra (2 Important found); I ruled on both (plural handling in matcher; pickWord fallback); re-review by OpenCode DeepSeek; I re-ran verify (65/65) |
+| 2026-11-16 | Codex GPT-6.1 Terra | Task 3 PNG renderer + judge request/response | Reviewed by Antigravity Sonnet (approved); I rendered red/blue zone PNGs and inspected them |
+| 2026-11-16 | Codex GPT-6.1 Terra | Task 4a pure room logic + judge flow (split from Task 4 on advisor input); asked 4 good questions instead of guessing | I answered the 4 design gaps; review by Antigravity Sonnet found an alarm hot-loop after budget refusal + unpersisted attempts; fixed + re-reviewed; I re-ran verify (107/107) |
+| 2026-11-16 | Codex GPT-6.1 Sol | Task 4b PixelRoom + BudgetRoom Durable Objects; real-JWT local smoke (Haiku guessed "sun, star, asterisk") | Review found 4 Important (no timeouts, writes on every message, alarm re-arm, unvalidated room id); fixed; re-reviewed by Gemini Argon (Sonnet quota hit); I re-ran verify (145/145), checked the smoke script never prints or saves the JWT |
