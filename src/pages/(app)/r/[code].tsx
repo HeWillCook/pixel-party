@@ -275,7 +275,7 @@ export default function RoomPage() {
         className="mx-auto flex w-full max-w-2xl flex-col gap-4 px-4 py-10 sm:px-6"
       >
         <Link
-          to="/home"
+          to="/party"
           className="font-pixel inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
         >
           <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
@@ -310,7 +310,7 @@ export default function RoomPage() {
                 Sign in to join
               </Button>
               <Link
-                to="/home"
+                to="/party"
                 className="arcade-btn font-pixel inline-flex h-10 items-center justify-center rounded-md bg-secondary px-4 text-xs font-bold text-secondary-foreground hover:bg-secondary/80"
               >
                 Back to Lobby
@@ -337,7 +337,7 @@ export default function RoomPage() {
               </p>
             </div>
             <Link
-              to="/home"
+              to="/party"
               className="arcade-btn font-pixel inline-flex h-10 items-center justify-center rounded-md bg-amber-400 px-5 text-sm font-extrabold uppercase text-slate-950 hover:bg-amber-300"
             >
               Back to Lobby
@@ -363,7 +363,7 @@ export default function RoomPage() {
               </p>
             </div>
             <Link
-              to="/home"
+              to="/party"
               className="arcade-btn font-pixel inline-flex h-10 items-center justify-center rounded-md bg-amber-400 px-5 text-sm font-extrabold uppercase text-slate-950 hover:bg-amber-300"
             >
               Back to Lobby
@@ -379,7 +379,7 @@ export default function RoomPage() {
   const header = (
     <div className="flex flex-wrap items-center justify-between gap-2">
       <Link
-        to="/home"
+        to="/party"
         className="font-pixel inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
       >
         <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
