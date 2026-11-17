@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { getAuthToken, useAuthProfileReady } from 'deepspace'
 import { PALETTE } from '../game/config'
-import type { GradeKind } from '../game/daily/attempt'
+import { cellsHash, type GradeKind } from '../game/daily/attempt'
 import {
+  canAskDaily,
+  canPaintDaily,
   dailyReducer,
   initialDailyClientState,
-  nextAutoAt,
+  shouldFireAutoGrade,
   shouldFinalGrade,
+  type DailyAction,
   type DailyClientState,
   type DailyRejectReason,
 } from '../game/daily/client-schedule'
@@ -81,7 +84,7 @@ export function useDailyAttempt(): {
   const { isSignedIn, user } = useAuthProfileReady({ requireUser: false })
   const userId = user?.id ?? ''
 
-  const [state, dispatch] = useReducer(dailyReducer, undefined, () =>
+  const [state, rawDispatch] = useReducer(dailyReducer, undefined, () =>
     initialDailyClientState(new Date().toISOString().slice(0, 10)),
   )
   const [cells, setCells] = useState<Uint8Array>(() => new Uint8Array(GRID_CELLS))
@@ -89,10 +92,16 @@ export function useDailyAttempt(): {
   const stateRef = useRef<DailyClientState>(state)
   const cellsRef = useRef<Uint8Array>(cells)
   const userIdRef = useRef<string>(userId)
-  const lastGradeAtRef = useRef<number | null>(null)
-  const lastAutoTargetRef = useRef<number | null>(null)
-  const endingRef = useRef<boolean>(false)
+  const inFlightGradeRef = useRef<Promise<void> | null>(null)
+  const finalizingRef = useRef<boolean>(false)
+  const finishPromiseRef = useRef<Promise<void> | null>(null)
+  const frozenFinalCellsRef = useRef<string | null>(null)
   const restoredKeyRef = useRef<string>('')
+
+  const dispatch = useCallback((action: DailyAction) => {
+    stateRef.current = dailyReducer(stateRef.current, action)
+    rawDispatch(action)
+  }, [])
 
   useEffect(() => {
     stateRef.current = state
@@ -131,9 +140,10 @@ export function useDailyAttempt(): {
   useEffect(() => {
     if (!isSignedIn) {
       restoredKeyRef.current = ''
-      endingRef.current = false
-      lastGradeAtRef.current = null
-      lastAutoTargetRef.current = null
+      finalizingRef.current = false
+      finishPromiseRef.current = null
+      frozenFinalCellsRef.current = null
+      inFlightGradeRef.current = null
       dispatch({
         type: 'state_loaded',
         state: {
@@ -156,6 +166,10 @@ export function useDailyAttempt(): {
         if (!res.ok || cancelled) return
         const serverState = (await res.json()) as DailyStateView
         if (cancelled) return
+        if (serverState.status === 'ended') {
+          finalizingRef.current = false
+          frozenFinalCellsRef.current = null
+        }
         dispatch({ type: 'state_loaded', state: serverState })
         if (userId) {
           restoreCanvas(serverState, userId)
@@ -169,7 +183,7 @@ export function useDailyAttempt(): {
     return () => {
       cancelled = true
     }
-  }, [isSignedIn, userId, restoreCanvas])
+  }, [isSignedIn, userId, restoreCanvas, dispatch])
 
   // Restore from localStorage if userId resolved after state_loaded
   useEffect(() => {
@@ -178,64 +192,148 @@ export function useDailyAttempt(): {
     }
   }, [userId, state, restoreCanvas])
 
-  const sendGrade = useCallback(async (kind: GradeKind): Promise<void> => {
-    if (stateRef.current.grading) return
-    dispatch({ type: 'grade_start' })
-    try {
-      const headers = await authHeaders()
-      const encoded = encodeCells(cellsRef.current)
-      const res = await fetch('/api/daily/grade', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ kind, cells: encoded }),
-      })
-      if (!res.ok) {
-        dispatch({ type: 'error', message: 'Could not grade canvas right now.' })
-        return
+  const sendGrade = useCallback(
+    (kind: GradeKind, encodedOverride?: string): Promise<void> => {
+      if (inFlightGradeRef.current) return inFlightGradeRef.current
+      if (kind !== 'final' && (finalizingRef.current || stateRef.current.finalizing)) {
+        return Promise.resolve()
       }
-      const payload = (await res.json()) as GradeResponse
-      if (payload.ok) {
-        lastGradeAtRef.current = Date.now()
-        dispatch({ type: 'grade_ok', grade: payload.grade, state: payload.state })
-      } else {
-        dispatch({ type: 'grade_rejected', reason: payload.reason, state: payload.state })
-      }
-    } catch {
-      dispatch({ type: 'error', message: 'Network error while grading.' })
-    }
-  }, [])
 
-  const sendEnd = useCallback(async (): Promise<void> => {
-    try {
-      const headers = await authHeaders()
-      const encoded = encodeCells(cellsRef.current)
-      const res = await fetch('/api/daily/end', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ cells: encoded }),
-      })
-      if (!res.ok) return
-      const serverState = (await res.json()) as DailyStateView
-      dispatch({ type: 'state_loaded', state: serverState })
-    } catch {
-      // Ignore network error during end
-    }
-  }, [])
+      const encoded = encodedOverride ?? encodeCells(cellsRef.current)
+      const hash = cellsHash(encoded)
+      dispatch({ type: 'grade_start', kind })
+
+      const promise = (async () => {
+        try {
+          const headers = await authHeaders()
+          const res = await fetch('/api/daily/grade', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ kind, cells: encoded }),
+          })
+          const now = Date.now()
+          if (!res.ok) {
+            dispatch({
+              type: 'error',
+              message: 'Could not grade canvas right now.',
+              kind,
+              now,
+            })
+            return
+          }
+          const payload = (await res.json()) as GradeResponse
+          if (payload.ok) {
+            dispatch({
+              type: 'grade_ok',
+              grade: payload.grade,
+              state: payload.state,
+              cellsHash: hash,
+              now,
+            })
+          } else {
+            dispatch({
+              type: 'grade_rejected',
+              reason: payload.reason,
+              state: payload.state,
+              kind,
+              cellsHash: hash,
+              now,
+            })
+          }
+        } catch {
+          dispatch({
+            type: 'error',
+            message: 'Network error while grading.',
+            kind,
+            now: Date.now(),
+          })
+        } finally {
+          inFlightGradeRef.current = null
+        }
+      })()
+
+      inFlightGradeRef.current = promise
+      return promise
+    },
+    [dispatch],
+  )
+
+  const sendEnd = useCallback(
+    async (encodedCells: string): Promise<boolean> => {
+      try {
+        const headers = await authHeaders()
+        const res = await fetch('/api/daily/end', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ cells: encodedCells }),
+        })
+        if (!res.ok) {
+          dispatch({
+            type: 'end_failed',
+            message: 'Could not finish attempt — press Done to retry.',
+          })
+          return false
+        }
+        const serverState = (await res.json()) as DailyStateView
+        finalizingRef.current = false
+        frozenFinalCellsRef.current = null
+        dispatch({
+          type: 'state_loaded',
+          state: { ...serverState, status: 'ended' },
+          preserveError: Boolean(stateRef.current.lastError) && !stateRef.current.endFailed,
+        })
+        return true
+      } catch {
+        dispatch({
+          type: 'end_failed',
+          message: 'Network error while finishing attempt — press Done to retry.',
+        })
+        return false
+      }
+    },
+    [dispatch],
+  )
 
   const finishAttempt = useCallback(async (): Promise<void> => {
-    if (endingRef.current) return
-    endingRef.current = true
-    try {
-      if (!stateRef.current.finalUsed) {
-        await sendGrade('final')
-      }
-      await sendEnd()
-    } finally {
-      endingRef.current = false
-    }
-  }, [sendGrade, sendEnd])
+    if (finishPromiseRef.current) return finishPromiseRef.current
+    if (stateRef.current.status === 'ended') return
 
-  // 1s ticker while playing: triggers auto grades at nextAutoAt and final grade + end when time is up
+    finalizingRef.current = true
+    if (frozenFinalCellsRef.current === null) {
+      frozenFinalCellsRef.current = encodeCells(cellsRef.current)
+    }
+    const frozenCells = frozenFinalCellsRef.current
+    dispatch({ type: 'finalize_start' })
+
+    const promise = (async () => {
+      try {
+        // Wait for any grade already in flight before running final grade
+        if (inFlightGradeRef.current) {
+          await inFlightGradeRef.current
+        }
+        if (
+          stateRef.current.status !== 'ended' &&
+          !stateRef.current.finalUsed &&
+          !stateRef.current.endFailed
+        ) {
+          await sendGrade('final', frozenCells)
+        }
+        if (stateRef.current.status !== 'ended') {
+          await sendEnd(frozenCells)
+        } else {
+          finalizingRef.current = false
+          frozenFinalCellsRef.current = null
+        }
+      } finally {
+        finishPromiseRef.current = null
+      }
+    })()
+
+    finishPromiseRef.current = promise
+    return promise
+  }, [dispatch, sendGrade, sendEnd])
+
+  // 1s ticker while playing: triggers auto grades at nextAutoAt, final grade + end when time is up, and retries failed end
   useEffect(() => {
     if (state.status !== 'playing' || state.startedAt === undefined) return
     const startedAt = state.startedAt
@@ -245,23 +343,22 @@ export function useDailyAttempt(): {
       if (cur.status !== 'playing' || cur.startedAt === undefined) return
       const now = Date.now()
 
+      if (cur.endFailed && !finishPromiseRef.current) {
+        void finishAttempt()
+        return
+      }
+
       if (shouldFinalGrade(now, startedAt)) {
-        if (!cur.grading && !endingRef.current) {
+        if (!finishPromiseRef.current) {
           void finishAttempt()
         }
         return
       }
 
-      if (cur.grading || endingRef.current) return
+      if (finalizingRef.current || cur.finalizing || inFlightGradeRef.current) return
 
-      const targetAuto =
-        cur.nextAutoAt ?? nextAutoAt(startedAt, cur.autoUsed, lastGradeAtRef.current)
-      if (
-        targetAuto !== null &&
-        now >= targetAuto &&
-        lastAutoTargetRef.current !== targetAuto
-      ) {
-        lastAutoTargetRef.current = targetAuto
+      const currentHash = cellsHash(encodeCells(cellsRef.current))
+      if (shouldFireAutoGrade(cur, now, currentHash)) {
         void sendGrade('auto')
       }
     }, 1000)
@@ -270,7 +367,8 @@ export function useDailyAttempt(): {
   }, [state.status, state.startedAt, finishAttempt, sendGrade])
 
   const paint = useCallback((x: number, y: number, color: number) => {
-    if (stateRef.current.status !== 'playing') return
+    const now = Date.now()
+    if (finalizingRef.current || !canPaintDaily(stateRef.current, now)) return
     if (!Number.isInteger(x) || !Number.isInteger(y)) return
     if (x < 0 || x >= GRID_WIDTH || y < 0 || y >= GRID_HEIGHT) return
     if (!Number.isInteger(color) || color < 0 || color >= PALETTE.length) return
@@ -300,9 +398,9 @@ export function useDailyAttempt(): {
         return
       }
       const serverState = (await res.json()) as DailyStateView
-      endingRef.current = false
-      lastGradeAtRef.current = null
-      lastAutoTargetRef.current = null
+      finalizingRef.current = false
+      finishPromiseRef.current = null
+      frozenFinalCellsRef.current = null
       dispatch({ type: 'state_loaded', state: serverState })
       if (userIdRef.current) {
         restoreCanvas(serverState, userIdRef.current)
@@ -310,10 +408,17 @@ export function useDailyAttempt(): {
     } catch {
       dispatch({ type: 'error', message: 'Network error while starting attempt.' })
     }
-  }, [restoreCanvas])
+  }, [restoreCanvas, dispatch])
 
   const askNow = useCallback(async (): Promise<void> => {
-    if (stateRef.current.status !== 'playing') return
+    const now = Date.now()
+    if (
+      finalizingRef.current ||
+      inFlightGradeRef.current ||
+      !canAskDaily(stateRef.current, now)
+    ) {
+      return
+    }
     await sendGrade('ask')
   }, [sendGrade])
 

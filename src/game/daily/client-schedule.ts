@@ -1,5 +1,5 @@
 import { DAILY } from '../config'
-import type { GradeReject } from './attempt'
+import type { GradeKind, GradeReject } from './attempt'
 import type { DailyStateView, GradeView } from '../../server/daily-service'
 
 export type DailyRejectReason = GradeReject | 'judge_resting' | 'bad_cells' | string
@@ -7,16 +7,38 @@ export type DailyRejectReason = GradeReject | 'judge_resting' | 'bad_cells' | st
 export interface DailyClientState extends DailyStateView {
   latest: GradeView | null
   grading: boolean
+  finalizing: boolean
+  endFailed: boolean
   lastError: string | null
+  lastGradedHash?: string | null
+  lastGradeAt?: number | null
+  autoRetryAfter?: number | null
 }
 
 export type DailyAction =
-  | { type: 'state_loaded'; state: DailyStateView }
-  | { type: 'grade_start' }
-  | { type: 'grade_ok'; grade: GradeView; state?: DailyStateView }
-  | { type: 'grade_rejected'; reason: DailyRejectReason; state?: DailyStateView }
-  | { type: 'error'; message: string }
+  | { type: 'state_loaded'; state: DailyStateView; preserveError?: boolean }
+  | { type: 'grade_start'; kind?: GradeKind }
+  | {
+      type: 'grade_ok'
+      grade: GradeView
+      state?: DailyStateView
+      cellsHash?: string
+      now?: number
+    }
+  | {
+      type: 'grade_rejected'
+      reason: DailyRejectReason
+      state?: DailyStateView
+      kind?: GradeKind
+      cellsHash?: string
+      now?: number
+    }
+  | { type: 'finalize_start' }
+  | { type: 'end_failed'; message: string }
+  | { type: 'error'; message: string; kind?: GradeKind; now?: number }
   | { type: 'clear_error' }
+
+const AUTO_RETRY_BACKOFF_MS = 10_000
 
 export function initialDailyClientState(day = ''): DailyClientState {
   return {
@@ -28,7 +50,12 @@ export function initialDailyClientState(day = ''): DailyClientState {
     best: 0,
     latest: null,
     grading: false,
+    finalizing: false,
+    endFailed: false,
     lastError: null,
+    lastGradedHash: null,
+    lastGradeAt: null,
+    autoRetryAfter: null,
   }
 }
 
@@ -45,6 +72,47 @@ export function nextAutoAt(
 
 export function shouldFinalGrade(now: number, startedAt: number): boolean {
   return now >= startedAt + DAILY.attemptMs
+}
+
+export function canPaintDaily(state: DailyClientState, now: number): boolean {
+  if (state.status !== 'playing') return false
+  if (state.finalizing || state.endFailed || state.finalUsed) return false
+  const endsAt =
+    state.endsAt ?? (state.startedAt !== undefined ? state.startedAt + DAILY.attemptMs : undefined)
+  if (endsAt !== undefined && now >= endsAt) return false
+  return true
+}
+
+export function canAskDaily(state: DailyClientState, now: number): boolean {
+  if (!canPaintDaily(state, now)) return false
+  if (state.grading) return false
+  if (state.asksUsed >= DAILY.maxAsks) return false
+  return true
+}
+
+export function shouldFireAutoGrade(
+  state: DailyClientState,
+  now: number,
+  currentCellsHash?: string,
+): boolean {
+  if (!canPaintDaily(state, now)) return false
+  if (state.grading) return false
+  if (state.startedAt === undefined) return false
+  if (state.autoUsed >= DAILY.maxAuto) return false
+
+  const target =
+    state.nextAutoAt ?? nextAutoAt(state.startedAt, state.autoUsed, state.lastGradeAt ?? null)
+  if (target === null || now < target) return false
+
+  if (state.autoRetryAfter != null && now < state.autoRetryAfter) return false
+  if (
+    currentCellsHash !== undefined &&
+    state.lastGradedHash != null &&
+    currentCellsHash === state.lastGradedHash
+  ) {
+    return false
+  }
+  return true
 }
 
 function rejectErrorMessage(reason: DailyRejectReason): string | null {
@@ -74,6 +142,8 @@ function rejectErrorMessage(reason: DailyRejectReason): string | null {
 }
 
 function mergeServerState(prev: DailyClientState, next: DailyStateView): DailyClientState {
+  const isNowEnded = next.status === 'ended'
+  const isNewStart = prev.status === 'not_started' && next.status === 'playing'
   return {
     ...prev,
     day: next.day,
@@ -87,21 +157,47 @@ function mergeServerState(prev: DailyClientState, next: DailyStateView): DailyCl
     best: Math.max(prev.best, next.best),
     nextAutoAt: next.nextAutoAt,
     lastCells: next.lastCells,
+    finalizing: isNowEnded || isNewStart ? false : prev.finalizing,
+    endFailed: isNowEnded || isNewStart ? false : prev.endFailed,
+    ...(isNewStart
+      ? {
+          lastGradedHash: null,
+          lastGradeAt: null,
+          autoRetryAfter: null,
+        }
+      : {}),
   }
 }
 
 export function dailyReducer(state: DailyClientState, action: DailyAction): DailyClientState {
   switch (action.type) {
-    case 'state_loaded':
+    case 'state_loaded': {
+      const merged = mergeServerState(state, action.state)
       return {
-        ...mergeServerState(state, action.state),
-        best: action.state.best,
-        lastError: null,
+        ...merged,
+        best: action.state.status === 'not_started' ? action.state.best : Math.max(state.best, action.state.best),
+        lastError: action.preserveError ? state.lastError : null,
+      }
+    }
+    case 'finalize_start':
+      return {
+        ...state,
+        finalizing: true,
+        endFailed: false,
+      }
+    case 'end_failed':
+      return {
+        ...state,
+        grading: false,
+        finalizing: true,
+        endFailed: true,
+        lastError: action.message,
       }
     case 'grade_start':
       return {
         ...state,
         grading: true,
+        finalizing: state.finalizing || action.kind === 'final',
         lastError: null,
       }
     case 'grade_ok': {
@@ -112,15 +208,33 @@ export function dailyReducer(state: DailyClientState, action: DailyAction): Dail
         best: Math.max(state.best, action.state?.best ?? 0, action.grade.total),
         grading: false,
         lastError: null,
+        lastGradedHash: action.cellsHash ?? state.lastGradedHash ?? null,
+        lastGradeAt: action.now ?? state.lastGradeAt ?? null,
+        autoRetryAfter: null,
       }
     }
     case 'grade_rejected': {
       const merged = action.state ? mergeServerState(state, action.state) : state
+      const isUnchanged = action.reason === 'unchanged'
+      const shouldBackoffAuto =
+        action.kind === 'auto' &&
+        !isUnchanged &&
+        action.now !== undefined &&
+        merged.nextAutoAt === state.nextAutoAt
       return {
         ...merged,
         best: state.best,
         grading: false,
         lastError: rejectErrorMessage(action.reason),
+        lastGradedHash:
+          isUnchanged && action.cellsHash !== undefined
+            ? action.cellsHash
+            : state.lastGradedHash ?? null,
+        autoRetryAfter: shouldBackoffAuto
+          ? action.now! + AUTO_RETRY_BACKOFF_MS
+          : isUnchanged
+            ? null
+            : state.autoRetryAfter ?? null,
       }
     }
     case 'error':
@@ -128,6 +242,10 @@ export function dailyReducer(state: DailyClientState, action: DailyAction): Dail
         ...state,
         grading: false,
         lastError: action.message,
+        autoRetryAfter:
+          action.kind === 'auto' && action.now !== undefined
+            ? action.now + AUTO_RETRY_BACKOFF_MS
+            : state.autoRetryAfter ?? null,
       }
     case 'clear_error':
       return {

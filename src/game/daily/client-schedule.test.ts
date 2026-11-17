@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import type { DailyStateView, GradeView } from '../../server/daily-service'
 import {
+  canAskDaily,
+  canPaintDaily,
   dailyReducer,
   initialDailyClientState,
   nextAutoAt,
+  shouldFireAutoGrade,
   shouldFinalGrade,
   type DailyClientState,
 } from './client-schedule'
@@ -105,5 +108,114 @@ describe('client-schedule', () => {
     })
     expect(tooSoon.lastError).toBeNull()
     expect(tooSoon.best).toBe(620)
+  })
+
+  it('does not permanently suppress auto-grades after unchanged, too_soon, judge_resting, or error', () => {
+    const s = 1_000_000
+    let st: DailyClientState = {
+      ...initialDailyClientState('2026-11-17'),
+      ...baseState,
+      startedAt: s,
+      endsAt: s + 600_000,
+      nextAutoAt: s + 120_000,
+    }
+
+    // At 2:00, auto-grade should fire
+    expect(shouldFireAutoGrade(st, s + 120_000, 'hash-a')).toBe(true)
+
+    // 1) Suppose auto-grade was rejected with 'unchanged' on 'hash-a'
+    st = dailyReducer(st, {
+      type: 'grade_rejected',
+      reason: 'unchanged',
+      kind: 'auto',
+      cellsHash: 'hash-a',
+      now: s + 120_000,
+      state: { ...baseState, startedAt: s, endsAt: s + 600_000, nextAutoAt: s + 120_000 },
+    })
+    // While canvas is still 'hash-a', do not spam auto-grade on the next tick
+    expect(shouldFireAutoGrade(st, s + 121_000, 'hash-a')).toBe(false)
+    // As soon as the player paints a new pixel ('hash-b'), auto-grade fires!
+    expect(shouldFireAutoGrade(st, s + 122_000, 'hash-b')).toBe(true)
+
+    // 2) Suppose auto-grade was rejected with 'too_soon' or 'judge_resting' or network error
+    const rejectedResting = dailyReducer(st, {
+      type: 'grade_rejected',
+      reason: 'judge_resting',
+      kind: 'auto',
+      cellsHash: 'hash-b',
+      now: s + 122_000,
+      state: { ...baseState, startedAt: s, endsAt: s + 600_000, nextAutoAt: s + 120_000 },
+    })
+    // Backoff prevents immediate 1s spam, but once backoff passes (or at minute 4), it fires again
+    expect(shouldFireAutoGrade(rejectedResting, s + 123_000, 'hash-b')).toBe(false)
+    expect(shouldFireAutoGrade(rejectedResting, s + 140_000, 'hash-b')).toBe(true)
+    expect(shouldFireAutoGrade(rejectedResting, s + 240_000, 'hash-b')).toBe(true)
+  })
+
+  it('blocks Ask-now and all further grades once finalizing starts or end is pending/failed', () => {
+    const s = 1_000_000
+    let st: DailyClientState = {
+      ...initialDailyClientState('2026-11-17'),
+      ...baseState,
+      startedAt: s,
+      endsAt: s + 600_000,
+    }
+    expect(canAskDaily(st, s + 50_000)).toBe(true)
+
+    // Finalizing starts (Done clicked or 10:00 reached)
+    st = dailyReducer(st, { type: 'finalize_start' })
+    expect(st.finalizing).toBe(true)
+    expect(canAskDaily(st, s + 50_000)).toBe(false)
+    expect(shouldFireAutoGrade(st, s + 120_000, 'hash-a')).toBe(false)
+
+    // Final grade completes, but /api/daily/end is still in flight
+    st = dailyReducer(st, {
+      type: 'grade_ok',
+      grade: sampleGrade,
+      state: { ...baseState, finalUsed: true, best: 800 },
+    })
+    expect(st.grading).toBe(false)
+    expect(st.finalizing).toBe(true)
+    expect(canAskDaily(st, s + 55_000)).toBe(false)
+
+    // If /api/daily/end fails, attempt stays locked in finalizing with an error until end succeeds
+    st = dailyReducer(st, { type: 'end_failed', message: 'Could not finish attempt. Retrying…' })
+    expect(st.finalizing).toBe(true)
+    expect(st.endFailed).toBe(true)
+    expect(st.lastError).toBe('Could not finish attempt. Retrying…')
+    expect(canAskDaily(st, s + 56_000)).toBe(false)
+    expect(canPaintDaily(st, s + 56_000)).toBe(false)
+
+    // When /api/daily/end succeeds, state transitions to 'ended' and clears finalizing
+    st = dailyReducer(st, {
+      type: 'state_loaded',
+      state: { ...baseState, status: 'ended', finalUsed: true, best: 800 },
+    })
+    expect(st.status).toBe('ended')
+    expect(st.finalizing).toBe(false)
+    expect(st.endFailed).toBe(false)
+    expect(canAskDaily(st, s + 60_000)).toBe(false)
+  })
+
+  it('disables painting when now >= endsAt or while finalizing or ended', () => {
+    const s = 1_000_000
+    const playing: DailyClientState = {
+      ...initialDailyClientState('2026-11-17'),
+      ...baseState,
+      startedAt: s,
+      endsAt: s + 600_000,
+    }
+    expect(canPaintDaily(playing, s + 599_999)).toBe(true)
+    // At or past endsAt (10:00), painting is disabled immediately
+    expect(canPaintDaily(playing, s + 600_000)).toBe(false)
+    expect(canPaintDaily(playing, s + 605_000)).toBe(false)
+
+    // During finalization (even before 10:00 when Done is clicked early), painting is disabled
+    const finalizing = dailyReducer(playing, { type: 'finalize_start' })
+    expect(canPaintDaily(finalizing, s + 100_000)).toBe(false)
+
+    // When ended, painting is disabled
+    const ended: DailyClientState = { ...playing, status: 'ended' }
+    expect(canPaintDaily(ended, s + 100_000)).toBe(false)
   })
 })

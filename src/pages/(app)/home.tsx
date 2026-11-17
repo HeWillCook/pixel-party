@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { AuthOverlay, useAuthProfileReady } from 'deepspace'
+import { AuthOverlay, useAuthProfileReady, useQuery } from 'deepspace'
 import {
   Bot,
   CheckCircle2,
@@ -16,8 +16,36 @@ import { Palette } from '../../components/game/Palette'
 import { PixelCanvas } from '../../components/game/PixelCanvas'
 import { Badge, Button } from '../../components/ui'
 import { DAILY } from '../../game/config'
+import { canAskDaily, canPaintDaily } from '../../game/daily/client-schedule'
 import { decodeCells } from '../../game/grid'
 import { useDailyAttempt } from '../../hooks/useDailyAttempt'
+import type { GradeView } from '../../server/daily-service'
+
+interface DailyDrawingRecord {
+  day: string
+  userId: string
+  displayName: string
+  prompt: string
+  cells: string
+  guess: string
+  reason: string
+  score: number
+  visibility: 'public' | 'private'
+}
+
+interface DailyScoreRecord {
+  day: string
+  userId: string
+  displayName: string
+  avatarUrl: string
+  score: number
+  fit: number
+  recognition: number
+  speed: number
+  bestElapsedMs: number
+  ended: number
+  medal: number
+}
 
 function decodeSnapshotOrFallback(encoded: string | undefined, fallback: Uint8Array): Uint8Array {
   if (!encoded) return fallback
@@ -55,20 +83,89 @@ function LeaderboardSlot({ day }: { day: string }) {
 }
 
 export default function DailyHomePage() {
-  const { isLoaded, isSignedIn } = useAuthProfileReady({ requireUser: false })
+  const { isLoaded, isSignedIn, user } = useAuthProfileReady({ requireUser: false })
   const { state, cells, paint, start, askNow, done } = useDailyAttempt()
+
+  const userId = user?.id ?? ''
+  const queryDay = state.day || '__none__'
+  const queryUserId = userId || '__none__'
+
+  const { records: myDrawings } = useQuery<DailyDrawingRecord>('dailyDrawings', {
+    where: { day: queryDay, userId: queryUserId },
+    limit: 1,
+  })
+  const { records: myScores } = useQuery<DailyScoreRecord>('dailyScores', {
+    where: { day: queryDay, userId: queryUserId },
+    limit: 1,
+  })
+
+  const bestDrawingDoc = myDrawings[0]?.data
+  const bestScoreDoc = myScores[0]?.data
 
   const [activeColor, setActiveColor] = useState<number>(4)
   const [starting, setStarting] = useState(false)
   const [showAuthModal, setShowAuthModal] = useState(false)
+  const [now, setNow] = useState<number>(() => Date.now())
+
+  useEffect(() => {
+    if (state.status !== 'playing') return
+    const interval = setInterval(() => {
+      setNow(Date.now())
+    }, 250)
+    return () => clearInterval(interval)
+  }, [state.status])
 
   const asksLeft = Math.max(0, DAILY.maxAsks - state.asksUsed)
-  const canDraw = isSignedIn && state.status === 'playing'
+  const canDraw = isSignedIn && canPaintDaily(state, now)
+  const canAsk = isSignedIn && canAskDaily(state, now)
+
+  const endedBestScore = Math.max(
+    state.best,
+    bestScoreDoc?.score ?? 0,
+    bestDrawingDoc?.score ?? 0,
+  )
 
   const endedCells = useMemo(
-    () => decodeSnapshotOrFallback(state.lastCells, cells),
-    [state.lastCells, cells],
+    () => decodeSnapshotOrFallback(bestDrawingDoc?.cells ?? state.lastCells, cells),
+    [bestDrawingDoc?.cells, state.lastCells, cells],
   )
+
+  const endedGrade = useMemo((): GradeView | null => {
+    if (bestScoreDoc || bestDrawingDoc) {
+      const fit = bestScoreDoc?.fit ?? (state.latest?.total === endedBestScore ? state.latest.fit : 0)
+      const recognition =
+        bestScoreDoc?.recognition ??
+        (state.latest?.total === endedBestScore ? state.latest.recognition : 0)
+      const speed =
+        bestScoreDoc?.speed ?? (state.latest?.total === endedBestScore ? state.latest.speed : 0)
+      const total = bestScoreDoc?.score ?? bestDrawingDoc?.score ?? endedBestScore
+      const guess =
+        bestDrawingDoc?.guess ||
+        (state.latest?.total === endedBestScore ? state.latest.guess : '')
+      const reason =
+        bestDrawingDoc?.reason ||
+        (state.latest?.total === endedBestScore ? state.latest.reason : '')
+      const elapsedMs =
+        bestScoreDoc?.bestElapsedMs ??
+        (state.latest?.total === endedBestScore ? state.latest.elapsedMs : 0)
+
+      if (total > 0 || Boolean(guess) || Boolean(reason)) {
+        return {
+          guess,
+          reason,
+          fit,
+          recognition,
+          speed,
+          total,
+          elapsedMs,
+        }
+      }
+    }
+    if (state.latest && state.latest.total >= state.best) {
+      return state.latest
+    }
+    return null
+  }, [bestScoreDoc, bestDrawingDoc, state.latest, state.best, endedBestScore])
 
   const handleStart = async () => {
     setStarting(true)
@@ -258,7 +355,7 @@ export default function DailyHomePage() {
                   <Button
                     type="button"
                     data-testid="daily-ask-button"
-                    disabled={state.grading || asksLeft <= 0}
+                    disabled={!canAsk}
                     onClick={() => void askNow()}
                     className="arcade-btn font-pixel flex-1 gap-2 bg-pink-600 px-4 py-2.5 text-xs font-extrabold uppercase tracking-wider text-white hover:bg-pink-500 disabled:opacity-60 sm:text-sm"
                   >
@@ -270,12 +367,18 @@ export default function DailyHomePage() {
                     type="button"
                     variant="secondary"
                     data-testid="daily-done-button"
-                    disabled={state.grading}
+                    disabled={state.grading || (state.finalizing && !state.endFailed)}
                     onClick={() => void done()}
                     className="arcade-btn font-pixel gap-1.5 px-4 py-2.5 text-xs font-bold uppercase tracking-wider sm:text-sm"
                   >
                     <CheckCircle2 className="h-4 w-4 text-emerald-400" aria-hidden />
-                    <span>Done</span>
+                    <span>
+                      {state.endFailed
+                        ? 'Retry Done'
+                        : state.finalizing
+                          ? 'Finishing…'
+                          : 'Done'}
+                    </span>
                   </Button>
                 </div>
 
@@ -296,17 +399,17 @@ export default function DailyHomePage() {
               <Badge variant="default" className="font-pixel uppercase">
                 Attempt Complete
               </Badge>
-              {state.prompt && (
+              {(state.prompt ?? bestDrawingDoc?.prompt) && (
                 <span
                   data-testid="daily-prompt"
                   className="font-pixel text-sm font-extrabold uppercase tracking-wider text-amber-300 sm:text-base"
                 >
-                  {state.prompt}
+                  {state.prompt ?? bestDrawingDoc?.prompt}
                 </span>
               )}
             </div>
             <span className="font-pixel text-xs font-bold text-emerald-300">
-              Best: {state.best} / 1000
+              Best: {endedBestScore} / 1000
             </span>
           </div>
 
@@ -318,15 +421,15 @@ export default function DailyHomePage() {
                 cells={endedCells}
                 activeColor={activeColor}
                 canDraw={false}
-                word={state.prompt}
+                word={state.prompt ?? bestDrawingDoc?.prompt}
                 onPlace={paint}
               />
             </div>
 
             <div className="flex flex-col gap-3 lg:col-span-5">
               <GradePanel
-                latest={state.latest}
-                best={state.best}
+                latest={endedGrade}
+                best={endedBestScore}
                 grading={state.grading}
                 lastError={state.lastError}
                 ended
