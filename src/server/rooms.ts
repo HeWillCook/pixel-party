@@ -8,7 +8,7 @@ export type RoomData = Record<string, unknown> & {
   joinCode: string
   hostId: string
   memberIds: string[]
-  status: 'playing' | 'intermission' | 'paused' | 'closed'
+  status: 'lobby' | 'playing' | 'intermission' | 'paused' | 'closed'
   currentRoundId: string
   playerCount: number
   lastActiveAt: number
@@ -19,8 +19,15 @@ export type RoomRecord = { recordId: string; data: RoomData }
 export const joinCodePattern = /^[A-Za-z0-9_-]{1,64}$/
 
 export async function findRoom(tools: ServerTools, joinCode: string): Promise<ActionResult<RoomRecord | null>> {
-  const result = await tools.query<RoomData>('rooms', { where: { joinCode }, limit: 1 })
-  return result.success ? { success: true, data: result.data.records[0] ?? null } : result
+  const normalized = joinCode.toUpperCase()
+  const result = await tools.query<RoomData>('rooms', { where: { joinCode: normalized === 'PLAY' ? 'play' : normalized }, limit: 1 })
+  if (!result.success) return result
+  if (result.data.records[0]) return { success: true, data: result.data.records[0] }
+  // Legacy room codes were not normalized at storage time. Page only on a canonical miss.
+  const legacy = await roomRecords(tools, 'rooms', {})
+  if (!legacy.success) return legacy
+  const match = legacy.data.find(room => typeof room.data.joinCode === 'string' && room.data.joinCode.toUpperCase() === normalized)
+  return { success: true, data: match ? match as RoomRecord : null }
 }
 
 export async function roomRecords(tools: ServerTools, collection: string, where: Record<string, unknown>): Promise<ActionResult<{ recordId: string; data: Record<string, unknown> }[]>> {

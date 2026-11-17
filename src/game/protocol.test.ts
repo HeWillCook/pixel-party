@@ -17,3 +17,12 @@ describe('parseClientMsg', () => {
     }
   })
 })
+
+it('accepts bounded placement batches and rejects malformed cells or excessive work', () => {
+  const cells = Array.from({ length: 64 }, (_, x) => ({ x, y: 0, c: 4 }))
+  expect(parseClientMsg(JSON.stringify({ t: 'place', cells }))).toEqual({ t: 'place', cells })
+  for (const bad of [[], [...cells, cells[0]], [{ x: '1', y: 0, c: 4 }], [null]]) {
+    expect(parseClientMsg(JSON.stringify({ t: 'place', cells: bad }))).toBeNull()
+  }
+  expect(parseClientMsg(' '.repeat(4097))).toBeNull()
+})

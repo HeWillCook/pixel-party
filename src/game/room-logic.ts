@@ -1,8 +1,8 @@
 import { JUDGE, MODES, ROOMS, type Mode, type ZoneId } from './config'
 import { contributors, createGrid, decodeCells, encodeCells, pixelsUsed, setPixel, type Grid } from './grid'
 import type { JudgeOutcome } from './judge-flow'
-import type { RoundView } from './protocol'
-import { validatePlacement, type RejectReason } from './rules'
+import type { Placement, RoundView } from './protocol'
+import { consumeSoloToken, validatePlacement, type SoloBucket, type RejectReason } from './rules'
 import { coopScore } from './scoring'
 import { pickWord, type WordEntry } from './words'
 
@@ -18,6 +18,7 @@ export interface RoomState {
   lastGuesses: string[]
   roundCounter: number
   lastPlacedAt: Record<string, number>
+  soloBuckets: Record<string, SoloBucket>
   judgeCalls: number[]
   lastJudgedVersion: number
   lastJudgedAt: number
@@ -26,7 +27,7 @@ export interface RoomState {
   intermissionEndsAt: number | null
   pausedAt: number | null
   pausedFrom: 'playing' | 'intermission' | null
-  status: 'playing' | 'intermission' | 'paused' | 'closed'
+  status: 'lobby' | 'playing' | 'intermission' | 'paused' | 'closed'
 }
 
 export type RoundEndedEvent = {
@@ -37,7 +38,7 @@ export type RoundEndedEvent = {
 export type RoomStatusEvent = { roomId: string; status: RoomState['status']; playerCount: number; lastActiveAt: number; currentRoundId: string }
 export type RoomEvent =
   | { type: 'pixel'; x: number; y: number; c: number; by: string }
-  | { type: 'reject'; reason: RejectReason; retryAt?: number }
+  | { type: 'reject'; reason: RejectReason; retryAt?: number; x?: number; y?: number }
   | { type: 'judgement'; zone: ZoneId; guesses: string[]; confidence: number; matched: boolean }
   | { type: 'round'; round: RoundView }
   | { type: 'cleared' }
@@ -50,26 +51,31 @@ export function countPlayers(connections: Array<{ userId: string | null }>): num
   return new Set(connections.map(connection => connection.userId).filter((id): id is string => id !== null)).size
 }
 
-export function newRoomState(init: { roomId: string; mode: Mode; isDefaultBoard: boolean }, now: number, rng: () => number): RoomState {
+export function newRoomState(init: { roomId: string; mode: Mode; isDefaultBoard: boolean; startsInLobby?: boolean }, now: number, rng: () => number): RoomState {
   const config = MODES[init.mode]
   const wordEntry = pickWord(rng, [])
+  const lobby = init.startsInLobby === true && !init.isDefaultBoard
   return {
-    ...init, grid: createGrid(config.width, config.height), version: 0,
-    round: { id: `${now}-0`, word: wordEntry.word, state: 'playing', startedAt: now, endsAt: now + config.capMs, askAvailableAt: now + JUDGE.askMinMs },
-    wordEntry, recentWords: [wordEntry.word], lastGuesses: [], roundCounter: 0, lastPlacedAt: {}, judgeCalls: [],
+    roomId: init.roomId, mode: init.mode, isDefaultBoard: init.isDefaultBoard, grid: createGrid(config.width, config.height), version: 0,
+    round: { id: `${now}-0`, word: lobby ? '' : wordEntry.word, state: lobby ? 'lobby' : 'playing', startedAt: lobby ? 0 : now, endsAt: lobby ? null : now + config.capMs, askAvailableAt: now + JUDGE.askMinMs },
+    wordEntry, recentWords: lobby ? [] : [wordEntry.word], lastGuesses: [], roundCounter: 0, lastPlacedAt: {}, soloBuckets: {}, judgeCalls: [],
     lastJudgedVersion: 0, lastJudgedAt: now, judgeInFlight: false, emptySince: null,
-    intermissionEndsAt: null, pausedAt: null, pausedFrom: null, status: 'playing',
+    intermissionEndsAt: null, pausedAt: null, pausedFrom: null, status: lobby ? 'lobby' : 'playing',
   }
 }
 
 export function applyPlacement(s: RoomState, p: { x: number; y: number; c: number; userId: string | null }, now: number, playersConnected: number): RoomTransition {
   const valid = validatePlacement({ width: s.grid.width, height: s.grid.height, x: p.x, y: p.y, color: p.c, userId: p.userId, roundPlaying: s.status === 'playing' && s.round.state === 'playing', lastPlacedAt: p.userId === null ? undefined : s.lastPlacedAt[p.userId], now, playersConnected })
-  if (!valid.ok) return { state: s, events: [{ type: 'reject', reason: valid.reason, ...(valid.retryAt === undefined ? {} : { retryAt: valid.retryAt }) }] }
+  if (!valid.ok) return { state: s, events: [{ type: 'reject', x: p.x, y: p.y, reason: valid.reason, ...(valid.retryAt === undefined ? {} : { retryAt: valid.retryAt }) }] }
+  const token = playersConnected <= 1 ? consumeSoloToken(s.soloBuckets[p.userId!], now) : null
+  if (token && !token.ok) return { state: s, events: [{ type: 'reject', reason: 'rate_limited', retryAt: token.retryAt, x: p.x, y: p.y }] }
+  const soloBuckets = Object.fromEntries(Object.entries(s.soloBuckets).filter(([, bucket]) => bucket.updatedAt >= now - 1000))
+  if (token?.ok) soloBuckets[p.userId!] = token.bucket
   const grid = { ...s.grid, cells: s.grid.cells.slice(), placedBy: [...s.grid.placedBy] }
   const userId = p.userId!
   setPixel(grid, p.x, p.y, p.c, userId)
   const lastPlacedAt = Object.fromEntries(Object.entries(s.lastPlacedAt).filter(([, time]) => time >= now - 10000))
-  return { state: { ...s, grid, version: s.version + 1, lastPlacedAt: { ...lastPlacedAt, [userId]: now } }, events: [{ type: 'pixel', x: p.x, y: p.y, c: p.c, by: userId }] }
+  return { state: { ...s, grid, soloBuckets, version: s.version + 1, lastPlacedAt: { ...lastPlacedAt, [userId]: now } }, events: [{ type: 'pixel', x: p.x, y: p.y, c: p.c, by: userId }] }
 }
 
 export function shouldJudge(s: RoomState, now: number, signedInConnected: number, reason: 'tick' | 'ask'): { ok: true } | { ok: false; why: 'not_playing' | 'unchanged' | 'no_players' | 'too_soon' | 'rate_cap' } {
@@ -105,7 +111,7 @@ export function applyJudgeOutcome(s: RoomState, outcome: JudgeOutcome, now: numb
 }
 
 export function startNextRound(s: RoomState, now: number, rng: () => number): RoomTransition {
-  if (s.status !== 'playing' && s.status !== 'intermission') return { state: s, events: [] }
+  if (s.status !== 'lobby' && s.status !== 'playing' && s.status !== 'intermission') return { state: s, events: [] }
   const wordEntry = pickWord(rng, s.recentWords)
   const roundCounter = s.roundCounter + 1
   const round: RoundView = { id: `${now}-${roundCounter}`, word: wordEntry.word, state: 'playing', startedAt: now, endsAt: now + MODES[s.mode].capMs, askAvailableAt: now + JUDGE.askMinMs }
@@ -118,9 +124,13 @@ function statusEvent(s: RoomState, now: number, playerCount: number): RoomEvent 
 }
 
 export function advance(s: RoomState, now: number, signedInConnected: number, rng: () => number): RoomTransition {
-  if (signedInConnected === 0 && !s.isDefaultBoard && s.status === 'paused' && s.emptySince !== null && now - s.emptySince >= ROOMS.closeAfterEmptyMs) {
+  if (signedInConnected === 0 && !s.isDefaultBoard && (s.status === 'paused' || s.status === 'lobby') && s.emptySince !== null && now - s.emptySince >= ROOMS.closeAfterEmptyMs) {
     const state: RoomState = { ...s, status: 'closed' }
     return { state, events: [statusEvent(state, now, signedInConnected)] }
+  }
+  if (s.status === 'lobby') {
+    const emptySince = signedInConnected > 0 ? null : s.emptySince ?? now
+    return { state: emptySince === s.emptySince ? s : { ...s, emptySince }, events: [] }
   }
   if (signedInConnected === 0 && (s.status === 'playing' || s.status === 'intermission')) {
     const state: RoomState = { ...s, pausedFrom: s.status, status: 'paused', pausedAt: now, emptySince: now, round: { ...s.round, state: 'paused' } }
@@ -144,7 +154,7 @@ export function advance(s: RoomState, now: number, signedInConnected: number, rn
 
 export function nextAlarmAt(s: RoomState, now: number): number | null {
   const deadlines: number[] = []
-  if (s.status === 'paused' && !s.isDefaultBoard && s.emptySince !== null) deadlines.push(s.emptySince + ROOMS.closeAfterEmptyMs)
+  if ((s.status === 'paused' || s.status === 'lobby') && !s.isDefaultBoard && s.emptySince !== null) deadlines.push(s.emptySince + ROOMS.closeAfterEmptyMs)
   if (s.status === 'playing') {
     deadlines.push(s.round.startedAt + MODES[s.mode].capMs)
     if (s.version !== s.lastJudgedVersion && !s.judgeInFlight) {
@@ -164,4 +174,15 @@ export function serializeRoomState(s: RoomState): string {
 export function deserializeRoomState(json: string): RoomState {
   const state = JSON.parse(json) as RoomState & { grid: { width: number; height: number; cells: string; placedBy: string[] } }
   return { ...state, judgeInFlight: false, grid: { ...state.grid, cells: decodeCells(state.grid.cells, state.grid.width * state.grid.height) } }
+}
+
+/** Apply a frame atomically in the shell, preserving per-cell validation and responses. */
+export function applyPlacements(state: RoomState, cells: Placement[], userId: string | null, now: number, players: number): RoomTransition {
+  const events: RoomEvent[] = []
+  for (const cell of cells) {
+    const next = applyPlacement(state, { ...cell, userId }, now, players)
+    state = next.state
+    events.push(...next.events)
+  }
+  return { state, events }
 }

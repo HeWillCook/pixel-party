@@ -47,7 +47,7 @@ describe('PixelRoom route configuration', () => {
   it.each(['play', 'custom-room'])('overwrites forged room configuration for %s', async roomId => {
     const test = harness()
     await test.request(`${roomId}?userId=forged`, {
-      headers: { 'X-Room-Id': 'forged', 'X-Room-Mode': 'team', 'X-Room-Default': 'forged', 'X-Room-Host': 'forged', 'X-User-Id': 'forged' },
+      headers: { 'X-Room-Id': 'forged', 'X-Room-Mode': 'team', 'X-Room-Default': 'forged', 'X-Room-Host': 'forged', 'X-Room-Lobby': 'true', 'X-User-Id': 'forged' },
     })
     const expectedId = roomId === 'play' ? 'default-board' : 'record-id'
     expect(test.namespace.idFromName).toHaveBeenCalledWith(expectedId)
@@ -57,6 +57,7 @@ describe('PixelRoom route configuration', () => {
     expect(forwarded.headers.get('X-Room-Default')).toBe(String(roomId === 'play'))
     expect(forwarded.headers.get('X-Room-Host')).toBe(roomId === 'play' ? '' : 'host')
     expect(forwarded.headers.get('X-User-Id')).toBeNull()
+    expect(forwarded.headers.get('X-Room-Lobby')).toBe('false')
     expect(new URL(forwarded.url).searchParams.has('userId')).toBe(false)
   })
 
@@ -72,6 +73,17 @@ describe('PixelRoom route configuration', () => {
     expect((await test.request('custom-room?token=valid&userId=forged')).status).toBe(200)
     expect(test.rows('rooms').get('record-id')!.memberIds).toEqual(['host', 'guest'])
     expect(Buffer.from(test.forwarded()!.headers.get('X-User-Id')!, 'base64url').toString()).toBe('guest')
+  })
+
+  it('normalizes private lobby codes, preserves trusted lobby state and denies anonymous JWTs', async () => {
+    const test = harness('private', 'lobby')
+    test.rows('rooms').get('record-id')!.joinCode = 'AB2Z'
+    verifyJwt.mockResolvedValue({ result: { userId: 'anon-viewer', claims: {} } })
+    expect((await test.request('ab2z?token=anonymous')).status).toBe(401)
+    expect(test.forwarded()).toBeUndefined()
+    verifyJwt.mockResolvedValue({ result: { userId: 'host', claims: {} } })
+    expect((await test.request('aB2z?token=valid')).status).toBe(200)
+    expect(test.forwarded()!.headers.get('X-Room-Lobby')).toBe('true')
   })
 
   it('rejects an invalid JWT on a public room', async () => {

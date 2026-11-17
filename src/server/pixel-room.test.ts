@@ -35,6 +35,7 @@ describe('PixelRoom persistence recovery', () => {
     state.round = { ...state.round, result: { outcome: 'won', contributorCount: 1 } }
     const saved = JSON.parse(serializeRoomState(state))
     delete saved.lastGuesses
+    delete saved.soloBuckets
     delete saved.recentWords
     delete saved.roundCounter
     saved.judgeInFlight = true
@@ -44,6 +45,8 @@ describe('PixelRoom persistence recovery', () => {
     expect(restored.grid.placedBy[2]).toBe('owner')
     expect(restored.lastPlacedAt.owner).toBe(400)
     expect(restored.lastGuesses).toEqual([])
+    expect(restored.soloBuckets).toEqual({})
+    expect(restored.status).toBe('playing')
     expect(restored.recentWords).toEqual([state.wordEntry.word])
     expect(restored.roundCounter).toBe(0)
     expect(restored.judgeInFlight).toBe(false)
@@ -171,8 +174,9 @@ describe('durable room boundaries', () => {
     vi.spyOn(BaseRoom.prototype, 'fetch').mockResolvedValue(new Response('upgraded'))
     const room = new TestPixelRoom(durable as unknown as DurableObjectState, env)
     expect((await room.fetch(new Request('https://room/ws', { headers: {
-      Upgrade: 'websocket', 'X-Room-Id': 'test', 'X-Room-Mode': 'coop', 'X-Room-Default': 'false', 'X-Room-Host': 'host',
+      Upgrade: 'websocket', 'X-Room-Id': 'test', 'X-Room-Mode': 'coop', 'X-Room-Default': 'false', 'X-Room-Host': 'host', 'X-Room-Lobby': 'true',
     } }))).status).toBe(200)
+    expect((JSON.parse((database.prepare('SELECT state FROM pixel_state').get() as { state: string }).state) as RoomState).status).toBe('lobby')
     expect(database.prepare('SELECT host_id FROM pixel_state').get()).toMatchObject({ host_id: 'host' })
     const restored = new TestPixelRoom(durable as unknown as DurableObjectState, env)
     const guest = socket('guest')
@@ -184,6 +188,54 @@ describe('durable room boundaries', () => {
     await restored.command(host.connection, { t: 'next' })
     expect((JSON.parse((database.prepare('SELECT state FROM pixel_state').get() as { state: string }).state) as RoomState).roundCounter).toBe(1)
     database.close()
+  })
+
+  it('batches solo cells into one durable write and keeps the abuse cap after wake', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const harness = roomHarness()
+    const owner = await harness.connect('owner')
+    const tab = await harness.connect('owner')
+    const sql = vi.spyOn(harness.durable.storage.sql, 'exec')
+    const cells = Array.from({ length: 64 }, (_, i) => ({ x: i % 32, y: Math.floor(i / 32), c: 4 }))
+    await harness.room.webSocketMessage(owner.connection, JSON.stringify({ t: 'place', cells }))
+    expect(harness.saved().version).toBe(60)
+    expect(sql.mock.calls.filter(([query]) => query.startsWith('INSERT'))).toHaveLength(1)
+    expect(messages(owner).filter(message => message.reason === 'rate_limited')).toHaveLength(4)
+    expect(messages(tab).filter(message => message.t === 'pixel')).toHaveLength(60)
+    const restored = harness.makeRoom()
+    await restored.command(tab.connection, { t: 'place', x: 5, y: 5, c: 6 })
+    expect(messages(tab).at(-1)).toMatchObject({ t: 'reject', reason: 'rate_limited', x: 5, y: 5 })
+    expect(harness.saved().version).toBe(60)
+    harness.database.close()
+  })
+
+  it.each([1, 2])('keeps a private lobby inert and lets only its host start with %s players', async count => {
+    const harness = roomHarness(false, () => newRoomState({ ...init, startsInLobby: true }, Date.now(), () => 0))
+    harness.database.prepare('UPDATE pixel_state SET host_id = ?').run('host')
+    const restored = harness.makeRoom()
+    const host = await harness.connect('host', restored)
+    const guest = count === 2 ? await harness.connect('guest', restored) : host
+    const snapshot = messages(host).find(message => message.t === 'snapshot')
+    expect(snapshot.round).toMatchObject({ state: 'lobby', word: '', endsAt: null })
+    expect(snapshot.roster).toEqual([{ userId: 'host', name: 'Test' }])
+    expect(harness.saved().status).toBe('lobby')
+    if (count === 2) {
+      await restored.command(guest.connection, { t: 'next' })
+      expect(messages(guest).at(-1)).toEqual({ t: 'reject', reason: 'not_host' })
+    }
+    await restored.command(host.connection, { t: 'place', cells: [{ x: 0, y: 0, c: 4 }] })
+    expect(messages(host).at(-1)).toMatchObject({ t: 'reject', reason: 'round_inactive' })
+    await restored.command(host.connection, { t: 'ask' })
+    await restored.tick()
+    expect(integration).not.toHaveBeenCalled()
+    expect(reserve).not.toHaveBeenCalled()
+    expect(restored.onRoomStatus).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'lobby', playerCount: count }))
+    await restored.command(host.connection, { t: 'next' })
+    expect(harness.saved().status).toBe('playing')
+    expect(restored.onRoomStatus).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'playing', playerCount: count }))
+    const late = await harness.connect('late', restored)
+    expect(messages(late).find(message => message.t === 'snapshot').round.state).toBe('playing')
+    harness.database.close()
   })
 
   it('refreshes record player counts on joins/leaves and round ids on next', async () => {
@@ -229,7 +281,7 @@ describe('durable room boundaries', () => {
     harness.database.close()
   })
 
-  it('broadcasts placements, rejects spectators and cooldowns, and recovers live identities after wake', async () => {
+  it('broadcasts instant solo placements, rejects spectators, and recovers live identities after wake', async () => {
     const harness = roomHarness()
     const owner = await harness.connect('owner')
     const tab = await harness.connect('owner')
@@ -238,13 +290,13 @@ describe('durable room boundaries', () => {
     await harness.room.webSocketMessage(owner.connection, JSON.stringify({ t: 'place', x: 3, y: 2, c: 6 }))
     for (const client of [owner, tab, spectator]) expect(messages(client)).toContainEqual({ t: 'pixel', x: 3, y: 2, c: 6, by: 'owner' })
     await harness.room.webSocketMessage(owner.connection, JSON.stringify({ t: 'place', x: 4, y: 2, c: 6 }))
-    expect(messages(owner).at(-1)).toMatchObject({ t: 'reject', reason: 'cooldown' })
+    expect(messages(owner).at(-1)).toMatchObject({ t: 'pixel', x: 4, y: 2 })
     for (const command of [{ t: 'place', x: 0, y: 0, c: 1 }, { t: 'ask' }, { t: 'next' }, { t: 'team', team: 'red' }]) {
       await harness.room.webSocketMessage(spectator.connection, JSON.stringify(command))
-      expect(messages(spectator).at(-1)).toEqual({ t: 'reject', reason: 'not_signed_in' })
+      expect(messages(spectator).at(-1)).toMatchObject({ t: 'reject', reason: 'not_signed_in' })
     }
-    await harness.room.webSocketMessage(owner.connection, `${' '.repeat(257)}{"t":"next"}`)
-    expect(harness.saved().version).toBe(1)
+    await harness.room.webSocketMessage(owner.connection, `${' '.repeat(4097)}{"t":"next"}`)
+    expect(harness.saved().version).toBe(2)
     const restarted = harness.makeRoom()
     const fresh = await harness.connect('anon-fresh', restarted)
     expect(messages(fresh).find(message => message.t === 'snapshot')).toMatchObject({ players: 1, cells: expect.any(String), round: { id: harness.initial.round.id } })
@@ -359,7 +411,7 @@ describe('durable room boundaries', () => {
       await harness.room.command(owner.connection, { t: 'team', team: 'red' })
       await harness.room.command(owner.connection, { t: 'ask' })
     }
-    expect(messages(spectator).at(-1)).toEqual({ t: 'reject', reason: 'not_signed_in' })
+    expect(messages(spectator).at(-1)).toMatchObject({ t: 'reject', reason: 'not_signed_in' })
     expect(sql.mock.calls.filter(([query]) => query.startsWith('INSERT'))).toHaveLength(0)
     harness.database.close()
   })
@@ -375,7 +427,7 @@ describe('durable room boundaries', () => {
     await expect(harness.room.disconnect(owner.connection)).resolves.toBeUndefined()
     expect(messages(spectator)).toEqual([
       { t: 'round', round: expect.objectContaining({ state: 'paused' }) },
-      { t: 'players', count: 0 },
+      { t: 'players', count: 0, roster: [] },
     ])
     expect(harness.durable.storage.setAlarm).toHaveBeenCalledOnce()
     expect(log).toHaveBeenCalledWith('[PixelRoom] Room-status hook failed')
@@ -466,7 +518,7 @@ describe('durable room boundaries', () => {
     harness.durable.storage.setAlarm.mockClear()
     await expect(harness.room.disconnect(owner.connection)).resolves.toBeUndefined()
     expect(harness.saved().status).toBe('paused')
-    expect(messages(spectator).at(-1)).toEqual({ t: 'players', count: 0 })
+    expect(messages(spectator).at(-1)).toEqual({ t: 'players', count: 0, roster: [] })
     expect(harness.durable.storage.setAlarm).toHaveBeenCalledOnce()
     harness.database.close()
   })

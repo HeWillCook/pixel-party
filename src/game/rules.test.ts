@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cooldownMs, validatePlacement } from './rules'
+import { consumeSoloToken, cooldownMs, validatePlacement } from './rules'
 
 const base = {
   width: 32,
@@ -15,9 +15,9 @@ const base = {
 }
 
 describe('cooldownMs', () => {
-  it('returns 200ms when 0 or 1 players are connected', () => {
-    expect(cooldownMs(1)).toBe(200)
-    expect(cooldownMs(0)).toBe(200)
+  it('returns zero when 0 or 1 players are connected', () => {
+    expect(cooldownMs(1)).toBe(0)
+    expect(cooldownMs(0)).toBe(0)
   })
 
   it('scales linearly by 1000ms per player up to 10_000ms', () => {
@@ -78,4 +78,11 @@ describe('validatePlacement', () => {
       validatePlacement({ ...base, playersConnected: 3, lastPlacedAt: 1000, now: 4000 }),
     ).toEqual({ ok: true })
   })
+})
+
+it('refills the solo bucket at 60/s, bounds bursts and handles backwards time', () => {
+  expect(consumeSoloToken({ tokens: 0, updatedAt: 1000 }, 1000)).toEqual({ ok: false, retryAt: 1017 })
+  expect(consumeSoloToken({ tokens: 0, updatedAt: 1000 }, 1017)).toMatchObject({ ok: true })
+  expect(consumeSoloToken({ tokens: 0, updatedAt: 1000 }, 2000)).toEqual({ ok: true, bucket: { tokens: 59, updatedAt: 2000 } })
+  expect(consumeSoloToken({ tokens: 0, updatedAt: 1000 }, 900).ok).toBe(false)
 })

@@ -10,7 +10,7 @@ import { runJudge } from '../game/judge-flow'
 import { renderZonePng, toBase64 } from '../game/png'
 import { parseClientMsg, type ServerMsg } from '../game/protocol'
 import {
-  advance, applyJudgeOutcome, applyPlacement, countPlayers, deserializeRoomState,
+  advance, applyJudgeOutcome, applyPlacements, countPlayers, deserializeRoomState,
   newRoomState, nextAlarmAt, serializeRoomState, startNextRound,
   type RoomState, type RoomTransition, type RoundEndedEvent, type RoomStatusEvent,
 } from '../game/room-logic'
@@ -27,16 +27,16 @@ const roomStateSchema = z.object({
   grid: z.object({ width: z.number().int().positive(), height: z.number().int().positive(), cells: z.instanceof(Uint8Array), placedBy: z.array(z.string()) }),
   version: finite.int().nonnegative(), lastJudgedVersion: finite.int().nonnegative(),
   round: z.object({
-    id: z.string().min(1), word: z.string().min(1), state: z.enum(['playing', 'intermission', 'paused']),
+    id: z.string().min(1), word: z.string(), state: z.enum(['lobby', 'playing', 'intermission', 'paused']),
     startedAt: finite, endsAt: finite.nullable(), askAvailableAt: finite, endedAt: finite.optional(),
     result: z.object({ outcome: z.enum(['won', 'timeout', 'teamWin']), score: finite.optional(), contributorCount: finite.int().nonnegative().optional(), winningTeam: z.enum(['red', 'blue', 'draw']).optional() }).optional(),
   }),
   wordEntry: z.object({ word: z.string().min(1), synonyms: z.array(z.string()), tier: z.enum(['easy', 'medium']) }),
   recentWords: z.array(z.string()), lastGuesses: z.array(z.string()), roundCounter: finite.int().nonnegative(),
-  lastPlacedAt: z.record(z.string(), finite), judgeCalls: z.array(finite), lastJudgedAt: finite,
+  lastPlacedAt: z.record(z.string(), finite), soloBuckets: z.record(z.string(), z.object({ tokens: finite.nonnegative(), updatedAt: finite })), judgeCalls: z.array(finite), lastJudgedAt: finite,
   judgeInFlight: z.boolean(), emptySince: finite.nullable(), intermissionEndsAt: finite.nullable(),
   pausedAt: finite.nullable(), pausedFrom: z.enum(['playing', 'intermission']).nullable(),
-  status: z.enum(['playing', 'intermission', 'paused', 'closed']),
+  status: z.enum(['lobby', 'playing', 'intermission', 'paused', 'closed']),
 })
 
 function signedInId(userId: string | null | undefined): string | null {
@@ -56,7 +56,7 @@ export function restorePixelState(json: string, init: RoomInit, now: number, rng
     const validDimensions = restored.grid.width === config.width && restored.grid.height === config.height
     const validAttributions = restored.grid.placedBy.length === restored.grid.cells.length
     const validColors = restored.grid.cells.every(color => color < PALETTE.length)
-    const validWord = restored.wordEntry.word === restored.round.word
+    const validWord = restored.status === 'lobby' ? restored.round.word === '' : restored.wordEntry.word === restored.round.word
     if (!validDimensions || !validAttributions || !validColors || !validWord) {
       throw new Error('Invalid saved grid or word')
     }
@@ -101,7 +101,7 @@ export class PixelRoom extends BaseRoom<Env> {
       const hostId = request.headers.get('X-Room-Host')
       if (!roomId || hostId === null || (mode !== 'coop' && mode !== 'team') || (isDefault !== 'true' && isDefault !== 'false')) return new Response('Missing room configuration', { status: 400 })
       this.hostUserId = isDefault === 'true' ? '' : hostId
-      this.game = newRoomState({ roomId, mode: mode as Mode, isDefaultBoard: isDefault === 'true' }, Date.now(), Math.random)
+      this.game = newRoomState({ roomId, mode: mode as Mode, isDefaultBoard: isDefault === 'true', startsInLobby: request.headers.get('X-Room-Lobby') === 'true' }, Date.now(), Math.random)
       this.persist()
     }
     if (request.headers.get('Upgrade') === 'websocket' && this.game?.status === 'closed') return new Response('Room closed', { status: 410 })
@@ -117,7 +117,7 @@ export class PixelRoom extends BaseRoom<Env> {
     try {
       ws.serializeAttachment(user)
       await this.transition(this.withRoomStatus(advance(this.game!, Date.now(), this.playerCount(), Math.random), this.playerCount()), undefined, ws)
-      this.broadcastGame({ t: 'players', count: this.playerCount() })
+      this.broadcastGame({ t: 'players', count: this.playerCount(), roster: this.playerRoster() })
     } finally {
       await this.armAlarm().catch(logAlarmError)
     }
@@ -132,7 +132,7 @@ export class PixelRoom extends BaseRoom<Env> {
       if (command.t !== 'place' && !userId) {
         this.sendGame(ws, { t: 'reject', reason: 'not_signed_in' })
       } else if (command.t === 'place') {
-        await this.transition(applyPlacement(this.game, { ...command, userId }, Date.now(), this.playerCount()), ws)
+        await this.transition(applyPlacements(this.game, 'cells' in command ? command.cells : [command], userId, Date.now(), this.playerCount()), ws)
       } else if (command.t === 'ask') {
         await this.judge('ask', ws)
       } else if (command.t === 'next') {
@@ -150,7 +150,7 @@ export class PixelRoom extends BaseRoom<Env> {
       try { ws.close(1000, 'Disconnected') } catch {}
       if (!this.game) return
       await this.transition(this.withRoomStatus(advance(this.game, Date.now(), this.playerCount(ws), Math.random), this.playerCount(ws)))
-      this.broadcastGame({ t: 'players', count: this.playerCount(ws) })
+      this.broadcastGame({ t: 'players', count: this.playerCount(ws), roster: this.playerRoster(ws) })
     } finally {
       await this.armAlarm().catch(logAlarmError)
     }
@@ -206,6 +206,16 @@ export class PixelRoom extends BaseRoom<Env> {
     return countPlayers(this.liveSockets(exclude).map(ws => ({ userId: signedInId(this.getAttachment(ws)?.userId) })))
   }
 
+  private playerRoster(exclude?: WebSocket): { userId: string; name: string }[] {
+    const players = new Map<string, { userId: string; name: string }>()
+    for (const ws of this.liveSockets(exclude)) {
+      const user = this.getAttachment(ws)
+      const userId = signedInId(user?.userId)
+      if (userId) players.set(userId, { userId, name: user?.userName || 'Painter' })
+    }
+    return [...players.values()]
+  }
+
   private sendGame(ws: WebSocket, message: ServerMsg): void {
     try {
       if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(message))
@@ -223,7 +233,7 @@ export class PixelRoom extends BaseRoom<Env> {
     const players = this.playerCount()
     this.sendGame(ws, {
       t: 'snapshot', mode: state.mode, width: state.grid.width, height: state.grid.height,
-      cells: encodeCells(state.grid.cells), round: state.round, players,
+      cells: encodeCells(state.grid.cells), round: state.round, players, roster: this.playerRoster(),
       you: { userId, cooldownUntil: placedAt === undefined ? 0 : placedAt + cooldownMs(players) },
       aiResting: this.restingDay === utcDay(Date.now()),
     })
@@ -258,7 +268,7 @@ export class PixelRoom extends BaseRoom<Env> {
         case 'roomStatus':
           try { await this.onRoomStatus(event.event) } catch { console.warn('[PixelRoom] Room-status hook failed') }
           break
-        case 'reject': if (sender) this.sendGame(sender, { t: 'reject', reason: event.reason, ...(event.retryAt === undefined ? {} : { retryAt: event.retryAt }) }); break
+        case 'reject': if (sender) this.sendGame(sender, { t: 'reject', reason: event.reason, x: event.x, y: event.y, ...(event.retryAt === undefined ? {} : { retryAt: event.retryAt }) }); break
         default: {
           const { type, ...payload } = event
           this.broadcastGame({ t: type, ...payload } as ServerMsg)

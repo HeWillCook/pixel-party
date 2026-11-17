@@ -5,6 +5,7 @@
  * scrub it and forward verified JWT identity in internal-only headers.
  */
 
+import { isAnonymousUserId } from 'deepspace'
 import type { Context, Hono } from 'hono'
 import { authenticatedRoomRequest, resolveAppRole, verifyJwt } from 'deepspace/worker'
 import type { JwtVerifierConfig, VerifyResult } from 'deepspace/worker'
@@ -47,8 +48,9 @@ function wsRoute(
 
 export function registerRealtimeRoutes(app: Hono<AppContext>): void {
   app.get('/api/pixel/:joinCode/ws', async context => {
-    const joinCode = context.req.param('joinCode')
-    if (!joinCodePattern.test(joinCode)) return new Response('Not found', { status: 404 })
+    const rawCode = context.req.param('joinCode')
+    const joinCode = rawCode.toLowerCase() === 'play' ? 'play' : rawCode.toUpperCase()
+    if (!joinCodePattern.test(rawCode)) return new Response('Not found', { status: 404 })
     const tools = createServerTools(context.env)
     const lookup = joinCode === 'play' ? await ensureDefaultBoard(tools) : await findRoom(tools, joinCode)
     if (!lookup.success) return new Response('Room unavailable', { status: 503 })
@@ -57,17 +59,18 @@ export function registerRealtimeRoutes(app: Hono<AppContext>): void {
     if (room.data.status === 'closed') return new Response('Room closed', { status: 410 })
     const token = new URL(context.req.url).searchParams.get('token')
     const auth = token ? (await verifyJwt(jwtConfig(context.env), token)).result : null
-    if ((token && !auth) || (room.data.visibility === 'private' && !auth)) return new Response('Unauthorized', { status: 401 })
+    if ((token && !auth) || (room.data.visibility === 'private' && (!auth || isAnonymousUserId(auth.userId)))) return new Response('Unauthorized', { status: 401 })
     if (room.data.visibility === 'private' && auth) {
       const joined = await addRoomMember(tools, room, auth.userId)
       if (!joined.success) return new Response('Room unavailable', { status: 503 })
     }
     const request = authenticatedRoomRequest(context.req.raw, auth)
-    for (const header of ['X-Room-Id', 'X-Room-Mode', 'X-Room-Default', 'X-Room-Host']) request.headers.delete(header)
+    for (const header of ['X-Room-Id', 'X-Room-Mode', 'X-Room-Default', 'X-Room-Host', 'X-Room-Lobby']) request.headers.delete(header)
     request.headers.set('X-Room-Id', room.recordId)
     request.headers.set('X-Room-Mode', room.data.mode)
     request.headers.set('X-Room-Default', String(Boolean(room.data.isDefaultBoard)))
     request.headers.set('X-Room-Host', room.data.hostId)
+    request.headers.set('X-Room-Lobby', String(room.data.status === 'lobby'))
     return context.env.PIXEL_ROOMS.get(context.env.PIXEL_ROOMS.idFromName(room.recordId)).fetch(request)
   })
 

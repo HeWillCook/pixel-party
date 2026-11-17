@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { JUDGE, MODES, ROOMS } from './config'
-import { applyJudgeOutcome, applyPlacement, advance, countPlayers, deserializeRoomState, newRoomState, nextAlarmAt, serializeRoomState, shouldJudge, startNextRound } from './room-logic'
+import { applyPlacements, applyJudgeOutcome, applyPlacement, advance, countPlayers, deserializeRoomState, newRoomState, nextAlarmAt, serializeRoomState, shouldJudge, startNextRound } from './room-logic'
 import { WORDS } from './words'
 import { createGrid } from './grid'
 
@@ -20,7 +20,7 @@ describe('room logic', () => {
     expect(placed.state.grid.cells[33]).toBe(2)
     expect(original.grid.cells[33]).toBe(0)
     expect(placed.state.version).toBe(original.version + 1)
-    expect(applyPlacement(placed.state, { x: 2, y: 1, c: 2, userId: 'a' }, 2001, 1).events[0]).toMatchObject({ reason: 'cooldown' })
+    expect(applyPlacement(placed.state, { x: 2, y: 1, c: 2, userId: 'a' }, 2001, 1).events[0]).toMatchObject({ type: 'pixel' })
   })
   it('gates judgements and permits retries after failed attempts', () => {
     const s = room()
@@ -152,5 +152,54 @@ describe('room logic', () => {
     expect(result.state.round.result?.score).toBe(875)
     expect(result.state.lastGuesses).toEqual(['house'])
     expect(result.events).toContainEqual(expect.objectContaining({ type: 'roundEnded', event: expect.objectContaining({ finalGuesses: ['house'] }) }))
+  })
+})
+
+describe('solo placement abuse cap', () => {
+  it('accepts a solid stroke instantly, caps bursts, persists and refills per user', () => {
+    const cells = Array.from({ length: 64 }, (_, i) => ({ x: i % 32, y: Math.floor(i / 32), c: 4 }))
+    const original = room()
+    const batch = applyPlacements(original, cells, 'solo', 2000, 1)
+    expect(batch.events.filter(event => event.type === 'pixel')).toHaveLength(60)
+    expect(batch.events.filter(event => event.type === 'reject')).toHaveLength(4)
+    expect(batch.events.at(-1)).toMatchObject({ reason: 'rate_limited', x: 31, y: 1 })
+    const restored = deserializeRoomState(serializeRoomState(batch.state))
+    expect(applyPlacement(restored, { ...cells[0], userId: 'solo' }, 2000, 1).events[0]).toMatchObject({ reason: 'rate_limited' })
+    expect(applyPlacement(restored, { ...cells[0], userId: 'solo' }, 2017, 1).events[0].type).toBe('pixel')
+    expect(applyPlacement(restored, { ...cells[0], userId: 'other' }, 2000, 1).events[0].type).toBe('pixel')
+    expect(original.version).toBe(0)
+  })
+  it('keeps multiplayer cooldown within a batch', () => {
+    const batch = applyPlacements(room(), [{ x: 0, y: 0, c: 4 }, { x: 1, y: 0, c: 4 }], 'a', 2000, 2)
+    expect(batch.events.map(event => event.type)).toEqual(['pixel', 'reject'])
+    expect(batch.events[1]).toMatchObject({ reason: 'cooldown', retryAt: 4000, x: 1, y: 0 })
+  })
+})
+
+describe('private waiting room', () => {
+  const lobby = () => newRoomState({ roomId: 'private', mode: 'coop', isDefaultBoard: false, startsInLobby: true }, 1000, () => 0)
+  it('has no word or timer, refuses painting and judging, and starts on command', () => {
+    const state = lobby()
+    expect(state.status).toBe('lobby')
+    expect(state.round).toMatchObject({ state: 'lobby', word: '', endsAt: null })
+    expect(applyPlacement(state, { x: 0, y: 0, c: 4, userId: 'a' }, 2000, 1).events[0]).toMatchObject({ reason: 'round_inactive' })
+    expect(shouldJudge({ ...state, version: 1 }, 20000, 1, 'tick')).toEqual({ ok: false, why: 'not_playing' })
+    expect(advance(state, 900000, 1, () => 0).state.status).toBe('lobby')
+    const started = startNextRound(state, 2000, () => 0)
+    expect(started.state.round).toMatchObject({ state: 'playing', startedAt: 2000, endsAt: 302000 })
+    expect(started.state.round.word).not.toBe('')
+    expect(started.events).toContainEqual({ type: 'cleared' })
+  })
+  it('closes after the empty timeout, resets it on reconnect and never auto-starts', () => {
+    const empty = advance(lobby(), 2000, 0, () => 0).state
+    expect(empty.status).toBe('lobby')
+    expect(nextAlarmAt(empty, 2000)).toBe(2000 + ROOMS.closeAfterEmptyMs)
+    const joined = advance(empty, 3000, 1, () => 0).state
+    expect(joined.emptySince).toBeNull()
+    expect(nextAlarmAt(joined, 3000)).toBeNull()
+    const left = advance(joined, 4000, 0, () => 0).state
+    expect(advance(left, 4000 + ROOMS.closeAfterEmptyMs - 1, 0, () => 0).state.status).toBe('lobby')
+    expect(advance(left, 4000 + ROOMS.closeAfterEmptyMs, 0, () => 0).state.status).toBe('closed')
+    expect(room().status).toBe('playing')
   })
 })

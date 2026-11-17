@@ -1,5 +1,5 @@
 import { canCreate, canDelete, canRead, canUpdate } from 'deepspace/worker'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { schemas } from '../schemas'
 import { createRoom, joinRoom } from '../actions/rooms'
 import { ensureDefaultBoard } from './default-board'
@@ -31,13 +31,14 @@ describe('game collection permissions', () => {
 })
 
 describe('room actions', () => {
-  it('creates validated public/private rooms with random ten-character codes', async () => {
+  it('creates validated public/private rooms with random short private codes and legacy public codes', async () => {
     const { tools, rows } = memoryTools()
     for (const visibility of ['public', 'private']) {
       const result = await createRoom(tools, 'host', { name: 'Drawing party', mode: 'coop', visibility })
       expect(result.success).toBe(true)
       if (!result.success) throw new Error(result.error)
-      expect(result.data.joinCode).toMatch(/^[23456789ABCDEFGHJKLMNPQRSTUVWXYZ_]{10}$/)
+      expect(result.data.joinCode).toMatch(visibility === 'private' ? /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}$/ : /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{10}$/)
+      expect(rows('rooms').get(result.data.roomId)!.status).toBe(visibility === 'private' ? 'lobby' : 'playing')
       expect(rows('rooms').get(result.data.roomId)).toMatchObject({ visibility, hostId: 'host', memberIds: ['host'], playerCount: 0, currentRoundId: '', isDefaultBoard: false })
     }
     expect(new Set([...rows('rooms').values()].map(room => room.joinCode)).size).toBe(2)
@@ -119,4 +120,35 @@ describe('room actions', () => {
     expect(create).toHaveBeenCalledTimes(1)
     expect(rows('rooms').get('default-board')).toMatchObject({ joinCode: 'play', visibility: 'public', isDefaultBoard: true, hostId: '', currentRoundId: 'existing' })
   })
+})
+
+it('retries collisions ten times without overwriting rooms', async () => {
+  const { tools, rows, create } = memoryTools()
+  const random = vi.spyOn(crypto, 'getRandomValues').mockImplementation(array => {
+    (array as Uint8Array).fill(0)
+    return array
+  })
+  try {
+    rows('rooms').set('existing', { joinCode: 'AAAA', status: 'lobby', hostId: 'other' })
+    expect(await createRoom(tools, 'host', { name: 'Party', mode: 'coop', visibility: 'private' })).toMatchObject({ success: false, code: 'code_unavailable' })
+    expect(random).toHaveBeenCalledTimes(10)
+    expect(create).not.toHaveBeenCalled()
+    random.mockImplementationOnce(array => { (array as Uint8Array).fill(1); return array })
+    expect(await createRoom(tools, 'host', { name: 'Party', mode: 'coop', visibility: 'private' })).toMatchObject({ success: true, data: { joinCode: 'BBBB' } })
+    expect(rows('rooms').get('existing')!.status).toBe('lobby')
+  } finally { random.mockRestore() }
+})
+it('joins short, legacy and default codes case-insensitively', async () => {
+  const { tools, rows } = memoryTools()
+  for (const code of ['AB2Z', 'LONG234ABC', 'MiXeD-code', 'play']) rows('rooms').set(code, { joinCode: code, status: 'playing', visibility: 'public', memberIds: ['guest'] })
+  for (const joinCode of ['ab2z', 'long234abc', 'mixed-CODE', 'PLAY']) expect(await joinRoom(tools, 'guest', { joinCode })).toMatchObject({ success: true })
+})
+
+it('retries a unique-index collision from a concurrent creator but returns other storage failures', async () => {
+  const { tools, create } = memoryTools()
+  create.mockResolvedValueOnce({ success: false, error: 'Duplicate: a record with joinCode already exists in rooms' } as never)
+  expect(await createRoom(tools, 'host', { name: 'Race', mode: 'coop', visibility: 'private' })).toMatchObject({ success: true })
+  expect(create).toHaveBeenCalledTimes(2)
+  create.mockResolvedValueOnce({ success: false, error: 'offline' } as never)
+  expect(await createRoom(tools, 'host', { name: 'Fail', mode: 'coop', visibility: 'private' })).toMatchObject({ success: false, error: 'offline' })
 })

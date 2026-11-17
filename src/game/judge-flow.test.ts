@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { JUDGE, MODES } from './config'
 import { runJudge } from './judge-flow'
-import { newRoomState, nextAlarmAt, shouldJudge } from './room-logic'
+import { advance, countPlayers, newRoomState, nextAlarmAt, shouldJudge } from './room-logic'
 
 function setup() {
   const state = newRoomState({ roomId: 'r', mode: 'coop', isDefaultBoard: false }, 0, () => 0)
@@ -82,4 +82,20 @@ describe('runJudge', () => {
     expect(state.lastJudgedVersion).toBe(1)
     expect(shouldJudge(state, 30000, 1, 'tick')).toEqual({ ok: true })
   })
+})
+
+it.each(['tick', 'ask'] as const)('spends zero on %s for lobby, anonymous-only, paused, empty, and unchanged rooms', async reason => {
+  for (const scenario of ['lobby', 'anonymous', 'paused', 'empty', 'unchanged']) {
+    const { state, deps } = setup()
+    let signedIn = 1
+    if (scenario === 'lobby') { state.status = 'lobby'; state.round.state = 'lobby' }
+    if (scenario === 'anonymous') signedIn = countPlayers([{ userId: null }, { userId: null }])
+    if (scenario === 'paused') Object.assign(state, advance(state, 1000, 0, () => 0).state)
+    if (scenario === 'empty') signedIn = 0
+    if (scenario === 'unchanged') state.lastJudgedVersion = state.version
+    expect(await runJudge(deps, state, reason, signedIn, zone)).toMatchObject({ kind: 'skipped' })
+    expect(deps.callJudge, scenario).toHaveBeenCalledTimes(0)
+    expect(deps.reserve, scenario).toHaveBeenCalledTimes(0)
+    expect(deps.render, scenario).toHaveBeenCalledTimes(0)
+  }
 })
