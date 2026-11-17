@@ -23,6 +23,7 @@ export interface GuessLogEntry {
 export interface ClientState {
   connected: boolean
   snapshotLoaded: boolean
+  snapshotSeq: number
   connectError: ConnectError | null
   mode: Mode
   width: number
@@ -46,6 +47,7 @@ export function initialClientState(): ClientState {
   return {
     connected: false,
     snapshotLoaded: false,
+    snapshotSeq: 0,
     connectError: null,
     mode: 'coop',
     width,
@@ -122,6 +124,7 @@ export function applyServerMsg(s: ClientState, m: ServerMsg, now: number = Date.
       return {
         ...s,
         snapshotLoaded: true,
+        snapshotSeq: s.snapshotSeq + 1,
         connectError: null,
         mode: m.mode,
         width: m.width,

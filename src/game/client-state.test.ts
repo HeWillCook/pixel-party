@@ -68,6 +68,16 @@ describe('client-state', () => {
     expect(state.guessLogRoundId).toBe('r3')
   })
 
+  it('increments snapshotSeq for each snapshot', () => {
+    const snapshot = { t: 'snapshot' as const, mode: 'coop' as const, width: 32, height: 32, cells: encodeCells(new Uint8Array(32 * 32)), round: makeRound('r1'), you: { userId: null, cooldownUntil: 0 }, players: 1, aiResting: false }
+    let state = initialClientState()
+    expect(state.snapshotSeq).toBe(0)
+    state = applyServerMsg(state, snapshot)
+    expect(state.snapshotSeq).toBe(1)
+    state = applyServerMsg(state, snapshot)
+    expect(state.snapshotSeq).toBe(2)
+  })
+
   it('caps the log at 50 entries', () => {
     let state = initialClientState()
     for (let index = 0; index < 55; index++) {

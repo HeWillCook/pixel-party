@@ -4,7 +4,7 @@ import type { RoundView } from './protocol'
 export type SoundName = 'guess' | 'tick' | 'win' | 'timeout'
 
 export function soundEventsFor(prev: ClientState, next: ClientState): SoundName[] {
-  if (!prev.snapshotLoaded || !next.snapshotLoaded || !prev.round || prev.round.id !== next.round?.id) return []
+  if (!prev.snapshotLoaded || !next.snapshotLoaded || prev.snapshotSeq !== next.snapshotSeq || !prev.round || prev.round.id !== next.round?.id) return []
   if (prev.round.state === 'playing' && next.round.state !== 'playing') {
     if (next.round.result?.outcome === 'won' || next.round.result?.outcome === 'teamWin') return ['win']
   }

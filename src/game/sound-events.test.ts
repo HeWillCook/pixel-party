@@ -28,6 +28,13 @@ describe('sound events', () => {
   it('returns nothing when joining a room already in intermission', () => {
     expect(soundEventsFor(initialClientState(), { ...loaded, round: { ...round, state: 'intermission', result: { outcome: 'won', score: 1 } } })).toEqual([])
   })
+  it("returns nothing when a reconnect snapshot lands in the same round's intermission", () => {
+    const prev = { ...loaded, snapshotSeq: 1 }
+    for (const outcome of ['won', 'timeout'] as const) {
+      const next = { ...loaded, snapshotSeq: 2, round: { ...round, state: 'intermission' as const, result: { outcome, score: 1 } } }
+      expect(soundEventsFor(prev, next)).toEqual([])
+    }
+  })
   it('countdownTickSecond gives 5..1 in the last five seconds and null otherwise', () => {
     expect([5000, 6000, 7000, 8000, 9000].map(now => countdownTickSecond(round, now))).toEqual([5, 4, 3, 2, 1])
     expect(countdownTickSecond(round, 4999)).toBeNull()
