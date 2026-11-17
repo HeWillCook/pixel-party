@@ -14,6 +14,8 @@ import { roomsSchema } from './schemas/rooms-schema'
 import { roundsSchema } from './schemas/rounds-schema'
 import { teamMembersSchema } from './schemas/team-members-schema'
 import { scoresSchema } from './schemas/scores-schema'
+import { dailyScoresSchema } from './schemas/daily-scores-schema'
+import { dailyDrawingsSchema } from './schemas/daily-drawings-schema'
 
 export const schemas: CollectionSchema[] = [
   usersSchema,
@@ -22,4 +24,6 @@ export const schemas: CollectionSchema[] = [
   roundsSchema,
   teamMembersSchema,
   scoresSchema,
+  dailyScoresSchema,
+  dailyDrawingsSchema,
 ]
