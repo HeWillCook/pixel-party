@@ -27,25 +27,25 @@
  */
 @theme {
   /* shadcn core tokens — synthwave arcade */
-  --color-background: #0a0814;
-  --color-foreground: #fef3c7;
-  --color-card: #14061fd9;
-  --color-card-foreground: #fef3c7;
-  --color-popover: #14061f;
-  --color-popover-foreground: #fef3c7;
-  --color-primary: #fb923c;
-  --color-primary-foreground: #ffffff;
-  --color-secondary: #1e1b4b;
-  --color-secondary-foreground: #fde68a;
-  --color-muted: #1e1b4b;
-  --color-muted-foreground: #fbcfe8;
-  --color-accent: #ec4899;
-  --color-accent-foreground: #ffffff;
-  --color-destructive: #ef4444;
-  --color-destructive-foreground: #ffffff;
-  --color-border: #ec4899;
-  --color-input: #f472b6;
-  --color-ring: #fde68a;
+  --color-background: #f6bd91;
+  --color-foreground: #392a45;
+  --color-card: #fff0cc;
+  --color-card-foreground: #392a45;
+  --color-popover: #fff0cc;
+  --color-popover-foreground: #392a45;
+  --color-primary: #614052;
+  --color-primary-foreground: #fff0cc;
+  --color-secondary: #ecd4b0;
+  --color-secondary-foreground: #392a45;
+  --color-muted: #ecd4b0;
+  --color-muted-foreground: #614052;
+  --color-accent: #d1b5a3;
+  --color-accent-foreground: #392a45;
+  --color-destructive: #a94958;
+  --color-destructive-foreground: #fff0cc;
+  --color-border: #8e5960;
+  --color-input: #8e5960;
+  --color-ring: #392a45;
   --radius: 0;
 
   /*
@@ -58,20 +58,20 @@
   --radius-2xl: var(--radius);
 
   /* Status colors — constant across all themes */
-  --color-success: #10b981;
-  --color-success-foreground: #ffffff;
-  --color-warning: #f59e0b;
-  --color-warning-foreground: #ffffff;
-  --color-info: #3b82f6;
-  --color-info-foreground: #ffffff;
+  --color-success: #3e5b5b;
+  --color-success-foreground: #fff0cc;
+  --color-warning: #8e5960;
+  --color-warning-foreground: #fff0cc;
+  --color-info: #34516a;
+  --color-info-foreground: #fff0cc;
 
   /* Shadows — hard arcade drop shadows */
-  --shadow-card: 0 5px 0 #0009;
-  --shadow-card-hover: 0 6px 0 #000a;
+  --shadow-card: 0 var(--px) 0 #614052;
+  --shadow-card-hover: 0 var(--px) 0 #392a45;
 
   /* Shell tokens */
-  --color-shell: #0a0814;
-  --color-shell-panel: #14061fd9;
+  --color-shell: #f6bd91;
+  --color-shell-panel: #fff0cc;
 
   /* Animations */
   --animate-pulse-glow: pulse-glow 2s ease-in-out infinite;
@@ -134,8 +134,9 @@
  */
 @layer base {
   html {
-    color-scheme: dark;
-    background-color: #0a0814;
+    color-scheme: light;
+    background-color: #f6bd91;
+    --px: 3px;
   }
 
   html, body, #root {
@@ -150,7 +151,7 @@
     -moz-osx-font-smoothing: grayscale;
     font-size: 20px;
     color: var(--color-foreground);
-    background: radial-gradient(ellipse at 50% 0%, #1e1b4b 0%, #0a0814 60%), #0a0814;
+    background: linear-gradient(#f6bd91, #df917e 58%, #61989b);
   }
 
   /* Scrollbar styling */

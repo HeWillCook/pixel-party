@@ -472,3 +472,9 @@ The fake judge is selected by default in dev and tests so those runs make no pai
 - Wired Party rooms (`/r/:code`) with `Paint`, `Erase`, and `Pick colour` (never rendering Fill/Undo/Redo), server/client `0..MAX_COLOR` validation, cooldown-enforced non-empty erases, free silent no-op for erasing already-empty cells, and updated `pixelsUsed` at round end.
 - Stacked onto `t3/pr1-daily-fixes` and wired Daily (`/home`) with `DAILY_TOOLS` + Undo/Redo (`100`-step in-memory history), single-step drag strokes and iterative flood fills, `useToolShortcuts`, and `useDailyAttempt.replaceCells` gated like `paint` and persisted to `localStorage` for PR 1's auto-grade scheduler.
 - Verification: `npm run verify` PASS (44 files, 441 unit tests; lint, type-check, Worker/client build); offline Playwright `tests/offline` PASS (50 passed, 6 gated screenshot tests skipped); `git diff --check` PASS.
+
+### 2026-11-17 — Porch theme and navigation (PR 3 Task 2)
+
+- Reused the scene palette for the porch theme and built the sign beam, signs, lantern and account mailbox with pixel sprites. Added Daily, Party, Scores and Gallery navigation and the temporary Scores page.
+- Verified `npm run verify` (456 unit tests), the offline Playwright suite (57 passed, 12 screenshot tests skipped), and six inspected Party and Settings captures at desktop and phone sizes under `docs/superpowers/screenshots/2026-11-18-porch/`.
+- Updated existing offline assertions for the renamed Party link, porch colours and focus offsets, and excluded decorative nav canvases from the private-board insertion guard while retaining its drawing-canvas coverage.

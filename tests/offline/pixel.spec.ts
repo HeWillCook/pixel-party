@@ -108,8 +108,8 @@ test('selected swatch displays a separate keyboard focus outline', async ({ page
   const before = await selected.evaluate(element => getComputedStyle(element).outlineOffset)
   await page.keyboard.press('Shift')
   await selected.focus()
-  await expect(selected).toHaveCSS('outline-offset', '2px')
-  expect(before).not.toBe('2px')
+  await expect(selected).toHaveCSS('outline-offset', '3px')
+  expect(before).not.toBe('3px')
 })
 
 test('navigation, logo and home visibility controls use the palette focus outline', async ({ page }) => {
@@ -128,8 +128,8 @@ test('navigation, logo and home visibility controls use the palette focus outlin
     await control.focus()
     await expect(control).toHaveCSS('outline-width', '3px')
     await expect(control).toHaveCSS('outline-style', 'solid')
-    await expect(control).toHaveCSS('outline-color', 'rgb(253, 230, 138)')
-    await expect(control).toHaveCSS('outline-offset', '2px')
+    await expect(control).toHaveCSS('outline-color', 'rgb(57, 42, 69)')
+    await expect(control).toHaveCSS('outline-offset', '3px')
   }
 })
 
@@ -141,9 +141,9 @@ test('mobile navigation toggle uses the shared palette outline without a second 
   await expect(toggle).toBeVisible()
   await page.keyboard.press('Shift')
   await toggle.focus()
-  await expect(toggle).toHaveCSS('outline-width', '3px')
+  await expect(toggle).toHaveCSS('outline-width', '2px')
   await expect(toggle).toHaveCSS('outline-style', 'solid')
-  await expect(toggle).toHaveCSS('outline-color', 'rgb(253, 230, 138)')
+  await expect(toggle).toHaveCSS('outline-color', 'rgb(57, 42, 69)')
   await expect(toggle).toHaveCSS('outline-offset', '2px')
   await expect(toggle).toHaveCSS('box-shadow', 'none')
 })
@@ -258,7 +258,7 @@ test('audio unlock retries on a later interaction until the context runs', async
   expect(await page.evaluate(() => (window as unknown as { unlockAttempts: number }).unlockAttempts)).toBe(2)
 })
 
-test('room shells expose the navy body glow', async ({ page }) => {
+test('room shells expose the sunset background', async ({ page }) => {
   await clientFixture(page, { signedIn: true })
   await page.routeWebSocket('**/api/pixel/**', socket => socket.send(JSON.stringify(snapshot('playing'))))
   await page.goto(`${origin}/r/AB2Z`)
@@ -268,7 +268,7 @@ test('room shells expose the navy body glow', async ({ page }) => {
     const shell = root.querySelector('.h-screen')!
     return [getComputedStyle(document.body).backgroundImage, getComputedStyle(root).backgroundColor, getComputedStyle(shell).backgroundColor]
   })
-  expect(backgrounds[0]).toContain('radial-gradient')
+  expect(backgrounds[0]).toContain('linear-gradient')
   expect(backgrounds.slice(1)).toEqual(['rgba(0, 0, 0, 0)', 'rgba(0, 0, 0, 0)'])
 })
 
@@ -280,7 +280,7 @@ for (const entry of ['direct', 'home-join'] as const) {
     await page.addInitScript(() => {
       const state = window as unknown as { roomContentInsertions: string[] }
       state.roomContentInsertions = []
-      const selector = 'canvas, [role="grid"], .grid-cols-10, [data-testid*="canvas"], [data-testid*="board"], [data-testid="round-players"], [data-testid="room-lobby"]'
+      const selector = 'canvas:not(.porch-sprite), [role="grid"], .grid-cols-10, [data-testid*="canvas"], [data-testid*="board"], [data-testid="round-players"], [data-testid="room-lobby"]'
       new MutationObserver(records => {
         for (const record of records) {
           for (const node of record.addedNodes) {
@@ -428,16 +428,16 @@ test('host deletion asks for confirmation, closes the board, and never reconnect
   await page.goto(`${origin}/r/AB2Z`)
   await expect(page.getByTestId('pixel-canvas')).toBeVisible()
   const trigger = page.getByRole('button', { name: 'Delete room', exact: true })
-  await expect(trigger).toHaveCSS('color', 'rgb(236, 72, 153)')
-  await expect(trigger).toHaveCSS('border-color', 'rgb(236, 72, 153)')
+  await expect(trigger).toHaveCSS('color', 'rgb(169, 73, 88)')
+  await expect(trigger).toHaveCSS('border-color', 'rgb(169, 73, 88)')
   await trigger.click()
   await expect(page.getByRole('dialog')).toContainText('This ends the room for everyone.')
   await expect(page.getByRole('dialog')).toHaveClass(/pp-panel/)
   await expect(page.getByRole('dialog')).toHaveCSS('border-radius', '0px')
   const confirm = page.getByRole('button', { name: 'End room', exact: true })
   await expect(confirm).toHaveCSS('background-image', 'none')
-  await expect(confirm).toHaveCSS('background-color', 'rgb(236, 72, 153)')
-  await expect(confirm).toHaveCSS('color', 'rgb(10, 8, 20)')
+  await expect(confirm).toHaveCSS('background-color', 'rgb(169, 73, 88)')
+  await expect(confirm).toHaveCSS('color', 'rgb(255, 240, 204)')
   await expect(page.getByRole('button', { name: 'Cancel', exact: true })).toHaveClass(/pp-chip/)
   await page.getByRole('button', { name: 'Cancel', exact: true }).click()
   expect(deletes).toBe(0)
