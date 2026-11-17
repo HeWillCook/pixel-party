@@ -378,7 +378,7 @@ export default function DailyHomePage() {
                     type="button"
                     variant="secondary"
                     data-testid="daily-done-button"
-                    disabled={state.grading || (state.finalizing && !state.endFailed)}
+                    disabled={state.stale || state.grading || (state.finalizing && !state.endFailed)}
                     onClick={() => void done()}
                     className="pp-btn gap-1.5 px-4 py-2.5 text-base uppercase tracking-wider sm:text-lg"
                   >

@@ -45,4 +45,11 @@ describe('daily sound events', () => {
     timeout(playing, 10_000)
     expect(timeout({ ...playing, status: 'ended' }, 601_000)).toEqual(['timeout'])
   })
+
+  it('does not play a grade, countdown or end sound while a stale attempt is recovering', () => {
+    const gate = createDailySoundGate()
+    gate(playing, 595_000)
+    expect(gate({ ...playing, stale: true, lastGradeAt: 596_000 }, 596_000)).toEqual([])
+    expect(gate({ ...playing, status: 'ended', best: 840 }, 597_000)).toEqual([])
+  })
 })

@@ -6,7 +6,7 @@ export function createDailySoundGate() {
   let previousSecond: number | undefined
   return (state: DailyClientState, now: number): SoundName[] => {
     const second = state.endsAt === undefined ? undefined : Math.ceil((state.endsAt - now) / 1000)
-    const live = previous?.status === 'playing' && previous.day === state.day && previous.startedAt === state.startedAt
+    const live = previous?.status === 'playing' && !previous.stale && !state.stale && previous.day === state.day && previous.startedAt === state.startedAt
     const events: SoundName[] = []
     if (live) {
       if (state.status === 'ended') events.push(state.best > 0 ? 'win' : 'timeout')

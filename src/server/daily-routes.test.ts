@@ -105,8 +105,9 @@ describe('daily HTTP routes', () => {
     expect(await (await request('end', 'POST', { day: yesterday, cells })).json()).toMatchObject({ day: yesterday, status: 'ended' })
     expect(await (await request('me')).json()).toMatchObject({ day: '2026-11-18', status: 'playing', asksUsed: 0 })
     for (const invalidDay of [yesterday, '2026-11-16', '2026-11-19', '2026-99-99']) {
-      expect(await (await request('grade', 'POST', { day: invalidDay, kind: 'ask', cells })).json()).toMatchObject({ ok: false, reason: 'invalid_day' })
+      expect(await (await request('grade', 'POST', { day: invalidDay, kind: 'ask', cells })).json()).toMatchObject({ ok: false, reason: 'invalid_day', state: { day: invalidDay } })
       expect((await request('end', 'POST', { day: invalidDay, cells })).status).toBe(400)
     }
+    expect(await (await request('me')).json()).toMatchObject({ day: '2026-11-18', status: 'playing', asksUsed: 0, finalUsed: false })
   })
 })

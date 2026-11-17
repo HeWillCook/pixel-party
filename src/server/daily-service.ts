@@ -111,7 +111,7 @@ export async function gradeDaily(deps: DailyDeps, user: DailyUser, kind: GradeKi
   | { ok: false; reason: GradeReject | 'judge_resting' | 'bad_cells'; state: DailyStateView }
 > {
   const now = deps.now()
-  if (!await allowedDay(deps, user.userId, day, now)) return { ok: false, reason: 'invalid_day', state: stateView(utcDay(now), null, now) }
+  if (!await allowedDay(deps, user.userId, day, now)) return { ok: false, reason: 'invalid_day', state: stateView(day, await deps.store.get(user.userId, day), now) }
   const state = async () => stateView(day, await deps.store.get(user.userId, day), deps.now())
   if (!validCells(cells)) return { ok: false, reason: 'bad_cells', state: await state() }
   const hash = cellsHash(cells)

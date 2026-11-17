@@ -7,6 +7,15 @@ const midnight = Date.UTC(2026, 10, 18)
 const grade = { guess: 'old', reason: 'old', fit: 500, recognition: 400, speed: 99, total: 999, elapsedMs: 5000 }
 
 describe('final client regressions', () => {
+  it('locks an invalid-day attempt without adopting the fabricated current-day state', () => {
+    const old = { ...initialDailyClientState(day), status: 'playing' as const, startedAt: midnight - 60_000, grading: true, best: 999, latest: grade }
+    const stale = dailyReducer(old, { type: 'grade_rejected', reason: 'invalid_day', state: initialDailyClientState(nextDay), kind: 'final' })
+    expect(stale).toMatchObject({ day, status: 'playing', best: 999, latest: grade, stale: true, grading: false, finalizing: true, endFailed: false })
+    expect(needsDailyDayRefresh(stale, midnight)).toBe(true)
+    const refreshed = dailyReducer(stale, { type: 'state_loaded', state: initialDailyClientState(nextDay) })
+    expect(refreshed).toMatchObject({ day: nextDay, stale: false, finalizing: false, latest: null })
+  })
+
   it('I3 resets results and scheduling when switching to the next day', () => {
     const old = { ...initialDailyClientState(day), status: 'ended' as const, best: 999, latest: grade, lastGradedHash: 'old', lastGradeAt: midnight - 1, autoRetryAfter: midnight + 1000 }
     const next = dailyReducer(old, { type: 'state_loaded', state: initialDailyClientState(nextDay) })

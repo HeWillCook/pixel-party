@@ -34,6 +34,23 @@ function setup(start = startedAt) {
 }
 
 describe('final review regressions', () => {
+  it('rejects an expired yesterday without fabricating today or ending today\'s real attempt', async () => {
+    const late = Date.UTC(2026, 10, 17, 23, 55)
+    const { deps, at } = setup(late)
+    await startDaily(deps, user)
+    at(Date.UTC(2026, 10, 18, 0, 20))
+    await startDaily(deps, user)
+    const today = await deps.store.get(user.userId, '2026-11-18')
+    const end = vi.spyOn(deps.store, 'end')
+    const rejection = await gradeDaily(deps, user, 'final', cells, day)
+    expect(rejection).toMatchObject({ ok: false, reason: 'invalid_day', state: { day, status: 'ended', startedAt: late } })
+    await expect(endDaily(deps, user, cells, day)).rejects.toBeInstanceOf(InvalidAttemptDay)
+    expect(end).not.toHaveBeenCalled()
+    expect(await deps.store.get(user.userId, '2026-11-18')).toEqual(today)
+    expect(await dailyState(deps, user.userId)).toMatchObject({ day: '2026-11-18', status: 'playing', best: 0 })
+    expect(deps.judge.blind).not.toHaveBeenCalled()
+  })
+
   it('I1 serializes delayed projection writes using the current authoritative best', async () => {
     const { deps, records, row, at } = setup()
     await startDaily(deps, user)
@@ -166,18 +183,18 @@ describe('final review regressions', () => {
     expect(client.best).toBe(stale.state.best)
   })
 
-  it('I5 keeps a bounded four-call local retry sequence inside its reservation lifetime', async () => {
+  it('keeps the bounded four-call production retry sequence inside the 90-second lease', async () => {
     const { deps, at } = setup()
     await startDaily(deps, user)
     let elapsed = 0
-    const wait = () => { elapsed += 60_000; at(startedAt + elapsed) }
+    const wait = () => { elapsed += 20_000; at(startedAt + elapsed) }
     vi.mocked(deps.judge.blind)
       .mockImplementationOnce(async () => { wait(); return null })
       .mockImplementationOnce(async () => { wait(); return { guess: 'cat' } })
     vi.mocked(deps.judge.score)
       .mockImplementationOnce(async () => { wait(); return null })
       .mockImplementationOnce(async () => { wait(); return { fit: 100, recognition: 100, reason: 'accepted' } })
-    expect(DAILY.inFlightStaleMs).toBeGreaterThan(4 * 60_000)
+    expect(DAILY.inFlightStaleMs).toBeGreaterThan(4 * 20_000)
     expect(await gradeDaily(deps, user, 'ask', cells)).toMatchObject({ ok: true, state: { asksUsed: 1 } })
     expect(deps.reserveBudget).toHaveBeenCalledTimes(4)
   })

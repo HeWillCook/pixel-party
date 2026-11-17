@@ -168,7 +168,7 @@ export function useDailyAttempt(): {
         if (!res.ok || cancelled) return
         const serverState = (await res.json()) as DailyStateView
         if (cancelled) return
-        if (serverState.status === 'ended') {
+        if (serverState.status === 'ended' || stateRef.current.stale || serverState.day !== stateRef.current.day) {
           finalizingRef.current = false
           frozenFinalCellsRef.current = null
         }
@@ -191,7 +191,7 @@ export function useDailyAttempt(): {
       cancelled = true
       clearInterval(rollover)
     }
-  }, [isSignedIn, userId, restoreCanvas, dispatch])
+  }, [isSignedIn, userId, restoreCanvas, dispatch, state.stale])
 
   // Restore from localStorage if userId resolved after state_loaded
   useEffect(() => {
@@ -202,6 +202,7 @@ export function useDailyAttempt(): {
 
   const sendGrade = useCallback(
     (kind: GradeKind, encodedOverride?: string): Promise<void> => {
+      if (stateRef.current.stale) return Promise.resolve()
       if (inFlightGradeRef.current) return inFlightGradeRef.current
       if (kind !== 'final' && (finalizingRef.current || stateRef.current.finalizing)) {
         return Promise.resolve()
@@ -215,6 +216,7 @@ export function useDailyAttempt(): {
       const promise = (async () => {
         try {
           const headers = await authHeaders()
+          if (stateRef.current.day !== day || stateRef.current.stale) return
           const res = await fetch('/api/daily/grade', {
             method: 'POST',
             headers,
@@ -232,6 +234,11 @@ export function useDailyAttempt(): {
             return
           }
           const payload = (await res.json()) as GradeResponse
+          if (stateRef.current.day !== day || stateRef.current.stale) return
+          if ((!payload.ok && payload.reason === 'invalid_day') || payload.state.day !== day) {
+            dispatch({ type: 'grade_rejected', reason: 'invalid_day' })
+            return
+          }
           if (payload.ok) {
             dispatch({
               type: 'grade_ok',
@@ -251,6 +258,7 @@ export function useDailyAttempt(): {
             })
           }
         } catch {
+          if (stateRef.current.day !== day || stateRef.current.stale) return
           dispatch({
             type: 'error',
             message: 'Network error while grading.',
@@ -269,17 +277,24 @@ export function useDailyAttempt(): {
   )
 
   const sendEnd = useCallback(
-    async (encodedCells: string): Promise<boolean> => {
-      const day = stateRef.current.day
+    async (day: string, encodedCells: string): Promise<boolean> => {
+      if (stateRef.current.day !== day || stateRef.current.stale) return false
       try {
         const headers = await authHeaders()
+        if (stateRef.current.day !== day || stateRef.current.stale) return false
         const res = await fetch('/api/daily/end', {
           method: 'POST',
           headers,
           body: JSON.stringify({ day, cells: encodedCells }),
         })
-        if (stateRef.current.day !== day) return false
+        if (stateRef.current.day !== day || stateRef.current.stale) return false
         if (!res.ok) {
+          const payload = await res.json().catch(() => null) as { error?: string } | null
+          if (stateRef.current.day !== day || stateRef.current.stale) return false
+          if (payload?.error === 'invalid_attempt_day') {
+            dispatch({ type: 'grade_rejected', reason: 'invalid_day' })
+            return false
+          }
           dispatch({
             type: 'end_failed',
             message: 'Could not finish attempt — press Done to retry.',
@@ -287,15 +302,21 @@ export function useDailyAttempt(): {
           return false
         }
         const serverState = (await res.json()) as DailyStateView
+        if (stateRef.current.day !== day || stateRef.current.stale) return false
+        if (serverState.day !== day) {
+          dispatch({ type: 'grade_rejected', reason: 'invalid_day' })
+          return false
+        }
         finalizingRef.current = false
         frozenFinalCellsRef.current = null
         dispatch({
           type: 'state_loaded',
-          state: { ...serverState, status: 'ended' },
+          state: serverState,
           preserveError: Boolean(stateRef.current.lastError) && !stateRef.current.endFailed,
         })
-        return true
+        return serverState.status === 'ended'
       } catch {
+        if (stateRef.current.day !== day || stateRef.current.stale) return false
         dispatch({
           type: 'end_failed',
           message: 'Network error while finishing attempt — press Done to retry.',
@@ -309,6 +330,8 @@ export function useDailyAttempt(): {
   const finishAttempt = useCallback(async (): Promise<void> => {
     if (finishPromiseRef.current) return finishPromiseRef.current
     if (stateRef.current.status === 'ended') return
+    if (stateRef.current.stale) return
+    const day = stateRef.current.day
 
     finalizingRef.current = true
     if (frozenFinalCellsRef.current === null) {
@@ -323,6 +346,7 @@ export function useDailyAttempt(): {
         if (inFlightGradeRef.current) {
           await inFlightGradeRef.current
         }
+        if (stateRef.current.day !== day || stateRef.current.stale) return
         if (
           stateRef.current.status !== 'ended' &&
           !stateRef.current.finalUsed &&
@@ -330,8 +354,9 @@ export function useDailyAttempt(): {
         ) {
           await sendGrade('final', frozenCells)
         }
+        if (stateRef.current.day !== day || stateRef.current.stale) return
         if (stateRef.current.status !== 'ended') {
-          await sendEnd(frozenCells)
+          await sendEnd(day, frozenCells)
         } else {
           finalizingRef.current = false
           frozenFinalCellsRef.current = null
@@ -352,7 +377,7 @@ export function useDailyAttempt(): {
 
     const interval = setInterval(() => {
       const cur = stateRef.current
-      if (cur.status !== 'playing' || cur.startedAt === undefined) return
+      if (cur.status !== 'playing' || cur.startedAt === undefined || cur.stale) return
       const now = Date.now()
 
       if (cur.endFailed && !finishPromiseRef.current) {

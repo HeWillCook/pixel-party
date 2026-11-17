@@ -9,6 +9,7 @@ export interface DailyClientState extends DailyStateView {
   grading: boolean
   finalizing: boolean
   endFailed: boolean
+  stale: boolean
   lastError: string | null
   lastGradedHash?: string | null
   lastGradeAt?: number | null
@@ -52,6 +53,7 @@ export function initialDailyClientState(day = ''): DailyClientState {
     grading: false,
     finalizing: false,
     endFailed: false,
+    stale: false,
     lastError: null,
     lastGradedHash: null,
     lastGradeAt: null,
@@ -59,8 +61,8 @@ export function initialDailyClientState(day = ''): DailyClientState {
   }
 }
 
-export function needsDailyDayRefresh(state: DailyStateView, now: number): boolean {
-  return state.status !== 'playing' && state.day !== new Date(now).toISOString().slice(0, 10)
+export function needsDailyDayRefresh(state: DailyStateView & { stale?: boolean }, now: number): boolean {
+  return Boolean(state.stale) || (state.status !== 'playing' && state.day !== new Date(now).toISOString().slice(0, 10))
 }
 
 export function nextAutoAt(
@@ -80,6 +82,7 @@ export function shouldFinalGrade(now: number, startedAt: number): boolean {
 
 export function canPaintDaily(state: DailyClientState, now: number): boolean {
   if (state.status !== 'playing') return false
+  if (state.stale) return false
   if (state.finalizing || state.endFailed || state.finalUsed) return false
   const endsAt =
     state.endsAt ?? (state.startedAt !== undefined ? state.startedAt + DAILY.attemptMs : undefined)
@@ -181,6 +184,8 @@ export function dailyReducer(state: DailyClientState, action: DailyAction): Dail
       return {
         ...merged,
         best: action.state.best,
+        stale: false,
+        finalizing: state.stale ? false : merged.finalizing,
         lastError: action.preserveError ? state.lastError : null,
       }
     }
@@ -219,6 +224,16 @@ export function dailyReducer(state: DailyClientState, action: DailyAction): Dail
       }
     }
     case 'grade_rejected': {
+      if (action.reason === 'invalid_day') {
+        return {
+          ...state,
+          stale: true,
+          grading: false,
+          finalizing: true,
+          endFailed: false,
+          lastError: 'This attempt has expired. Reloading the current daily challenge…',
+        }
+      }
       const merged = action.state ? mergeServerState(state, action.state) : state
       const isUnchanged = action.reason === 'unchanged'
       const shouldBackoffAuto =

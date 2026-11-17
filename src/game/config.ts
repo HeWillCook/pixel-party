@@ -81,7 +81,7 @@ export const DAILY = {
   maxAuto: 4,
   maxAsks: 3,
   askMinGapMs: 20_000,
-  inFlightStaleMs: 300_000,
+  inFlightStaleMs: 90_000,
   renderPx: 512,
 } as const
 

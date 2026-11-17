@@ -26,6 +26,15 @@ describe('daily attempt', () => {
     expect(reserveGrade(row, 'ask', 'h', now + 6_000)).toEqual({ ok: false, reason: 'busy' })
     expect(reserveGrade(row, 'ask', 'h', now + 5_000 + DAILY.inFlightStaleMs).ok).toBe(true)
   })
+  it('keeps the 80-second judge budget leased and releases a crash at exactly 90 seconds', () => {
+    const row = reserve(initial(), 'ask', 'first', now)
+    expect(DAILY.inFlightStaleMs).toBe(90_000)
+    for (const elapsed of [80_000, 89_999]) {
+      expect(reserveGrade(row, 'ask', 'next', now + elapsed)).toEqual({ ok: false, reason: 'busy' })
+    }
+    const recovered = reserveGrade(row, 'ask', 'next', now + 90_000)
+    expect(recovered).toMatchObject({ ok: true, row: { asksUsed: 1, inFlightSince: now + 90_000 } })
+  })
   it('enforces auto timing and limits', () => {
     expect(reserveGrade(initial(), 'auto', 'h', now + 60_000)).toEqual({ ok: false, reason: 'too_soon' })
     const row = reserve(initial(), 'auto', 'h', now + 120_000)
