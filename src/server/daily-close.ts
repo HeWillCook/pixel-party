@@ -1,0 +1,50 @@
+import { roomRecords } from './rooms'
+import type { ServerTools } from './server-tools'
+
+export interface DayCloseResult {
+  /** Drawings on the day's gallery after the run (also the count on a repeat run). */
+  published: number
+  /** Medals handed out: one each to the top three ranks, or fewer if fewer players finished. */
+  medals: number
+}
+
+const MEDAL_RANKS = 3
+
+function numberField(row: Record<string, unknown>, field: string): number {
+  const value = row[field]
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0
+}
+
+/** An unknown best time sorts after every real one, so a missing time only breaks ties downward. */
+function bestElapsedMs(row: Record<string, unknown>): number {
+  const value = row.bestElapsedMs
+  return typeof value === 'number' && Number.isFinite(value) ? value : Number.POSITIVE_INFINITY
+}
+
+/**
+ * Closes one UTC day: every drawing goes public, and every score is frozen with
+ * its medal. Best score wins; an exact score tie goes to the lower elapsed time
+ * of the best grade. Safe to run twice — the same rows end in the same state.
+ */
+export async function closeDay(tools: ServerTools, day: string): Promise<DayCloseResult> {
+  const drawings = await roomRecords(tools, 'dailyDrawings', { day })
+  if (!drawings.success) throw new Error(drawings.error)
+  for (const drawing of drawings.data) {
+    const updated = await tools.update('dailyDrawings', drawing.recordId, { visibility: 'public' })
+    if (!updated.success) throw new Error(updated.error)
+  }
+
+  const scores = await roomRecords(tools, 'dailyScores', { day })
+  if (!scores.success) throw new Error(scores.error)
+  const ranked = [...scores.data].sort((left, right) =>
+    numberField(right.data, 'score') - numberField(left.data, 'score')
+    || bestElapsedMs(left.data) - bestElapsedMs(right.data))
+  for (const [rank, score] of ranked.entries()) {
+    const updated = await tools.update('dailyScores', score.recordId, {
+      ended: 1,
+      medal: rank < MEDAL_RANKS ? rank + 1 : 0,
+    })
+    if (!updated.success) throw new Error(updated.error)
+  }
+  return { published: drawings.data.length, medals: Math.min(ranked.length, MEDAL_RANKS) }
+}

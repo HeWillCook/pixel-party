@@ -27,9 +27,19 @@
  */
 
 import type { CronTask } from 'deepspace/worker'
+import type { Env } from '../worker.js'
+import { closeDay } from './server/daily-close.js'
+import { utcDay } from './server/room-time.js'
+import { createServerTools } from './server/server-tools.js'
 
-export const tasks: CronTask[] = []
+export const tasks: CronTask[] = [
+  // 00:15 UTC: after the latest possible end of a 10-minute attempt that
+  // started at 23:59 on the previous UTC day.
+  { name: 'daily-close', schedule: '15 0 * * *', timezone: 'UTC' },
+]
 
-export async function runTask(_name: string, _env: unknown): Promise<void> {
-  // No-op — implement your cron tasks here. Dispatch on `_name`.
+export async function runTask(name: string, env: Env): Promise<void> {
+  if (name === 'daily-close') {
+    await closeDay(createServerTools(env), utcDay(Date.now() - 86_400_000))
+  }
 }
