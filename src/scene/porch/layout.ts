@@ -11,11 +11,11 @@ export const porchLayout: Record<Composition, Record<PorchObject, Rect>> = {
     plant: { x: 263, y: 119, w: 23, h: 31 },
   },
   portrait: {
-    easel: { x: 56, y: 80, w: 68, h: 116 }, chalkboard: { x: 7, y: 210, w: 61, h: 77 },
-    steps: { x: 119, y: 288, w: 51, h: 32 }, lighthouse: { x: 24, y: 111, w: 14, h: 29 },
-    mailbox: { x: 8, y: 167, w: 22, h: 27 }, door: { x: 147, y: 62, w: 27, h: 122 },
-    radio: { x: 129, y: 215, w: 24, h: 18 }, note: { x: 3, y: 52, w: 15, h: 22 },
-    lantern: { x: 134, y: 54, w: 11, h: 22 }, cat: { x: 78, y: 275, w: 29, h: 15 },
-    plant: { x: 150, y: 237, w: 23, h: 31 },
+    easel: { x: 56, y: 67, w: 68, h: 116 }, chalkboard: { x: 29, y: 190, w: 59, h: 70 },
+    steps: { x: 94, y: 247, w: 51, h: 29 }, lighthouse: { x: 30, y: 111, w: 14, h: 29 },
+    mailbox: { x: 30, y: 152, w: 22, h: 27 }, door: { x: 122, y: 62, w: 27, h: 122 },
+    radio: { x: 124, y: 190, w: 24, h: 18 }, note: { x: 29, y: 52, w: 15, h: 22 },
+    lantern: { x: 107, y: 48, w: 11, h: 22 }, cat: { x: 78, y: 255, w: 29, h: 15 },
+    plant: { x: 124, y: 215, w: 23, h: 31 },
   },
 }

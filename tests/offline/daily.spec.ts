@@ -61,7 +61,20 @@ test('ended user never sees start', async ({ page }) => {
   }
   release()
   await expect(page.getByTestId('daily-ended')).toBeVisible()
+  await page.getByRole('button', { name: 'View result' }).click()
   await expect(page.getByText('Manual grades: 0 of 3 used')).toBeVisible()
+})
+
+test('reduced motion starts directly in the play view', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await offlineClient(page, true)
+  const now = Date.now()
+  const playing = { day: new Date(now).toISOString().slice(0, 10), status: 'playing', prompt: 'A tree', startedAt: now, endsAt: now + 600_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: now + 120_000, serverNow: now }
+  await page.route('**/api/daily/**', route => route.fulfill({ json: new URL(route.request().url()).pathname.endsWith('/me') ? { ...playing, status: 'not_started' } : playing }))
+  await page.goto(`${origin}/home`)
+  await page.getByTestId('daily-start-button').click()
+  await expect(page.getByTestId('daily-playing')).toBeVisible()
+  await expect(page.locator('.porch-world')).toHaveCount(0)
 })
 
 test('me failure stays loading then recovers', async ({ page }) => {

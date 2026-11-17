@@ -32,6 +32,92 @@ async function setup(page: Page, signedOut = false) {
   })
 }
 
+test('porch objects are present and labelled', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await setup(page)
+  await page.goto(`${origin}/home`)
+  const scene = page.locator('.porch-world')
+  for (const name of ['Start Daily Challenge', "Today's scores", 'Party beach', 'Public board', 'Account menu', 'My gallery', 'Mute sounds', 'Scoring rules']) {
+    await expect(scene.getByRole(name === "Today's scores" || name === 'Party beach' || name === 'Public board' || name === 'My gallery' ? 'link' : 'button', { name, exact: true })).toBeVisible()
+  }
+})
+
+test('porch keyboard tour reaches objects with labels and focus rings', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await setup(page)
+  await page.goto(`${origin}/home`)
+  const scene = page.locator('.porch-world')
+  const names = ['Start Daily Challenge', "Today's scores", 'Party beach', 'Public board', 'Account menu', 'My gallery', 'Mute sounds', 'Scoring rules']
+  await scene.getByRole('button', { name: names[0] }).focus()
+  for (const [index, name] of names.entries()) {
+    const focused = scene.locator(':focus')
+    await expect(focused).toHaveAttribute('aria-label', name)
+    await expect(focused.locator('.pixel-hotspot__label')).toBeVisible()
+    expect(await focused.evaluate(element => getComputedStyle(element).outlineStyle)).not.toBe('none')
+    if (index < names.length - 1) await page.keyboard.press('Tab')
+  }
+  await scene.getByRole('link', { name: 'Party beach' }).focus()
+  await page.keyboard.press('Enter')
+  await expect(page).toHaveURL(`${origin}/party`)
+})
+
+test('signed-out porch offers sign-in on easel and mailbox', async ({ page }) => {
+  await setup(page, true)
+  await page.goto(`${origin}/home`)
+  const scene = page.locator('.porch-world')
+  await expect(scene.getByRole('button', { name: 'Sign in to paint' })).toBeVisible()
+  await expect(scene.getByRole('button', { name: 'Sign in', exact: true })).toBeVisible()
+})
+
+test('daily loading shows only the neutral view', async ({ page }) => {
+  await setup(page)
+  let release!: () => void
+  const gate = new Promise<void>(resolve => { release = resolve })
+  await page.route('**/api/daily/me', async route => { await gate; await route.fulfill({ json: { day: '2026-11-17', status: 'not_started', windows: [], serverNow: Date.now() } }) })
+  await page.goto(`${origin}/home`)
+  await expect(page.getByTestId('daily-loading')).toHaveText('Setting up your easel…')
+  await expect(page.locator('.pixel-hotspot')).toHaveCount(0)
+  await expect(page.getByTestId('daily-start-button')).toHaveCount(0)
+  release()
+  await expect(page.getByTestId('daily-start-button')).toBeVisible()
+})
+
+test('landing is prerendered with porch calls to action', async () => {
+  const html = await readFile(resolve(clientDir, 'index.html'), 'utf8')
+  expect(html).toContain('data-testid="static-landing"')
+  expect(html).toContain('data-testid="landing-play-now"')
+  expect(html).toContain('data-testid="landing-browse-lobby"')
+})
+
+for (const path of ['/', '/home']) test(`no horizontal scroll at 375px on ${path}`, async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 })
+  await setup(page)
+  await page.goto(`${origin}${path}`)
+  await expect(page.locator('.porch-world')).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375)
+})
+
+test('portrait porch keeps every object in view and tappable', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 })
+  await setup(page)
+  await page.goto(`${origin}/home`)
+  const hotspots = page.locator('.porch-world .pixel-hotspot')
+  await expect(hotspots).toHaveCount(8)
+  for (const hotspot of await hotspots.all()) {
+    await expect(hotspot.locator('.pixel-hotspot__label')).toBeVisible()
+    const box = await hotspot.boundingBox()
+    expect(box!.width).toBeGreaterThanOrEqual(44)
+    expect(box!.height).toBeGreaterThanOrEqual(44)
+    expect(box!.x).toBeGreaterThanOrEqual(0)
+    expect(box!.x + box!.width).toBeLessThanOrEqual(375)
+    const hit = await hotspot.evaluate(element => {
+      const bounds = element.getBoundingClientRect()
+      return element.contains(document.elementFromPoint(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2))
+    })
+    expect(hit, await hotspot.getAttribute('aria-label') ?? '').toBe(true)
+  }
+})
+
 for (const viewport of [{ width: 1280, height: 720 }, { width: 375, height: 812 }]) {
   test(`sign beam has four signs at ${viewport.width}px`, async ({ page }) => {
     await page.setViewportSize(viewport)
