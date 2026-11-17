@@ -121,6 +121,8 @@ async function resolveDocsYjsRole(
 }
 
 export function registerRealtimeRoutes(app: Hono<AppContext>): void {
+  app.get('/api/pixel/:roomId/ws', wsRoute((env) => env.PIXEL_ROOMS))
+
   app.get(
     '/ws/:roomId',
     wsRoute((env) => env.RECORD_ROOMS),

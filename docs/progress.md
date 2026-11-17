@@ -133,6 +133,29 @@ AI image generation (the point is humans draw), ElevenLabs announcer (gimmick).
   sandbox exited 1 with `credential_unreadable` / EPERM, confirming CLI credentials were inaccessible.
   CI retains full `npm run verify` without login. Platform probes follow in Step 2.
 
+- **2026-11-16: Task 1 platform assumptions PASS (Codex; DeepSpace 0.44.2, local Worker runtime).**
+  - **(a) PASS:** `/api/pixel/:roomId/ws` admitted an anonymous WebSocket and the probe reported
+    `{"type":"probe.identity","userId":null}`. Forged URL identity/role and `X-User-Id` / `X-User-Role`
+    headers were ignored. Invalid JWT returned HTTP **401**. A real owner CLI-login JWT (not an invented token)
+    produced the same user id as `auth whoami`; forged identity did not override it. No password or browser OAuth was needed.
+    **SDK detail:** BaseRoom assigns anonymous attachments an ephemeral `anon-*` id; the throwaway probe used
+    `isAnonymousUserId` to report the logical spectator identity as null. Future game authorization must use that
+    helper rather than checking whether `user.userId` is truthy.
+  - **(b) PASS:** one call from PixelRoom through `createServerTools(env).integration` and `apiWorkerFetch`,
+    authenticated with `env.APP_OWNER_JWT` (developer billing), using the exact requested model/prompt/64-token budget.
+    Response: `success:true`, `data.content:[{"type":"text","text":"ok"}]`, `stop_reason:"end_turn"`,
+    `input_tokens:16`, `output_tokens:4`, `costUsd:0.0000036`. Full JSON response (no headers or credentials)
+    committed at `src/game/__fixtures__/anthropic-response.json`; response text is directly under `data.content`.
+  - **(c) PASS:** created record `1794880135952_r8kif0` in temporary `probes`, as the app owner via the internal
+    RecordRoom tools endpoint. Delete returned `{"success":true,"data":{"deleted":true}}`;
+    a follow-up query returned `records:[]`, `count:0`. No probe records remain.
+  - Probe handler and `probes` schema removed. PixelRoom now ignores messages until the later game protocol task;
+    anonymous connect and ping/pong still work. Stock users schema retained. No fallback Worker route needed.
+  - Final `npm run verify` PASS with normal login and with CLI credential reads denied by macOS `sandbox-exec`,
+    with **no `.dev.vars` file** in either run: lint, type-check, **6 tests / 3 files**, Worker + client build.
+    Dev server stopped; task-generated `.dev.vars` removed; no `.dev.vars` remains in build output.
+    No deploy, push, transfer, collaborator change, app init, or undeploy was run during this continuation.
+
 ## Spikes (throwaway tests)
 
 | # | Question | Status | Result |
@@ -147,7 +170,7 @@ AI image generation (the point is humans draw), ElevenLabs announcer (gimmick).
 
 ## Open questions
 
-- Can a custom DO call the integration proxy directly? (verify day 1)
+- Custom DO integration + record access: **resolved, Task 1 PASS** (see Findings).
 - Cooldown length, round length, judge frequency
 - Final name ("Pixel Party" for now)
 
@@ -155,6 +178,7 @@ AI image generation (the point is humans draw), ElevenLabs announcer (gimmick).
 
 | Task | Commit | Commands run | Result | Reviewer | Will to check by hand |
 |---|---|---|---|---|---|
+| 1 | `4b8e65c` + Task 1 binding change | `npm run verify` normal + credentials denied; signed-out/signed-in JWT WebSockets; one Haiku call; record create/delete/query | PASS: 6 unit tests; all three platform probes; probe removed | Implementer self-check only; controller review follows | Optional browser OAuth UI smoke; signed-in WebSocket identity already verified with real login JWT |
 
 ## Agent log
 
@@ -165,3 +189,4 @@ AI image generation (the point is humans draw), ElevenLabs announcer (gimmick).
 | 2026-11-16 | Codex GPT-6.1 Terra | Spike 2: read SDK + Tangent/PartyPack source for pixel storage options | Confirmed BaseRoom, Tangent's custom rooms, full-record broadcast in source |
 | 2026-11-16 | Antigravity Gemini 4 Hydrogen | Spike 1: generated test pixel art, ran 130 Claude vision calls | Recounted accuracy from results.json; inspected contact sheet and flagged test drawings as too clean |
 | 2026-11-16 | Claude Opus (me) | Checked AI integration schemas, found Claude-only vision | Ran `deepspace integrations info` myself |
+| 2026-11-16 | Codex GPT-6.1 Sol | Task 1 scaffold/CI, custom DO platform probes, fixture, cleanup | Self-verified: all probes and normal/credential-free verify passed; review pending controller |
