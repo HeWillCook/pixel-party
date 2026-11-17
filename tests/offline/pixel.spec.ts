@@ -19,6 +19,10 @@ async function clientFixture(page: Page, options: { signedIn?: boolean; hostId?:
       user: fixtureUser, session: { id: 'offline-session', userId: 'host', expiresAt: '2096-01-01T00:00:00Z' },
     } : null })
     if (url.pathname === '/api/auth/token') return route.fulfill({ json: { token: fixtureToken } })
+    if (url.pathname === '/api/daily/me') {
+      const now = Date.now()
+      return route.fulfill({ json: { day: new Date(now).toISOString().slice(0, 10), status: 'not_started', autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: null, serverNow: now } })
+    }
     if (url.pathname.startsWith('/api/pixel/')) {
       await options.preflight?.()
       return route.fulfill({ status: 401, body: 'Unauthorized' })
