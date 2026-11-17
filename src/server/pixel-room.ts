@@ -295,7 +295,7 @@ export class PixelRoom extends BaseRoom<Env> {
           }).catch(() => { console.warn('[PixelRoom] Room-status hook failed') })
           await this.statusWrite
           break
-        case 'noop': if (sender) this.sendGame(sender, { t: 'noop', x: event.x, y: event.y }); break
+        case 'noop': if (sender) this.sendGame(sender, { t: 'noop', x: event.x, y: event.y, ...(event.id === undefined ? {} : { id: event.id }) }); break
         case 'reject': if (sender) this.sendGame(sender, { t: 'reject', reason: event.reason, x: event.x, y: event.y, ...(event.retryAt === undefined ? {} : { retryAt: event.retryAt }) }); break
         default: {
           const { type, ...payload } = event

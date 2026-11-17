@@ -5,6 +5,7 @@ import {
   applyOptimisticPlace,
   applyServerMsg,
   clearLastReject,
+  effectiveCooldownUntil,
   initialClientState,
   type ClientState,
 } from '../game/client-state'
@@ -35,7 +36,8 @@ export function usePixelRoom(joinCode: string): UsePixelRoomResult {
   const queuedRef = useRef<Placement[]>([])
   const frameRef = useRef<number | null>(null)
   const lastSendAtRef = useRef<number>(0)
-  const provisionalRef = useRef<{ idx: number; prevLastSendAt: number } | null>(null)
+  const seqRef = useRef<number>(0)
+  const provisionalRef = useRef<{ id: number; prevLastSendAt: number } | null>(null)
 
   useEffect(() => {
     stateRef.current = state
@@ -152,20 +154,16 @@ export function usePixelRoom(joinCode: string): UsePixelRoomResult {
         if (msg.t === 'snapshot') {
           receivedSnapshot = true
           backoffMs = 500
-          provisionalRef.current = null
         }
         if (msg.t === 'closed' || msg.t === 'snapshot' || (msg.t === 'round' && msg.round.id !== stateRef.current.round?.id)) {
           queuedRef.current = []
           if (frameRef.current !== null) cancelAnimationFrame(frameRef.current)
           frameRef.current = null
         }
-        if (msg.t === 'closed' || msg.t === 'reject') {
-          provisionalRef.current = null
-        } else if (msg.t === 'pixel' && msg.by === stateRef.current.you.userId) {
+        if (msg.t === 'closed' || msg.t === 'snapshot') {
           provisionalRef.current = null
         } else if (msg.t === 'noop') {
-          const noopIdx = msg.y * stateRef.current.width + msg.x
-          if (provisionalRef.current?.idx === noopIdx) {
+          if (provisionalRef.current && msg.id !== undefined && provisionalRef.current.id === msg.id) {
             lastSendAtRef.current = provisionalRef.current.prevLastSendAt
             provisionalRef.current = null
           }
@@ -249,19 +247,22 @@ export function usePixelRoom(joinCode: string): UsePixelRoomResult {
       const now = Date.now()
       const cd = cooldownMs(Math.max(1, current.players))
 
-      if (now < current.you.cooldownUntil) return
+      if (now < effectiveCooldownUntil(current)) return
       if (now - lastSendAtRef.current < cd) return
 
       const idx = y * current.width + x
       if (current.cells[idx] === c || current.pending.has(idx)) return
       if (wsRef.current?.readyState !== WebSocket.OPEN) return
-      provisionalRef.current = { idx, prevLastSendAt: lastSendAtRef.current }
+      const id = ++seqRef.current
+      provisionalRef.current = { id, prevLastSendAt: lastSendAtRef.current }
       lastSendAtRef.current = now
-      const optimistic = applyOptimisticPlace(current, x, y, c)
-      const updated = { ...optimistic, you: { ...optimistic.you, cooldownUntil: Math.max(optimistic.you.cooldownUntil, now + cd) } }
+      const updated = applyOptimisticPlace(current, x, y, c, {
+        id,
+        ...(cd > 0 ? { provisionalCooldownUntil: now + cd } : {}),
+      })
       stateRef.current = updated
       setState(updated)
-      queuedRef.current.push({ x, y, c })
+      queuedRef.current.push({ x, y, c, id })
       if (frameRef.current === null) {
         frameRef.current = requestAnimationFrame(() => {
           frameRef.current = null

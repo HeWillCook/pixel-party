@@ -34,7 +34,7 @@ import { RoundBar } from '../../../components/game/RoundBar'
 import { ToolBar } from '../../../components/game/ToolBar'
 import { useGameSounds } from '../../../components/game/useGameSounds'
 import { Button } from '../../../components/ui'
-import { roomAccessView, type RejectMsg } from '../../../game/client-state'
+import { effectiveCooldownUntil, roomAccessView, type RejectMsg } from '../../../game/client-state'
 import { contributorLabel } from '../../../game/contributor-label'
 import { cooldownMs } from '../../../game/rules'
 import { PARTY_TOOLS, pickAt, type Tool } from '../../../game/tools'
@@ -197,7 +197,7 @@ export default function RoomPage() {
   const roundPlaying = state.round?.state === 'playing'
   const canDraw = Boolean(state.you.userId) && Boolean(roundPlaying)
   const cooldownTotalMs = cooldownMs(Math.max(1, state.players))
-  const cooldownRemainingMs = Math.max(0, state.you.cooldownUntil - now)
+  const cooldownRemainingMs = Math.max(0, effectiveCooldownUntil(state) - now)
   const friendlyReject = rejectMessage(state.lastReject, now)
 
   useEffect(() => {

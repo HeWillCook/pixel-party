@@ -587,7 +587,7 @@ test('room shows Paint, Erase and Pick colour; no Fill, Undo or Redo', async ({ 
   await expect(page.getByTestId('tool-erase')).toHaveAttribute('aria-pressed', 'true')
   await canvas.dispatchEvent('pointerdown', { clientX: point(2, 2).x, clientY: point(2, 2).y, pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1 })
   await canvas.dispatchEvent('pointerup', { pointerId: 1, pointerType: 'mouse' })
-  await expect.poll(() => sent.flat()).toContainEqual({ x: 2, y: 2, c: 0 })
+  await expect.poll(() => sent.flat()).toContainEqual({ x: 2, y: 2, c: 0, id: 1 })
   await expect.poll(() => pixelColor(page, 2, 2)).toEqual([243, 234, 216, 255])
 
   // Pick colour on empty pixel (3, 3) -> switches to Erase
@@ -601,8 +601,10 @@ test('room shows Paint, Erase and Pick colour; no Fill, Undo or Redo', async ({ 
 
 test('party noop clears provisional cooldown so next paint sends immediately', async ({ page }) => {
   const errors = await clientFixture(page, { signedIn: true })
-  const sent: { x: number; y: number; c: number }[][] = []
+  const sent: { x: number; y: number; c: number; id?: number }[][] = []
+  let serverSocket!: WebSocketRoute
   await page.routeWebSocket('**/api/pixel/**', socket => {
+    serverSocket = socket
     const state = snapshot('playing')
     const cells = Buffer.alloc(1024)
     cells[2 * 32 + 2] = 9
@@ -611,9 +613,9 @@ test('party noop clears provisional cooldown so next paint sends immediately', a
       const message = JSON.parse(String(raw))
       if (message.t !== 'place') return
       sent.push(message.cells)
-      for (const cell of message.cells as { x: number; y: number; c: number }[]) {
+      for (const cell of message.cells as { x: number; y: number; c: number; id?: number }[]) {
         if (cell.c === 0) {
-          socket.send(JSON.stringify({ t: 'noop', x: cell.x, y: cell.y }))
+          socket.send(JSON.stringify({ t: 'noop', x: cell.x, y: cell.y, ...(cell.id === undefined ? {} : { id: cell.id }) }))
         } else {
           socket.send(JSON.stringify({ t: 'pixel', x: cell.x, y: cell.y, c: cell.c, by: 'host' }))
         }
@@ -627,19 +629,26 @@ test('party noop clears provisional cooldown so next paint sends immediately', a
   const box = (await canvas.boundingBox())!
   const point = (x: number, y: number) => ({ x: box.x + box.width * (x + 0.5) / 32, y: box.y + box.height * (y + 0.5) / 32 })
 
-  // Erase (2, 2); client starts provisional 2s cooldown, server responds noop
+  // Erase (2, 2); client starts provisional 2s cooldown, server echoes placement id in noop
   await page.getByTestId('tool-erase').click()
   await canvas.dispatchEvent('pointerdown', { clientX: point(2, 2).x, clientY: point(2, 2).y, pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1 })
   await canvas.dispatchEvent('pointerup', { pointerId: 1, pointerType: 'mouse' })
-  await expect.poll(() => sent.flat()).toContainEqual({ x: 2, y: 2, c: 0 })
+  await expect.poll(() => sent.flat()).toContainEqual({ x: 2, y: 2, c: 0, id: 1 })
   await expect.poll(() => pixelColor(page, 2, 2)).toEqual([243, 234, 216, 255])
 
-  // Immediately paint (4, 4) without waiting 2s; succeeds because noop cleared provisional cooldown
+  // Immediately paint (4, 4) without waiting 2s; succeeds because matching noop cleared provisional cooldown
   await page.getByTestId('tool-paint').click()
   await page.getByTestId('swatch-4').click()
   await canvas.dispatchEvent('pointerdown', { clientX: point(4, 4).x, clientY: point(4, 4).y, pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1 })
   await canvas.dispatchEvent('pointerup', { pointerId: 1, pointerType: 'mouse' })
-  await expect.poll(() => sent.flat()).toContainEqual({ x: 4, y: 4, c: 4 })
+  await expect.poll(() => sent.flat()).toContainEqual({ x: 4, y: 4, c: 4, id: 2 })
   await expect.poll(() => pixelColor(page, 4, 4)).toEqual([239, 68, 68, 255])
+
+  // Stale noop with old id=1 must NOT clear the active cooldown from placement id=2
+  serverSocket.send(JSON.stringify({ t: 'noop', x: 2, y: 2, id: 1 }))
+  await canvas.dispatchEvent('pointerdown', { clientX: point(6, 6).x, clientY: point(6, 6).y, pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1 })
+  await canvas.dispatchEvent('pointerup', { pointerId: 1, pointerType: 'mouse' })
+  await page.waitForTimeout(100)
+  expect(sent.flat().some(cell => cell.x === 6 && cell.y === 6)).toBe(false)
   expect(errors).toEqual([])
 })

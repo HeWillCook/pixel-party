@@ -38,7 +38,7 @@ export type RoundEndedEvent = {
 export type RoomStatusEvent = { roomId: string; status: RoomState['status']; playerCount: number; lastActiveAt: number; currentRoundId: string }
 export type RoomEvent =
   | { type: 'pixel'; x: number; y: number; c: number; by: string }
-  | { type: 'noop'; x: number; y: number }
+  | { type: 'noop'; x: number; y: number; id?: number }
   | { type: 'reject'; reason: RejectReason; retryAt?: number; x?: number; y?: number }
   | { type: 'judgement'; zone: ZoneId; guesses: string[]; confidence: number; matched: boolean }
   | { type: 'round'; round: RoundView }
@@ -65,11 +65,11 @@ export function newRoomState(init: { roomId: string; mode: Mode; isDefaultBoard:
   }
 }
 
-export function applyPlacement(s: RoomState, p: { x: number; y: number; c: number; userId: string | null }, now: number, playersConnected: number): RoomTransition {
+export function applyPlacement(s: RoomState, p: { x: number; y: number; c: number; userId: string | null; id?: number }, now: number, playersConnected: number): RoomTransition {
   const roundPlaying = s.status === 'playing' && s.round.state === 'playing'
   const inBounds = Number.isInteger(p.x) && Number.isInteger(p.y) && p.x >= 0 && p.x < s.grid.width && p.y >= 0 && p.y < s.grid.height
   if (p.userId && roundPlaying && inBounds && p.c === 0 && s.grid.cells[p.y * s.grid.width + p.x] === 0) {
-    return { state: s, events: [{ type: 'noop', x: p.x, y: p.y }] }
+    return { state: s, events: [{ type: 'noop', x: p.x, y: p.y, ...(p.id === undefined ? {} : { id: p.id }) }] }
   }
   const valid = validatePlacement({ width: s.grid.width, height: s.grid.height, x: p.x, y: p.y, color: p.c, userId: p.userId, roundPlaying, lastPlacedAt: p.userId === null ? undefined : s.lastPlacedAt[p.userId], now, playersConnected })
   if (!valid.ok) return { state: s, events: [{ type: 'reject', x: p.x, y: p.y, reason: valid.reason, ...(valid.retryAt === undefined ? {} : { retryAt: valid.retryAt }) }] }

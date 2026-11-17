@@ -19,8 +19,9 @@ describe('parseClientMsg', () => {
 })
 
 describe('parseServerMsg', () => {
-  it('parses noop messages and rejects malformed noop or unknown tags', () => {
+  it('parses noop messages keeping optional id and rejects malformed noop or unknown tags', () => {
     expect(parseServerMsg(JSON.stringify({ t: 'noop', x: 3, y: 4 }))).toEqual({ t: 'noop', x: 3, y: 4 })
+    expect(parseServerMsg(JSON.stringify({ t: 'noop', x: 3, y: 4, id: 12, extra: 'ignored' }))).toEqual({ t: 'noop', x: 3, y: 4, id: 12 })
     for (const bad of [
       'not-json',
       'null',
@@ -28,17 +29,31 @@ describe('parseServerMsg', () => {
       '{"t":"noop"}',
       '{"t":"noop","x":"3","y":4}',
       '{"t":"noop","x":3,"y":null}',
+      '{"t":"noop","x":3,"y":4,"id":-1}',
+      '{"t":"noop","x":3,"y":4,"id":"1"}',
     ]) {
       expect(parseServerMsg(bad)).toBeNull()
     }
   })
 })
 
-it('accepts bounded placement batches and rejects malformed cells or excessive work', () => {
+it('accepts bounded placement batches, keeps optional id while stripping unknown fields, and rejects malformed cells or excessive work', () => {
   const cells = Array.from({ length: 64 }, (_, x) => ({ x, y: 0, c: 4 }))
   expect(parseClientMsg(JSON.stringify({ t: 'place', cells }))).toEqual({ t: 'place', cells })
-  for (const bad of [[], [...cells, cells[0]], [{ x: '1', y: 0, c: 4 }], [null]]) {
+  expect(parseClientMsg(JSON.stringify({ t: 'place', cells: [{ x: 1, y: 2, c: 0, id: 7, extra: 'drop' }] }))).toEqual({
+    t: 'place',
+    cells: [{ x: 1, y: 2, c: 0, id: 7 }],
+  })
+  expect(parseClientMsg(JSON.stringify({ t: 'place', x: 1, y: 2, c: 0, id: 9, extra: 'drop' }))).toEqual({
+    t: 'place',
+    x: 1,
+    y: 2,
+    c: 0,
+    id: 9,
+  })
+  for (const bad of [[], [...cells, cells[0]], [{ x: '1', y: 0, c: 4 }], [{ x: 1, y: 0, c: 0, id: -1 }], [{ x: 1, y: 0, c: 0, id: '7' }], [null]]) {
     expect(parseClientMsg(JSON.stringify({ t: 'place', cells: bad }))).toBeNull()
   }
+  expect(parseClientMsg(JSON.stringify({ t: 'place', x: 1, y: 2, c: 0, id: 'bad' }))).toBeNull()
   expect(parseClientMsg(' '.repeat(4097))).toBeNull()
 })

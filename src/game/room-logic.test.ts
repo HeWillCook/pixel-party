@@ -179,8 +179,8 @@ describe('room logic', () => {
   })
   it('erasing empty is a free no-op', () => {
     const s = room()
-    const noop = applyPlacement(s, { x: 5, y: 5, c: 0, userId: 'a' }, 2000, 2)
-    expect(noop.events).toEqual([{ type: 'noop', x: 5, y: 5 }])
+    const noop = applyPlacement(s, { x: 5, y: 5, c: 0, userId: 'a', id: 11 }, 2000, 2)
+    expect(noop.events).toEqual([{ type: 'noop', x: 5, y: 5, id: 11 }])
     expect(noop.state).toBe(s)
     expect(noop.state.lastPlacedAt).toEqual({})
     const painted = applyPlacement(noop.state, { x: 1, y: 1, c: 4, userId: 'a' }, 2001, 2)
