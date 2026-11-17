@@ -439,3 +439,21 @@ The fake judge is selected by default in dev and tests so those runs make no pai
 - Full conflict audit, per-finding tests, logs and screenshot list:
   `.superpowers/sdd/2026-11-17-pixel-redesign/merge-and-fix-report.md`.
 - No push, deployment, PR or nested agents. Implementation and verification by Codex.
+
+
+## 2026-11-17: Daily branch merged with pixel redesign
+
+- Merged origin/main d8ad9ec into daily mode (6bbc9e9); main's redesigned lobby now lives at /party, daily remains
+  /home, and room back links and daily-first landing copy preserve both branches' intent.
+- Applied shared synthwave tokens, VT323, square panels/buttons and measured board-size canvas to all daily states,
+  the leaderboard, verdict/timer/thumbnails and public profiles (67b72df). Added persisted mute and live-only daily
+  grade/countdown/end sounds; no pixel-placement sound or AI/scoring changes.
+- Fixed invalid-day stale-tab recovery and captured-day /end targeting; reduced the grade lease to 90 seconds
+  with exact-boundary and 80-second production retry tests (27881be). Eight offline browser regressions cover
+  invalid grade/end recovery to unstarted, live or ended today, plus failed refreshes.
+- Verification: npm run verify PASS (383 tests / 39 files), build + offline Playwright with SCREENSHOTS=1 PASS
+  (38/38, none skipped), real local test-worker API Playwright PASS (4/4), git diff --check PASS.
+- Fifteen daily/profile screenshots at 1440×900, 1280×720 and 375×812 are in docs/superpowers/screenshots/2026-11-17-redesign/.
+  Conflict resolutions, test output tails, visual inspection and unchanged dev-local timeout/dependency caveats:
+  .superpowers/sdd/2026-11-17-daily-mode/merge-redesign-report.md. No push, deploy, DAILY_JUDGE override or real AI call.
+- Provider: Codex implementation, screenshots, self-review and verification; no nested agents.
