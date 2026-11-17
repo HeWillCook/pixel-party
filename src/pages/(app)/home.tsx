@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { AuthOverlay, useAuthProfileReady, useQuery } from 'deepspace'
 import {
@@ -8,7 +8,10 @@ import {
   Play,
   Sparkles,
   Users,
+  Volume2,
+  VolumeX,
 } from 'lucide-react'
+import { useDailySounds } from '../../components/daily/useDailySounds'
 import { DailyTimer } from '../../components/daily/DailyTimer'
 import { Leaderboard } from '../../components/daily/Leaderboard'
 import { GradePanel } from '../../components/daily/GradePanel'
@@ -30,7 +33,7 @@ interface DailyDrawingRecord {
   guess: string
   reason: string
   score: number
-  visibility: 'public' | 'private'
+  visibility: 'public' |'private'
 }
 
 interface DailyScoreRecord {
@@ -61,6 +64,28 @@ function decodeSnapshotOrFallback(encoded: string | undefined, fallback: Uint8Ar
 export default function DailyHomePage() {
   const { isLoaded, isSignedIn, user } = useAuthProfileReady({ requireUser: false })
   const { state, cells, paint, start, askNow, done } = useDailyAttempt()
+  const { muted, toggleMute } = useDailySounds(state)
+  const boardRef = useRef<HTMLDivElement>(null)
+  const paletteRef = useRef<HTMLDivElement>(null)
+  const [boardBox, setBoardBox] = useState({ width: 320, height: 600 })
+
+  useEffect(() => {
+    const board = boardRef.current
+    if (!board) return
+    const measure = () => {
+      const top = board.getBoundingClientRect().top + (board.closest('main')?.scrollTop ?? 0)
+      const paletteHeight = paletteRef.current?.getBoundingClientRect().height ?? 0
+      const width = board.clientWidth
+      const height = Math.max(200, window.innerHeight - top - paletteHeight - 48)
+      setBoardBox(previous => previous.width === width && previous.height === height ? previous : { width, height })
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(board)
+    if (paletteRef.current) observer.observe(paletteRef.current)
+    window.addEventListener('resize', measure)
+    return () => { observer.disconnect(); window.removeEventListener('resize', measure) }
+  }, [state.status, isSignedIn])
 
   const userId = user?.id ?? ''
   const queryDay = state.day || '__none__'
@@ -155,27 +180,34 @@ export default function DailyHomePage() {
   return (
     <div
       data-testid="daily-page"
-      className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8"
+      className="mx-auto flex w-full max-w-[1400px] flex-col gap-5 px-4 py-4 sm:px-6"
     >
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <span className="pp-logo text-3xl">Daily Challenge</span>
+        <Button type="button" variant="secondary" size="sm" onClick={toggleMute} aria-label={muted ? 'Unmute sounds' : 'Mute sounds'} className="pp-chip gap-2 text-base">
+          {muted ? <VolumeX className="h-4 w-4" aria-hidden /> : <Volume2 className="h-4 w-4" aria-hidden />}
+          {muted ? 'Sound off' : 'Sound on'}
+        </Button>
+      </div>
       {/* Signed out view */}
       {isLoaded && !isSignedIn && (
         <div className="flex flex-col gap-6">
           <section
             data-testid="daily-signed-out"
-            className="arcade-card relative overflow-hidden rounded-xl border-2 border-amber-400/80 bg-gradient-to-br from-[#231b42] via-[#171426] to-[#2d1636] p-5 sm:p-8"
+            className="pp-panel relative overflow-hidden border-2 border-border p-5 sm:p-8"
           >
             <div className="relative z-10 flex flex-col justify-between gap-6 lg:flex-row lg:items-center">
               <div className="max-w-xl space-y-2.5">
-                <div className="inline-flex items-center gap-2 rounded-full border border-amber-400/40 bg-amber-400/15 px-3 py-1 text-xs font-bold text-amber-300">
+                <div className="pp-chip inline-flex items-center gap-2 px-3 py-1 text-base">
                   <Sparkles className="h-3.5 w-3.5" aria-hidden />
-                  <span className="font-pixel uppercase tracking-wider">
+                  <span className="uppercase tracking-wider">
                     Solo Daily Pixel Challenge
                   </span>
                 </div>
-                <h1 className="font-pixel text-2xl font-extrabold uppercase tracking-tight text-foreground sm:text-4xl">
+                <h1 className="text-2xl uppercase tracking-tight text-foreground sm:text-4xl">
                   One Prompt. 10 Minutes. Judged by Haiku.
                 </h1>
-                <p className="text-sm text-muted-foreground sm:text-base">
+                <p className="text-lg text-muted-foreground sm:text-xl">
                   Everyone gets the same daily scene on a 32×32 canvas. You have 10 minutes, auto-grades every 2 minutes, and 3 Ask-nows. Your highest-scoring snapshot goes on today&apos;s leaderboard!
                 </p>
               </div>
@@ -185,16 +217,16 @@ export default function DailyHomePage() {
                   type="button"
                   data-testid="daily-sign-in-button"
                   onClick={() => setShowAuthModal(true)}
-                  className="arcade-btn font-pixel inline-flex items-center justify-center gap-2.5 rounded-lg bg-amber-400 px-6 py-3.5 text-sm font-extrabold uppercase tracking-wider text-slate-950 hover:bg-amber-300 sm:text-base"
+                  className="pp-btn inline-flex items-center justify-center gap-2.5 bg-secondary px-6 py-3.5 text-lg uppercase tracking-wider text-primary-foreground hover:bg-secondary sm:text-xl"
                 >
                   <LogIn className="h-5 w-5" aria-hidden />
                   Sign in to play
                 </Button>
                 <Link
                   to="/party"
-                  className="arcade-btn font-pixel inline-flex items-center justify-center gap-2 rounded-lg bg-secondary px-5 py-2.5 text-xs font-bold uppercase tracking-wider text-foreground hover:bg-secondary/80"
+                  className="pp-btn inline-flex items-center justify-center gap-2 bg-secondary px-5 py-2.5 text-base uppercase tracking-wider text-foreground hover:bg-secondary/80"
                 >
-                  <Users className="h-4 w-4 text-cyan-400" aria-hidden />
+                  <Users className="h-4 w-4 text-[var(--sunset-1)]" aria-hidden />
                   Party mode
                 </Link>
               </div>
@@ -209,44 +241,44 @@ export default function DailyHomePage() {
       {isSignedIn && state.status === 'not_started' && (
         <section
           data-testid="daily-not-started"
-          className="arcade-card mx-auto flex w-full max-w-2xl flex-col gap-5 rounded-xl border-2 border-amber-400/80 bg-gradient-to-br from-[#231b42] via-[#171426] to-[#2d1636] p-6 sm:p-8"
+          className="pp-panel mx-auto flex w-full max-w-2xl flex-col gap-5 border-2 border-border p-6 sm:p-8"
         >
           <div className="space-y-2">
-            <div className="inline-flex items-center gap-2 rounded-full border border-amber-400/40 bg-amber-400/15 px-3 py-1 text-xs font-bold text-amber-300">
+            <div className="pp-chip inline-flex items-center gap-2 px-3 py-1 text-base">
               <Sparkles className="h-3.5 w-3.5" aria-hidden />
-              <span className="font-pixel uppercase tracking-wider">
+              <span className="uppercase tracking-wider">
                 Daily Challenge • {state.day}
               </span>
             </div>
-            <h1 className="font-pixel text-2xl font-extrabold uppercase tracking-tight text-foreground sm:text-3xl">
+            <h1 className="text-2xl uppercase tracking-tight text-foreground sm:text-3xl">
               Ready for Today&apos;s Prompt?
             </h1>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-lg text-muted-foreground">
               Today&apos;s prompt is hidden until you start. Once you press Start, your 10-minute clock begins immediately.
             </p>
           </div>
 
-          <ul className="space-y-2 rounded-lg border border-border/60 bg-background/50 p-4 text-xs text-muted-foreground sm:text-sm">
+          <ul className="space-y-2 border border-border/60 bg-background/50 p-4 text-base text-muted-foreground sm:text-lg">
             <li>
-              <strong className="font-pixel text-foreground">10 minutes:</strong>{' '}
+              <strong className="font-normal text-foreground">10 minutes:</strong>{''}
               One solo attempt per UTC day on a 32×32 pixel grid.
             </li>
             <li>
-              <strong className="font-pixel text-foreground">Grades every 2 minutes:</strong>{' '}
+              <strong className="font-normal text-foreground">Grades every 2 minutes:</strong>{''}
               Claude Haiku automatically checks your drawing at 2, 4, 6, and 8 minutes.
             </li>
             <li>
-              <strong className="font-pixel text-foreground">3 Ask-nows:</strong>{' '}
+              <strong className="font-normal text-foreground">3 Ask-nows:</strong>{''}
               Request an immediate judge check up to 3 times whenever your drawing reads well.
             </li>
             <li>
-              <strong className="font-pixel text-foreground">Best score kept:</strong>{' '}
+              <strong className="font-normal text-foreground">Best score kept:</strong>{''}
               Scored out of 1,000 (500 fit + 400 blind recognition + 100 speed). Your highest grade is saved!
             </li>
           </ul>
 
           {state.lastError && (
-            <p role="status" className="text-xs font-medium text-amber-300">
+            <p role="status" className="text-base text-[var(--sunset-1)]">
               {state.lastError}
             </p>
           )}
@@ -257,15 +289,15 @@ export default function DailyHomePage() {
               data-testid="daily-start-button"
               disabled={starting}
               onClick={handleStart}
-              className="arcade-btn font-pixel inline-flex items-center gap-2.5 rounded-lg bg-amber-400 px-6 py-3.5 text-sm font-extrabold uppercase tracking-wider text-slate-950 hover:bg-amber-300 sm:text-base"
+              className="pp-btn inline-flex items-center gap-2.5 bg-secondary px-6 py-3.5 text-lg uppercase tracking-wider text-primary-foreground hover:bg-secondary sm:text-xl"
             >
               <Play className="h-5 w-5 fill-current" aria-hidden />
-              {starting ? 'Starting…' : 'Start Daily Challenge'}
+              {starting ?'Starting…' : 'Start Daily Challenge'}
             </Button>
 
             <Link
               to="/party"
-              className="font-pixel text-xs font-bold uppercase tracking-wider text-muted-foreground hover:text-foreground"
+              className="text-base uppercase tracking-wider text-muted-foreground hover:text-foreground"
             >
               Or play Party mode →
             </Link>
@@ -277,14 +309,14 @@ export default function DailyHomePage() {
       {isSignedIn && state.status === 'playing' && (
         <div data-testid="daily-playing" className="flex flex-col gap-4">
           {/* Top Bar: Prompt + Timer + Best */}
-          <div className="arcade-card flex flex-wrap items-center justify-between gap-3 rounded-lg bg-card px-4 py-3">
+          <div className="pp-panel flex flex-wrap items-center justify-between gap-3 bg-card px-4 py-3">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="font-pixel text-xs uppercase tracking-wider text-muted-foreground">
+              <span className="text-base uppercase tracking-wider text-muted-foreground">
                 Prompt:
               </span>
               <span
                 data-testid="daily-prompt"
-                className="font-pixel rounded-md border-2 border-amber-400/80 bg-amber-400/15 px-3 py-1 text-sm font-extrabold uppercase tracking-wider text-amber-300 sm:text-base"
+                className="pp-word text-2xl uppercase tracking-wide text-[var(--sunset-1)] sm:text-3xl"
               >
                 {state.prompt}
               </span>
@@ -296,12 +328,14 @@ export default function DailyHomePage() {
           </div>
 
           {/* Main Stage */}
-          <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-12">
+          <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
             {/* Left: Canvas + Palette */}
-            <div className="flex flex-col gap-3 lg:col-span-7">
+            <div ref={boardRef} className="flex min-w-0 flex-col gap-4">
               <PixelCanvas
                 width={32}
                 height={32}
+                availWidth={boardBox.width}
+                availHeight={boardBox.height}
                 cells={cells}
                 activeColor={activeColor}
                 canDraw={canDraw}
@@ -309,15 +343,17 @@ export default function DailyHomePage() {
                 onPlace={paint}
               />
 
-              <Palette
-                activeColor={activeColor}
-                onSelectColor={setActiveColor}
-                disabled={!canDraw}
-              />
+              <div ref={paletteRef}>
+                <Palette
+                  activeColor={activeColor}
+                  onSelectColor={setActiveColor}
+                  disabled={!canDraw}
+                />
+              </div>
             </div>
 
             {/* Right: Controls + GradePanel */}
-            <div className="flex flex-col gap-3 lg:col-span-5">
+            <div className="flex min-w-0 flex-col gap-4">
               <GradePanel
                 latest={state.latest}
                 best={state.best}
@@ -325,14 +361,14 @@ export default function DailyHomePage() {
                 lastError={state.lastError}
               />
 
-              <div className="arcade-card flex flex-col gap-3 rounded-lg bg-card p-4">
+              <div className="pp-panel flex flex-col gap-3 bg-card p-4">
                 <div className="flex flex-wrap items-center gap-2.5">
                   <Button
                     type="button"
                     data-testid="daily-ask-button"
                     disabled={!canAsk}
                     onClick={() => void askNow()}
-                    className="arcade-btn font-pixel flex-1 gap-2 bg-pink-600 px-4 py-2.5 text-xs font-extrabold uppercase tracking-wider text-white hover:bg-pink-500 disabled:opacity-60 sm:text-sm"
+                    className="pp-btn flex-1 gap-2 bg-secondary px-4 py-2.5 text-base uppercase tracking-wider text-white hover:bg-secondary disabled:opacity-60 sm:text-lg"
                   >
                     <Bot className="h-4 w-4 shrink-0" aria-hidden />
                     <span>Ask now ({asksLeft} left)</span>
@@ -344,20 +380,20 @@ export default function DailyHomePage() {
                     data-testid="daily-done-button"
                     disabled={state.grading || (state.finalizing && !state.endFailed)}
                     onClick={() => void done()}
-                    className="arcade-btn font-pixel gap-1.5 px-4 py-2.5 text-xs font-bold uppercase tracking-wider sm:text-sm"
+                    className="pp-btn gap-1.5 px-4 py-2.5 text-base uppercase tracking-wider sm:text-lg"
                   >
-                    <CheckCircle2 className="h-4 w-4 text-emerald-400" aria-hidden />
+                    <CheckCircle2 className="h-4 w-4 text-[var(--sunset-1)]" aria-hidden />
                     <span>
                       {state.endFailed
-                        ? 'Retry Done'
+                        ?'Retry Done'
                         : state.finalizing
-                          ? 'Finishing…'
+                          ?'Finishing…'
                           : 'Done'}
                     </span>
                   </Button>
                 </div>
 
-                <p className="text-xs text-muted-foreground">
+                <p className="text-base text-muted-foreground">
                   Auto-grades run at 2, 4, 6, and 8 minutes ({state.autoUsed}/{DAILY.maxAuto} used). Pressing Done runs one final grade and locks in your best score.
                 </p>
               </div>
@@ -369,30 +405,32 @@ export default function DailyHomePage() {
       {/* Signed in: Ended */}
       {isSignedIn && state.status === 'ended' && (
         <div data-testid="daily-ended" className="flex flex-col gap-6">
-          <div className="arcade-card flex flex-wrap items-center justify-between gap-3 rounded-lg bg-card px-4 py-3">
+          <div className="pp-panel flex flex-wrap items-center justify-between gap-3 bg-card px-4 py-3">
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="default" className="font-pixel uppercase">
+              <Badge variant="default" className="uppercase">
                 Attempt Complete
               </Badge>
               {(state.prompt ?? bestDrawingDoc?.prompt) && (
                 <span
                   data-testid="daily-prompt"
-                  className="font-pixel text-sm font-extrabold uppercase tracking-wider text-amber-300 sm:text-base"
+                  className="text-lg uppercase tracking-wider text-[var(--sunset-1)] sm:text-xl"
                 >
                   {state.prompt ?? bestDrawingDoc?.prompt}
                 </span>
               )}
             </div>
-            <span className="font-pixel text-xs font-bold text-emerald-300">
+            <span className="text-base text-[var(--sunset-1)]">
               Best: {endedBestScore} / 1000
             </span>
           </div>
 
-          <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-12">
-            <div className="flex flex-col gap-3 lg:col-span-7">
+          <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
+            <div ref={boardRef} className="flex min-w-0 flex-col gap-4">
               <PixelCanvas
                 width={32}
                 height={32}
+                availWidth={boardBox.width}
+                availHeight={boardBox.height}
                 cells={endedCells}
                 activeColor={activeColor}
                 canDraw={false}
@@ -401,7 +439,7 @@ export default function DailyHomePage() {
               />
             </div>
 
-            <div className="flex flex-col gap-3 lg:col-span-5">
+            <div className="flex min-w-0 flex-col gap-4">
               <GradePanel
                 latest={endedGrade}
                 best={endedBestScore}

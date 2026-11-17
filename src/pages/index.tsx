@@ -146,9 +146,6 @@ export default function Landing() {
                     <span className="pp-chip text-base text-foreground">
                       Fit 450 • Rec 390 • Spd 80
                     </span>
-                    <span className="pp-chip text-base text-foreground">
-                      umbrella?
-                    </span>
                   </div>
                 </div>
               </div>

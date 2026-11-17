@@ -51,28 +51,28 @@ export function Leaderboard({ day, ended }: { day: string; ended: boolean }) {
   const ranks = rankScores(scores)
   const sorted = ranks.map(({ userId, rank }) => ({ score: scores.find((row) => row.userId === userId)!, rank }))
   return (
-    <section className="arcade-card flex flex-col gap-4 rounded-xl bg-card p-5" data-testid="daily-leaderboard">
+    <section className="pp-panel flex flex-col gap-4 bg-card p-5" data-testid="daily-leaderboard">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="flex items-center gap-2 font-pixel text-base font-extrabold uppercase tracking-wider"><Trophy className="h-4 w-4 text-amber-400" aria-hidden /> Leaderboard</h2>
+        <h2 className="flex items-center gap-2 text-xl uppercase tracking-wider"><Trophy className="h-4 w-4 text-[var(--sunset-1)]" aria-hidden /> Leaderboard</h2>
         <div className="flex items-center gap-2">
           <Button type="button" variant="secondary" size="sm" onClick={() => setOffset((value) => value + 1)} aria-label="Previous day">←</Button>
-          <span className="text-xs text-muted-foreground">{offset === 0 ? 'Today' : selectedDay}</span>
+          <span className="text-base text-muted-foreground">{offset === 0 ?'Today' : selectedDay}</span>
           <Button type="button" variant="secondary" size="sm" onClick={() => setOffset((value) => Math.max(0, value - 1))} disabled={offset === 0} aria-label="Next day">→</Button>
         </div>
       </div>
-      {offset === 0 && <p className="text-xs text-muted-foreground">Live rankings so far</p>}
-      {status === 'loading' ? <p className="text-xs text-muted-foreground">Loading scores…</p> : sorted.length === 0 ? <p className="text-xs text-muted-foreground">No scores yet.</p> : (
+      {offset === 0 && <p className="text-base text-muted-foreground">Live rankings so far</p>}
+      {status === 'loading' ? <p className="text-base text-muted-foreground">Loading scores…</p> : sorted.length === 0 ? <p className="text-base text-muted-foreground">No scores yet.</p> : (
         <ol className="space-y-2">
           {sorted.map(({ score, rank }) => {
             const drawing = ended && offset === 0 && drawings.day === day ? drawings.items.find((item) => item.userId === score.userId) : undefined
             const medal = offset === 0 ? (rank <= 3 ? rank : 0) : score.medal
-            return <li key={score.userId} className="flex items-center gap-3 rounded-lg bg-secondary/40 p-2">
-              <span className="w-6 text-center text-sm font-bold">{rank}</span>
+            return <li key={score.userId} className="flex items-center gap-3 bg-secondary/40 p-2">
+              <span className="w-6 text-center text-lg">{rank}</span>
               <Avatar><AvatarImage src={score.avatarUrl || undefined} /><AvatarFallback>{score.displayName?.slice(0, 1) || '?'}</AvatarFallback></Avatar>
               {drawing && <PixelThumb cells={drawing.cells} size={40} />}
-              <Link className="min-w-0 flex-1 truncate font-bold hover:underline" to={`/u/${encodeURIComponent(score.userId)}`}>{score.displayName || 'Player'}</Link>
-              {medal > 0 && medal <= 3 && <span aria-label={`${['Gold', 'Silver', 'Bronze'][medal - 1]} medal${offset === 0 ? ' so far' : ''}`}>{['🥇', '🥈', '🥉'][medal - 1]}</span>}
-              <span className="text-sm font-bold">{score.score}<span className="text-muted-foreground"> / 1000</span></span>
+              <Link className="min-w-0 flex-1 truncate hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring" to={`/u/${encodeURIComponent(score.userId)}`}>{score.displayName || 'Player'}</Link>
+              {medal > 0 && medal <= 3 && <span aria-label={`${['Gold', 'Silver', 'Bronze'][medal - 1]} medal${offset === 0 ?' so far' : ''}`}>{['🥇', '🥈', '🥉'][medal - 1]}</span>}
+              <span className="text-lg">{score.score}<span className="text-muted-foreground"> / 1000</span></span>
             </li>
           })}
         </ol>

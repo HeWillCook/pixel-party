@@ -57,11 +57,17 @@ function lighthouseCells(): string {
   return Buffer.from(cells).toString('base64')
 }
 
-async function setupClient(page: Page) {
+async function setupClient(page: Page, options: { signedOut?: boolean; dailyStatus?: 'not_started' | 'playing' | 'ended'; gallery?: boolean } = {}) {
   await page.route('**/*', async (route) => {
     const url = new URL(route.request().url())
     if (url.origin !== origin) return route.abort()
+    if (url.pathname === '/api/daily/me') {
+      const now = Date.now()
+      const status = options.dailyStatus ?? 'not_started'
+      return route.fulfill({ json: { day: new Date(now).toISOString().slice(0, 10), status, autoUsed: 0, asksUsed: 0, finalUsed: status === 'ended', best: status === 'ended' ? 840 : 0, ...(status !== 'not_started' ? { prompt: 'A lighthouse by the sea', startedAt: now - 60_000, endsAt: now + 540_000, nextAutoAt: now + 60_000, lastCells: lighthouseCells() } : {}) } })
+    }
     if (url.pathname === '/api/auth/get-session') {
+      if (options.signedOut) return route.fulfill({ json: null })
       return route.fulfill({
         json: {
           user: fixtureUser,
@@ -69,7 +75,7 @@ async function setupClient(page: Page) {
         },
       })
     }
-    if (url.pathname === '/api/auth/token') return route.fulfill({ json: { token: fixtureToken } })
+    if (url.pathname === '/api/auth/token') return route.fulfill({ json: { token: options.signedOut ? null : fixtureToken } })
     if (url.pathname.startsWith('/api/')) return route.fulfill({ json: {} })
     const asset = url.pathname.startsWith('/assets/')
     const path = asset ? resolve(clientDir, `.${url.pathname}`) : resolve(clientDir, '_spa.html')
@@ -173,6 +179,10 @@ async function setupClient(page: Page) {
             },
           }),
         )
+      } else if (options.gallery && (query.collection === 'dailyDrawings' || query.collection === 'dailyScores')) {
+        const day = new Date().toISOString().slice(0, 10)
+        const data = { day, userId: 'host', displayName: 'Will', avatarUrl: '', prompt: 'A lighthouse by the sea', cells: lighthouseCells(), score: 840, fit: 450, recognition: 310, speed: 80, bestElapsedMs: 60_000, guess: 'lighthouse', reason: 'A bright beacon above the waves.', medal: 1, visibility: 'public' }
+        socket.send(JSON.stringify({ type: 'core.query_result', payload: { subscriptionId, records: [{ recordId: 'daily-fixture', data }] } }))
       } else {
         socket.send(
           JSON.stringify({
@@ -397,11 +407,11 @@ test('capture playing room, lobby, overlay, landing, and home screenshots', asyn
 
   // 7. Home (/home) at 1440x900 and 375x812
   await page.setViewportSize({ width: 1440, height: 900 })
-  await page.goto(`${origin}/home`)
+  await page.goto(`${origin}/party`)
   await expect(page.getByTestId('lobby-page')).toBeVisible()
   await expect(page.getByTestId('room-card-QX3J')).toBeVisible()
   await page.evaluate(() => document.fonts.ready)
-  await page.screenshot({ path: resolve(screenshotsDir, 'home-1440x900.png') })
+  await page.screenshot({ path: resolve(screenshotsDir, 'party-1440x900.png') })
 
   await page.setViewportSize({ width: 375, height: 812 })
   await page.waitForTimeout(150)
@@ -411,9 +421,37 @@ test('capture playing room, lobby, overlay, landing, and home screenshots', asyn
   }))
   expect(home375.docScrollWidth).toBeLessThanOrEqual(375)
   expect(home375.bodyScrollWidth).toBeLessThanOrEqual(375)
-  await page.screenshot({ path: resolve(screenshotsDir, 'home-375x812.png') })
+  await page.screenshot({ path: resolve(screenshotsDir, 'party-375x812.png') })
   const roomName = page.getByTestId('room-card-QX3J').locator('.truncate')
   expect(await roomName.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
   await page.getByTestId('join-room-form').scrollIntoViewIfNeeded()
-  await page.screenshot({ path: resolve(screenshotsDir, 'home-controls-375x812.png') })
+  await page.screenshot({ path: resolve(screenshotsDir, 'party-controls-375x812.png') })
 })
+
+for (const view of ['signed-out', 'not_started', 'playing', 'ended', 'profile'] as const) {
+  test(`capture daily ${view} at desktop, short desktop, and mobile sizes`, async ({ page }) => {
+    await mkdir(screenshotsDir, { recursive: true })
+    await setupClient(page, {
+      signedOut: view === 'signed-out' || view === 'profile',
+      dailyStatus: view === 'not_started' || view === 'playing' || view === 'ended' ? view : undefined,
+      gallery: view === 'profile' || view === 'ended',
+    })
+    const errors: string[] = []
+    page.on('pageerror', error => errors.push(error.message))
+    await page.goto(`${origin}/${view === 'profile' ? 'u/host' : 'home'}`)
+    if (view === 'profile') await expect(page.getByRole('heading', { name: "Will's Gallery" })).toBeVisible()
+    else await expect(page.getByTestId(view === 'signed-out' ? 'daily-signed-out' : `daily-${view.replace('_', '-')}`)).toBeVisible()
+    await page.evaluate(() => document.fonts.ready)
+    for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720 }, { width: 375, height: 812 }]) {
+      await page.setViewportSize(viewport)
+      await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width)
+      if (view === 'playing' || view === 'ended') {
+        const canvas = page.getByTestId('pixel-canvas')
+        await expect.poll(async () => (await canvas.boundingBox())!.width).toBeLessThanOrEqual(viewport.width - 40)
+        if (viewport.width === 1440) await expect.poll(async () => (await canvas.boundingBox())!.width).toBeGreaterThanOrEqual(576)
+      }
+      await page.screenshot({ path: resolve(screenshotsDir, `daily-${view}-${viewport.width}x${viewport.height}.png`) })
+    }
+    expect(errors).toEqual([])
+  })
+}

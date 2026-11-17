@@ -31,14 +31,14 @@ export function DailyTimer({ startedAt, endsAt }: DailyTimerProps) {
   return (
     <span
       data-testid="daily-timer"
-      className={`font-pixel inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-bold ${
+      className={`inline-flex items-center gap-2 px-2.5 py-1 text-2xl ${
         urgent
-          ? 'bg-rose-500/20 text-rose-300 ring-1 ring-rose-400/50'
+          ? 'bg-secondary text-[var(--sunset-2)] ring-1 ring-ring'
           : 'bg-secondary text-foreground'
       }`}
       title="Time remaining in daily attempt"
     >
-      <Clock className={`h-3.5 w-3.5 ${urgent ? 'text-rose-400' : 'text-amber-400'}`} aria-hidden />
+      <Clock className="h-4 w-4 text-[var(--sunset-1)]" aria-hidden />
       <span>{formatTimer(remainingMs)}</span>
     </span>
   )
