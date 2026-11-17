@@ -124,7 +124,7 @@
 @utility slide-in-from-left-2 { --tw-enter-translate-x: -0.5rem; }
 @utility slide-in-from-right-2 { --tw-enter-translate-x: 0.5rem; }
 @utility slide-out-to-top-2 { --tw-exit-translate-y: -0.5rem; }
-@utility slide-out-to-bottom-2 { --tw-exit-translate-y: -0.5rem; }
+@utility slide-out-to-bottom-2 { --tw-exit-translate-y: 0.5rem; }
 @utility slide-out-to-left-2 { --tw-exit-translate-x: -0.5rem; }
 @utility slide-out-to-right-2 { --tw-exit-translate-x: 0.5rem; }
 
