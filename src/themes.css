@@ -80,6 +80,16 @@
   color: var(--sunset-1, #fde68a);
 }
 
+.pp-danger {
+  color: var(--sunset-3);
+  border-color: var(--sunset-3);
+}
+
+.pp-danger-solid {
+  background: var(--sunset-3);
+  color: var(--color-background);
+}
+
 .pp-btn {
   background: var(--button-gradient, linear-gradient(180deg,#fb923c,#db2777));
   color: #ffffff;
@@ -100,6 +110,7 @@ a.pp-panel:focus-visible,
 [data-testid^="room-card-"]:focus-visible,
 a.pp-logo:focus-visible,
 nav a:focus-visible,
+nav button:focus-visible,
 [data-testid="visibility-public"]:focus-visible,
 [data-testid="visibility-private"]:focus-visible,
 [data-testid="palette"] button:focus-visible {

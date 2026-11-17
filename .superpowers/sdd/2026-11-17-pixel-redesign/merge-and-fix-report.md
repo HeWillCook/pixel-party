@@ -185,3 +185,80 @@ explicit screenshot run and individually inspected:
 
 Provider: Codex performed the merge, implementation, visual inspection and verification;
 no subagents or reviewers were spawned, as requested.
+
+## Merge review fixes
+
+Follow-up to the review of `8f4ff3e`, completed on 2026-11-17. All five findings
+are addressed together without another merge or any conflict resolution.
+
+1. **Mobile navigation focus:** removed the menu toggle's outline suppression and
+   Tailwind ring classes. `nav button:focus-visible` now shares the navigation links'
+   3 px solid `--sunset-1` outline with a 2 px offset. The new mobile direct-focus
+   regression checks the complete outline and absence of a second box-shadow ring.
+2. **Absent-host header permission:** extended both non-host permission scenarios
+   to assert the header's `host-next-button` count during intermission. With the host
+   absent it is present once, and clicking it sends exactly one `next` command;
+   with the host present it remains absent. Live-round skip restrictions remain covered.
+3. **Single scroll source:** removed `window.scrollY` from the canvas top-offset
+   calculation. The explanatory comment identifies `main` as the sole scroller in
+   the document-locked app shell. This supersedes the dual-source description in
+   item 6 above. The existing 100 px container-scroll sizing regression remains green.
+4. **Destructive hierarchy:** added token-only `.pp-danger` and `.pp-danger-solid`
+   modifiers. Delete room is a pink outlined chip; End room is solid `--sunset-3`
+   with dark `--color-background` text rather than the play gradient. Computed-style
+   assertions cover trigger text/border, confirm fill/text, and no background image;
+   cancel/confirm, room closure and no reconnect behavior still pass.
+5. **Countdown hook deduplication:** added an offline hook integration regression
+   using Playwright's clock and an injected AudioContext that counts only the tick's
+   triangle oscillator at 1046.5 Hz. It exercises both state-effect-first and
+   interval-first observations of the same second and proves one tick per second.
+   The shared hook gate needed no production change. A temporary mutation giving
+   the interval its own gate failed as intended (`Expected: 1`, `Received: 2` at
+   the first 250 ms interval); the original hook was restored before final validation.
+
+### Verification
+
+Initial focus/destructive regressions failed against the reviewed implementation,
+then all six focused tests passed after the fixes. Final required commands all
+exited successfully:
+
+```text
+$ npm run verify
+> eslint .
+> tsc --noEmit
+ Test Files  24 passed (24)
+      Tests  263 passed (263)
+✓ built in 820ms
+[prerender] wrote 1 page(s) [/], _spa.html, robots.txt, sitemap.xml
+
+$ npx playwright test -c tests/offline.playwright.config.ts
+1280x720 banner-case metrics: {"canvasWidth":384,"canvasBottom":637,"paletteBottom":683}
+1 skipped
+21 passed (4.8s)
+
+$ npm run build && SCREENSHOTS=1 npx playwright test -c tests/offline.playwright.config.ts screenshots
+1440x900 metrics: {"canvasWidth":672,"canvasHeight":672,"canvasBottom":823,"paletteBottom":869,"askBottom":253.75,"vh":900,"mainScrollHeight":851,"mainClientHeight":851}
+1280x720 metrics: {"canvasWidth":480,"canvasHeight":480,"canvasBottom":631,"paletteBottom":677,"askBottom":253.75}
+375x812 metrics: {"canvasWidth":320,"docScrollWidth":375,"bodyScrollWidth":375}
+1 passed (2.5s)
+```
+
+The normal-suite skip remains the explicitly gated screenshot test. All 13 existing
+captures listed above were regenerated; the 10 changed captures were visually
+inspected, including `delete-room-confirm-1440x900.png`, playing/results views at
+all three sizes, desktop lobby/home, and mobile home controls. Destructive actions
+are visually distinct; pinned result actions and canvas dimensions remain intact.
+No new hex colors, font changes or rounded controls were introduced. The design
+audit still reports only the two allowed avatar `rounded-full` declarations.
+`git diff --check` passes. The lockfile is unchanged, so no additional `npm ci`
+was necessary.
+
+### Concerns
+
+No unresolved follow-up finding. The existing nonblocking Node localStorage and
+Playwright color-environment warnings remain. Verification is local/offline only;
+the production-only investigation noted above is unchanged. No push, deployment,
+PR, additional agent or reviewer was started.
+
+Provider: Codex implemented, mutation-checked, visually inspected and verified all
+five follow-ups in the assigned checkout.

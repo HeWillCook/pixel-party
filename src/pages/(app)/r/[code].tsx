@@ -202,8 +202,9 @@ export default function RoomPage() {
       if (!col) return
       const colWidth = col.clientWidth || Math.max(280, window.innerWidth - 32)
       const slot = canvasSlotRef.current
+      // The app shell locks document scrolling; main is the sole scroll container.
       const topOffset = slot
-        ? slot.getBoundingClientRect().top + window.scrollY + (slot.closest('main')?.scrollTop ?? 0)
+        ? slot.getBoundingClientRect().top + (slot.closest('main')?.scrollTop ?? 0)
         : 140
       const paletteH = paletteWrapRef.current
         ? paletteWrapRef.current.getBoundingClientRect().height

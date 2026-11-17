@@ -143,7 +143,7 @@ export default function Navigation() {
           )}
 
           <button
-            className="inline-flex h-8 w-8 items-center justify-center text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:hidden"
+            className="inline-flex h-8 w-8 items-center justify-center text-muted-foreground hover:text-foreground md:hidden"
             onClick={() => setMobileMenuOpen((prev) => !prev)}
             aria-label="Toggle menu"
             aria-expanded={mobileMenuOpen}

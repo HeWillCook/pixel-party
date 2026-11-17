@@ -129,6 +129,21 @@ test('navigation, logo and home visibility controls use the palette focus outlin
   }
 })
 
+test('mobile navigation toggle uses the shared palette outline without a second focus ring', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 })
+  await clientFixture(page, { signedIn: true })
+  await page.goto(`${origin}/home`)
+  const toggle = page.getByRole('button', { name: 'Toggle menu' })
+  await expect(toggle).toBeVisible()
+  await page.keyboard.press('Shift')
+  await toggle.focus()
+  await expect(toggle).toHaveCSS('outline-width', '3px')
+  await expect(toggle).toHaveCSS('outline-style', 'solid')
+  await expect(toggle).toHaveCSS('outline-color', 'rgb(253, 230, 138)')
+  await expect(toggle).toHaveCSS('outline-offset', '2px')
+  await expect(toggle).toHaveCSS('box-shadow', 'none')
+})
+
 test('canvas sizing stays stable when the room scroll container is scrolled before remeasurement', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 })
   await clientFixture(page, { signedIn: true })
@@ -146,6 +161,71 @@ test('canvas sizing stays stable when the room scroll container is scrolled befo
   })
   expect(await page.evaluate(() => document.querySelector('main')!.scrollTop)).toBe(100)
   await expect.poll(async () => (await canvas.boundingBox())!.width).toBe(originalWidth)
+})
+
+test('countdown hook shares one tick per second between state effects and the interval', async ({ page }) => {
+  const epoch = new Date('2026-11-17T17:00:00Z')
+  await page.clock.install({ time: epoch })
+  await page.addInitScript(() => {
+    const state = window as unknown as { tickOscillators: number; audioContexts: number; AudioContext: unknown }
+    state.tickOscillators = 0
+    state.audioContexts = 0
+    state.AudioContext = class {
+      state = 'running'
+      destination = {}
+      constructor() { state.audioContexts++ }
+      get currentTime() { return Date.now() / 1000 }
+      createGain() {
+        return {
+          gain: { value: 0, setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {} },
+          connect() {},
+        }
+      }
+      createOscillator() {
+        let frequency = 0
+        const oscillator = {
+          type: 'sine',
+          frequency: { setValueAtTime(value: number) { frequency = value } },
+          connect() {},
+          start() { if (oscillator.type === 'triangle' && frequency === 1046.5) state.tickOscillators++ },
+          stop() {},
+        }
+        return oscillator
+      }
+    }
+  })
+  const errors = await clientFixture(page, { signedIn: true })
+  const state = snapshot('playing')
+  state.round.endsAt = epoch.getTime() + 300000
+  let server!: WebSocketRoute
+  await page.routeWebSocket('**/api/pixel/**', socket => {
+    server = socket
+    socket.send(JSON.stringify(state))
+  })
+  await page.goto(`${origin}/r/AB2Z`)
+  await expect(page.getByTestId('pixel-canvas')).toBeVisible()
+  await page.clock.pauseAt(new Date(epoch.getTime() + 60000))
+  await page.keyboard.press('Shift')
+  await expect.poll(() => page.evaluate(() => (window as unknown as { audioContexts: number }).audioContexts)).toBe(1)
+  const ticks = () => page.evaluate(() => (window as unknown as { tickOscillators: number }).tickOscillators)
+  expect(await ticks()).toBe(0)
+  const now = await page.evaluate(() => Date.now())
+  server.send(JSON.stringify({ t: 'round', round: { ...state.round, endsAt: now + 6000 } }))
+  await expect(page.getByTestId('round-timer')).toHaveText('0:06')
+  await page.clock.setSystemTime(new Date(now + 1000))
+  server.send(JSON.stringify({ t: 'players', count: 2, watching: 0, roster: state.roster }))
+  await expect(page.getByTestId('round-players')).toHaveText('2 painters')
+  await expect.poll(ticks).toBe(1)
+  await page.clock.runFor(250)
+  expect(await ticks()).toBe(1)
+  await page.clock.runFor(1000)
+  expect(await ticks()).toBe(2)
+  server.send(JSON.stringify({ t: 'players', count: 3, watching: 0, roster: state.roster }))
+  await expect(page.getByTestId('round-players')).toHaveText('3 painters')
+  expect(await ticks()).toBe(2)
+  await page.clock.runFor(500)
+  expect(await ticks()).toBe(2)
+  expect(errors).toEqual([])
 })
 
 test('audio unlock retries on a later interaction until the context runs', async ({ page }) => {
@@ -343,11 +423,17 @@ test('host deletion asks for confirmation, closes the board, and never reconnect
   })
   await page.goto(`${origin}/r/AB2Z`)
   await expect(page.getByTestId('pixel-canvas')).toBeVisible()
-  await page.getByRole('button', { name: 'Delete room', exact: true }).click()
+  const trigger = page.getByRole('button', { name: 'Delete room', exact: true })
+  await expect(trigger).toHaveCSS('color', 'rgb(236, 72, 153)')
+  await expect(trigger).toHaveCSS('border-color', 'rgb(236, 72, 153)')
+  await trigger.click()
   await expect(page.getByRole('dialog')).toContainText('This ends the room for everyone.')
   await expect(page.getByRole('dialog')).toHaveClass(/pp-panel/)
   await expect(page.getByRole('dialog')).toHaveCSS('border-radius', '0px')
-  await expect(page.getByRole('button', { name: 'End room', exact: true })).toHaveClass(/pp-btn/)
+  const confirm = page.getByRole('button', { name: 'End room', exact: true })
+  await expect(confirm).toHaveCSS('background-image', 'none')
+  await expect(confirm).toHaveCSS('background-color', 'rgb(236, 72, 153)')
+  await expect(confirm).toHaveCSS('color', 'rgb(10, 8, 20)')
   await expect(page.getByRole('button', { name: 'Cancel', exact: true })).toHaveClass(/pp-chip/)
   await page.getByRole('button', { name: 'Cancel', exact: true }).click()
   expect(deletes).toBe(0)
@@ -391,8 +477,10 @@ for (const hostConnected of [true, false]) {
   test(`non-host cannot skip a live round and ${hostConnected ? 'cannot' : 'can'} start results when host is ${hostConnected ? 'present' : 'absent'}`, async ({ page }) => {
     const errors = await clientFixture(page, { signedIn: true, hostId: 'other-host' })
     let server!: WebSocketRoute
+    const commands: string[] = []
     await page.routeWebSocket('**/api/pixel/**', socket => {
       server = socket
+      socket.onMessage(raw => commands.push(JSON.parse(String(raw)).t))
       const state = snapshot('playing')
       socket.send(JSON.stringify({ ...state, roster: [
         ...state.roster!, ...(hostConnected ? [{ userId: 'other-host', name: 'Other host' }] : []),
@@ -406,6 +494,11 @@ for (const hostConnected of [true, false]) {
     await expect(page.getByTestId('round-timer')).toHaveText('ROUND OVER')
     await expect(page.getByTestId('round-overlay')).toBeVisible()
     await expect(page.getByTestId('overlay-next')).toHaveCount(hostConnected ? 0 : 1)
+    await expect(page.getByTestId('host-next-button')).toHaveCount(hostConnected ? 0 : 1)
+    if (!hostConnected) {
+      await page.getByTestId('host-next-button').click()
+      await expect.poll(() => commands).toEqual(['next'])
+    }
     if (hostConnected) await expect(page.getByTestId('round-overlay')).toContainText('Waiting for the host to start a new game.')
     expect(errors).toEqual([])
   })
