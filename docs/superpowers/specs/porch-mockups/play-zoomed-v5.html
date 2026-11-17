@@ -1,0 +1,180 @@
+<h2>Zoomed in: the play screen v5: easel hovering on little boosters</h2>
+<p class="subtitle">Home is the wide porch scene (signs = navigation). Pressing Start zooms the camera into the easel, and this clear UI slides in around the canvas: pixel-styled, but labelled and conventional. The sunset stays in the background.</p>
+
+<link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+<style>
+  .play { position:relative; width:100%; max-width:1100px; margin:0 auto; container-type:inline-size; font-family:'VT323',monospace; color:#3b2214; border-radius:4px }
+  .play canvas.bg { position:absolute; inset:0; width:100%; height:100%; image-rendering:pixelated }
+  .ui { position:relative; display:grid; grid-template-columns: 15cqw 1fr 22cqw; grid-template-rows: 6cqw auto 9cqw; gap:1.2cqw; padding:1.4cqw; }
+  .px { background:#f6ead2; border:.35cqw solid #3b2214; box-shadow: inset -.35cqw -.35cqw 0 #d9c39c, inset .35cqw .35cqw 0 #fffaf0, .45cqw .45cqw 0 rgba(30,10,30,.45); }
+  .top { grid-column:1/4; display:flex; align-items:center; gap:1.2cqw; padding:0 1.2cqw; font-size:2.4cqw }
+  .top .prompt b { font-size:3cqw; color:#c0482f } .top .sp{flex:1}
+  .chip { background:#3b2214; color:#ffe6a8; padding:.2cqw 1cqw; font-size:2.2cqw }
+  .exit { border:.3cqw solid #3b2214; padding:.1cqw .9cqw; background:#e9d3ad; font-size:2.1cqw }
+  .tools { display:flex; flex-direction:column; gap:.7cqw; padding:1cqw; }
+  .tools h4, .side h4 { margin:0 0 .3cqw; font-size:1.8cqw; letter-spacing:.1cqw; opacity:.7; font-weight:normal }
+  .tool { display:flex; align-items:center; gap:.8cqw; padding:.5cqw .7cqw; font-size:2.1cqw; border:.25cqw solid transparent }
+  .tool .ic { width:3cqw; height:3cqw; image-rendering:pixelated }
+  .tool .k { margin-left:auto; font-size:1.6cqw; background:#e9d3ad; padding:0 .5cqw; border:.2cqw solid #b8996c }
+  .tool.on { background:#3b2214; color:#ffe6a8 } .tool.on .k{ background:#5a3a26; color:#ffe6a8; border-color:#7a5a3e}
+  .tool.off { opacity:.35 }
+  .easel { display:flex; align-items:center; justify-content:center }
+  .stand { position:relative; width:38cqw; aspect-ratio:80/106; animation:bob 3.2s ease-in-out infinite }
+  @keyframes bob { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-.7cqw)} }
+  .stand canvas { position:absolute; inset:0; width:100%; height:100%; image-rendering:pixelated }
+  .stand .board { position:absolute; left:15%; top:8.49%; width:70%; padding:0; border:none; box-shadow:none; background:none }
+  .stand .grid { width:100% }
+  .board { background:#e8dcc4; padding:1.2cqw; box-shadow: .6cqw .6cqw 0 rgba(30,10,30,.45); border:.35cqw solid #5a3420 }
+  .grid { display:grid; grid-template-columns:repeat(16,1fr); width:28cqw; aspect-ratio:1; background:#fff; cursor:crosshair }
+  .grid i { box-shadow: inset 0 0 0 .05cqw rgba(0,0,0,.06) }
+  .side { display:flex; flex-direction:column; gap:1.2cqw }
+  .side .card { padding:1cqw; font-size:2cqw }
+  .row { display:flex; justify-content:space-between } .total { font-size:4.4cqw; color:#c0482f; line-height:.9 }
+  .bar { height:1.2cqw; background:#e3cfa8; border:.2cqw solid #3b2214; margin:.2cqw 0 .6cqw } .bar span{ display:block; height:100%; background:#e8743b }
+  .hint { font-size:1.65cqw; opacity:.75 }
+  .bell { background:#e8743b; color:#fff8e6; text-align:center; font-size:2.6cqw; padding:.8cqw; border:.35cqw solid #3b2214; box-shadow: inset -.35cqw -.35cqw 0 #b9532a, .45cqw .45cqw 0 rgba(30,10,30,.45) }
+  .palette { grid-column:1/4; display:flex; align-items:center; gap:1cqw; padding:0 1.4cqw; font-size:2cqw }
+  .sw { width:4.6cqw; height:4.6cqw; border:.3cqw solid #3b2214; position:relative }
+  .sw.on { outline:.4cqw solid #ffd36b; outline-offset:.25cqw; transform:translateY(-.6cqw) }
+  .sw .n { position:absolute; bottom:-2.2cqw; left:50%; transform:translateX(-50%); font-size:1.5cqw; opacity:.6 }
+</style>
+
+<div class="play">
+  <canvas class="bg" id="bg" width="160" height="90"></canvas>
+  <div class="ui">
+    <div class="top px">
+      <span class="chip">DAILY</span>
+      <span class="prompt">Today: <b>Sunset over the sea</b></span>
+      <span class="sp"></span>
+      <span>⏱ 6:18 left</span>
+      <span class="exit">✕ Exit to porch</span>
+    </div>
+
+    <div class="tools px">
+      <h4>TOOLS</h4>
+      <div class="tool on"><canvas class="ic" data-ic="pencil" width="8" height="8"></canvas>Paint</div>
+      <div class="tool"><canvas class="ic" data-ic="eraser" width="8" height="8"></canvas>Erase</div>
+      <div class="tool"><canvas class="ic" data-ic="bucket" width="8" height="8"></canvas>Fill</div>
+      <div class="tool"><canvas class="ic" data-ic="dropper" width="8" height="8"></canvas>Pick colour</div>
+      <div style="flex:1"></div>
+      <div class="tool"><canvas class="ic" data-ic="undo" width="8" height="8"></canvas>Undo</div>
+      <div class="tool"><canvas class="ic" data-ic="redo" width="8" height="8"></canvas>Redo</div>
+      <div class="hint">Party mode: Fill is hidden (pixel budget)</div>
+    </div>
+
+    <div class="easel"><div class="stand"><canvas id="easel" width="80" height="106"></canvas><div class="board"><div class="grid" id="grid"></div></div></div></div>
+
+    <div class="side">
+      <div class="card px">
+        <h4>HOW YOU'RE SCORED</h4>
+        <div class="row"><span>Score</span><span class="total">742</span></div>
+        <div class="row"><span>Matches the prompt</span><span>410/500</span></div><div class="bar"><span style="width:82%"></span></div>
+        <div class="row"><span>Easy to recognise</span><span>260/400</span></div><div class="bar"><span style="width:65%"></span></div>
+        <div class="row"><span>Speed</span><span>72/100</span></div><div class="bar"><span style="width:72%"></span></div>
+        <div class="hint">"Clear sun and water; add a horizon line"</div>
+      </div>
+      <div class="card px">
+        <h4>AUTO-GRADES</h4>
+        <div class="row"><span>2:00 ✓ 655</span><span>4:00 ✓ 742</span></div>
+        <div class="row"><span>6:00 in 0:42</span><span>8:00 …</span></div>
+        <div class="row"><span>Manual: 1 of 3 used</span><span></span></div>
+        <div class="hint">Skipped grades say why (e.g. "no changes since last grade")</div>
+      </div>
+      <div class="bell">🔔 Grade now <span style="font-size:1.9cqw;opacity:.85">(3 left)</span></div>
+      <div class="bell" style="background:#2f7f9a;box-shadow: inset -.35cqw -.35cqw 0 #1f5a6e, .45cqw .45cqw 0 rgba(30,10,30,.45)">✓ Submit &amp; finish</div>
+      <div class="hint" style="color:#fff3d6;text-shadow:1px 1px 0 #2a1630">Grade now keeps you drawing. Submit locks in your best score; earlier = more speed points.</div>
+    </div>
+
+    <div class="palette px">
+      <span style="margin-right:.6cqw">COLOURS</span>
+      <div id="sws" style="display:flex;gap:1cqw;align-items:center"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  // background: zoomed sunset + porch rail
+  const c=document.getElementById('bg'), g=c.getContext('2d'); const r=(x,y,w,h,col)=>{g.fillStyle=col;g.fillRect(x,y,w,h)};
+  const bands=['#45235e','#6b2f6b','#9a3a6e','#c4456b','#e65f60','#f2805a','#ffa35c','#ffc070'];
+  for(let y=0;y<55;y++){ const i=Math.min(7,Math.floor(y/7)); for(let x=0;x<160;x++){ let col=bands[i]; if(y%7>4 && i<7 && (x+y)%2==0) col=bands[i+1]; r(x,y,1,1,col);} }
+  for(let y=30;y<55;y++) for(let x=96;x<136;x++){ const d=Math.hypot(x-116,y-56); if(d<16) r(x,y,1,1,d<11?'#fff4c2':'#ffd36b'); }
+  for(let y=55;y<90;y++) r(0,y,160,1, y<65?'#3d5f93':'#2f4c7c');
+  let s=3; const rnd=()=>{s=(s*16807)%2147483647; return s/2147483647};
+  for(let i=0;i<80;i++){ r(Math.floor(rnd()*160),56+Math.floor(rnd()*30),2+Math.floor(rnd()*4),1,'#5677a8'); }
+  for(let y=56;y<85;y++) r(116+Math.round((rnd()*2-1)*(4+(y-55)*0.8)),y,3,1,'#ffd36b');
+  r(0,70,160,3,'#7a4a2e'); r(0,70,160,1,'#b47d4f'); for(let x=3;x<160;x+=6){ r(x,73,3,17,'#7a4a2e'); r(x,73,1,17,'#9a6640'); }
+
+  // icons (8x8)
+  const icons={
+    pencil:["......#.",".....#y#","....#yy#","...#yy#.","..#yy#..",".#yy#...","#pp#....","##......"],
+    eraser:["........","...####.","..#pppp#",".#pppp##","#wwww#.#","#wwww##.","#####...","........"],
+    bucket:["...##...","..#..#..",".######b",".#ssss#b",".#ssss#b",".#ssss#.",".#ssss#.","..####.."],
+    dropper:[".....##.","....####","...####.","..#w##..",".#w#....","#w#.....","##......","........"],
+    undo:["..#.....",".##.....","#######.",".##...#.","..#...#.","......#.","..####..","........"],
+    redo:[".....#..",".....##.",".#######",".#...##.",".#...#..",".#......","..####..","........"]};
+  const ic={'#':'#3b2214','y':'#ffcf3a','p':'#f28aa5','w':'#ffffff','s':'#9aa6b2','b':'#3a6fd8'};
+  document.querySelectorAll('canvas.ic').forEach(cv=>{ const k=cv.getContext('2d'); icons[cv.dataset.ic].forEach((row,y)=>[...row].forEach((ch,x)=>{ if(ic[ch]){ k.fillStyle= cv.closest('.tool.on')&&ch==='#'?'#ffe6a8':ic[ch]; k.fillRect(x,y,1,1);} })); });
+
+
+  // ---- pixel easel (80x92), canvas board area = x12..68, y9..65
+  (function(){
+    const e=document.getElementById('easel').getContext('2d');
+    const P=(x,y,c)=>{e.fillStyle=c;e.fillRect(x,y,1,1)}; const R=(x,y,w,h,c)=>{e.fillStyle=c;e.fillRect(x,y,w,h)};
+    const O='#2e1a10', D='#5a3420', M='#8a5a36', L='#b47d4f', H='#d9a26a';
+    // leg rasteriser: from (x0,y0) to (x1,y1), width w, with outline/shade/highlight
+    function leg(x0,y0,x1,y1,w,back){
+      for(let y=y0;y<=y1;y++){ const t=(y-y0)/(y1-y0); const x=Math.round(x0+(x1-x0)*t);
+        P(x-1,y,O); P(x+w,y,O);
+        for(let i=0;i<w;i++) P(x+i,y, back? (i===0?M:D) : (i===0?H:(i===w-1?D:(i===1?L:M))));
+        if(!back && y%11===3) P(x+2,y,D); }
+      R(x1-1,y1+1,w+2,1,O);
+    }
+    leg(39,3,39,88,3,true);           // back leg (behind)
+    R(30,78,20,3,O); R(31,79,18,1,D);  // rear brace
+    leg(33,2,10,90,4,false);          // front-left leg
+    leg(43,2,66,90,4,false);          // front-right leg
+    // top mast + clamp
+    R(37,0,6,12,O); R(38,0,4,12,M); P(38,1,H); R(38,2,1,9,L);
+    R(31,5,18,5,O); R(32,6,16,3,M); R(32,6,16,1,H); R(39,7,2,1,O);
+    // board backing (cream canvas with thickness)
+    R(11,8,58,59,O); R(12,9,56,56,'#efe4cc'); R(12,65,56,1,'#c9b896'); R(67,9,1,56,'#d6c6a6');
+    // tray ledge with lip
+    R(5,66,70,7,O); R(6,67,68,2,H); R(6,69,68,2,M); R(6,71,68,1,D);
+    R(5,64,3,3,O); R(72,64,3,3,O); P(6,65,L); P(73,65,L);
+    // things on the tray: brush, paint tubes, rag
+    R(14,64,16,2,O); R(15,64,10,1,'#c0482f'); R(25,64,2,1,'#c9c9c9'); R(27,64,3,1,'#3b2214');
+    R(36,62,6,4,O); R(37,63,4,2,'#2f7f9a'); P(42,64,'#9aa6b2');
+    R(45,62,6,4,O); R(46,63,4,2,'#ffd166'); P(51,64,'#9aa6b2');
+    R(56,61,10,5,O); R(57,62,8,3,'#f2e6d0'); P(59,63,'#ff8a3d'); P(62,62,'#2f7f9a'); P(60,64,'#e65f60');
+    // lower crossbar between front legs
+    R(17,80,46,3,O); R(18,81,44,1,L);
+    // drips of paint on legs for charm
+    P(14,78,'#ff8a3d'); P(14,79,'#ff8a3d'); P(64,74,'#2f7f9a');
+    // boosters under the three feet + animated flames
+    const feet=[[11,89],[39,87],[67,89]];
+    feet.forEach(([fx,fy],i)=>{ const back=i===1;
+      R(fx-3,fy+2,8,6,O); R(fx-2,fy+3,6,4,back?'#6f7a86':'#9aa6b2'); R(fx-2,fy+3,6,1,back?'#9aa6b2':'#d5dde5'); R(fx-2,fy+5,6,1,'#c0482f');
+      R(fx-2,fy+8,6,1,O); R(fx-1,fy+8,4,1,'#4a5560'); });
+    const cv=document.getElementById('easel');
+    let f=0; function flames(){ f++;
+      feet.forEach(([fx,fy],i)=>{ const y0=fy+9; R(fx-3,y0,8,106-y0,'rgba(0,0,0,0)'); e.clearRect(fx-3,y0,8,106-y0);
+        const len=(i===1?6:8)+((f+i*3)%6<3?1:0)+(Math.random()<.3?1:0);
+        for(let k=0;k<len;k++){ const w=k<2?4:(k<len-2?2:1); const x=fx+ (4-w)/2 - 0 - (w===1?0:0);
+          const col= k<2?'#fff4c2':(k<4?'#ffd36b':(k<len-1?'#ff8a3d':'#e65f60'));
+          R(Math.round(fx-1+(4-w)/2),y0+k,w,1,col); }
+        if(Math.random()<.5) P(fx-1+Math.floor(Math.random()*4),y0+len+1+Math.floor(Math.random()*2),'#ffb35c'); });
+      setTimeout(flames,110); }
+    flames();
+
+  })();
+
+  // canvas art
+  const art=["................","................","..........oo....",".........oooo...",".........oooo...","..........oo....","................","~~~~~~~~~~~~~~~~","~~~~~~~~~--~~~~~","~~~~~~~~~~-~~~~~","~~~~~~~~~-~~~~~~","~~~~~~~~~~~~~~~~","................","................","................","................"];
+  const pal={'.':'#ffffff','o':'#ff8a3d','~':'#2f7f9a','-':'#ffd36b'};
+  document.getElementById('grid').innerHTML=art.join('').split('').map(ch=>`<i style="background:${pal[ch]}"></i>`).join('');
+
+  const sw=[['#000000','black'],['#ffffff','white'],['#e63946','red'],['#ff8a3d','orange'],['#ffd166','yellow'],['#06d6a0','green'],['#2f7f9a','teal'],['#3a5bd9','blue'],['#9b5de5','purple'],['#f4a3c0','pink'],['#8d5a3b','brown'],['#7a7a7a','grey']];
+  document.getElementById('sws').innerHTML=sw.map(([col,n],i)=>`<div class="sw${i===3?' on':''}" style="background:${col}"></div>`).join('');
+})();
+</script>
