@@ -40,7 +40,12 @@
 - **Contrast:** WCAG AA for panel text.
 - **Screenshots:** each UI task ends with `SCREENSHOTS=1` captures at 1440×900, 1280×720 and 375×812 into `docs/superpowers/screenshots/2026-11-18-porch/`, and the implementer looks at every image before reporting.
 - **No new runtime dependencies** except an optional self-hosted `@fontsource/*` pixel font for display text, if VT323 reads poorly in panels. That's the builder's call; record the choice.
-- Don't change game logic, scoring formulas, the judge or the server, except Task 5's noop-ack correlation fix.
+- Don't change game logic, scoring formulas, the judge or the server.
+- **Pixel-size rule:** the scene renders at an integer scale. Expose it as the CSS variable `--px` (an integer number of CSS pixels per scene pixel, minimum 2). Panel borders, shadows, icon pixels and in-scene text sizes are whole multiples of `--px`, so every pixel on screen is the same size. Nothing that stands in for a scene object (signs, the beam, the easel) may be a plain CSS box; draw those as sprites.
+- **Two compositions:** `landscape` (320×180 scene px, used when the viewport aspect is at least 1) and `portrait` (180×320 scene px, used below 1). Each has its own object layout in `src/scene/porch/layout.ts` (and later `beach/layout.ts`). The portrait porch stacks the beam, then the easel in the centre, with the objects arranged around and below it. Every object stays at least 44 CSS px and labelled.
+- **Loading:** whenever the Daily state (or a room's) isn't known yet, show one neutral loading view: the sunset sky and sea only, with no porch objects and no easel, plus "Setting up your easel…" (`daily-loading`). It then resolves to either the porch or the zoomed play screen, never porch first then zoomed. This is the only loading view.
+- **Presentational scenes:** `PorchScene` and `BeachLobby` take plain props (easel state, top three, targets, signed-in flag, callbacks) and never call auth, query or daily hooks. `home.tsx` and `party.tsx` wire the data. `/` renders `PorchScene` with static signed-out props and no DeepSpace providers.
+- **Art source of truth:** `src/scene/palette.ts` (the master palette and colour ramps) and `docs/superpowers/specs/porch-art-rules.md` (the pixel-art rules). Read both before drawing anything, and use only palette colours in sprites.
 
 ## Review Focus
 
@@ -72,25 +77,30 @@ export function drawSun(ctx, cx: number, cy: number, r: number, horizonY: number
 // camera.ts
 export interface Rect { x: number; y: number; w: number; h: number } // scene px (320×180)
 export interface Camera { x: number; y: number; zoom: number }
-export const SCENE_W = 320, SCENE_H = 180
-export function cameraFor(focus: Rect | null, viewportAspect: number): Camera   // null = wide view
+export type Composition = 'landscape' | 'portrait'
+export function compositionFor(viewportW: number, viewportH: number): Composition
+export function sceneSize(c: Composition): { w: number; h: number } // 320×180 | 180×320
+export function integerScale(viewportW: number, viewportH: number, c: Composition): number // max(2, ceil(cover scale)); the crop absorbs the overflow
+export function cameraFor(focus: Rect | null, target: { x: number; y: number; w: number; h: number } | null, viewport: { w: number; h: number }, c: Composition): Camera // null focus = wide view; target = the measured on-screen box (CSS px) the focus rect must land on
 export function cameraTransform(c: Camera): string                                // CSS transform for the wrapper
-export function rectToPercent(r: Rect): { left: string; top: string; width: string; height: string }
+export function rectToPercent(r: Rect, c: Composition): { left: string; top: string; width: string; height: string }
 // useSceneClock.ts
 export function useSceneClock(fps?: number /* default 12 */): number // frame counter; frozen at 0 under reduced motion; paused when document.hidden
 // PixelScene.tsx
-export function PixelScene(props: { draw: (ctx: CanvasRenderingContext2D, frame: number) => void; camera?: Camera; zoomMs?: number /* default 600 */; children?: React.ReactNode /* hotspots + overlays */; className?: string; 'data-testid'?: string }): JSX.Element
+export function PixelScene(props: { draw: (ctx: CanvasRenderingContext2D, frame: number, c: Composition) => void; camera?: Camera; zoomMs?: number /* default 600 */; children?: React.ReactNode /* hotspots + overlays */; className?: string; 'data-testid'?: string }): JSX.Element
 // Hotspot.tsx
 export function Hotspot(props: { rect: Rect; label: string; href?: string; onClick?: () => void; testId?: string; children?: React.ReactNode }): JSX.Element
 ```
-`PixelScene` renders a `<canvas width=320 height=180>` sized to fill its box while preserving 16:9 cover-crop. The `focusX` cropping for narrow screens comes from the camera. Drawing runs only in effects.
+`PixelScene` picks the composition from its measured box, renders a canvas at `sceneSize` scaled by `integerScale` (cover-cropped and centred), sets `--px` on its root, and passes the composition to `draw`, so `draw(ctx, frame, composition)` is the signature. Drawing runs only in effects.
 
 - [ ] **Step 1: Write the failing tests:**
   - `defineSprite rejects ragged rows`
   - `defineSprite rejects unknown palette char`
   - `cameraFor(null) is identity` (`{x:0,y:0,zoom:1}`)
-  - `cameraFor easel rect centres and zooms` (rect `{x:104,y:26,w:96,h:96}` at 16:9 → zoom > 1.5, centre maps to viewport centre)
-  - `rectToPercent` (`{x:32,y:18,w:64,h:36}` → `left:'10%', top:'10%', width:'20%', height:'20%'`)
+  - `cameraFor maps focus onto target`: rect `{x:104,y:26,w:96,h:96}` (landscape) with target `{x:500,y:120,w:576,h:576}` at viewport 1440×900 → the transformed rect's on-screen box equals the target within 1 px
+  - `compositionFor`: 1440×900 → landscape; 375×812 → portrait
+  - `integerScale`: equals `Math.ceil(Math.max(vw / w, vh / h))` (cover, integer, the crop absorbs the overflow), never below 2; 1440×900 landscape → 5; 375×812 portrait → 3
+  - `rectToPercent` (`{x:32,y:18,w:64,h:36}`, landscape → `left:'10%', top:'10%', width:'20%', height:'20%'`)
   - `mulberry32 is deterministic` (same seed → same first 5 values)
 - [ ] **Step 2: Run** `npm run test:unit -- src/scene`. Expected: FAIL.
 - [ ] **Step 3: Implement.**
@@ -100,6 +110,7 @@ export function Hotspot(props: { rect: Rect; label: string; href?: string; onCli
 ### Task 2: Porch theme and sign-beam navigation
 
 **Files:**
+- Create: `src/scene/palette.ts` (master palette: named colour ramps for sky, sea, sun, wood, paper, foliage, skin, metal, flame and UI, following `docs/superpowers/specs/porch-art-rules.md`; `themes.css` tokens must use these same hex values)
 - Modify: `src/themes.css` (replace the `arcade` tokens with a `porch` theme: warm sunset sky, wood browns, cream paper, coral accent, teal sea; restyle `.pp-panel`, `.pp-frame`, `.pp-chip`, `.pp-btn`, `.pp-logo`, `.pp-word`, `.pp-danger*`, `.pp-results*` and the focus-ring group as wood and paper pixel panels with hard 1-step pixel shadows), `src/themes.ts` (id `porch`, name "Porch at Sunset"), `index.html` (`data-theme="porch"` and the pre-JS background colour), `src/styles.css` (`@layer base` body background → sunset gradient; `color-scheme: light`; `@theme` colour tokens to porch values)
 - Modify: `src/components/Navigation.tsx` → the sign beam: a wooden beam strip with hanging signs (Daily, Party, Scores, Gallery), the active sign lit by a lantern, plus a mailbox button for the account menu (Sign in / My gallery / Settings / Sign out). Keep testids `app-navigation`, `nav-user-name`, `nav-user-email`, `nav-sign-in-button` and the mobile drawer.
 - Modify: `src/nav.ts` (Daily `/home`, Party `/party`, Scores `/scores`, Gallery; the Public Board entry moves to the lighthouse object)
@@ -119,7 +130,7 @@ export function Hotspot(props: { rect: Rect; label: string; href?: string; onCli
 
 **Files:**
 - Create: `src/scene/porch/sprites.ts` (easel with three boosters and flames, chalkboard on an A-frame, mailbox with flag, front door with window, radio, pinned note, lantern, porch beam, posts, railing, floor planks, steps down to the beach, lighthouse, distant island, a sleeping cat, a potted plant), `src/scene/porch/drawPorch.ts` (`drawPorch(ctx, frame, opts: { easelState: 'draped' | 'cover' | 'finished' | 'signin'; bob: boolean }): void`), `src/scene/porch/layout.ts` (exported `Rect`s for every object, in one place), `src/components/porch/PorchScene.tsx`, `src/components/porch/RulesNote.tsx` (popover with the scoring recipe from PR 1's not-started copy), `src/hooks/useMute.ts`
-- Modify: `src/pages/(app)/home.tsx` (non-playing states render `PorchScene`; the existing not-started, ended, signed-out and loading content moves into easel-anchored panels; keep testids `daily-page`, `daily-loading`, `daily-signed-out`, `daily-sign-in-button`, `daily-not-started`, `daily-start-button`, `daily-ended`), `src/pages/index.tsx` (static porch: the same scene with signed-out objects, SEO copy as readable notes or panels in the scene, CTAs `landing-play-now` → `/home` and `landing-browse-lobby` → `/party` kept as hotspots; `static-landing` kept), `src/components/daily/useDailySounds.ts` and `src/components/game/useGameSounds.ts` (read and write mute through `useMute`)
+- Modify: `src/pages/(app)/home.tsx` (the loading state renders the neutral sky view from Global Constraints; non-playing known states render `PorchScene`; the existing not-started, ended, signed-out and loading content moves into easel-anchored panels; keep testids `daily-page`, `daily-loading`, `daily-signed-out`, `daily-sign-in-button`, `daily-not-started`, `daily-start-button`, `daily-ended`), `src/pages/index.tsx` (static porch: the same scene with signed-out objects, SEO copy as readable notes or panels in the scene, CTAs `landing-play-now` → `/home` and `landing-browse-lobby` → `/party` kept as hotspots; `static-landing` kept), `src/components/daily/useDailySounds.ts` and `src/components/game/useGameSounds.ts` (read and write mute through `useMute`)
 - Test: `tests/offline/porch.spec.ts`, `tests/offline/daily.spec.ts`, `src/hooks/useMute.test.ts`
 
 **Interfaces:**
@@ -143,7 +154,7 @@ The porch objects (hotspot, then target):
   - offline `porch objects present`: every hotspot is visible by accessible name on `/home` at 1280×720
   - `porch keyboard tour`: Tab visits the objects in order, each with a focus ring and label, and Enter on Steps navigates to `/party`
   - `signed-out porch`: the easel shows "Sign in to paint" and the mailbox offers sign-in
-  - `easel draped while loading`: no `daily-start-button` while loading
+  - `neutral loading view`: while `/api/daily/me` is delayed, `daily-loading` is shown with no porch hotspots and no `daily-start-button`
   - `landing is the porch`: `/` prerendered HTML contains `static-landing` and the landing CTAs
   - `375 no horizontal scroll` on `/` and `/home`
 - [ ] **Step 2: Run** `npm run test:unit -- src/hooks/useMute.test.ts` and `npm run build && npx playwright test tests/offline/porch.spec.ts tests/offline/daily.spec.ts`. Expected: the new tests FAIL.
@@ -158,10 +169,18 @@ The porch objects (hotspot, then target):
 - Modify: `src/pages/(app)/home.tsx` (playing state = camera focused on the easel's `Rect` and `PlayLayout`; Start triggers the zoom; Exit zooms out to the porch, replacing PR 1's `/party` target; keep the Exit confirm copy, `daily-exit`, `daily-playing`, `daily-prompt`, `daily-timer`, `daily-ask-button`, `daily-done-button`, `toolbar`, `palette`, `pixel-canvas`, `daily-score-breakdown`, `grade-total`, `daily-best-score`), `src/components/daily/AutoGradeTimeline.tsx`, `GradePanel.tsx` and `src/components/game/ToolBar.tsx` / `Palette.tsx` (restyle only: labelled pixel icons, palette bar with black and white first, the selected swatch raised and outlined)
 - Test: `tests/offline/daily.spec.ts`, `tests/offline/screenshots.spec.ts`
 
+**Zoom and easel rules (decided):**
+- On the porch, the easel is the scene sprite.
+- On Start, the camera zooms (600 ms) so the scene easel's board lands on the measured `pixel-canvas` target box from `PlayLayout`. Measure it with the play UI mounted but transparent.
+- At the end of the zoom, the scene stops drawing its easel, and `HoverEasel` (HTML/canvas around the real canvas) takes over, crossfaded over about 150 ms. A pixel-exact match isn't required.
+- Exit reverses this.
+- **Fit:** the canvas bounds tests win. `HoverEasel` is compact: a thin board frame, a top clamp, a tray and short legs. At 1440×900 the whole easel including the boosters must be in the viewport (assert it). At 1280×720 and below, the legs and boosters may tuck behind the palette bar, but the board frame and tray must stay visible (assert the frame box contains the canvas box). The portrait play screen stacks the top bar, canvas on easel, tools row, palette row and a score drawer.
+
 - [ ] **Step 1: Write the failing offline tests:**
+  - `easel fits`: at 1440×900 the easel element (`data-testid="hover-easel"`) box is within the viewport; at 1280×720 its frame contains `pixel-canvas`
   - `start zooms into easel`: after Start, `daily-playing` is visible and the scene camera is focused (assert a `data-camera="easel"` attribute)
   - `exit returns to porch`: confirm Exit → porch hotspots visible, URL `/home`
-  - `reload mid-attempt starts zoomed`: no porch hotspots are rendered at any point (poll during load)
+  - `reload mid-attempt starts zoomed`: only the neutral loading view, then the play screen; no porch hotspots are rendered at any point (poll during load)
   - `reduced motion start`: with `page.emulateMedia({ reducedMotion: 'reduce' })`, the play screen is visible within 100 ms of Start
   - `easel still while playing`: the easel element's bounding box is identical across 1 s
 - [ ] **Step 2: Run** `npm run build && npx playwright test tests/offline/daily.spec.ts`. Expected: FAIL.
@@ -169,36 +188,43 @@ The porch objects (hotspot, then target):
 - [ ] **Step 4: Run** `npm run verify`, the full offline suite and `SCREENSHOTS=1 npx playwright test tests/offline/screenshots.spec.ts` (the existing bounds assertions must pass). Expected: PASS. Look at the screenshots of every daily state at all three sizes.
 - [ ] **Step 5: Commit** `feat(play): zoomed daily play screen on the hovering easel`.
 
-### Task 5: The beach (Party lobby and rooms)
+### Task 5a: Party scoring parts
+
+(The noop-ack fix parked from PR 2 lands separately on PR #10's branch; it isn't part of this plan.)
+
+**Files:** Modify `src/game/scoring.ts` (add `coopScoreParts(p): { pixels: number; time: number; total: number }`, the two 500-point halves of `coopScore`; `total` must equal `coopScore(p)`, with rounding applied so `pixels + time === total`). Test: `src/game/scoring.test.ts`.
+
+- [ ] **Step 1:** Failing test `coopScoreParts sums to coopScore` (3 fixtures, including clamped extremes). **Step 2:** Run `npm run test:unit -- src/game/scoring.test.ts` → FAIL. **Step 3:** Implement. **Step 4:** Run → PASS. **Step 5:** Commit `feat(scoring): co-op score parts`.
+
+### Task 5b: The beach lobby
 
 **Files:**
-- Create: `src/scene/beach/sprites.ts` and `drawBeach.ts` (beach at sunset, bonfire, easels with pennants, beach chairs, lighthouse, signpost, a critic character, e.g. a gull in a beret), `src/components/beach/BeachLobby.tsx`, `src/components/play/CriticBubble.tsx` (wraps `GuessFeed` as the critic's speech bubble), `src/components/play/PartyScoreNote.tsx`
-- Modify:
-  - `src/pages/(app)/party.tsx`:
-    - Room cards become easels around the bonfire (`room-card-*`).
-    - The featured public board is the lighthouse (`room-card-play`, `lobby-play-now`).
-    - The create form is a wooden sign, "Set up an easel" (`create-room-form`, …).
-    - Join-by-code is a signpost (`join-room-form`, `join-code-input`, `join-code-submit`).
-    - `DeleteRoomButton` is relabelled "Pack up easel".
-  - `src/pages/(app)/r/[code].tsx`:
-    - The lobby is beach chairs (one per painter) facing the easel, with "Start painting" for the host (`room-lobby`, `round-players`, `host-start-button`).
-    - Play uses `PlayLayout` and `HoverEasel`. The top bar holds the word, timer, px, the invite ticket ("Copy link") and a new "Back to the beach" link (`data-testid="room-exit"` → `/party`). Left: ToolBar (Paint, Erase, Pick colour) and PlayersPanel. Right: CriticBubble, Ask the AI and PartyScoreNote.
-    - Results become a framed painting card on a stand, with the plaque buttons `overlay-dismiss` and `overlay-next`.
-    - The error states (`room-error-*`) become small scenes with "Back to the beach".
-  - Results breakdown: show "Pixels saved: N/500" and "Time saved: N/500" computed from `coopScore`'s two halves (add `coopScoreParts(p): { pixels: number; time: number; total: number }` to `src/game/scoring.ts`; total must equal `coopScore(p)`).
-  - **Parked fix from PR 2:** correlate `noop` acks per placement. `usePixelRoom` keeps provisional state keyed by `x,y` plus a send sequence; a `noop` clears only the provisional cooldown that same placement started, and never a newer one (see the PR 2 ledger finding 4).
-- Test: `src/game/scoring.test.ts`, `src/game/client-state.test.ts`, `tests/offline/pixel.spec.ts`
+- Create: `src/scene/beach/sprites.ts`, `src/scene/beach/layout.ts` (landscape and portrait), `src/scene/beach/drawBeach.ts` (beach at sunset, bonfire, easels with pennants, lighthouse, signpost), `src/components/beach/BeachLobby.tsx` (presentational)
+- Modify: `src/pages/(app)/party.tsx`:
+  - Room cards become easels around the bonfire (`room-card-*`, `public-rooms-list`).
+  - The featured public board is the lighthouse (`room-card-play`, `lobby-play-now`).
+  - The create form is a wooden sign, "Set up an easel" (`create-room-form`, `create-room-name`, `visibility-*`, `create-room-submit`, `create-room-signin`).
+  - Join-by-code is a signpost (`join-room-form`, `join-code-input`, `join-code-submit`).
+  - `DeleteRoomButton` is relabelled "Pack up easel".
+  - More rooms than the easels shown → overflow into a scrollable "More easels" list.
+- Test: `tests/offline/pixel.spec.ts` (lobby cases)
+
+- [ ] **Step 1:** Failing offline tests: `lobby easels link to rooms`, `lighthouse opens public board`, `signpost joins by code`, `create sign creates room`, `375 lobby no horizontal scroll`. **Step 2:** Run → FAIL. **Step 3:** Implement. **Step 4:** Run `npm run verify`, the offline suite and screenshots → PASS; look at every lobby screenshot. **Step 5:** Commit `feat(beach): party lobby on the beach`.
+
+### Task 5c: Rooms on the beach
+
+**Files:**
+- Create: `src/components/play/CriticBubble.tsx` (wraps `GuessFeed` as the critic's speech bubble; the critic is a sprite, for example a gull in a beret), `src/components/play/PartyScoreNote.tsx`
+- Modify: `src/pages/(app)/r/[code].tsx`:
+  - The lobby is beach chairs (one per painter) facing the easel, with "Start painting" for the host (`room-lobby`, `round-players`, `round-watching`, `host-start-button`).
+  - Play uses `PlayLayout` and `HoverEasel`. The top bar holds the word, timer and px, the invite ticket ("Copy link"), `host-next-button`, `mute-button` and a new "Back to the beach" link (`data-testid="room-exit"` → `/party`). Left: ToolBar (Paint, Erase, Pick colour) and PlayersPanel. Right: CriticBubble, Ask the AI and PartyScoreNote. Banners keep their testids.
+  - Results become a framed painting card on a stand, with "Pixels saved: N/500" and "Time saved: N/500" from `coopScoreParts`, plus the plaque buttons `overlay-dismiss` and `overlay-next` (intermission controls stay inside the canvas frame, as the tests require).
+  - The error states (`room-error-*`) become small scenes with "Back to the beach".
+- Test: `tests/offline/pixel.spec.ts`
 
 **PartyScoreNote copy (exact):** "Fewer pixels and a faster guess score higher. The round ends when the critic guesses the word."
 
-- [ ] **Step 1: Write the failing tests:**
-  - `coopScoreParts sums to coopScore` (3 fixtures)
-  - `stale noop does not clear newer cooldown`
-  - offline: `room exit returns to beach`, `lobby shows chairs per painter`, `results show pixels and time saved`, and all existing pixel.spec layout tests unchanged
-- [ ] **Step 2: Run** `npm run test:unit -- src/game` and `npm run build && npx playwright test tests/offline/pixel.spec.ts`. Expected: FAIL.
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run** `npm run verify`, the full offline suite and the screenshot suite. Expected: PASS. Look at the screenshots of the lobby, room lobby, play, results and errors at all three sizes.
-- [ ] **Step 5: Commit** `feat(beach): party lobby and rooms on the beach`.
+- [ ] **Step 1:** Failing offline tests: `room exit returns to beach`, `lobby shows chairs per painter`, `results show pixels and time saved`, with all existing pixel.spec layout tests unchanged. **Step 2:** Run → FAIL. **Step 3:** Implement. **Step 4:** Run `npm run verify`, the offline suite and screenshots → PASS; look at the room lobby, play, results and error screenshots at all three sizes. **Step 5:** Commit `feat(beach): rooms on the beach`.
 
 ### Task 6: Remaining screens and PR 3 wrap-up
 
