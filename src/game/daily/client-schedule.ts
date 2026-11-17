@@ -14,7 +14,6 @@ export interface DailyClientState extends DailyStateView {
   endFailed: boolean
   stale: boolean
   lastError: string | null
-  lastGradedHash?: string | null
   lastGradeAt?: number | null
   autoRetryAfter?: number | null
 }
@@ -28,7 +27,6 @@ export type DailyAction =
       type: 'grade_ok'
       grade: GradeView
       state?: DailyStateView
-      cellsHash?: string
       now?: number
     }
   | {
@@ -36,7 +34,6 @@ export type DailyAction =
       reason: DailyRejectReason
       state?: DailyStateView
       kind?: GradeKind
-      cellsHash?: string
       now?: number
     }
   | { type: 'finalize_start' }
@@ -67,7 +64,6 @@ export function initialDailyClientState(day = ''): DailyClientState {
     endFailed: false,
     stale: false,
     lastError: null,
-    lastGradedHash: null,
     lastGradeAt: null,
     autoRetryAfter: null,
   }
@@ -164,7 +160,6 @@ function mergeServerState(prev: DailyClientState, next: DailyStateView): DailyCl
     endFailed: isNowEnded || isNewStart ? false : prev.endFailed,
     ...(isNewStart
       ? {
-          lastGradedHash: null,
           lastGradeAt: null,
           autoRetryAfter: null,
         }
@@ -223,7 +218,6 @@ export function dailyReducer(state: DailyClientState, action: DailyAction): Dail
         best: action.state?.best ?? Math.max(state.best, action.grade.total),
         grading: false,
         lastError: null,
-        lastGradedHash: action.cellsHash ?? state.lastGradedHash ?? null,
         lastGradeAt: action.now ?? state.lastGradeAt ?? null,
         autoRetryAfter: null,
       }
@@ -251,10 +245,6 @@ export function dailyReducer(state: DailyClientState, action: DailyAction): Dail
         best: merged.best,
         grading: false,
         lastError: rejectErrorMessage(action.reason),
-        lastGradedHash:
-          isUnchanged && action.cellsHash !== undefined
-            ? action.cellsHash
-            : state.lastGradedHash ?? null,
         autoRetryAfter: shouldBackoffAuto
           ? action.now! + AUTO_RETRY_BACKOFF_MS
           : isUnchanged

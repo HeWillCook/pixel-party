@@ -313,7 +313,7 @@ export default function DailyHomePage() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2.5">
-              <DailyTimer startedAt={state.startedAt} endsAt={state.endsAt} />
+              <DailyTimer startedAt={state.startedAt} endsAt={state.endsAt} clockOffsetMs={state.clockOffsetMs} />
               <ExitDailyButton />
             </div>
           </div>
@@ -434,6 +434,7 @@ export default function DailyHomePage() {
 
             <div className="flex min-w-0 flex-col gap-4">
               <AutoGradeTimeline windows={state.windows} now={now + state.clockOffsetMs} />
+              <p>Manual grades: {state.asksUsed} of 3 used</p>
               <GradePanel
                 latest={endedGrade}
                 best={endedBestScore}

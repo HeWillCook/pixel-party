@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import { DAILY } from '../game/config'
 import type { AppContext, Env } from '../../worker.js'
 import { reserveBudget } from './budget'
 import { createDailyJudge, renderCellsPng } from './daily-judge'
@@ -39,10 +40,10 @@ export function registerDailyRoutes(app: Hono<AppContext>): void {
   daily.post('/start', async c => c.json(await startDaily(dependencies(c.env), c.get('dailyUser'))))
   daily.post('/grade', async c => {
     const body: unknown = await c.req.json().catch(() => null)
-    if (!objectBody(body) || !dayBody(body.day) || (body.kind !== 'auto' && body.kind !== 'ask' && body.kind !== 'final') || typeof body.cells !== 'string') {
+    if (!objectBody(body) || !dayBody(body.day) || (body.kind !== 'auto' && body.kind !== 'ask' && body.kind !== 'final') || typeof body.cells !== 'string' || (body.kind === 'auto' && (!Number.isInteger(body.window) || (body.window as number) < 0 || (body.window as number) >= DAILY.autoWindowsMs.length))) {
       return c.json({ error: 'bad_request' }, 400)
     }
-    return c.json(await gradeDaily(dependencies(c.env), c.get('dailyUser'), body.kind, body.cells, body.day))
+    return c.json(await gradeDaily(dependencies(c.env), c.get('dailyUser'), body.kind, body.cells, body.day, body.window as number | undefined))
   })
   daily.post('/end', async c => {
     const body: unknown = await c.req.json().catch(() => null)

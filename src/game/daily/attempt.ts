@@ -25,11 +25,14 @@ export function autoWindowAt(startedAt: number, index: number): number {
   return startedAt + DAILY.autoWindowsMs[index]
 }
 export function settleMissedWindows(row: AttemptRow, now: number): AttemptRow {
-  const current = normalizeRow(row)
+  let current = normalizeRow(row)
+  if (current.inFlightSince !== null && now - current.inFlightSince >= DAILY.inFlightStaleMs) {
+    current = completeGrade(current, null, '', '', now, current.inFlightSince).row
+  }
   const windows = current.windows.map(window => {
     if (window.status !== 'pending') return window
     const due = autoWindowAt(current.startedAt, window.index)
-    if (current.endedAt !== null) return due > current.endedAt ? { ...window, status: 'not_reached' as const, resolvedAt: current.endedAt } : window
+    if (current.endedAt !== null) return { ...window, status: due > current.endedAt ? 'not_reached' as const : 'missed' as const, resolvedAt: current.endedAt }
     if (window.index !== current.inFlightWindow && now - due > DAILY.autoMissAfterMs) return { ...window, status: 'missed' as const, resolvedAt: now }
     return window
   })
@@ -46,7 +49,7 @@ export function startAttempt(existing: AttemptRow | null, userId: string, day: s
   return { created: true, row: normalizeRow({ userId, day, startedAt: now, endedAt: null, autoUsed: 0, asksUsed: 0, finalUsed: false, inFlightSince: null, inFlightKind: null, lastGradedHash: null, lastGradeAt: null, bestScore: 0, bestElapsedMs: null, lastCells: null, profile } as AttemptRow) }
 }
 
-export function reserveGrade(row: AttemptRow | null, kind: GradeKind, cellsHash: string, now: number, blank = false):
+export function reserveGrade(row: AttemptRow | null, kind: GradeKind, cellsHash: string, now: number, blank = false, requestedWindow?: number):
   { ok: true; row: AttemptRow; elapsedMs: number } | { ok: false; reason: GradeReject } | { ok: 'skipped'; row: AttemptRow; window: number; status: 'skipped_blank' | 'skipped_unchanged' } {
   if (!row) return { ok: false, reason: 'not_started' }
   if (row.endedAt !== null) return { ok: false, reason: 'ended' }
@@ -70,6 +73,7 @@ export function reserveGrade(row: AttemptRow | null, kind: GradeKind, cellsHash:
       const justMissed = latest && latest.status === 'missed' && before.windows[latest.index]?.status === 'pending'
       return { ok: false, reason: justMissed ? 'window_missed' : 'too_soon' }
     }
+    if (requestedWindow !== undefined && requestedWindow !== window) return { ok: false, reason: 'stale' }
     const status = blank ? 'skipped_blank' : current.lastGradedHash === cellsHash ? 'skipped_unchanged' : null
     if (status) return { ok: 'skipped', window, status, row: { ...current, windows: current.windows.map(item => item.index === window ? { ...item, status, resolvedAt: now } : item) } }
   }
@@ -86,6 +90,7 @@ export function completeGrade(row: AttemptRow, outcome: GradeResult | null, cell
     cleared.windows = current.windows.map(window => window.index === index ? { ...window, status: 'graded', resolvedAt: now, score: outcome.total, late: reservedAt - autoWindowAt(row.startedAt, index) > DAILY.autoLateMs } : window)
     cleared.autoUsed++
   }
+  if (row.endedAt !== null) return { improved: false, applied: true, row: cleared }
   const improved = row.bestElapsedMs === null || outcome.total > row.bestScore
   return { improved, applied: true, row: { ...cleared, lastGradeAt: now, lastGradedHash: cellsHash, lastCells: cells, bestScore: improved ? outcome.total : row.bestScore, bestElapsedMs: improved ? outcome.elapsedMs : row.bestElapsedMs, bestGrade: improved ? { cells, grade: outcome } : row.bestGrade } }
 }

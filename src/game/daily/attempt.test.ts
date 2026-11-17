@@ -51,7 +51,16 @@ describe('daily attempt', () => {
     const ended = endAttempt(initial(), null, now + 180_000)
     const settled = settleMissedWindows(ended, now + 600_000)
     expect(settled.windows.slice(1).map(window => window.status)).toEqual(['not_reached', 'not_reached', 'not_reached'])
-    expect(settled.windows.some(window => window.status === 'missed')).toBe(false)
+    expect(settled.windows[0].status).toBe('missed')
+  })
+  it('expires a crashed auto lease before settling overdue windows', () => {
+    const active = reserve(initial(), 'auto', 'h1', now + 120_000)
+    const settled = settleMissedWindows(active, now + 120_000 + DAILY.inFlightStaleMs)
+    expect(settled).toMatchObject({ inFlightSince: null, inFlightWindow: null })
+    expect(settled.windows[0].status).toBe('missed')
+  })
+  it('rejects a delayed auto for an earlier window', () => {
+    expect(reserveGrade(initial(), 'auto', 'old', now + 240_000, false, 0)).toEqual({ ok: false, reason: 'stale' })
   })
   it('normalizes legacy rows', () => {
     const { windows, lastAskAt, inFlightWindow, ...legacy } = initial()

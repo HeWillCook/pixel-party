@@ -8,7 +8,7 @@ import { createServerTools, type ServerTools } from './server-tools'
 type Outcome = GradeResult | null
 type Operation =
   | { op: 'start'; userId: string; day: string; now: number; profile?: AttemptProfile }
-  | { op: 'reserve'; userId: string; day: string; kind: GradeKind; hash: string; now: number; blank: boolean }
+  | { op: 'reserve'; userId: string; day: string; kind: GradeKind; hash: string; now: number; blank: boolean; window?: number }
   | { op: 'complete'; userId: string; day: string; outcome: Outcome; hash: string; cells: string; now: number; reservedAt: number }
   | { op: 'end'; userId: string; day: string; cells: string | null; now: number }
   | { op: 'get'; userId: string; day: string; now?: number }
@@ -16,7 +16,7 @@ type PublishOperation = { op: 'publish'; userId: string; day: string; now: numbe
 
 export interface AttemptStore {
   start(userId: string, day: string, now: number, profile?: AttemptProfile): Promise<{ row: AttemptRow; created: boolean }>
-  reserve(userId: string, day: string, kind: GradeKind, hash: string, now: number, blank?: boolean): Promise<ReturnType<typeof reserveGrade>>
+  reserve(userId: string, day: string, kind: GradeKind, hash: string, now: number, blank?: boolean, window?: number): Promise<ReturnType<typeof reserveGrade>>
   complete(userId: string, day: string, outcome: Outcome, hash: string, cells: string, now: number, reservedAt: number): Promise<ReturnType<typeof completeGrade>>
   end(userId: string, day: string, cells: string | null, now: number): Promise<AttemptRow | null>
   get(userId: string, day: string, now?: number): Promise<AttemptRow | null>
@@ -26,7 +26,7 @@ export interface AttemptStore {
 function applyOperation(row: AttemptRow | null, body: Operation) {
   switch (body.op) {
     case 'start': return startAttempt(row, body.userId, body.day, body.now, body.profile)
-    case 'reserve': return reserveGrade(row, body.kind, body.hash, body.now, body.blank)
+    case 'reserve': return reserveGrade(row, body.kind, body.hash, body.now, body.blank, body.window)
     case 'complete':
       if (!row) throw new Error('Attempt not started')
       return completeGrade(row, body.outcome, body.hash, body.cells, body.now, body.reservedAt)
@@ -71,7 +71,7 @@ export class DailyRoom extends BaseRoom<Env> {
 function makeStore(invoke: (body: Operation | PublishOperation) => Promise<ReturnType<typeof applyOperation>>): AttemptStore {
   return {
     start: (userId, day, now, profile) => invoke({ op: 'start', userId, day, now, profile }) as ReturnType<AttemptStore['start']>,
-    reserve: (userId, day, kind, hash, now, blank = false) => invoke({ op: 'reserve', userId, day, kind, hash, now, blank }) as ReturnType<AttemptStore['reserve']>,
+    reserve: (userId, day, kind, hash, now, blank = false, window) => invoke({ op: 'reserve', userId, day, kind, hash, now, blank, window }) as ReturnType<AttemptStore['reserve']>,
     complete: (userId, day, outcome, hash, cells, now, reservedAt) => invoke({ op: 'complete', userId, day, outcome, hash, cells, now, reservedAt }) as ReturnType<AttemptStore['complete']>,
     end: async (userId, day, cells, now) => (await invoke({ op: 'end', userId, day, cells, now }) as { row: AttemptRow | null }).row,
     get: async (userId, day, now) => (await invoke({ op: 'get', userId, day, now }) as { row: AttemptRow | null }).row,

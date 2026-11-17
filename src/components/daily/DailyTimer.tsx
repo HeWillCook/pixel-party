@@ -5,6 +5,7 @@ import { DAILY } from '../../game/config'
 export interface DailyTimerProps {
   startedAt?: number
   endsAt?: number
+  clockOffsetMs?: number
 }
 
 function formatTimer(ms: number): string {
@@ -14,7 +15,7 @@ function formatTimer(ms: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
-export function DailyTimer({ startedAt, endsAt }: DailyTimerProps) {
+export function DailyTimer({ startedAt, endsAt, clockOffsetMs = 0 }: DailyTimerProps) {
   const [now, setNow] = useState<number>(() => Date.now())
 
   useEffect(() => {
@@ -25,7 +26,7 @@ export function DailyTimer({ startedAt, endsAt }: DailyTimerProps) {
   }, [])
 
   const targetEnd = endsAt ?? (startedAt !== undefined ? startedAt + DAILY.attemptMs : undefined)
-  const remainingMs = targetEnd !== undefined ? Math.max(0, targetEnd - now) : DAILY.attemptMs
+  const remainingMs = targetEnd !== undefined ? Math.max(0, targetEnd - now - clockOffsetMs) : DAILY.attemptMs
   const urgent = remainingMs > 0 && remainingMs <= 60_000
 
   return (

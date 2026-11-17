@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { getAuthToken, useAuthProfileReady } from 'deepspace'
 import { DAILY, PALETTE } from '../game/config'
-import { cellsHash, type GradeKind } from '../game/daily/attempt'
+import type { GradeKind } from '../game/daily/attempt'
 import {
   canAskDaily,
   canPaintDaily,
@@ -232,7 +232,7 @@ export function useDailyAttempt(): {
   }, [userId, state, restoreCanvas])
 
   const sendGrade = useCallback(
-    (kind: GradeKind, encodedOverride?: string): Promise<void> => {
+    (kind: GradeKind, encodedOverride?: string, window?: number): Promise<void> => {
       if (stateRef.current.stale) return Promise.resolve()
       if (inFlightGradeRef.current) return inFlightGradeRef.current
       if (kind !== 'final' && (finalizingRef.current || stateRef.current.finalizing)) {
@@ -241,7 +241,6 @@ export function useDailyAttempt(): {
 
       const encoded = encodedOverride ?? encodeCells(cellsRef.current)
       const day = stateRef.current.day
-      const hash = cellsHash(encoded)
       mutationEpochRef.current++
       dispatch({ type: 'grade_start', kind })
 
@@ -252,7 +251,7 @@ export function useDailyAttempt(): {
           const res = await fetch('/api/daily/grade', {
             method: 'POST',
             headers,
-            body: JSON.stringify({ day, kind, cells: encoded }),
+            body: JSON.stringify({ day, kind, cells: encoded, ...(kind === 'auto' ? { window } : {}) }),
           })
           if (stateRef.current.day !== day) return
           const now = Date.now()
@@ -282,7 +281,6 @@ export function useDailyAttempt(): {
               type: 'grade_ok',
               grade: payload.grade,
               state: payload.state,
-              cellsHash: hash,
               now,
             })
           } else {
@@ -291,7 +289,6 @@ export function useDailyAttempt(): {
               reason: payload.reason,
               state: payload.state,
               kind,
-              cellsHash: hash,
               now,
             })
           }
@@ -369,7 +366,7 @@ export function useDailyAttempt(): {
     [dispatch],
   )
 
-  const finishAttempt = useCallback(async (): Promise<void> => {
+  const finishAttempt = useCallback(async (timeoutCells?: Uint8Array): Promise<void> => {
     if (finishPromiseRef.current) return finishPromiseRef.current
     if (stateRef.current.status === 'ended') return
     if (stateRef.current.stale) return
@@ -377,7 +374,7 @@ export function useDailyAttempt(): {
 
     finalizingRef.current = true
     if (frozenFinalCellsRef.current === null) {
-      frozenFinalCellsRef.current = encodeCells(cellsRef.current)
+      frozenFinalCellsRef.current = encodeCells(timeoutCells ?? cellsRef.current)
     }
     const frozenCells = frozenFinalCellsRef.current
     dispatch({ type: 'finalize_start' })
@@ -425,7 +422,8 @@ export function useDailyAttempt(): {
 
       if (shouldFinalGrade(now, cur.startedAt, cur.clockOffsetMs)) {
         if (!finishPromiseRef.current) {
-          void finishAttempt()
+          const localCells = readLocalCells(cur.day, userIdRef.current)
+          if (localCells) void finishAttempt(localCells)
         }
         return
       }
@@ -441,7 +439,8 @@ export function useDailyAttempt(): {
       }
       const localCells = readLocalCells(cur.day, userIdRef.current)
       if (shouldFireAutoGrade(cur, now, localCells !== null) && localCells) {
-        void sendGrade('auto', encodeCells(localCells))
+        const window = DAILY.autoWindowsMs.findIndex(offset => cur.startedAt! + offset === cur.nextAutoAt)
+        if (window >= 0) void sendGrade('auto', encodeCells(localCells), window)
       }
   }, [finishAttempt, sendGrade])
 
@@ -484,6 +483,9 @@ export function useDailyAttempt(): {
       dispatch({ type: 'state_loaded', state: serverState })
       if (userIdRef.current) {
         restoreCanvas(serverState, userIdRef.current)
+        if (serverState.status === 'playing' && !readLocalCells(serverState.day, userIdRef.current)) {
+          writeLocalCells(serverState.day, userIdRef.current, cellsRef.current)
+        }
       }
     } catch {
       dispatch({ type: 'error', message: 'Network error while starting attempt.' })

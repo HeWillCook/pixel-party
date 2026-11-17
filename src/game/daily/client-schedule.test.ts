@@ -158,12 +158,11 @@ describe('client-schedule', () => {
       nextAutoAt: s + 120_000,
     }
 
-    expect(shouldFireAutoGrade({ ...st, lastGradedHash: 'hash-a' }, s + 120_000, true)).toBe(true)
+    expect(shouldFireAutoGrade(st, s + 120_000, true)).toBe(true)
     const rejectedResting = dailyReducer(st, {
       type: 'grade_rejected',
       reason: 'judge_resting',
       kind: 'auto',
-      cellsHash: 'hash-b',
       now: s + 122_000,
       state: { ...baseState, startedAt: s, endsAt: s + 600_000, nextAutoAt: s + 120_000 },
     })

@@ -36,6 +36,27 @@ function onlyRow(records: ReturnType<typeof memoryTools>, collection: string) {
 }
 
 describe('daily service', () => {
+  it('keeps submitted score and cells when another tab finishes an in-flight auto', async () => {
+    const { deps, at } = setup()
+    let release!: () => void
+    let entered!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    const judging = new Promise<void>(resolve => { entered = resolve })
+    const blind = deps.judge.blind
+    deps.judge.blind = vi.fn(async png => { entered(); await gate; return blind(png) })
+    await startDaily(deps, user)
+    at(startedAt + 120_000)
+    const auto = gradeDaily(deps, user, 'auto', cells, day, 0)
+    await judging
+    expect(await gradeDaily(deps, user, 'final', otherCells, day)).toMatchObject({ ok: false, reason: 'busy' })
+    const submitted = await endDaily(deps, user, otherCells, day)
+    release()
+    await auto
+    const row = await deps.store.get(user.userId, day)
+    expect(row).toMatchObject({ endedAt: startedAt + 120_000, bestScore: submitted.best, lastCells: otherCells })
+    expect(row?.bestGrade).toBeUndefined()
+    expect(row?.windows[0].status).toBe('graded')
+  })
   it('auto on blank cells skips without judge', async () => {
     const { deps, at } = setup()
     await startDaily(deps, user)

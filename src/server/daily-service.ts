@@ -117,7 +117,7 @@ async function judgeCall<Value>(deps: DailyDeps, ownsReservation: () => Promise<
   return null
 }
 
-export async function gradeDaily(deps: DailyDeps, user: DailyUser, kind: GradeKind, cells: string, day = utcDay(deps.now())): Promise<
+export async function gradeDaily(deps: DailyDeps, user: DailyUser, kind: GradeKind, cells: string, day = utcDay(deps.now()), window?: number): Promise<
   { ok: true; grade: GradeView; state: DailyStateView }
   | { ok?: never; reason?: never; skipped: 'skipped_blank' | 'skipped_unchanged'; window: number; state: DailyStateView }
   | { ok: false; reason: GradeReject | 'judge_resting' | 'bad_cells'; state: DailyStateView }
@@ -127,7 +127,7 @@ export async function gradeDaily(deps: DailyDeps, user: DailyUser, kind: GradeKi
   const state = () => readState(deps, user.userId, day)
   if (!validCells(cells)) return { ok: false, reason: 'bad_cells', state: await state() }
   const hash = cellsHash(cells)
-  const reservation = await deps.store.reserve(user.userId, day, kind, hash, now, isBlankCells(decodeCells(cells, 1024)))
+  const reservation = await deps.store.reserve(user.userId, day, kind, hash, now, isBlankCells(decodeCells(cells, 1024)), window)
   if (!reservation.ok) return { ok: false, reason: reservation.reason, state: await state() }
   if (reservation.ok === 'skipped') return { skipped: reservation.status, window: reservation.window, state: await state() }
   const reservedAt = reservation.row.inFlightSince!
