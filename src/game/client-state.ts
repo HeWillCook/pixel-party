@@ -26,6 +26,7 @@ export interface ClientState {
   guesses: Record<ZoneId, ZoneGuess | undefined>
   roster: { userId: string; name: string }[]
   players: number
+  watching: number
   you: SnapshotYou
   aiResting: boolean
   lastReject: RejectMsg | null
@@ -45,6 +46,7 @@ export function initialClientState(): ClientState {
     round: null,
     guesses: {} as Record<ZoneId, ZoneGuess | undefined>,
     players: 0,
+    watching: 0,
     roster: [],
     you: { userId: null, cooldownUntil: 0 },
     aiResting: false,
@@ -120,6 +122,7 @@ export function applyServerMsg(s: ClientState, m: ServerMsg): ClientState {
           ? ({} as Record<ZoneId, ZoneGuess | undefined>)
           : s.guesses,
         players: m.players,
+        watching: m.watching ?? 0,
         roster: m.roster ?? [],
         you: m.you,
         aiResting: m.aiResting,
@@ -226,6 +229,7 @@ export function applyServerMsg(s: ClientState, m: ServerMsg): ClientState {
       return {
         ...s,
         players: m.count,
+        watching: m.watching ?? 0,
         roster: m.roster ?? s.roster,
       }
     }

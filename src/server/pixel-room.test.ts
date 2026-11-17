@@ -281,6 +281,28 @@ describe('durable room boundaries', () => {
     harness.database.close()
   })
 
+  it('counts signed-out sockets as watchers in snapshot and players messages', async () => {
+    const harness = roomHarness()
+    const owner = await harness.connect('owner')
+    await harness.connect('owner')
+    const spectator = await harness.connect('anon-spectator')
+    expect(messages(owner).at(-1)).toMatchObject({ t: 'players', count: 1, watching: 1 })
+    expect(messages(spectator).find(message => message.t === 'snapshot')).toMatchObject({ players: 1, watching: 1 })
+    harness.database.close()
+  })
+
+  it('re-broadcasts players when a watcher leaves', async () => {
+    const harness = roomHarness()
+    const owner = await harness.connect('owner')
+    const tab = await harness.connect('owner')
+    const spectator = await harness.connect('anon-spectator')
+    await harness.room.disconnect(spectator.connection)
+    for (const client of [owner, tab]) {
+      expect(messages(client).at(-1)).toEqual({ t: 'players', count: 1, roster: [{ userId: 'owner', name: 'Test' }], watching: 0 })
+    }
+    harness.database.close()
+  })
+
   it('broadcasts instant solo placements, rejects spectators, and recovers live identities after wake', async () => {
     const harness = roomHarness()
     const owner = await harness.connect('owner')
@@ -427,7 +449,7 @@ describe('durable room boundaries', () => {
     await expect(harness.room.disconnect(owner.connection)).resolves.toBeUndefined()
     expect(messages(spectator)).toEqual([
       { t: 'round', round: expect.objectContaining({ state: 'paused' }) },
-      { t: 'players', count: 0, roster: [] },
+      { t: 'players', count: 0, roster: [], watching: 1 },
     ])
     expect(harness.durable.storage.setAlarm).toHaveBeenCalledOnce()
     expect(log).toHaveBeenCalledWith('[PixelRoom] Room-status hook failed')
@@ -518,7 +540,7 @@ describe('durable room boundaries', () => {
     harness.durable.storage.setAlarm.mockClear()
     await expect(harness.room.disconnect(owner.connection)).resolves.toBeUndefined()
     expect(harness.saved().status).toBe('paused')
-    expect(messages(spectator).at(-1)).toEqual({ t: 'players', count: 0, roster: [] })
+    expect(messages(spectator).at(-1)).toEqual({ t: 'players', count: 0, roster: [], watching: 1 })
     expect(harness.durable.storage.setAlarm).toHaveBeenCalledOnce()
     harness.database.close()
   })

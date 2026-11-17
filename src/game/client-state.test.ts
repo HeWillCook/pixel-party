@@ -23,6 +23,24 @@ function makeRound(id: string, word = 'mushroom'): RoundView {
 }
 
 describe('client-state', () => {
+  it('stores watching from players and snapshot, defaulting to 0', () => {
+    let state = initialClientState()
+    expect(state.watching).toBe(0)
+    state = applyServerMsg(state, { t: 'players', count: 1, watching: 2 })
+    expect(state.watching).toBe(2)
+    state = applyServerMsg(state, { t: 'players', count: 1 })
+    expect(state.watching).toBe(0)
+    const snapshot = {
+      t: 'snapshot' as const, mode: 'coop' as const, width: 32, height: 32,
+      cells: encodeCells(new Uint8Array(32 * 32)), round: makeRound('r1'),
+      you: { userId: null, cooldownUntil: 0 }, players: 1, aiResting: false,
+    }
+    state = applyServerMsg(state, { ...snapshot, watching: 3 })
+    expect(state.watching).toBe(3)
+    state = applyServerMsg(state, snapshot)
+    expect(state.watching).toBe(0)
+  })
+
   it('initialClientState returns default 32x32 coop state', () => {
     const s = initialClientState()
     expect(s.connected).toBe(false)
