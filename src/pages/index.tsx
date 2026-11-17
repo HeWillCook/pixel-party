@@ -44,17 +44,17 @@ export default function Landing() {
 
             <nav className="flex items-center gap-3">
               <Link
-                to="/home"
+                to="/party"
                 className="px-3 py-1.5 text-lg uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
               >
-                Lobby
+                Party Mode
               </Link>
               <Link
-                to="/r/play"
+                to="/home"
                 className="pp-btn inline-flex items-center gap-1.5 px-3.5 py-1 text-lg uppercase tracking-wider"
               >
                 <Play className="h-4 w-4 fill-current" aria-hidden />
-                Play Now
+                Daily Challenge
               </Link>
             </nav>
           </div>
@@ -68,7 +68,7 @@ export default function Landing() {
               <div className="pp-chip mb-3 inline-flex items-center gap-2 px-3 py-1 text-base uppercase tracking-wider">
                 <Sparkles className="h-4 w-4 shrink-0 text-[var(--sunset-1)]" aria-hidden />
                 <span>
-                  Multiplayer pixel drawing game vs. Claude Haiku
+                  Daily pixel-art challenge judged by Claude Haiku
                 </span>
               </div>
 
@@ -77,29 +77,29 @@ export default function Landing() {
               </div>
 
               <h1 className="mb-4 text-3xl uppercase leading-none tracking-wide text-foreground sm:text-5xl">
-                Paint the Word in as Few Pixels as Possible.
+                One Daily Prompt. 10 Minutes. Beat the AI Judge.
               </h1>
 
               <p className="mb-7 max-w-xl text-xl leading-snug text-muted-foreground">
-                Share a live 32×32 canvas with friends or strangers. Everyone on the board sees the target word—only the AI judge is in the dark. Every pixel counts: points are 50% pixel economy and 50% speed!
+                One secret scene each day. Paint solo on a 32×32 canvas, get two-step Haiku grades, and keep your best score out of 1,000. Want company? Party Mode still has live co-op rooms.
               </p>
 
               <div className="flex flex-wrap items-center gap-3.5">
                 <Link
-                  to="/r/play"
+                  to="/home"
                   data-testid="landing-play-now"
                   className="pp-btn inline-flex items-center gap-2.5 px-6 py-2.5 text-xl uppercase tracking-wider"
                 >
                   <Play className="h-5 w-5 fill-current" aria-hidden />
-                  Play now
+                  Play today’s daily
                 </Link>
 
                 <Link
-                  to="/home"
+                  to="/party"
                   data-testid="landing-browse-lobby"
                   className="pp-chip inline-flex items-center gap-2 px-5 py-2.5 text-xl uppercase tracking-wider transition-colors hover:bg-secondary"
                 >
-                  Browse Lobby &amp; Create Room
+                  Party Mode &amp; Co-op Rooms
                 </Link>
               </div>
             </div>
@@ -109,9 +109,9 @@ export default function Landing() {
               <div className="pp-panel w-full max-w-sm p-4">
                 <div className="mb-3 flex items-baseline justify-between text-lg text-[var(--soft-text)]">
                   <span>
-                    DRAW: <span className="pp-word text-2xl uppercase">MUSHROOM</span>
+                    DAILY: <span className="pp-word text-2xl uppercase">A MUSHROOM IN THE RAIN</span>
                   </span>
-                  <span>42 PX</span>
+                  <span>BEST: 920 / 1000</span>
                 </div>
 
                 {/* 10x10 Sprite Preview */}
@@ -136,18 +136,15 @@ export default function Landing() {
                       Haiku says
                     </span>
                     <span className="pp-chip text-sm uppercase">
-                      94% MATCH!
+                      920 / 1000
                     </span>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
                     <span className="border border-[var(--sunset-1)] bg-secondary px-2 py-0.5 text-base text-[var(--sunset-1)]">
-                      mushroom?
+                      a red toadstool
                     </span>
                     <span className="pp-chip text-base text-foreground">
-                      toadstool?
-                    </span>
-                    <span className="pp-chip text-base text-foreground">
-                      umbrella?
+                      Fit 450 • Rec 390 • Spd 80
                     </span>
                   </div>
                 </div>
@@ -162,10 +159,10 @@ export default function Landing() {
                 <Grid3X3 className="h-5 w-5" aria-hidden />
               </div>
               <h2 className="mb-1.5 text-xl uppercase tracking-wider text-[var(--sunset-2)]">
-                1. Paint on a 32×32 Grid
+                1. One 10-Minute Daily Attempt
               </h2>
               <p className="text-base leading-snug text-muted-foreground">
-                Pick from 15 bold arcade swatches. Click or drag solo, or coordinate with a crowd where pixel cooldown scales with room size.
+                Press Start to reveal today&apos;s secret scene and paint solo on a 32×32 canvas with 15 bold arcade swatches.
               </p>
             </div>
 
@@ -174,10 +171,10 @@ export default function Landing() {
                 <Bot className="h-5 w-5" aria-hidden />
               </div>
               <h2 className="mb-1.5 text-xl uppercase tracking-wider text-[var(--sunset-2)]">
-                2. Claude Haiku Watches Live
+                2. Two-Step Haiku Judging
               </h2>
               <p className="text-base leading-snug text-muted-foreground">
-                Every 15 seconds—or whenever you hit &ldquo;Ask the AI&rdquo;—the canvas is rendered to a crisp PNG and judged by Claude Haiku.
+                Every 2 minutes—plus 3 Ask-nows—Haiku makes a blind guess from your pixels alone, then grades prompt fit and recognition.
               </p>
             </div>
 
@@ -186,10 +183,10 @@ export default function Landing() {
                 <Trophy className="h-5 w-5" aria-hidden />
               </div>
               <h2 className="mb-1.5 text-xl uppercase tracking-wider text-[var(--sunset-2)]">
-                3. 1000-Point Formula
+                3. Daily Leaderboard &amp; Party Mode
               </h2>
               <p className="text-base leading-snug text-muted-foreground">
-                Score up to 1,000 points (50% fewer pixels used, 50% speed). Every contributor with pixels on the winning canvas earns the full round score!
+                Your highest-scoring snapshot out of 1,000 counts for the daily leaderboard and your profile—plus live multiplayer boards in Party Mode!
               </p>
             </div>
           </section>

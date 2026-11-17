@@ -68,7 +68,7 @@ test('two painters sync, respect cooldown, and allow spectators', async ({ users
 test('private room invite requires sign-in and admits the invited painter', async ({ users, page }) => {
   // The rooms API suite fills the first account's five-room quota.
   const [b, a] = await users(2)
-  await a.page.goto('/home')
+  await a.page.goto('/party')
   await a.page.getByTestId('create-room-name').fill('Private pixel test')
   await a.page.getByTestId('visibility-private').click()
   await a.page.getByTestId('create-room-submit').click()

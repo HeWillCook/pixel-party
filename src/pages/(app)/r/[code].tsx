@@ -357,7 +357,7 @@ export default function RoomPage() {
       >
         <div className="flex items-center justify-between gap-2">
           <Link
-            to="/home"
+            to="/party"
             className="inline-flex items-center gap-1.5 text-base uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
           >
             <ArrowLeft className="h-4 w-4" aria-hidden />
@@ -394,7 +394,7 @@ export default function RoomPage() {
                 Sign in to join
               </Button>
               <Link
-                to="/home"
+                to="/party"
                 className="pp-chip inline-flex h-10 items-center justify-center px-4 text-base uppercase hover:bg-secondary"
               >
                 Back to Lobby
@@ -421,7 +421,7 @@ export default function RoomPage() {
               </p>
             </div>
             <Link
-              to="/home"
+              to="/party"
               className="pp-btn inline-flex h-10 items-center justify-center px-5 text-lg uppercase"
             >
               Back to Lobby
@@ -447,7 +447,7 @@ export default function RoomPage() {
               </p>
             </div>
             <Link
-              to="/home"
+              to="/party"
               className="pp-btn inline-flex h-10 items-center justify-center px-5 text-lg uppercase"
             >
               Back to Lobby
@@ -467,7 +467,7 @@ export default function RoomPage() {
     >
       <div className="flex flex-wrap items-baseline gap-3">
         <Link
-          to="/home"
+          to="/party"
           className="inline-flex items-center gap-1 text-base uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
         >
           <ArrowLeft className="h-4 w-4" aria-hidden />

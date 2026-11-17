@@ -110,7 +110,7 @@ test('selected swatch displays a separate keyboard focus outline', async ({ page
 
 test('navigation, logo and home visibility controls use the palette focus outline', async ({ page }) => {
   await clientFixture(page, { signedIn: true })
-  await page.goto(`${origin}/home`)
+  await page.goto(`${origin}/party`)
   const input = page.getByTestId('join-code-input')
   await expect(input).toHaveAttribute('placeholder', 'Enter 4-char code')
   await expect(input).toHaveAttribute('maxlength', '64')
@@ -132,7 +132,7 @@ test('navigation, logo and home visibility controls use the palette focus outlin
 test('mobile navigation toggle uses the shared palette outline without a second focus ring', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 })
   await clientFixture(page, { signedIn: true })
-  await page.goto(`${origin}/home`)
+  await page.goto(`${origin}/party`)
   const toggle = page.getByRole('button', { name: 'Toggle menu' })
   await expect(toggle).toBeVisible()
   await page.keyboard.press('Shift')
@@ -290,7 +290,7 @@ for (const entry of ['direct', 'home-join'] as const) {
       }).observe(document, { childList: true, subtree: true })
     })
     await page.routeWebSocket('**/api/pixel/**', socket => socket.close({ code: 1008 }))
-    const response = await page.goto(`${origin}/${entry === 'direct' ? 'r/AB2Z' : 'home'}`)
+    const response = await page.goto(`${origin}/${entry === 'direct' ? 'r/AB2Z' : 'party'}`)
     expect(await response!.text()).not.toMatch(/<canvas|grid-cols-10|pixel-canvas-frame/)
     if (entry === 'home-join') {
       await page.getByTestId('join-code-input').fill('ab2z')

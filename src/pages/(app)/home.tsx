@@ -1,447 +1,458 @@
-import { useState, type FormEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { AuthOverlay, useAuthProfileReady, useQuery } from 'deepspace'
 import {
-  AuthOverlay,
-  getAuthToken,
-  useAuthProfileReady,
-  useMutations,
-  useQuery,
-} from 'deepspace'
-import {
-  ArrowRight,
-  Globe,
-  Hash,
-  Lock,
-  Palette as PaletteIcon,
+  Bot,
+  CheckCircle2,
+  LogIn,
   Play,
-  Plus,
   Sparkles,
   Users,
+  Volume2,
+  VolumeX,
 } from 'lucide-react'
-import { DeleteRoomButton } from '../../components/game/DeleteRoomButton'
-import {
-  Badge,
-  Button,
-  Input,
-  Label,
-  useToast,
-} from '../../components/ui'
+import { useDailySounds } from '../../components/daily/useDailySounds'
+import { DailyTimer } from '../../components/daily/DailyTimer'
+import { Leaderboard } from '../../components/daily/Leaderboard'
+import { GradePanel } from '../../components/daily/GradePanel'
+import { Palette } from '../../components/game/Palette'
+import { PixelCanvas } from '../../components/game/PixelCanvas'
+import { Badge, Button } from '../../components/ui'
+import { DAILY } from '../../game/config'
+import { canAskDaily, canPaintDaily } from '../../game/daily/client-schedule'
+import { decodeCells } from '../../game/grid'
+import { useDailyAttempt } from '../../hooks/useDailyAttempt'
+import type { GradeView } from '../../server/daily-service'
 
-interface RoomRecord {
-  name: string
-  mode: 'coop' | 'team'
-  visibility: 'public' | 'private'
-  joinCode: string
-  hostId: string
-  status: 'lobby' | 'playing' | 'intermission' | 'paused' | 'closed'
-  playerCount: number
-  lastActiveAt: number
-  isDefaultBoard: boolean
+interface DailyDrawingRecord {
+  day: string
+  userId: string
+  displayName: string
+  prompt: string
+  cells: string
+  guess: string
+  reason: string
+  score: number
+  visibility: 'public' |'private'
 }
 
-export default function HomePage() {
-  const navigate = useNavigate()
-  const { isSignedIn, user } = useAuthProfileReady({ requireUser: false })
-  const { ready: mutationsReady } = useMutations('rooms')
-  const { error: toastError, success: toastSuccess } = useToast()
+interface DailyScoreRecord {
+  day: string
+  userId: string
+  displayName: string
+  avatarUrl: string
+  score: number
+  fit: number
+  recognition: number
+  speed: number
+  bestElapsedMs: number
+  ended: number
+  medal: number
+}
 
-  const { records: rooms, status: roomsStatus } = useQuery<RoomRecord>('rooms', {
-    orderBy: 'lastActiveAt',
-    orderDir: 'desc',
-    limit: 50,
+function decodeSnapshotOrFallback(encoded: string | undefined, fallback: Uint8Array): Uint8Array {
+  if (!encoded) return fallback
+  try {
+    const decoded = decodeCells(encoded, 1024)
+    if (decoded.every((c) => c <= 15)) return decoded
+  } catch {
+    // Ignore invalid base64
+  }
+  return fallback
+}
+
+export default function DailyHomePage() {
+  const { isLoaded, isSignedIn, user } = useAuthProfileReady({ requireUser: false })
+  const { state, cells, paint, start, askNow, done } = useDailyAttempt()
+  const { muted, toggleMute } = useDailySounds(state)
+  const boardRef = useRef<HTMLDivElement>(null)
+  const paletteRef = useRef<HTMLDivElement>(null)
+  const [boardBox, setBoardBox] = useState({ width: 320, height: 600 })
+
+  useEffect(() => {
+    const board = boardRef.current
+    if (!board) return
+    const measure = () => {
+      const top = board.getBoundingClientRect().top + (board.closest('main')?.scrollTop ?? 0)
+      const paletteHeight = paletteRef.current?.getBoundingClientRect().height ?? 0
+      const width = board.clientWidth
+      const height = Math.max(200, window.innerHeight - top - paletteHeight - 48)
+      setBoardBox(previous => previous.width === width && previous.height === height ? previous : { width, height })
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(board)
+    if (paletteRef.current) observer.observe(paletteRef.current)
+    window.addEventListener('resize', measure)
+    return () => { observer.disconnect(); window.removeEventListener('resize', measure) }
+  }, [state.status, isSignedIn])
+
+  const userId = user?.id ?? ''
+  const queryDay = state.day || '__none__'
+  const queryUserId = userId || '__none__'
+
+  const { records: myDrawings } = useQuery<DailyDrawingRecord>('dailyDrawings', {
+    where: { day: queryDay, userId: queryUserId },
+    limit: 1,
+  })
+  const { records: myScores } = useQuery<DailyScoreRecord>('dailyScores', {
+    where: { day: queryDay, userId: queryUserId },
+    limit: 1,
   })
 
-  const [roomName, setRoomName] = useState('')
-  const [visibility, setVisibility] = useState<'public' | 'private'>('public')
-  const [creating, setCreating] = useState(false)
+  const bestDrawingDoc = myDrawings[0]?.data
+  const bestScoreDoc = myScores[0]?.data
 
-  const [joinCodeInput, setJoinCodeInput] = useState('')
-  const [joining, setJoining] = useState(false)
+  const [activeColor, setActiveColor] = useState<number>(4)
+  const [starting, setStarting] = useState(false)
   const [showAuthModal, setShowAuthModal] = useState(false)
-  const [deletedRooms, setDeletedRooms] = useState<string[]>([])
+  const [now, setNow] = useState<number>(() => Date.now())
 
-  const livePublicRooms = rooms.filter(
-    (room) =>
-      room.data.status !== 'closed' &&
-      !deletedRooms.includes(room.recordId) &&
-      room.data.visibility === 'public' &&
-      !room.data.isDefaultBoard &&
-      room.data.joinCode !== 'play',
+  useEffect(() => {
+    if (state.status !== 'playing') return
+    const interval = setInterval(() => {
+      setNow(Date.now())
+    }, 250)
+    return () => clearInterval(interval)
+  }, [state.status])
+
+  const asksLeft = Math.max(0, DAILY.maxAsks - state.asksUsed)
+  const canDraw = isSignedIn && canPaintDaily(state, now)
+  const canAsk = isSignedIn && canAskDaily(state, now)
+
+  const endedBestScore = Math.max(
+    state.best,
+    bestScoreDoc?.score ?? 0,
+    bestDrawingDoc?.score ?? 0,
   )
 
-  const defaultBoardRoom = rooms.find(
-    (room) => room.data.isDefaultBoard || room.data.joinCode === 'play',
+  const endedCells = useMemo(
+    () => decodeSnapshotOrFallback(bestDrawingDoc?.cells ?? state.lastCells, cells),
+    [bestDrawingDoc?.cells, state.lastCells, cells],
   )
 
-  const handleCreateRoom = async (e: FormEvent) => {
-    e.preventDefault()
-    if (!isSignedIn) {
-      setShowAuthModal(true)
-      return
-    }
-    const trimmed = roomName.trim()
-    if (!trimmed) {
-      toastError('Room name required', 'Give your canvas room a name (1–40 chars).')
-      return
-    }
-    setCreating(true)
-    try {
-      const token = await getAuthToken()
-      const res = await fetch('/api/actions/createRoom', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({
-          name: trimmed,
-          mode: 'coop',
-          visibility,
-        }),
-      })
-      const payload = (await res.json()) as {
-        success?: boolean
-        data?: { roomId: string; joinCode: string }
-        error?: string
-      }
-      if (!res.ok || !payload.success || !payload.data) {
-        toastError('Could not create room', payload.error ?? 'Please try again.')
-        return
-      }
-      toastSuccess('Room created!', `Joining ${trimmed}…`)
-      navigate(`/r/${payload.data.joinCode}`)
-    } catch {
-      toastError('Network error', 'Could not reach the server to create your room.')
-    } finally {
-      setCreating(false)
-    }
-  }
+  const endedGrade = useMemo((): GradeView | null => {
+    if (bestScoreDoc || bestDrawingDoc) {
+      const fit = bestScoreDoc?.fit ?? (state.latest?.total === endedBestScore ? state.latest.fit : 0)
+      const recognition =
+        bestScoreDoc?.recognition ??
+        (state.latest?.total === endedBestScore ? state.latest.recognition : 0)
+      const speed =
+        bestScoreDoc?.speed ?? (state.latest?.total === endedBestScore ? state.latest.speed : 0)
+      const total = bestScoreDoc?.score ?? bestDrawingDoc?.score ?? endedBestScore
+      const guess =
+        bestDrawingDoc?.guess ||
+        (state.latest?.total === endedBestScore ? state.latest.guess : '')
+      const reason =
+        bestDrawingDoc?.reason ||
+        (state.latest?.total === endedBestScore ? state.latest.reason : '')
+      const elapsedMs =
+        bestScoreDoc?.bestElapsedMs ??
+        (state.latest?.total === endedBestScore ? state.latest.elapsedMs : 0)
 
-  const handleJoinCode = async (e: FormEvent) => {
-    e.preventDefault()
-    const raw = joinCodeInput.trim()
-    if (!raw) return
-    const normalized = raw.toLowerCase() === 'play' ? 'play' : raw.toUpperCase()
-    if (normalized === 'play') {
-      navigate('/r/play')
-      return
+      if (total > 0 || Boolean(guess) || Boolean(reason)) {
+        return {
+          guess,
+          reason,
+          fit,
+          recognition,
+          speed,
+          total,
+          elapsedMs,
+        }
+      }
     }
-    if (!isSignedIn) {
-      navigate(`/r/${normalized}`)
-      return
+    if (state.latest && state.latest.total >= state.best) {
+      return state.latest
     }
-    setJoining(true)
+    return null
+  }, [bestScoreDoc, bestDrawingDoc, state.latest, state.best, endedBestScore])
+
+  const handleStart = async () => {
+    setStarting(true)
     try {
-      const token = await getAuthToken()
-      const res = await fetch('/api/actions/joinRoom', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ joinCode: normalized }),
-      })
-      const payload = (await res.json()) as {
-        success?: boolean
-        error?: string
-      }
-      if (!res.ok || !payload.success) {
-        toastError('Could not join room', payload.error ?? 'Check the code and try again.')
-        return
-      }
-      navigate(`/r/${normalized}`)
-    } catch {
-      toastError('Network error', 'Failed to join room.')
+      await start()
     } finally {
-      setJoining(false)
+      setStarting(false)
     }
   }
 
   return (
     <div
-      data-testid="lobby-page"
-      className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8"
+      data-testid="daily-page"
+      className="mx-auto flex w-full max-w-[1400px] flex-col gap-5 px-4 py-4 sm:px-6"
     >
-      {/* Hero Banner: Play Now on the Default Public Board */}
-      <section className="pp-panel relative overflow-hidden p-5 sm:p-8">
-        <div className="relative z-10 flex flex-col justify-between gap-6 lg:flex-row lg:items-center">
-          <div className="max-w-xl space-y-2.5">
-            <div className="pp-chip inline-flex items-center gap-2 px-3 py-1 text-base uppercase tracking-wider">
-              <Sparkles className="h-4 w-4 text-[var(--sunset-1)]" aria-hidden />
-              <span>Always-On Co-op Canvas</span>
-            </div>
-            <h1 className="pp-word text-3xl uppercase leading-none sm:text-5xl">
-              Draw Together. Beat the AI.
-            </h1>
-            <p className="text-lg leading-snug text-muted-foreground">
-              Jump straight onto the public 32×32 pixel board. Everyone on the board sees the word—except Claude Haiku, who watches the canvas and shouts out live guesses!
-            </p>
-            {defaultBoardRoom && (
-              <div className="flex flex-wrap items-center gap-3 pt-1 text-base">
-                <span className="pp-chip inline-flex items-center gap-1.5 px-2.5 py-0.5">
-                  <Users className="h-4 w-4 text-[var(--sunset-1)]" aria-hidden />
-                  {defaultBoardRoom.data.playerCount ?? 0} active painters
-                </span>
-                <span className="uppercase text-[var(--sunset-1)]">
-                  ● {defaultBoardRoom.data.status}
-                </span>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <span className="pp-logo text-3xl">Daily Challenge</span>
+        <Button type="button" variant="secondary" size="sm" onClick={toggleMute} aria-label={muted ? 'Unmute sounds' : 'Mute sounds'} className="pp-chip gap-2 text-base">
+          {muted ? <VolumeX className="h-4 w-4" aria-hidden /> : <Volume2 className="h-4 w-4" aria-hidden />}
+          {muted ? 'Sound off' : 'Sound on'}
+        </Button>
+      </div>
+      {/* Signed out view */}
+      {isLoaded && !isSignedIn && (
+        <div className="flex flex-col gap-6">
+          <section
+            data-testid="daily-signed-out"
+            className="pp-panel relative overflow-hidden border-2 border-border p-5 sm:p-8"
+          >
+            <div className="relative z-10 flex flex-col justify-between gap-6 lg:flex-row lg:items-center">
+              <div className="max-w-xl space-y-2.5">
+                <div className="pp-chip inline-flex items-center gap-2 px-3 py-1 text-base">
+                  <Sparkles className="h-3.5 w-3.5" aria-hidden />
+                  <span className="uppercase tracking-wider">
+                    Solo Daily Pixel Challenge
+                  </span>
+                </div>
+                <h1 className="text-2xl uppercase tracking-tight text-foreground sm:text-4xl">
+                  One Prompt. 10 Minutes. Judged by Haiku.
+                </h1>
+                <p className="text-lg text-muted-foreground sm:text-xl">
+                  Everyone gets the same daily scene on a 32×32 canvas. You have 10 minutes, auto-grades every 2 minutes, and 3 Ask-nows. Your highest-scoring snapshot goes on today&apos;s leaderboard!
+                </p>
               </div>
-            )}
+
+              <div className="flex flex-col items-stretch gap-3 sm:flex-row lg:flex-col">
+                <Button
+                  type="button"
+                  data-testid="daily-sign-in-button"
+                  onClick={() => setShowAuthModal(true)}
+                  className="pp-btn inline-flex items-center justify-center gap-2.5 bg-secondary px-6 py-3.5 text-lg uppercase tracking-wider text-primary-foreground hover:bg-secondary sm:text-xl"
+                >
+                  <LogIn className="h-5 w-5" aria-hidden />
+                  Sign in to play
+                </Button>
+                <Link
+                  to="/party"
+                  className="pp-btn inline-flex items-center justify-center gap-2 bg-secondary px-5 py-2.5 text-base uppercase tracking-wider text-foreground hover:bg-secondary/80"
+                >
+                  <Users className="h-4 w-4 text-[var(--sunset-1)]" aria-hidden />
+                  Party mode
+                </Link>
+              </div>
+            </div>
+          </section>
+
+          <Leaderboard day={state.day} ended={false} />
+        </div>
+      )}
+
+      {/* Signed in: Not started */}
+      {isSignedIn && state.status === 'not_started' && (
+        <section
+          data-testid="daily-not-started"
+          className="pp-panel mx-auto flex w-full max-w-2xl flex-col gap-5 border-2 border-border p-6 sm:p-8"
+        >
+          <div className="space-y-2">
+            <div className="pp-chip inline-flex items-center gap-2 px-3 py-1 text-base">
+              <Sparkles className="h-3.5 w-3.5" aria-hidden />
+              <span className="uppercase tracking-wider">
+                Daily Challenge • {state.day}
+              </span>
+            </div>
+            <h1 className="text-2xl uppercase tracking-tight text-foreground sm:text-3xl">
+              Ready for Today&apos;s Prompt?
+            </h1>
+            <p className="text-lg text-muted-foreground">
+              Today&apos;s prompt is hidden until you start. Once you press Start, your 10-minute clock begins immediately.
+            </p>
           </div>
 
-          <div className="flex flex-col items-stretch gap-3 sm:flex-row lg:flex-col">
-            <Link
-              to="/r/play"
-              data-testid="lobby-play-now"
-              className="pp-btn inline-flex items-center justify-center gap-2.5 px-6 py-3 text-xl uppercase tracking-wider"
+          <ul className="space-y-2 border border-border/60 bg-background/50 p-4 text-base text-muted-foreground sm:text-lg">
+            <li>
+              <strong className="font-normal text-foreground">10 minutes:</strong>{''}
+              One solo attempt per UTC day on a 32×32 pixel grid.
+            </li>
+            <li>
+              <strong className="font-normal text-foreground">Grades every 2 minutes:</strong>{''}
+              Claude Haiku automatically checks your drawing at 2, 4, 6, and 8 minutes.
+            </li>
+            <li>
+              <strong className="font-normal text-foreground">3 Ask-nows:</strong>{''}
+              Request an immediate judge check up to 3 times whenever your drawing reads well.
+            </li>
+            <li>
+              <strong className="font-normal text-foreground">Best score kept:</strong>{''}
+              Scored out of 1,000 (500 fit + 400 blind recognition + 100 speed). Your highest grade is saved!
+            </li>
+          </ul>
+
+          {state.lastError && (
+            <p role="status" className="text-base text-[var(--sunset-1)]">
+              {state.lastError}
+            </p>
+          )}
+
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+            <Button
+              type="button"
+              data-testid="daily-start-button"
+              disabled={starting}
+              onClick={handleStart}
+              className="pp-btn inline-flex items-center gap-2.5 bg-secondary px-6 py-3.5 text-lg uppercase tracking-wider text-primary-foreground hover:bg-secondary sm:text-xl"
             >
               <Play className="h-5 w-5 fill-current" aria-hidden />
-              Play now
-            </Link>
-          </div>
-        </div>
-      </section>
+              {starting ?'Starting…' : 'Start Daily Challenge'}
+            </Button>
 
-      {/* Main Grid: Live Public Rooms + Create / Join Room */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-        {/* Left 7 Cols: Live Public Rooms List */}
-        <section className="flex flex-col gap-4 lg:col-span-7">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h2 className="text-2xl uppercase tracking-wider text-[var(--sunset-2)]">
-                Live Public Rooms
-              </h2>
-              <p className="text-base text-muted-foreground">
-                Drop into an active co-op canvas or spectate live rounds.
-              </p>
-            </div>
-            <Badge variant="secondary" className="pp-chip shrink-0 whitespace-nowrap text-base uppercase">
-              {livePublicRooms.length + 1} Open
-            </Badge>
-          </div>
-
-          <div data-testid="public-rooms-list" className="flex flex-col gap-3">
-            {/* Always show the featured Public Board at the top of the room list */}
             <Link
-              to="/r/play"
-              data-testid="room-card-play"
-              className="pp-panel group flex items-center justify-between gap-3 p-4 transition-colors hover:border-[var(--sunset-1)]"
+              to="/party"
+              className="text-base uppercase tracking-wider text-muted-foreground hover:text-foreground"
             >
-              <div className="flex min-w-0 items-center gap-3.5">
-                <div className="pp-chip flex h-11 w-11 shrink-0 items-center justify-center text-[var(--sunset-1)]">
-                  <PaletteIcon className="h-5 w-5" aria-hidden />
-                </div>
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="whitespace-nowrap text-xl uppercase text-foreground group-hover:text-[var(--sunset-1)]">
-                      Public Board
-                    </span>
-                    <Badge variant="default" className="pp-chip text-sm uppercase">
-                      Featured
-                    </Badge>
-                  </div>
-                  <p className="mt-0.5 text-base text-muted-foreground">
-                    Code: <code className="text-[var(--sunset-1)]">play</code> • Co-op 32×32
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex shrink-0 items-center gap-2.5">
-                <span className="pp-chip inline-flex items-center gap-1.5 px-2.5 py-0.5 text-base">
-                  <Users className="h-4 w-4 text-[var(--sunset-1)]" aria-hidden />
-                  {defaultBoardRoom?.data.playerCount ?? 0}
-                </span>
-                <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-1 group-hover:text-[var(--sunset-1)]" />
-              </div>
+              Or play Party mode →
             </Link>
-
-            {roomsStatus === 'loading' && livePublicRooms.length === 0 ? (
-              <div className="pp-panel p-6 text-center text-base text-muted-foreground">
-                Scanning active frequencies…
-              </div>
-            ) : livePublicRooms.length === 0 ? (
-              <div className="pp-panel p-6 text-center">
-                <p className="text-lg uppercase text-[var(--sunset-2)]">
-                  No custom public rooms right now
-                </p>
-                <p className="mt-1 text-base text-muted-foreground">
-                  Hop into the Public Board above or create your own room on the right!
-                </p>
-              </div>
-            ) : (
-              livePublicRooms.map((room) => (
-                <div key={room.recordId} className="pp-panel flex flex-col items-stretch sm:flex-row sm:items-center sm:gap-3 sm:pr-4">
-                  <Link
-                    to={`/r/${room.data.joinCode}`}
-                    data-testid={`room-card-${room.data.joinCode}`}
-                    className="group flex min-w-0 flex-1 items-center justify-between gap-4 p-4 transition-colors"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="truncate text-xl uppercase text-foreground group-hover:text-[var(--sunset-1)]">
-                          {room.data.name}
-                        </span>
-                        <Badge variant="secondary" className="pp-chip text-sm uppercase">
-                          {room.data.status}
-                        </Badge>
-                      </div>
-                      <p className="mt-0.5 text-base text-muted-foreground">
-                        Code: <code className="text-[var(--sunset-1)]">{room.data.joinCode}</code> • Co-op 32×32
-                      </p>
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                      <span className="pp-chip inline-flex items-center gap-1.5 px-2.5 py-0.5 text-base">
-                        <Users className="h-4 w-4 text-[var(--sunset-1)]" aria-hidden />
-                        {room.data.playerCount ?? 0}
-                      </span>
-                      <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-1 group-hover:text-[var(--sunset-1)]" />
-                    </div>
-                  </Link>
-                  {user?.id === room.data.hostId && (
-                    <div className="flex justify-end px-4 pb-4 sm:p-0">
-                      <DeleteRoomButton joinCode={room.data.joinCode} onDeleted={() => setDeletedRooms(previous => [...previous, room.recordId])} />
-                    </div>
-                  )}
-                </div>
-              ))
-            )}
           </div>
         </section>
+      )}
 
-        {/* Right 5 Cols: Create Room + Join by Code */}
-        <section className="flex flex-col gap-5 lg:col-span-5">
-          {/* Create Room Card */}
-          <form
-            data-testid="create-room-form"
-            onSubmit={handleCreateRoom}
-            className="pp-panel flex flex-col gap-4 p-5"
-          >
-            <div className="flex items-center justify-between">
-              <h2 className="text-2xl uppercase tracking-wider text-[var(--sunset-2)]">
-                Create a Room
-              </h2>
-              <Badge variant="secondary" className="pp-chip text-sm uppercase">
-                Co-op 32×32
-              </Badge>
+      {/* Signed in: Playing */}
+      {isSignedIn && state.status === 'playing' && (
+        <div data-testid="daily-playing" className="flex flex-col gap-4">
+          {/* Top Bar: Prompt + Timer + Best */}
+          <div className="pp-panel flex flex-wrap items-center justify-between gap-3 bg-card px-4 py-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-base uppercase tracking-wider text-muted-foreground">
+                Prompt:
+              </span>
+              <span
+                data-testid="daily-prompt"
+                className="pp-word text-2xl uppercase tracking-wide text-[var(--sunset-1)] sm:text-3xl"
+              >
+                {state.prompt}
+              </span>
             </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="room-name" className="text-base uppercase text-[var(--soft-text)]">
-                Room Name
-              </Label>
-              <Input
-                id="room-name"
-                data-testid="create-room-name"
-                placeholder="e.g. Midnight Pixel Club"
-                maxLength={40}
-                value={roomName}
-                onChange={(e) => setRoomName(e.target.value)}
-                disabled={!mutationsReady || creating}
+            <div className="flex flex-wrap items-center gap-2.5">
+              <DailyTimer startedAt={state.startedAt} endsAt={state.endsAt} />
+            </div>
+          </div>
+
+          {/* Main Stage */}
+          <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
+            {/* Left: Canvas + Palette */}
+            <div ref={boardRef} className="flex min-w-0 flex-col gap-4">
+              <PixelCanvas
+                width={32}
+                height={32}
+                availWidth={boardBox.width}
+                availHeight={boardBox.height}
+                cells={cells}
+                activeColor={activeColor}
+                canDraw={canDraw}
+                word={state.prompt}
+                onPlace={paint}
+              />
+
+              <div ref={paletteRef}>
+                <Palette
+                  activeColor={activeColor}
+                  onSelectColor={setActiveColor}
+                  disabled={!canDraw}
+                />
+              </div>
+            </div>
+
+            {/* Right: Controls + GradePanel */}
+            <div className="flex min-w-0 flex-col gap-4">
+              <GradePanel
+                latest={state.latest}
+                best={state.best}
+                grading={state.grading}
+                lastError={state.lastError}
+              />
+
+              <div className="pp-panel flex flex-col gap-3 bg-card p-4">
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <Button
+                    type="button"
+                    data-testid="daily-ask-button"
+                    disabled={!canAsk}
+                    onClick={() => void askNow()}
+                    className="pp-btn flex-1 gap-2 bg-secondary px-4 py-2.5 text-base uppercase tracking-wider text-white hover:bg-secondary disabled:opacity-60 sm:text-lg"
+                  >
+                    <Bot className="h-4 w-4 shrink-0" aria-hidden />
+                    <span>Ask now ({asksLeft} left)</span>
+                  </Button>
+
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    data-testid="daily-done-button"
+                    disabled={state.stale || state.grading || (state.finalizing && !state.endFailed)}
+                    onClick={() => void done()}
+                    className="pp-btn gap-1.5 px-4 py-2.5 text-base uppercase tracking-wider sm:text-lg"
+                  >
+                    <CheckCircle2 className="h-4 w-4 text-[var(--sunset-1)]" aria-hidden />
+                    <span>
+                      {state.endFailed
+                        ?'Retry Done'
+                        : state.finalizing
+                          ?'Finishing…'
+                          : 'Done'}
+                    </span>
+                  </Button>
+                </div>
+
+                <p className="text-base text-muted-foreground">
+                  Auto-grades run at 2, 4, 6, and 8 minutes ({state.autoUsed}/{DAILY.maxAuto} used). Pressing Done runs one final grade and locks in your best score.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Signed in: Ended */}
+      {isSignedIn && state.status === 'ended' && (
+        <div data-testid="daily-ended" className="flex flex-col gap-6">
+          <div className="pp-panel flex flex-wrap items-center justify-between gap-3 bg-card px-4 py-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="default" className="uppercase">
+                Attempt Complete
+              </Badge>
+              {(state.prompt ?? bestDrawingDoc?.prompt) && (
+                <span
+                  data-testid="daily-prompt"
+                  className="text-lg uppercase tracking-wider text-[var(--sunset-1)] sm:text-xl"
+                >
+                  {state.prompt ?? bestDrawingDoc?.prompt}
+                </span>
+              )}
+            </div>
+            <span className="text-base text-[var(--sunset-1)]">
+              Best: {endedBestScore} / 1000
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
+            <div ref={boardRef} className="flex min-w-0 flex-col gap-4">
+              <PixelCanvas
+                width={32}
+                height={32}
+                availWidth={boardBox.width}
+                availHeight={boardBox.height}
+                cells={endedCells}
+                activeColor={activeColor}
+                canDraw={false}
+                word={state.prompt ?? bestDrawingDoc?.prompt}
+                onPlace={paint}
               />
             </div>
 
-            <div className="space-y-1.5">
-              <Label className="text-base uppercase text-[var(--soft-text)]">Mode</Label>
-              <div className="flex items-center justify-between border border-border bg-secondary/60 px-3 py-2 text-base">
-                <span className="text-foreground">Co-op (32×32 Shared Grid)</span>
-              </div>
+            <div className="flex min-w-0 flex-col gap-4">
+              <GradePanel
+                latest={endedGrade}
+                best={endedBestScore}
+                grading={state.grading}
+                lastError={state.lastError}
+                ended
+              />
             </div>
+          </div>
 
-            <div className="space-y-1.5">
-              <Label className="text-base uppercase text-[var(--soft-text)]">Visibility</Label>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  data-testid="visibility-public"
-                  disabled={!mutationsReady || creating}
-                  onClick={() => setVisibility('public')}
-                  className={`flex items-center justify-center gap-1.5 border-2 px-3 py-2 text-base uppercase transition-colors ${
-                    visibility === 'public'
-                      ? 'border-[var(--sunset-1)] bg-secondary text-[var(--sunset-1)]'
-                      : 'border-border bg-secondary/40 text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  <Globe className="h-4 w-4" aria-hidden />
-                  <span>Public</span>
-                </button>
-                <button
-                  type="button"
-                  data-testid="visibility-private"
-                  disabled={!mutationsReady || creating}
-                  onClick={() => setVisibility('private')}
-                  className={`flex items-center justify-center gap-1.5 border-2 px-3 py-2 text-base uppercase transition-colors ${
-                    visibility === 'private'
-                      ? 'border-[var(--sunset-1)] bg-secondary text-[var(--sunset-1)]'
-                      : 'border-border bg-secondary/40 text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  <Lock className="h-4 w-4" aria-hidden />
-                  <span>Private</span>
-                </button>
-              </div>
-            </div>
-
-            {isSignedIn ? (
-              <Button
-                type="submit"
-                data-testid="create-room-submit"
-                disabled={!mutationsReady || creating || !roomName.trim()}
-                className="pp-btn mt-1 w-full gap-2 text-lg uppercase"
-              >
-                <Plus className="h-4 w-4" aria-hidden />
-                {creating ? 'Creating…' : 'Create & Launch Room'}
-              </Button>
-            ) : (
-              <Button
-                type="button"
-                data-testid="create-room-signin"
-                onClick={() => setShowAuthModal(true)}
-                className="pp-btn mt-1 w-full gap-2 text-lg uppercase"
-              >
-                Sign in to Host a Room
-              </Button>
-            )}
-          </form>
-
-          {/* Join by Code Card */}
-          <form
-            data-testid="join-room-form"
-            onSubmit={handleJoinCode}
-            className="pp-panel flex flex-col gap-3 p-5"
-          >
-            <h3 className="text-xl uppercase tracking-wider text-[var(--sunset-2)]">
-              Have an invite code?
-            </h3>
-            <div className="flex gap-2">
-              <div className="relative flex-1">
-                <Hash
-                  className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-                  aria-hidden
-                />
-                <Input
-                  data-testid="join-code-input"
-                  placeholder="Enter 4-char code"
-                  maxLength={64}
-                  value={joinCodeInput}
-                  onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
-                  disabled={joining}
-                  className="pl-8 uppercase"
-                />
-              </div>
-              <Button
-                type="submit"
-                variant="secondary"
-                data-testid="join-code-submit"
-                disabled={joining || !joinCodeInput.trim()}
-                className="pp-btn px-5 text-lg uppercase"
-              >
-                {joining ? 'Joining…' : 'Join'}
-              </Button>
-            </div>
-          </form>
-        </section>
-      </div>
+          <Leaderboard day={state.day} ended={state.status === 'ended'} />
+        </div>
+      )}
 
       {showAuthModal && <AuthOverlay onClose={() => setShowAuthModal(false)} />}
     </div>

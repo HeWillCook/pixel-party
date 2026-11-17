@@ -45,6 +45,10 @@ new_sqlite_classes = ["PixelRoom"]
 tag = "v3"
 new_sqlite_classes = ["BudgetRoom"]
 
+[[migrations]]
+tag = "v4"
+new_sqlite_classes = ["DailyRoom"]
+
 [durable_objects]
 bindings = [
   { name = "RECORD_ROOMS", class_name = "AppRecordRoom" },
@@ -55,6 +59,7 @@ bindings = [
   { name = "JOB_ROOMS", class_name = "AppJobRoom" },
   { name = "PIXEL_ROOMS", class_name = "PixelRoom" },
   { name = "BUDGET_ROOMS", class_name = "BudgetRoom" },
+  { name = "DAILY_ROOMS", class_name = "DailyRoom" },
 ]
 
 # For per-app resources (D1, KV, Vectorize, R2, Queues, AI Search), set the id

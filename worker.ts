@@ -25,6 +25,7 @@ import { runJob } from './src/jobs.js'
 import { schemas } from './src/schemas.js'
 import { createServerTools } from './src/server/server-tools.js'
 import { registerActionRoutes } from './src/server/action-routes.js'
+import { registerDailyRoutes } from './src/server/daily-routes.js'
 import {
   registerAuthAndIntegrationRoutes,
   registerPlatformProxyRoutes,
@@ -34,6 +35,7 @@ import {
 import { registerRealtimeRoutes } from './src/server/realtime-routes.js'
 export { PixelRoom } from './src/server/pixel-room.js'
 export { BudgetRoom } from './src/server/budget-room.js'
+export { DailyRoom } from './src/server/daily-room.js'
 
 // Dynamic deploy reads this manifest to create the app's DO bindings.
 export const __DO_MANIFEST__ = [
@@ -45,6 +47,7 @@ export const __DO_MANIFEST__ = [
   { binding: 'JOB_ROOMS', className: 'AppJobRoom', sqlite: true },
   { binding: 'PIXEL_ROOMS', className: 'PixelRoom', sqlite: true },
   { binding: 'BUDGET_ROOMS', className: 'BudgetRoom', sqlite: true },
+  { binding: 'DAILY_ROOMS', className: 'DailyRoom', sqlite: true },
 ] as const satisfies DOManifest
 
 export class AppRecordRoom extends RecordRoom<Env> {
@@ -154,6 +157,7 @@ app.use('*', async (c, next) => {
 registerAuthAndIntegrationRoutes(app)
 registerRealtimeRoutes(app)
 registerActionRoutes(app, resolveAuth)
+registerDailyRoutes(app)
 // Pixel Party has no website chat or local/browser agent surface.
 registerPlatformProxyRoutes(app)
 registerStaticRoutes(app)

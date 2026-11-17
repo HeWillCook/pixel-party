@@ -1,9 +1,15 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { BUDGET, JUDGE } from '../game/config'
 import { newRoomState, serializeRoomState } from '../game/room-logic'
 import type { RoomState } from '../game/room-logic'
 import type { Env } from '../../worker.js'
 import { PixelRoom, nextCommandRejection, restorePixelState } from './pixel-room'
+import { configuredJudgeMode } from './daily-judge'
+
+vi.mock('./daily-judge', async importOriginal => {
+  const original = await importOriginal<typeof import('./daily-judge')>()
+  return { ...original, configuredJudgeMode: vi.fn(original.configuredJudgeMode) }
+})
 import { BudgetRoom } from './budget-room'
 import { BaseRoom } from 'deepspace/worker'
 
@@ -170,12 +176,32 @@ const reserve = vi.fn()
 const messages = (client: ReturnType<typeof socket>) => client.send.mock.calls.map(([message]) => JSON.parse(message))
 
 describe('durable room boundaries', () => {
+  beforeEach(() => { vi.mocked(configuredJudgeMode).mockReturnValue('real') })
   afterEach(() => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
     vi.useRealTimers()
     integration.mockReset()
     reserve.mockReset()
+  })
+
+  it('I4 never calls a paid integration for party judging in normal dev fake mode', async () => {
+    vi.mocked(configuredJudgeMode).mockReturnValue('fake')
+    vi.useFakeTimers()
+    vi.setSystemTime(10_000)
+    vi.stubGlobal('__PIXEL_PARTY_TEST__', false)
+    const harness = roomHarness()
+    try {
+      const owner = await harness.connect('owner')
+      await harness.room.webSocketMessage(owner.connection, '{"t":"place","x":2,"y":2,"c":6}')
+      vi.setSystemTime(Date.now() + JUDGE.askMinMs)
+      reserve.mockResolvedValue(Response.json({ ok: true }))
+      integration.mockResolvedValue({ success: false })
+      await harness.room.webSocketMessage(owner.connection, '{"t":"ask"}')
+      expect(integration).not.toHaveBeenCalled()
+    } finally {
+      harness.database.close()
+    }
   })
 
   it('persists the trusted host header and enforces it after wake', async () => {
@@ -491,6 +517,35 @@ describe('durable room boundaries', () => {
     reserve.mockResolvedValue(Response.json({ ok: true }))
     expect(await wakingRoom.reserveForTest()).toEqual({ ok: true })
     expect(harness.database.prepare('SELECT resting_day FROM pixel_state').get()).toMatchObject({ resting_day: null })
+    harness.database.close()
+  })
+
+  it('catches persist errors during reserveBudget and yields resting instead of failed', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(1_800_000_000_000)
+    const harness = roomHarness()
+    harness.database.prepare('UPDATE pixel_state SET resting_day = ?').run('2027-01-15')
+    const wakingRoom = harness.makeRoom()
+    const owner = await harness.connect('owner', wakingRoom)
+    await wakingRoom.command(owner.connection, { t: 'place', x: 2, y: 2, c: 6 })
+    vi.setSystemTime(Date.now() + JUDGE.askMinMs)
+
+    reserve.mockResolvedValue(Response.json({ ok: true }))
+    const originalExec = harness.durable.storage.sql.exec
+    let failNextInsert = true
+    vi.spyOn(harness.durable.storage.sql, 'exec').mockImplementation((query: string, ...values: (string | number | null)[]) => {
+      if (failNextInsert && query.startsWith('INSERT')) {
+        failNextInsert = false
+        throw new Error('sqlite write failed')
+      }
+      return originalExec(query, ...values)
+    })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    await wakingRoom.command(owner.connection, { t: 'ask' })
+    expect(integration).not.toHaveBeenCalled()
+    expect(warn).not.toHaveBeenCalled()
+    expect(messages(owner)).toContainEqual({ t: 'ai_resting' })
     harness.database.close()
   })
 

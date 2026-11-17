@@ -9,9 +9,14 @@ import { prerender } from './prerender.ts'
 
 const appDir = fileURLToPath(new URL('.', import.meta.url))
 
-export default defineConfig({
-  define: { __PIXEL_PARTY_TEST__: JSON.stringify(process.env.PIXEL_PARTY_TEST === '1') },
-  plugins: [
+export default defineConfig(({ command }) => {
+  const dailyJudge = process.env.DAILY_JUDGE || (process.env.PIXEL_PARTY_TEST === '1' || command === 'serve' ? 'fake' : 'real')
+  return {
+    define: {
+      __PIXEL_PARTY_TEST__: JSON.stringify(process.env.PIXEL_PARTY_TEST === '1'),
+      __DAILY_JUDGE__: JSON.stringify(dailyJudge),
+    },
+    plugins: [
     react(),
     generouted(),
     // The Cloudflare plugin otherwise searches for a free inspector port by
@@ -66,4 +71,5 @@ export default defineConfig({
     // Dev-only; `vite build` ignores optimizeDeps.
     entries: ['./index.html', './src/pages/**/*.tsx'],
   },
+  }
 })
