@@ -5,6 +5,9 @@ import type { DailyStateView, GradeView } from '../../server/daily-service'
 export type DailyRejectReason = GradeReject | 'judge_resting' | 'bad_cells' | string
 
 export interface DailyClientState extends DailyStateView {
+  loaded: boolean
+  notice: string | null
+  clockOffsetMs: number
   latest: GradeView | null
   grading: boolean
   finalizing: boolean
@@ -18,6 +21,8 @@ export interface DailyClientState extends DailyStateView {
 
 export type DailyAction =
   | { type: 'state_loaded'; state: DailyStateView; preserveError?: boolean }
+  | { type: 'grade_skipped'; status: 'skipped_blank' | 'skipped_unchanged'; window: number; state: DailyStateView }
+  | { type: 'clear_notice' }
   | { type: 'grade_start'; kind?: GradeKind }
   | {
       type: 'grade_ok'
@@ -53,6 +58,9 @@ export function initialDailyClientState(day = ''): DailyClientState {
     asksLeft: DAILY.maxAsks,
     nextAutoAt: null,
     serverNow: 0,
+    loaded: false,
+    notice: null,
+    clockOffsetMs: 0,
     latest: null,
     grading: false,
     finalizing: false,
@@ -65,21 +73,12 @@ export function initialDailyClientState(day = ''): DailyClientState {
   }
 }
 
-export function needsDailyDayRefresh(state: DailyStateView & { stale?: boolean }, now: number): boolean {
-  return Boolean(state.stale) || (state.status !== 'playing' && state.day !== new Date(now).toISOString().slice(0, 10))
+export function needsDailyDayRefresh(state: DailyStateView & { stale?: boolean; clockOffsetMs?: number }, now: number): boolean {
+  return Boolean(state.stale) || (state.status !== 'playing' && state.day !== new Date(now + (state.clockOffsetMs ?? 0)).toISOString().slice(0, 10))
 }
 
-export function nextAutoAt(
-  startedAt: number,
-  autoUsed: number,
-  _lastGradeAt: number | null,
-): number | null {
-  if (autoUsed >= DAILY.autoWindowsMs.length) return null
-  return startedAt + DAILY.autoWindowsMs[autoUsed]
-}
-
-export function shouldFinalGrade(now: number, startedAt: number): boolean {
-  return now >= startedAt + DAILY.attemptMs
+export function shouldFinalGrade(now: number, startedAt: number, clockOffsetMs = 0): boolean {
+  return now + clockOffsetMs >= startedAt + DAILY.attemptMs
 }
 
 export function canPaintDaily(state: DailyClientState, now: number): boolean {
@@ -88,7 +87,7 @@ export function canPaintDaily(state: DailyClientState, now: number): boolean {
   if (state.finalizing || state.endFailed || state.finalUsed) return false
   const endsAt =
     state.endsAt ?? (state.startedAt !== undefined ? state.startedAt + DAILY.attemptMs : undefined)
-  if (endsAt !== undefined && now >= endsAt) return false
+  if (endsAt !== undefined && now + state.clockOffsetMs >= endsAt) return false
   return true
 }
 
@@ -102,25 +101,16 @@ export function canAskDaily(state: DailyClientState, now: number): boolean {
 export function shouldFireAutoGrade(
   state: DailyClientState,
   now: number,
-  currentCellsHash?: string,
+  hasLocalCanvas: boolean,
 ): boolean {
+  if (!hasLocalCanvas) return false
   if (!canPaintDaily(state, now)) return false
   if (state.grading) return false
-  if (state.startedAt === undefined) return false
-  if (state.autoUsed >= DAILY.autoWindowsMs.length) return false
-
-  const target =
-    state.nextAutoAt ?? nextAutoAt(state.startedAt, state.autoUsed, state.lastGradeAt ?? null)
-  if (target === null || now < target) return false
+  const target = state.nextAutoAt
+  const serverNow = now + state.clockOffsetMs
+  if (target == null || serverNow < target || serverNow - target > DAILY.autoMissAfterMs) return false
 
   if (state.autoRetryAfter != null && now < state.autoRetryAfter) return false
-  if (
-    currentCellsHash !== undefined &&
-    state.lastGradedHash != null &&
-    currentCellsHash === state.lastGradedHash
-  ) {
-    return false
-  }
   return true
 }
 
@@ -188,12 +178,20 @@ export function dailyReducer(state: DailyClientState, action: DailyAction): Dail
       const merged = mergeServerState(state, action.state)
       return {
         ...merged,
+        loaded: true,
+        clockOffsetMs: action.state.serverNow - Date.now(),
         best: action.state.best,
         stale: false,
         finalizing: state.stale ? false : merged.finalizing,
         lastError: action.preserveError ? state.lastError : null,
       }
     }
+    case 'grade_skipped': {
+      const merged = mergeServerState(state, action.state)
+      return { ...merged, grading: false, lastError: null, autoRetryAfter: null, notice: action.status === 'skipped_unchanged' ? 'Auto-grade skipped: no changes since your last grade' : 'Auto-grade skipped: nothing drawn yet' }
+    }
+    case 'clear_notice':
+      return { ...state, notice: null }
     case 'finalize_start':
       return {
         ...state,
