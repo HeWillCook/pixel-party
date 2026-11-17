@@ -26,7 +26,7 @@ export interface AttemptStore {
 function applyOperation(row: AttemptRow | null, body: Operation) {
   switch (body.op) {
     case 'start': return startAttempt(row, body.userId, body.day, body.now, body.profile)
-    case 'reserve': return reserveGrade(row, body.kind, body.hash, body.now)
+    case 'reserve': return reserveGrade(row, body.kind, body.hash, body.now, false)
     case 'complete':
       if (!row) throw new Error('Attempt not started')
       return completeGrade(row, body.outcome, body.hash, body.cells, body.now, body.reservedAt)

@@ -47,8 +47,8 @@ function stateView(day: string, row: AttemptRow | null, now: number): DailyState
     asksUsed: row.asksUsed,
     finalUsed: row.finalUsed,
     best: row.bestScore,
-    ...(!ended && row.autoUsed < DAILY.maxAuto ? {
-      nextAutoAt: Math.max(row.startedAt + DAILY.firstAutoMs + row.autoUsed * DAILY.autoEveryMs, (row.lastGradeAt ?? row.startedAt) + DAILY.autoMinGapMs),
+    ...(!ended && row.autoUsed < DAILY.autoWindowsMs.length ? {
+      nextAutoAt: row.startedAt + DAILY.autoWindowsMs[row.autoUsed],
     } : {}),
     ...(row.lastCells !== null ? { lastCells: row.lastCells } : {}),
   }
@@ -117,6 +117,7 @@ export async function gradeDaily(deps: DailyDeps, user: DailyUser, kind: GradeKi
   const hash = cellsHash(cells)
   const reservation = await deps.store.reserve(user.userId, day, kind, hash, now)
   if (!reservation.ok) return { ok: false, reason: reservation.reason, state: await state() }
+  if (reservation.ok === 'skipped') return { ok: false, reason: 'unchanged', state: await state() }
   const reservedAt = reservation.row.inFlightSince!
   const ownsReservation = async () => (await deps.store.get(user.userId, day))?.inFlightSince === reservedAt
   let grade: GradeView | null = null

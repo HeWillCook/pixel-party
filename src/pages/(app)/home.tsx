@@ -394,7 +394,7 @@ export default function DailyHomePage() {
                 </div>
 
                 <p className="text-base text-muted-foreground">
-                  Auto-grades run at 2, 4, 6, and 8 minutes ({state.autoUsed}/{DAILY.maxAuto} used). Pressing Done runs one final grade and locks in your best score.
+                  Auto-grades run at 2, 4, 6, and 8 minutes ({state.autoUsed}/{DAILY.autoWindowsMs.length} used). Pressing Done runs one final grade and locks in your best score.
                 </p>
               </div>
             </div>

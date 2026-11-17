@@ -68,12 +68,10 @@ export function needsDailyDayRefresh(state: DailyStateView & { stale?: boolean }
 export function nextAutoAt(
   startedAt: number,
   autoUsed: number,
-  lastGradeAt: number | null,
+  _lastGradeAt: number | null,
 ): number | null {
-  if (autoUsed >= DAILY.maxAuto) return null
-  const scheduled = startedAt + DAILY.firstAutoMs + autoUsed * DAILY.autoEveryMs
-  if (lastGradeAt === null) return scheduled
-  return Math.max(scheduled, lastGradeAt + DAILY.autoMinGapMs)
+  if (autoUsed >= DAILY.autoWindowsMs.length) return null
+  return startedAt + DAILY.autoWindowsMs[autoUsed]
 }
 
 export function shouldFinalGrade(now: number, startedAt: number): boolean {
@@ -105,7 +103,7 @@ export function shouldFireAutoGrade(
   if (!canPaintDaily(state, now)) return false
   if (state.grading) return false
   if (state.startedAt === undefined) return false
-  if (state.autoUsed >= DAILY.maxAuto) return false
+  if (state.autoUsed >= DAILY.autoWindowsMs.length) return false
 
   const target =
     state.nextAutoAt ?? nextAutoAt(state.startedAt, state.autoUsed, state.lastGradeAt ?? null)

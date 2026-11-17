@@ -86,13 +86,14 @@ describe('daily service', () => {
   })
 
   it.each([1, 2])('refunds the ask when budget reservation %i is refused', async refused => {
-    const { deps } = setup()
+    const { deps, at } = setup()
     await startDaily(deps, user)
     const budget = vi.mocked(deps.reserveBudget)
     if (refused === 2) budget.mockResolvedValueOnce(true)
     budget.mockResolvedValueOnce(false)
     expect(await gradeDaily(deps, user, 'ask', cells)).toMatchObject({ ok: false, reason: 'judge_resting', state: { asksUsed: 0 } })
     expect(deps.judge.score).not.toHaveBeenCalled()
+    at(startedAt + DAILY.askMinGapMs)
     expect((await gradeDaily(deps, user, 'ask', cells)).ok).toBe(true)
   })
 
@@ -106,10 +107,11 @@ describe('daily service', () => {
   })
 
   it.each(['blind', 'score'] as const)('refunds after two null %s results and permits another ask', async method => {
-    const { deps } = setup()
+    const { deps, at } = setup()
     await startDaily(deps, user)
     vi.mocked(deps.judge[method]).mockResolvedValueOnce(null).mockResolvedValueOnce(null)
     expect(await gradeDaily(deps, user, 'ask', cells)).toMatchObject({ ok: false, reason: 'judge_resting', state: { asksUsed: 0 } })
+    at(startedAt + DAILY.askMinGapMs)
     expect((await gradeDaily(deps, user, 'ask', cells)).ok).toBe(true)
   })
 
@@ -124,11 +126,12 @@ describe('daily service', () => {
   })
 
   it.each(['render', 'blind', 'score', 'reserveBudget'] as const)('releases the slot on a thrown %s error', async method => {
-    const { deps } = setup()
+    const { deps, at } = setup()
     await startDaily(deps, user)
     const operation = method === 'blind' || method === 'score' ? deps.judge[method] : deps[method]
     vi.mocked(operation).mockRejectedValueOnce(new Error('offline'))
     expect(await gradeDaily(deps, user, 'ask', cells)).toMatchObject({ ok: false, reason: 'judge_resting', state: { asksUsed: 0 } })
+    at(startedAt + DAILY.askMinGapMs)
     expect((await gradeDaily(deps, user, 'ask', cells)).ok).toBe(true)
   })
 

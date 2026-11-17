@@ -39,8 +39,7 @@ describe('client-schedule', () => {
     expect(nextAutoAt(s, 0, null)).toBe(s + 120_000)
     expect(nextAutoAt(s, 1, s + 120_000)).toBe(s + 240_000)
     expect(nextAutoAt(s, 4, s + 480_000)).toBeNull()
-    // Enforces minimum gap of 100_000ms after a recent grade
-    expect(nextAutoAt(s, 1, s + 180_000)).toBe(s + 280_000)
+    expect(nextAutoAt(s, 1, s + 180_000)).toBe(s + 240_000)
   })
 
   it('computes shouldFinalGrade when attempt window is reached', () => {
