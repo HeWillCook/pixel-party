@@ -28,6 +28,13 @@
 
 ---
 
+### Task 0: Reproduce the reported bug on current code
+
+The user reports that auto-grades never fire, only manual ones. An earlier read-only investigation found no hard blocker and couldn't run tests.
+
+- [ ] **Step 1:** Run `npm ci`, then add an offline Playwright test `auto-grade fires at 2:00 without asks` in `tests/offline/daily.spec.ts`: start the attempt, paint one cell, advance `page.clock` to 2:05, and assert that a POST to `/api/daily/grade` with `kind: 'auto'` was sent and answered 200. Run it against the unchanged code.
+- [ ] **Step 2:** Record the result in the report: either FAIL with the observed cause, or PASS (the bug doesn't reproduce in this scenario; also try "ask at 1:30, then no edits" and say which scenario reproduces it). Keep the test; it must pass after Task 4. Commit `test(daily): auto-grade repro`.
+
 ### Task 1: Window model in the attempt engine
 
 **Files:**
@@ -38,7 +45,7 @@
 **Interfaces:**
 - Produces (in `attempt.ts`):
   ```ts
-  export type AutoWindowStatus = 'pending' | 'graded' | 'skipped_unchanged' | 'skipped_blank' | 'missed'
+  export type AutoWindowStatus = 'pending' | 'graded' | 'skipped_unchanged' | 'skipped_blank' | 'missed' | 'not_reached'
   export interface AutoWindowRecord { index: number; status: AutoWindowStatus; resolvedAt: number | null; score: number | null; late: boolean }
   // AttemptRow gains: windows: AutoWindowRecord[]; lastAskAt: number | null; inFlightWindow: number | null
   export function normalizeRow(row: AttemptRow): AttemptRow            // fills windows (4 pending), lastAskAt, inFlightWindow for legacy rows
@@ -51,11 +58,11 @@
 - DAILY becomes: remove `firstAutoMs`, `autoEveryMs`, `autoMinGapMs`, `maxAuto`; add `autoWindowsMs: [120_000, 240_000, 360_000, 480_000] as const`, `autoLateMs: 5_000`, `autoMissAfterMs: 60_000`. Replace every usage repo-wide (`grep -rn "firstAutoMs\|autoEveryMs\|autoMinGapMs\|maxAuto" src tests`).
 
 Rules:
-- `settleMissedWindows`: each `pending` window whose due time is more than `autoMissAfterMs` ago, and isn't the `inFlightWindow`, becomes `missed` (`resolvedAt = now`).
+- `settleMissedWindows`: if the attempt has ended (`endedAt !== null`), every `pending` window due after `endedAt` becomes `not_reached`, never `missed`. Otherwise, each `pending` window whose due time is more than `autoMissAfterMs` ago, and isn't the `inFlightWindow`, becomes `missed` (`resolvedAt = now`). `endAttempt` applies the same `not_reached` rule.
 - `dueAutoWindow`: after settling, the lowest-index `pending` window whose due time is `<= now`; otherwise `null`.
 - In `reserveGrade`, kind `auto`: settle, then pick the due window. If there's none, return `too_soon` (or `window_missed` if the most recently due window was just settled as missed). If `blank`, mark the window `skipped_blank`. If `cellsHash === lastGradedHash`, mark it `skipped_unchanged`. Either skip returns `{ ok: 'skipped' }` with no in-flight reservation. Otherwise reserve with `inFlightWindow = index`. `autoUsed` counts graded windows only.
 - Kind `ask`: gap checked against `lastAskAt` only; set `lastAskAt = now` on reserve. Kind `final`: unchanged.
-- `completeGrade` with an outcome and `inFlightKind === 'auto'`: window → `graded`, `score = outcome.total`, `late = now - dueAt > autoLateMs`. With a null outcome (failure): the window stays `pending` and the in-flight fields clear.
+- `completeGrade` with an outcome and `inFlightKind === 'auto'`: window → `graded`, `score = outcome.total`, `late = reservedAt - dueAt > autoLateMs` (measured at reservation, not completion, so judge latency never makes a grade late). With a null outcome (failure): the window stays `pending` and the in-flight fields clear.
 
 - [ ] **Step 1: Write the failing tests** in `attempt.test.ts` (fixed `t0`; `cells` hashes `h1`/`h2`):
   - `fixed windows ignore manual grades`: an ask at t0+90s, then an auto at t0+120s → window 0 reserved (not `too_soon`).
@@ -65,6 +72,8 @@ Rules:
   - `late within miss window`: auto reserved at t0+150s, completed → window 0 `graded`, `late: true`.
   - `missed after 60s`: `settleMissedWindows(row, t0+181_000)` → window 0 `missed`; a reserve at that time → `window_missed`.
   - `failed auto keeps window pending`: `completeGrade(row, null, …)` → window 0 `pending`, `autoUsed` unchanged.
+  - `submit early marks later windows not_reached`: end at t0+180s, then `settleMissedWindows(row, t0+600_000)` → windows 1–3 are `not_reached`, none `missed`.
+  - `late uses reservation time`: reserve at t0+122s, complete at t0+170s → `late: false`.
   - `normalizes legacy rows`: a row without `windows`/`lastAskAt`/`inFlightWindow` → 4 pending windows, nulls.
 - [ ] **Step 2: Run** `npm run test:unit -- src/game/daily/attempt.test.ts`. Expected: the new tests FAIL.
 - [ ] **Step 3: Implement** the interfaces and rules above. Update or remove existing tests that assert the 100 s gap.
@@ -82,7 +91,7 @@ Rules:
 - Produces:
   ```ts
   export interface AutoWindowView { index: number; dueAt: number; status: AutoWindowStatus; score: number | null; late: boolean }
-  // DailyStateView gains: windows: AutoWindowView[]; asksLeft: number; nextAutoAt: number | null (next pending dueAt, else null)
+  // DailyStateView gains: windows: AutoWindowView[]; asksLeft: number; nextAutoAt: number | null (next pending dueAt, else null); serverNow: number
   // POST /api/daily/grade (kind 'auto') may now answer 200 { skipped: 'skipped_blank' | 'skipped_unchanged', window: number, state: DailyStateView }
   ```
 - Every state read (`/me`, grade responses) applies `settleMissedWindows` and persists the result if anything changed. A skip never calls the judge.
@@ -108,7 +117,8 @@ Rules:
 - Produces:
   - `DailyClientState` gains `loaded: boolean` (false initially) and `notice: string | null`.
   - New actions: `{ type: 'grade_skipped'; status: 'skipped_blank' | 'skipped_unchanged'; window: number; state: DailyStateView }` and `{ type: 'clear_notice' }`.
-  - `shouldFireAutoGrade(state: DailyClientState, now: number): boolean`. The `currentCellsHash` parameter is removed; the server decides skips.
+  - `DailyClientState` gains `clockOffsetMs: number` (`serverNow - Date.now()` at each `state_loaded`); every schedule comparison uses `Date.now() + clockOffsetMs`.
+  - `shouldFireAutoGrade(state: DailyClientState, now: number, hasLocalCanvas: boolean): boolean`. The `currentCellsHash` parameter is removed; the server decides skips. It returns false when `hasLocalCanvas` is false.
   - `nextAutoAt` (the client helper) is deleted; use `state.nextAutoAt`.
   - Notice copy, exact: `skipped_unchanged` → `"Auto-grade skipped: no changes since your last grade"`; `skipped_blank` → `"Auto-grade skipped: nothing drawn yet"`.
 - `state_loaded` sets `loaded: true`.
@@ -116,6 +126,8 @@ Rules:
 - [ ] **Step 1: Write the failing tests:**
   - `fires a due window after a long tick gap`: playing, `nextAutoAt = t`, `now = t + 55_000` → `true`; `now = t + 61_000` → `false`.
   - `does not fire while grading or before due` → `false`.
+  - `no local canvas never fires`: due window, `hasLocalCanvas=false` → `false`.
+  - `uses server clock offset`: a client clock 90 s slow with offset applied → fires at the server due time.
   - `grade_skipped sets notice and windows`.
   - `initial state is not loaded`: `initialDailyClientState().loaded === false`.
 - [ ] **Step 2: Run** `npm run test:unit -- src/game/daily/client-schedule.test.ts`. Expected: FAIL.
@@ -132,11 +144,13 @@ Rules:
 
 **Interfaces:**
 - Produces: `DailyAttemptProvider({ children })` and `useDaily(): ReturnType<typeof useDailyAttempt>` (throws outside the provider). The one-second scheduler effect lives in the provider, so it runs on every `(app)` route. The hook doesn't fetch for signed-out users, and sets `loaded: true` for them.
+- **Cells at fire time:** an auto-grade reads the canvas from localStorage (`daily:${day}:${userId}`) at the moment it fires, never from provider memory, so a tab that isn't drawing sends the latest strokes. If this browser has no localStorage canvas for today's attempt (for example, a second device), it doesn't fire autos at all (`hasLocalCanvas=false`); the window is then decided by the device that is drawing, or settles as missed.
 - Loading panel copy: `"Setting up your easel…"` with `data-testid="daily-loading"`.
 
 - [ ] **Step 1: Write the failing offline tests:**
   - `ended user never sees start`: stub `/api/daily/me` with a 1500 ms delay returning `ended` → `daily-loading` visible, and the Start button never appears (assert with a polling check across the delay); the ended view then appears.
   - `me failure stays loading then recovers`: the first `/me` returns 500 and the second returns `playing` → no Start button; the playing view appears.
+  - `no local canvas, no auto`: clear localStorage, load `/home` mid-attempt past 2:00 → no grade request.
   - `auto-grade fires on another route`: start an attempt, navigate to `/party`, advance the clock past 2:00 (Playwright `page.clock`) → a grade request is observed.
 - [ ] **Step 2: Run** `npm run build && npx playwright test tests/offline/daily.spec.ts`. Expected: the new tests FAIL.
 - [ ] **Step 3: Implement.**
@@ -157,6 +171,7 @@ Rules:
   - skipped_unchanged: `"4:00 skipped: no changes since your last grade"`
   - skipped_blank: `"2:00 skipped: nothing drawn yet"`
   - missed: `"6:00 missed: tab was closed"`
+  - not_reached: `"6:00 not reached: you submitted"`
   - pending, future: `"6:00 in 0:42"`; pending, due: `"6:00 grading…"`
 - Copy:
   - **GradePanel rows:** `"Matches the prompt"` x/500, `"Easy to recognise"` x/400, `"Speed"` x/100, each with a bar, and the total as x/1000. The judge's reason stays.
