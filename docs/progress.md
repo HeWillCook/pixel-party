@@ -464,3 +464,11 @@ The fake judge is selected by default in dev and tests so those runs make no pai
 - Added the timeline, clearer scoring and manual-grade controls, and Exit without submission. Final review hardened concurrent submissions, lease expiry, window identity, local timeout snapshots, and clock alignment.
 - Verification: `npm run verify` PASS (40 files, 411 unit tests; lint, type-check and build); `npm run build && npx playwright test tests/offline` PASS (44 passed, 6 screenshot tests skipped); `git diff --check` PASS.
 - Provider: Codex implemented; reviews by Codex Sol and Gemini Hydrogen; planned by Claude Opus.
+
+### 2026-11-17 — Drawing tools (PR 2)
+
+- Added white paint (`PALETTE[16] = '#ffffff'`, `MAX_COLOR = 16`) and alternating cream empty canvas tiles (`EMPTY_CANVAS = ['#f3ead8', '#efe3cc']`) while keeping `PALETTE[0] = '#ffffff'` for judge PNG rendering and preserving backward compatibility with legacy 0–15 snapshots.
+- Implemented pure tool and history modules (`src/game/tools.ts`, `src/game/history.ts`, `src/game/canvas-intent.ts`), the labelled `ToolBar` component, `useToolShortcuts` (`B`/`E`/`F`/`I`, `⌘/Ctrl+Z`, `Shift+⌘/Ctrl+Z`, no displayed shortcut text), and tool-aware `PixelCanvas` (including stroke boundaries and erase hover preview).
+- Wired Party rooms (`/r/:code`) with `Paint`, `Erase`, and `Pick colour` (never rendering Fill/Undo/Redo), server/client `0..MAX_COLOR` validation, cooldown-enforced non-empty erases, free silent no-op for erasing already-empty cells, and updated `pixelsUsed` at round end.
+- Stacked onto `t3/pr1-daily-fixes` and wired Daily (`/home`) with `DAILY_TOOLS` + Undo/Redo (`100`-step in-memory history), single-step drag strokes and iterative flood fills, `useToolShortcuts`, and `useDailyAttempt.replaceCells` gated like `paint` and persisted to `localStorage` for PR 1's auto-grade scheduler.
+- Verification: `npm run verify` PASS (44 files, 441 unit tests; lint, type-check, Worker/client build); offline Playwright `tests/offline` PASS (50 passed, 6 gated screenshot tests skipped); `git diff --check` PASS.

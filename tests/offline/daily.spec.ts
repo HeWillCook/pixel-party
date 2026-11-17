@@ -410,3 +410,146 @@ for (const invalidAt of ['grade', 'end'] as const) {
     })
   }
 }
+
+async function dailyPlayingSetup(page: Page, initialCells?: Uint8Array) {
+  const errors = await offlineClient(page, true)
+  const day = new Date().toISOString().slice(0, 10)
+  const now = Date.now()
+  await page.route('**/api/daily/**', async route => {
+    const path = new URL(route.request().url()).pathname
+    if (path.endsWith('/me')) {
+      return route.fulfill({
+        json: {
+          day,
+          status: 'playing',
+          prompt: 'A tree',
+          startedAt: now,
+          endsAt: now + 600_000,
+          autoUsed: 0,
+          asksUsed: 0,
+          asksLeft: 3,
+          finalUsed: false,
+          best: 0,
+          windows: [],
+          nextAutoAt: now + 120_000,
+          serverNow: now,
+          ...(initialCells ? { lastCells: Buffer.from(initialCells).toString('base64') } : {}),
+        },
+      })
+    }
+    return route.fulfill({ json: {} })
+  })
+  await page.goto(`${origin}/home`)
+  const canvas = page.getByTestId('pixel-canvas')
+  await expect(canvas).toBeVisible()
+  const box = (await canvas.boundingBox())!
+  const point = (x: number, y: number) => ({
+    x: box.x + (box.width * (x + 0.5)) / 32,
+    y: box.y + (box.height * (y + 0.5)) / 32,
+  })
+  const pixelColor = (x: number, y: number) =>
+    canvas.evaluate((el: HTMLCanvasElement, p) => [...el.getContext('2d')!.getImageData(p.x, p.y, 1, 1).data], { x, y })
+  const readStored = () =>
+    page.evaluate(d => {
+      const raw = localStorage.getItem(`daily:${d}:host`)
+      if (!raw) return null
+      return [...Uint8Array.from(atob(raw), ch => ch.charCodeAt(0))]
+    }, day)
+  return { errors, canvas, point, pixelColor, readStored }
+}
+
+test('one fill is one undo step', async ({ page }) => {
+  const { errors, canvas, point, pixelColor, readStored } = await dailyPlayingSetup(page)
+  await page.getByTestId('tool-fill').click()
+  await expect(page.getByTestId('tool-fill')).toHaveAttribute('aria-pressed', 'true')
+  const p = point(4, 4)
+  await canvas.dispatchEvent('pointerdown', { clientX: p.x, clientY: p.y, pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1 })
+  await canvas.dispatchEvent('pointerup', { pointerId: 1, pointerType: 'mouse' })
+
+  await expect.poll(() => pixelColor(0, 0)).toEqual([239, 68, 68, 255])
+  expect(await pixelColor(31, 31)).toEqual([239, 68, 68, 255])
+  await expect.poll(async () => (await readStored())?.every(c => c === 4)).toBe(true)
+
+  await page.getByTestId('tool-undo').click()
+  await expect.poll(() => pixelColor(0, 0)).toEqual([243, 234, 216, 255])
+  expect(await pixelColor(1, 0)).toEqual([239, 227, 204, 255])
+  await expect.poll(async () => (await readStored())?.every(c => c === 0)).toBe(true)
+  expect(errors).toEqual([])
+})
+
+test('drag stroke is one undo step', async ({ page }) => {
+  const { errors, canvas, point, pixelColor, readStored } = await dailyPlayingSetup(page)
+  await canvas.dispatchEvent('pointerdown', { clientX: point(2, 2).x, clientY: point(2, 2).y, pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1 })
+  await canvas.dispatchEvent('pointermove', { clientX: point(6, 2).x, clientY: point(2, 2).y, pointerId: 1, pointerType: 'mouse', buttons: 1 })
+  await canvas.dispatchEvent('pointerup', { pointerId: 1, pointerType: 'mouse' })
+
+  for (let x = 2; x <= 6; x++) {
+    await expect.poll(() => pixelColor(x, 2)).toEqual([239, 68, 68, 255])
+  }
+  await page.getByTestId('tool-undo').click()
+  for (let x = 2; x <= 6; x++) {
+    const expected = x % 2 === 0 ? [243, 234, 216, 255] : [239, 227, 204, 255]
+    await expect.poll(() => pixelColor(x, 2)).toEqual(expected)
+  }
+  await expect.poll(async () => (await readStored())?.every(c => c === 0)).toBe(true)
+  expect(errors).toEqual([])
+})
+
+test('redo restores', async ({ page }) => {
+  const { errors, canvas, point, pixelColor, readStored } = await dailyPlayingSetup(page)
+  await page.getByTestId('tool-fill').click()
+  const p = point(0, 0)
+  await canvas.dispatchEvent('pointerdown', { clientX: p.x, clientY: p.y, pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1 })
+  await canvas.dispatchEvent('pointerup', { pointerId: 1, pointerType: 'mouse' })
+  await expect.poll(() => pixelColor(10, 10)).toEqual([239, 68, 68, 255])
+
+  await page.getByTestId('tool-undo').click()
+  await expect.poll(() => pixelColor(10, 10)).toEqual([243, 234, 216, 255])
+  await expect(page.getByTestId('tool-redo')).toBeEnabled()
+
+  await page.getByTestId('tool-redo').click()
+  await expect.poll(() => pixelColor(10, 10)).toEqual([239, 68, 68, 255])
+  await expect.poll(async () => (await readStored())?.[10 * 32 + 10]).toBe(4)
+  expect(errors).toEqual([])
+})
+
+test('pick switches colour', async ({ page }) => {
+  const initial = new Uint8Array(1024)
+  initial[3 * 32 + 3] = 9
+  const { errors, canvas, point, pixelColor } = await dailyPlayingSetup(page, initial)
+
+  await page.getByTestId('tool-pick').click()
+  const p = point(3, 3)
+  await canvas.dispatchEvent('pointerdown', { clientX: p.x, clientY: p.y, pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1 })
+  await canvas.dispatchEvent('pointerup', { pointerId: 1, pointerType: 'mouse' })
+  await expect(page.getByTestId('tool-paint')).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByTestId('swatch-9')).toHaveAttribute('aria-pressed', 'true')
+
+  const p2 = point(5, 5)
+  await canvas.dispatchEvent('pointerdown', { clientX: p2.x, clientY: p2.y, pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1 })
+  await canvas.dispatchEvent('pointerup', { pointerId: 1, pointerType: 'mouse' })
+  await expect.poll(() => pixelColor(5, 5)).toEqual([6, 182, 212, 255])
+
+  // Picking empty cell switches to erase
+  await page.getByTestId('tool-pick').click()
+  const empty = point(8, 8)
+  await canvas.dispatchEvent('pointerdown', { clientX: empty.x, clientY: empty.y, pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1 })
+  await canvas.dispatchEvent('pointerup', { pointerId: 1, pointerType: 'mouse' })
+  await expect(page.getByTestId('tool-erase')).toHaveAttribute('aria-pressed', 'true')
+  expect(errors).toEqual([])
+})
+
+test('eraser clears', async ({ page }) => {
+  const initial = new Uint8Array(1024)
+  initial[4 * 32 + 4] = 4
+  const { errors, canvas, point, pixelColor, readStored } = await dailyPlayingSetup(page, initial)
+  await expect.poll(() => pixelColor(4, 4)).toEqual([239, 68, 68, 255])
+
+  await page.getByTestId('tool-erase').click()
+  const p = point(4, 4)
+  await canvas.dispatchEvent('pointerdown', { clientX: p.x, clientY: p.y, pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1 })
+  await canvas.dispatchEvent('pointerup', { pointerId: 1, pointerType: 'mouse' })
+  await expect.poll(() => pixelColor(4, 4)).toEqual([243, 234, 216, 255])
+  await expect.poll(async () => (await readStored())?.[4 * 32 + 4]).toBe(0)
+  expect(errors).toEqual([])
+})
