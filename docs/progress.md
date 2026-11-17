@@ -1,0 +1,129 @@
+# Project progress log
+
+Running record of design decisions, findings, and status for the DeepSpace build exercise.
+Newest entries at the bottom of each section. This doubles as source material for the final submission note.
+
+## Brief (from the exercise)
+
+Build and deploy a small, finished full-stack app on DeepSpace within five days. Judged on scope judgment,
+a working important path, technical depth, sensible use (or deliberate non-use) of integrations, readable code,
+protected secrets, use of platform primitives, and an honest writeup of tradeoffs, agent work, and what I verified.
+
+## The idea: Pixel Party (working name)
+
+A live, shared pixel canvas turned into a game, judged by an AI.
+
+- **Co-op mode (casual):** a round shows everyone a word (e.g. "lighthouse"). Players place pixels together.
+  On a schedule, a background job snapshots the canvas and asks a vision model "what is this a drawing of?".
+  The crowd wins when the AI guesses the word; faster = better score. Contributors to the winning image get credit.
+- **Team mode (competitive):** canvas split into one zone per team, same prompt for all. Anyone can place
+  anywhere, so sabotaging rival zones is part of the game. At round end the AI judges each zone; best match wins.
+- **Rooms:** players can create a room and share it with friends, or quick-play into a random public room.
+  Co-op also has one always-on public board.
+
+## Decisions
+
+| Date | Decision | Why |
+|---|---|---|
+| 2026-11-16 | Shared pixel canvas, gamified with an AI judge | My idea; realtime fan-out and server-enforced rules are what DeepSpace is built for; nothing like it among the 37 official examples |
+| 2026-11-16 | Two modes (co-op + team) on one engine | Modes differ mostly in config (who can place where, what the judge is asked) |
+| 2026-11-16 | Co-op is the must-ship path; team mode cut to "next steps" if co-op isn't solid by ~day 3 | One finished mode beats two half-finished ones |
+| 2026-11-16 | Storage: custom `BaseRoom` Durable Object per match (approach A) | Atomic validate+write, tiny broadcasts, same pattern as official games; records/CanvasRoom ruled out by spike 2 |
+| 2026-11-16 | Co-op: 32x32 grid, cooldown scales with players, score rewards few pixels + fast win | Spike 1 showed 32x32 is readable; keeps solo play short; turns 'AI reads it too easily' into the goal |
+| 2026-11-16 | Name "Pixel Party"; public GitHub repo HeWillCook/pixel-party is the source authority | Submission needs a repo; GitHub must be the remote before first deploy |
+| 2026-11-16 | Judge runs in the room's own DO alarm, not SDK cron | Cron is minute-granular; judge needs ~15s ticks only while a room is active |
+| 2026-11-16 | Solo play: ~0.2s cooldown + click-drag when alone, plus an "Ask the AI" button (≤1 judgement/room/10s) | Solo should just be fun; reviewers test alone; button gives control while keeping spend bounded |
+| 2026-11-16 | Builder-check calls: rooms pause when empty and close after 30 min; private rooms via link + member list; live guesses over WebSocket, not records | Nothing runs or costs money in an empty room; avoids ~240 records/hr/room |
+| 2026-11-16 | Cut quick play / matchmaking | Only useful with real traffic; with few players it lands people in empty rooms; default board covers "just play" |
+| 2026-11-16 | App-wide daily AI budget (default 3,000 judge calls/day ≈ $0.25), then "AI is resting" | Measured cost is tiny, but scripted accounts could otherwise run ~$3/day each; bounds worst case |
+| 2026-11-16 | Rooms (friends via link/code, or random quick-play) plus an always-on public co-op board | Reviewers likely visit alone; co-op works solo, team mode needs a room of friends or two tabs |
+
+## DeepSpace features: planned use
+
+| Feature | Role in the game |
+|---|---|
+| Server actions | Every pixel placement validated server-side: cooldown, zone rules, room membership (anti-cheat) |
+| Collections + realtime sync | Rooms, canvas, rounds, scores update live for everyone |
+| Presence | Live cursors, player count per room |
+| Jobs / cron | The AI judge tick: render canvas, call vision model, write verdict |
+| AI integration | Vision judging (Claude Haiku via `anthropic/chat-completion`), server-side through the platform proxy; signed-in only; ≤6 calls/min/room; app-wide daily cap |
+| Auth + permissions | Room host, private rooms member-only, public rooms in quick-play pool, team membership |
+| File storage | Per-tick snapshots, giving a round replay/timelapse |
+| Maybe: leaderboard, room chat | If time allows |
+
+**Deliberately left out:** payments (nothing to sell), email (nobody wants game email), voice/video (people use Discord),
+AI image generation (the point is humans draw), ElevenLabs announcer (gimmick).
+
+## Findings
+
+- **2026-11-16: DeepSpace research.** Cloudflare Worker + React SPA + per-app SQLite Durable Objects. Collections are
+  meant for "hundreds to tens of thousands of small rows", so a 1M-pixel canvas cannot be one record per pixel.
+  Schema migrations are additive only. Developer-billed integrations accept anonymous callers, so paid calls must be gated.
+- **2026-11-16: Only Claude can be the vision judge.** Checked with `deepspace integrations info`:
+  `anthropic/chat-completion` accepts array message content (image blocks). `openai/chat-completion` accepts string
+  content only (no images), and the `gemini` integration only offers `generate-image`. So the judge uses Claude through
+  the platform proxy; Haiku is the cheap default to test first.
+- **2026-11-16:** Logged the DeepSpace CLI in (`npx deepspace auth login`); vision test unblocked.
+
+- **2026-11-16: Spike 2, pixel storage (verified in SDK source by me).**
+  - `CanvasRoom`/`useCanvas` is a Yjs document of freeform shapes, re-encoded whole on each update, and only gates
+    viewer vs member. Wrong tool for a validated pixel grid.
+  - Record `put` broadcasts the **full record** to every reader (checked `packages/deepspace/src/server/handlers/records.ts`
+    around `broadcastChange`), so a tile-per-record design resends the whole tile on every pixel. Server actions do get
+    and update as separate calls, so cooldown checks can race.
+  - Presence is client-authored, ephemeral, 16 KiB cap: fine for cursors, not for pixels.
+  - The SDK exports `BaseRoom` (`packages/deepspace/src/server/rooms/base-room.ts`), an abstract Durable Object with SQL
+    storage and WebSocket helpers. Official games extend it: Tangent's `worker.ts` defines `AppGameRoom` and
+    `AppMatchmakerRoom` next to the stock rooms. That's the platform-sanctioned way to do server-authoritative realtime.
+  - Side effect: the spike's `deepspace dev start` registered a scratch app (`app_01M7KGN4TAMQQJWD9BTM9T37C8`) in my account.
+
+- **2026-11-16: Spike 1, AI judge (raw results recounted by me, drawings inspected).**
+  - `claude-haiku-5-5` via `anthropic/chat-completion`: 100% top-1 on all "crude" finished drawings at 32, 64, 128 grids,
+    with and without 15% random griefing noise; 95.8% across the full matrix. Sonnet matched Haiku at ~20x the cost.
+  - Haiku: ~1.7s median latency, ~$0.00006-0.00008 per judge call (512px PNG ≈ 456 input tokens). Cost is a non-issue
+    at one call per room every ~30s, but still gate it to active rooms.
+  - Gotchas: render the grid upscaled with nearest-neighbour to 512px (native 32px dropped accuracy); set `max_tokens`
+    ≥1024 because Haiku sometimes spends tokens thinking and returned `output_budget_exhausted` at 200; ask for raw JSON.
+  - **Caveat I found looking at the contact sheet:** the "crude" set is actually tidy, centred, complete drawings. Real
+    crowd art will be partial and messier, so the true accuracy is unknown. Re-test with real canvases once the app runs.
+  - **Design implication:** the risk flipped from "AI can't read it" to "AI may read it too easily", and to drawing
+    effort: a recognisable 64x64 drawing is hundreds of pixels, which one player on a multi-second cooldown can't finish.
+  - Artifacts (local scratchpad, not in repo): `spike1/results.json`, `spike1/contact_sheet.png`.
+
+- **2026-11-16: Installed the official DeepSpace agent skill** (github.com/deepdotspace/deepspace-skill @ dadfa91) into
+  `.claude/skills/deepspace/` and `.agents/skills/deepspace/`, plus an `AGENTS.md` pointing every agent at it.
+  Read it in full first: guidance only, no scripts.
+- **2026-11-16: Source authority is permanent (from the skill).** An app's first deploy latches its Git authority
+  forever: deploying from a checkout with a GitHub remote makes GitHub the source; deploying without one makes
+  DeepSpace the source. This repo has no remote yet, so a GitHub remote must exist before the first deploy.
+- Toolchain: Node v26.9.0, npm 11.19.1 (skill requires npm 11.6+; Node line still to check against the installation docs).
+
+- **2026-11-16: Design doc approved:** `docs/superpowers/specs/2026-11-16-pixel-party-design.md` (builder check by OpenCode DeepSeek Flash; 6 of its 7 questions settled by me, solo-play decided by Will).
+
+## Spikes (throwaway tests)
+
+| # | Question | Status | Result |
+|---|---|---|---|
+| 1 | Can Claude (via DeepSpace) recognise crowd pixel art, and at what canvas size? | done (Antigravity Gemini 4 Hydrogen; 130 Claude calls) | Yes. Haiku ~96-100% on finished drawings at 32/64/128 with 15% noise; caveat: test drawings were cleaner than real crowd art |
+| 2 | Where should pixel data live: tiled records, `CanvasRoom`/`useCanvas`, or something else? How fast can writes go? | done (Codex GPT-6.1 Terra, source reading; latency not measured) | Custom `BaseRoom` DO per game room recommended; see findings |
+
+## Future ideas
+
+- Quick play / matchmaking once there is real traffic.
+- In-game currency earned by playing, spent on extra "Ask the AI" requests.
+
+## Open questions
+
+- Can a custom DO call the integration proxy directly? (verify day 1)
+- Cooldown length, round length, judge frequency
+- Final name ("Pixel Party" for now)
+
+## Agent log
+
+| Date | Agent | Task | Verified by me |
+|---|---|---|---|
+| 2026-11-16 | OpenCode DeepSeek Flash | Read docs.deep.space, summarise platform | Spot-checked llms.txt index |
+| 2026-11-16 | Antigravity Gemini Flash | Read agent skill + example repos | Checked repo list with `gh repo list deepdotspace` |
+| 2026-11-16 | Codex GPT-6.1 Terra | Spike 2: read SDK + Tangent/PartyPack source for pixel storage options | Confirmed BaseRoom, Tangent's custom rooms, full-record broadcast in source |
+| 2026-11-16 | Antigravity Gemini 4 Hydrogen | Spike 1: generated test pixel art, ran 130 Claude vision calls | Recounted accuracy from results.json; inspected contact sheet and flagged test drawings as too clean |
+| 2026-11-16 | Claude Opus (me) | Checked AI integration schemas, found Claude-only vision | Ran `deepspace integrations info` myself |
