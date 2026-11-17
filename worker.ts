@@ -25,6 +25,7 @@ import { runJob } from './src/jobs.js'
 import { schemas } from './src/schemas.js'
 import { createServerTools } from './src/server/server-tools.js'
 import { registerActionRoutes } from './src/server/action-routes.js'
+import { registerDailyRoutes } from './src/server/daily-routes.js'
 import {
   registerAuthAndIntegrationRoutes,
   registerPlatformProxyRoutes,
@@ -156,6 +157,7 @@ app.use('*', async (c, next) => {
 registerAuthAndIntegrationRoutes(app)
 registerRealtimeRoutes(app)
 registerActionRoutes(app, resolveAuth)
+registerDailyRoutes(app)
 // Pixel Party has no website chat or local/browser agent surface.
 registerPlatformProxyRoutes(app)
 registerStaticRoutes(app)
