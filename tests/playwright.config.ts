@@ -28,6 +28,7 @@ export default defineConfig({
     launchOptions: chromiumLaunchOptions(),
   },
   webServer: {
+    env: { PIXEL_PARTY_TEST: '1' },
     // Bind the local test server directly. A bare `--host` asks Vite to
     // enumerate every interface, which fails in restricted containers before
     // the app can start (`uv_interface_addresses`).

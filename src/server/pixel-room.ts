@@ -17,9 +17,10 @@ import {
 import { cooldownMs } from '../game/rules'
 import { createServerTools } from './server-tools'
 import { utcDay, withTimeout } from './room-time'
+import type { RoomData } from './rooms'
 
 type RoomInit = Pick<RoomState, 'roomId' | 'mode' | 'isDefaultBoard'>
-type SavedRoom = { room_id: string; mode: string; is_default: number; state: string; resting_day: string | null }
+type SavedRoom = { room_id: string; mode: string; is_default: number; state: string; resting_day: string | null; host_id: string }
 const finite = z.number().finite()
 const roomStateSchema = z.object({
   roomId: z.string().min(1), isDefaultBoard: z.boolean(), mode: z.enum(['coop', 'team']),
@@ -69,20 +70,24 @@ export function restorePixelState(json: string, init: RoomInit, now: number, rng
 export function nextCommandRejection(state: RoomState, userId: string | null, hostUserId: string | null = null): 'not_signed_in' | 'not_host' | null {
   const verifiedId = signedInId(userId)
   if (!verifiedId) return 'not_signed_in'
-  return hostUserId === verifiedId || (!state.isDefaultBoard && hostUserId === null) ? null : 'not_host'
+  return !state.isDefaultBoard && hostUserId === verifiedId ? null : 'not_host'
 }
 
 export class PixelRoom extends BaseRoom<Env> {
   private game: RoomState | null = null
   private restingDay: string | null = null
+  private hostUserId = ''
 
   constructor(state: DurableObjectState, env: Env) {
     super(state, env)
     this.sql.exec('CREATE TABLE IF NOT EXISTS pixel_state (id INTEGER PRIMARY KEY CHECK (id = 1), room_id TEXT NOT NULL, mode TEXT NOT NULL, is_default INTEGER NOT NULL, state TEXT NOT NULL, resting_day TEXT)')
-    const saved = this.sql.exec<SavedRoom>('SELECT room_id, mode, is_default, state, resting_day FROM pixel_state WHERE id = 1').toArray()[0]
+    const columns = this.sql.exec<{ name: string }>('PRAGMA table_info(pixel_state)').toArray()
+    if (!columns.some(column => column.name === 'host_id')) this.sql.exec("ALTER TABLE pixel_state ADD COLUMN host_id TEXT NOT NULL DEFAULT ''")
+    const saved = this.sql.exec<SavedRoom>('SELECT room_id, mode, is_default, state, resting_day, host_id FROM pixel_state WHERE id = 1').toArray()[0]
     if (saved) {
       this.game = restorePixelState(saved.state, { roomId: saved.room_id, mode: saved.mode === 'team' ? 'team' : 'coop', isDefaultBoard: saved.is_default === 1 }, Date.now(), Math.random)
       this.restingDay = saved.resting_day
+      this.hostUserId = saved.host_id
       this.persist()
       void this.state.blockConcurrencyWhile(() => this.armAlarm().catch(logAlarmError))
     }
@@ -93,7 +98,9 @@ export class PixelRoom extends BaseRoom<Env> {
       const roomId = request.headers.get('X-Room-Id')
       const mode = request.headers.get('X-Room-Mode')
       const isDefault = request.headers.get('X-Room-Default')
-      if (!roomId || (mode !== 'coop' && mode !== 'team') || (isDefault !== 'true' && isDefault !== 'false')) return new Response('Missing room configuration', { status: 400 })
+      const hostId = request.headers.get('X-Room-Host')
+      if (!roomId || hostId === null || (mode !== 'coop' && mode !== 'team') || (isDefault !== 'true' && isDefault !== 'false')) return new Response('Missing room configuration', { status: 400 })
+      this.hostUserId = isDefault === 'true' ? '' : hostId
       this.game = newRoomState({ roomId, mode: mode as Mode, isDefaultBoard: isDefault === 'true' }, Date.now(), Math.random)
       this.persist()
     }
@@ -109,7 +116,7 @@ export class PixelRoom extends BaseRoom<Env> {
   protected override async onConnect(ws: WebSocket, user: UserAttachment): Promise<void> {
     try {
       ws.serializeAttachment(user)
-      await this.transition(advance(this.game!, Date.now(), this.playerCount(), Math.random), undefined, ws)
+      await this.transition(this.withRoomStatus(advance(this.game!, Date.now(), this.playerCount(), Math.random), this.playerCount()), undefined, ws)
       this.broadcastGame({ t: 'players', count: this.playerCount() })
     } finally {
       await this.armAlarm().catch(logAlarmError)
@@ -129,7 +136,7 @@ export class PixelRoom extends BaseRoom<Env> {
       } else if (command.t === 'ask') {
         await this.judge('ask', ws)
       } else if (command.t === 'next') {
-        const reason = nextCommandRejection(this.game, userId)
+        const reason = nextCommandRejection(this.game, userId, this.hostUserId)
         if (reason) this.sendGame(ws, { t: 'reject', reason })
         else await this.transition(startNextRound(this.game, Date.now(), Math.random))
       }
@@ -142,7 +149,7 @@ export class PixelRoom extends BaseRoom<Env> {
     try {
       try { ws.close(1000, 'Disconnected') } catch {}
       if (!this.game) return
-      await this.transition(advance(this.game, Date.now(), this.playerCount(ws), Math.random))
+      await this.transition(this.withRoomStatus(advance(this.game, Date.now(), this.playerCount(ws), Math.random), this.playerCount(ws)))
       this.broadcastGame({ t: 'players', count: this.playerCount(ws) })
     } finally {
       await this.armAlarm().catch(logAlarmError)
@@ -159,9 +166,37 @@ export class PixelRoom extends BaseRoom<Env> {
     }
   }
 
-  protected async onRoundEnded(_result: RoundEndedEvent): Promise<void> {}
+  protected async onRoundEnded(result: RoundEndedEvent): Promise<void> {
+    const tools = createServerTools(this.env)
+    const room = await tools.get<RoomData>('rooms', result.roomId)
+    if (!room.success) throw new Error('Room lookup failed')
+    const { hostId, memberIds, visibility } = room.data.record.data
+    const round = await tools.create('rounds', { ...result, score: result.score ?? 0, winningTeam: result.winningTeam ?? null, snapshotFileIds: [], hostId, memberIds, visibility }, `${result.roomId}:${result.roundId}`)
+    if (!round.success) throw new Error('Round write failed')
+    if (result.outcome !== 'won') return
+    for (const userId of new Set(result.contributorIds)) {
+      if (!signedInId(userId)) continue
+      const existing = await tools.get<{ totalPoints: number; roundsWon: number }>('scores', userId)
+      if (!existing.success && existing.error !== 'Record not found') throw new Error('Score lookup failed')
+      const previous = existing.success ? existing.data.record.data : { totalPoints: 0, roundsWon: 0 }
+      const score = await tools.create('scores', { userId, totalPoints: previous.totalPoints + (result.score ?? 0), roundsWon: previous.roundsWon + 1 }, userId)
+      if (!score.success) throw new Error('Score write failed')
+    }
+  }
 
-  protected async onRoomStatus(_status: RoomStatusEvent): Promise<void> {}
+  protected async onRoomStatus(status: RoomStatusEvent): Promise<void> {
+    const { roomId, ...data } = status
+    const result = await createServerTools(this.env).update('rooms', roomId, data)
+    if (!result.success) throw new Error('Room status write failed')
+  }
+
+  private withRoomStatus(transition: RoomTransition, playerCount: number): RoomTransition {
+    if (!transition.events.some(event => event.type === 'roomStatus')) {
+      const state = transition.state
+      transition.events.push({ type: 'roomStatus', event: { roomId: state.roomId, status: state.status, playerCount, lastActiveAt: Date.now(), currentRoundId: state.round.id } })
+    }
+    return transition
+  }
 
   private liveSockets(exclude?: WebSocket): WebSocket[] {
     return this.getWebSockets().filter(ws => ws !== exclude && ws.readyState === WebSocket.OPEN)
@@ -196,7 +231,7 @@ export class PixelRoom extends BaseRoom<Env> {
 
   private persist(): void {
     if (!this.game) return
-    this.sql.exec('INSERT OR REPLACE INTO pixel_state (id, room_id, mode, is_default, state, resting_day) VALUES (1, ?, ?, ?, ?, ?)', this.game.roomId, this.game.mode, Number(this.game.isDefaultBoard), serializeRoomState(this.game), this.restingDay)
+    this.sql.exec('INSERT OR REPLACE INTO pixel_state (id, room_id, mode, is_default, state, resting_day, host_id) VALUES (1, ?, ?, ?, ?, ?, ?)', this.game.roomId, this.game.mode, Number(this.game.isDefaultBoard), serializeRoomState(this.game), this.restingDay, this.hostUserId)
   }
 
   private async armAlarm(): Promise<void> {
@@ -208,6 +243,7 @@ export class PixelRoom extends BaseRoom<Env> {
   private async transition(transition: RoomTransition, sender?: WebSocket, snapshotFirst?: WebSocket): Promise<void> {
     const stateChanged = transition.state !== this.game
     const previousRound = this.game?.round
+    if (this.game && (this.game.status !== transition.state.status || previousRound?.id !== transition.state.round.id)) this.withRoomStatus(transition, this.playerCount())
     this.game = transition.state
     if (stateChanged || transition.events.some(event => event.type !== 'reject')) this.persist()
     if (snapshotFirst) this.snapshot(snapshotFirst)

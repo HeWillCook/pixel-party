@@ -5,9 +5,11 @@ import type { RoomState } from '../game/room-logic'
 import type { Env } from '../../worker.js'
 import { PixelRoom, nextCommandRejection, restorePixelState } from './pixel-room'
 import { BudgetRoom } from './budget-room'
+import { BaseRoom } from 'deepspace/worker'
 
-const { integration } = vi.hoisted(() => ({ integration: vi.fn() }))
-vi.mock('./server-tools', () => ({ createServerTools: () => ({ integration }) }))
+import { memoryTools } from './room-test-tools'
+const { integration, recordTools } = vi.hoisted(() => ({ integration: vi.fn(), recordTools: vi.fn() }))
+vi.mock('./server-tools', () => ({ createServerTools: () => ({ ...recordTools(), integration }) }))
 
 const init = { roomId: 'test', mode: 'coop' as const, isDefaultBoard: false }
 type TestDatabase = {
@@ -68,9 +70,10 @@ describe('temporary next authorization seam', () => {
     expect(nextCommandRejection(state, null)).toBe('not_signed_in')
     expect(nextCommandRejection(state, 'anon-socket')).toBe('not_signed_in')
   })
-  it('allows unknown-host custom rooms, but never the default board', () => {
-    expect(nextCommandRejection(state, 'owner')).toBeNull()
+  it('denies unknown-host custom rooms and always denies next on the default board', () => {
+    expect(nextCommandRejection(state, 'owner')).toBe('not_host')
     expect(nextCommandRejection({ ...state, isDefaultBoard: true }, 'owner')).toBe('not_host')
+    expect(nextCommandRejection({ ...state, isDefaultBoard: true }, 'owner', 'owner')).toBe('not_host')
     expect(nextCommandRejection(state, 'other', 'owner')).toBe('not_host')
     expect(nextCommandRejection(state, 'owner', 'owner')).toBeNull()
   })
@@ -122,6 +125,8 @@ class TestPixelRoom extends PixelRoom {
   command(connection: WebSocket, command: Record<string, unknown>) { return this.onMessage(connection, connection.deserializeAttachment(), { type: 'test', ...command }) }
   override onRoundEnded = vi.fn(async () => {})
   override onRoomStatus = vi.fn(async () => {})
+  writeRound(event: import('../game/room-logic').RoundEndedEvent) { return super.onRoundEnded(event) }
+  writeStatus(event: import('../game/room-logic').RoomStatusEvent) { return super.onRoomStatus(event) }
 }
 
 function roomHarness(isDefaultBoard = false, configure: (state: RoomState) => RoomState = state => state) {
@@ -154,6 +159,72 @@ describe('durable room boundaries', () => {
     vi.useRealTimers()
     integration.mockReset()
     reserve.mockReset()
+  })
+
+  it('persists the trusted host header and enforces it after wake', async () => {
+    const database = new DatabaseSync(':memory:')
+    const sockets: WebSocket[] = []
+    const durable = durableState(database, sockets)
+    const env = {} as Env
+    vi.spyOn(BaseRoom.prototype, 'fetch').mockResolvedValue(new Response('upgraded'))
+    const room = new TestPixelRoom(durable as unknown as DurableObjectState, env)
+    expect((await room.fetch(new Request('https://room/ws', { headers: {
+      Upgrade: 'websocket', 'X-Room-Id': 'test', 'X-Room-Mode': 'coop', 'X-Room-Default': 'false', 'X-Room-Host': 'host',
+    } }))).status).toBe(200)
+    expect(database.prepare('SELECT host_id FROM pixel_state').get()).toMatchObject({ host_id: 'host' })
+    const restored = new TestPixelRoom(durable as unknown as DurableObjectState, env)
+    const guest = socket('guest')
+    const host = socket('host')
+    sockets.push(guest.connection, host.connection)
+    await restored.connect(guest.connection)
+    await restored.command(guest.connection, { t: 'next' })
+    expect(messages(guest).at(-1)).toEqual({ t: 'reject', reason: 'not_host' })
+    await restored.command(host.connection, { t: 'next' })
+    expect((JSON.parse((database.prepare('SELECT state FROM pixel_state').get() as { state: string }).state) as RoomState).roundCounter).toBe(1)
+    database.close()
+  })
+
+  it('refreshes record player counts on joins/leaves and round ids on next', async () => {
+    const harness = roomHarness()
+    harness.database.prepare('UPDATE pixel_state SET host_id = ?').run('host')
+    const restored = harness.makeRoom()
+    const host = await harness.connect('host', restored)
+    const guest = await harness.connect('guest', restored)
+    expect(restored.onRoomStatus).toHaveBeenLastCalledWith(expect.objectContaining({ playerCount: 2, currentRoundId: harness.initial.round.id }))
+    await restored.command(host.connection, { t: 'next' })
+    expect(restored.onRoomStatus).toHaveBeenLastCalledWith(expect.objectContaining({ playerCount: 2, currentRoundId: harness.saved().round.id }))
+    await restored.disconnect(guest.connection)
+    expect(restored.onRoomStatus).toHaveBeenLastCalledWith(expect.objectContaining({ playerCount: 1, status: 'playing' }))
+    harness.database.close()
+  })
+
+  it('writes complete private round history and awards only won contributors', async () => {
+    const memory = memoryTools()
+    recordTools.mockReturnValue(memory.tools)
+    memory.rows('rooms').set('test', { hostId: 'host', visibility: 'private', memberIds: ['host', 'guest'] })
+    memory.rows('scores').set('host', { userId: 'host', totalPoints: 10, roundsWon: 2 })
+    const harness = roomHarness()
+    const event = { roomId: 'test', roundId: 'round1', mode: 'coop' as const, word: 'cat', startedAt: 100, endedAt: 200, outcome: 'won' as const, score: 50, pixelsUsed: 12, durationMs: 100, contributorIds: ['host', 'guest'], finalGuesses: ['cat'] }
+    await harness.room.writeRound(event)
+    expect([...memory.rows('rounds').values()][0]).toMatchObject({ ...event, visibility: 'private', memberIds: ['host', 'guest'], snapshotFileIds: [] })
+    expect(memory.rows('scores').get('host')).toMatchObject({ totalPoints: 60, roundsWon: 3 })
+    expect(memory.rows('scores').get('guest')).toMatchObject({ totalPoints: 50, roundsWon: 1 })
+    await harness.room.writeRound({ ...event, roundId: 'round2', outcome: 'timeout' })
+    expect(memory.rows('scores').get('host')!.roundsWon).toBe(3)
+    const status = { roomId: 'test', status: 'paused' as const, playerCount: 0, lastActiveAt: 300, currentRoundId: 'round2' }
+    await harness.room.writeStatus(status)
+    expect(memory.rows('rooms').get('test')).toMatchObject({ status: 'paused', playerCount: 0, lastActiveAt: 300, currentRoundId: 'round2' })
+    expect(memory.update).toHaveBeenCalledWith('rooms', 'test', { status: 'paused', playerCount: 0, lastActiveAt: 300, currentRoundId: 'round2' })
+    harness.database.close()
+  })
+
+  it('surfaces tool failure to the existing caught hook boundary, without resetting scores', async () => {
+    const memory = memoryTools()
+    recordTools.mockReturnValue(memory.tools)
+    memory.update.mockResolvedValueOnce({ success: false, error: 'offline' } as never)
+    const harness = roomHarness()
+    await expect(harness.room.writeStatus({ roomId: 'test', status: 'closed', playerCount: 0, lastActiveAt: 300, currentRoundId: 'round' })).rejects.toThrow()
+    harness.database.close()
   })
 
   it('broadcasts placements, rejects spectators and cooldowns, and recovers live identities after wake', async () => {

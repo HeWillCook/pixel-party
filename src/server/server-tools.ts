@@ -2,7 +2,11 @@ import { apiWorkerFetch, normalizeApiError, splitIntegrationEndpoint } from 'dee
 import type { ActionResult, ActionTools } from 'deepspace/worker'
 import type { Env } from '../../worker.js'
 
-export type ServerTools = Pick<ActionTools, 'create' | 'update' | 'get' | 'query'> & {
+export type ServerTools = Pick<ActionTools, 'create' | 'update' | 'get'> & {
+  query<T extends Record<string, unknown> = Record<string, unknown>>(
+    collection: string,
+    options?: NonNullable<Parameters<ActionTools['query']>[1]> & { offset?: number },
+  ): Promise<ActionResult<{ records: { recordId: string; data: T }[]; count: number; nextOffset?: number }>>
   integration<T = unknown>(endpoint: string, body: unknown): Promise<ActionResult<T>>
 }
 
