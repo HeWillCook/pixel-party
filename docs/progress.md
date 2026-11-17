@@ -11,7 +11,7 @@ protected secrets, use of platform primitives, and an honest writeup of tradeoff
 
 ## The idea: Pixel Party (working name)
 
-A live, shared pixel canvas turned into a game, judged by an AI.
+A daily solo pixel-art challenge judged by an AI, with the live shared canvas retained as party mode.
 
 - **Co-op mode (casual):** a round shows everyone a word (e.g. "lighthouse"). Players place pixels together.
   On a schedule, a background job snapshots the canvas and asks a vision model "what is this a drawing of?".
@@ -40,6 +40,7 @@ A live, shared pixel canvas turned into a game, judged by an AI.
 | 2026-11-17 | Checkpoint PR after final whole-branch review + fix wave | A stable, reviewed base on main to iterate from |
 | 2026-11-17 | First (smoke) deploy after Task 5 from a clean, CI-green commit | Catch production-only issues early; GitHub latched as source |
 | 2026-11-16 | Rooms (friends via link/code, or random quick-play) plus an always-on public co-op board | Reviewers likely visit alone; co-op works solo, team mode needs a room of friends or two tabs |
+| 2026-11-17 | Pivot the main feature to daily mode: one shared prompt, one 10-minute attempt, best grade kept, every attempt ranked; sign-in required to play | A focused solo game is more fun and reviewers can test it alone. Score is 0–1000: fit×5 + recognition×4 + speed. |
 
 ## DeepSpace features: planned use
 
@@ -56,6 +57,21 @@ A live, shared pixel canvas turned into a game, judged by an AI.
 
 **Deliberately left out:** payments (nothing to sell), email (nobody wants game email), voice/video (people use Discord),
 AI image generation (the point is humans draw), ElevenLabs announcer (gimmick).
+
+## Integrations used by daily mode
+
+| Need | DeepSpace feature actually used | Implementation |
+|---|---|---|
+| Sign-in, identity, display name and avatar | DeepSpace auth; worker verifies JWT identity | `src/server/daily-routes.ts` requires authenticated identity; display name/avatar are copied to server-written score and drawing records. |
+| Vision judging | `anthropic/chat-completion` integration proxy via `createServerTools` | `src/server/daily-judge.ts`; production mode calls the integration server-side. Fake judging is the default in dev/tests. |
+| Atomic one-attempt-per-day and grade caps | `DailyRoom`, a `BaseRoom` Durable Object using SQLite | `src/server/daily-room.ts` serializes state operations by UTC day; it uses HTTP operations, not a WebSocket. |
+| Gallery and leaderboard | `dailyDrawings` and `dailyScores` collections with server-write/public-read permissions | Profiles and boards read records through the normal collection API; drawings are private until the daily close. |
+| Close day and award top-three medals | DeepSpace cron through `AppCronRoom` | `src/cron.ts` runs at 00:15 UTC and `src/server/daily-close.ts` reveals eligible drawings and records medals. |
+| Shared daily AI cap | Existing `BudgetRoom` | Shared with party mode; `BUDGET.dailyCalls` is 1000. |
+
+Realtime sync/presence, messaging, payments, and file storage are not used for daily play. The local `claude -p` helper
+(`npm run judge:local`, with `DAILY_JUDGE=local`) is opt-in and dev-only; it is never the production judging path.
+The fake judge is selected by default in dev and tests so those runs make no paid model calls.
 
 ## Findings
 
@@ -238,13 +254,10 @@ AI image generation (the point is humans draw), ElevenLabs announcer (gimmick).
 
 - Quick play / matchmaking once there is real traffic.
 - In-game currency earned by playing, spent on extra "Ask the AI" requests.
-- **Daily puzzle (tabled 2026-11-17, ranked first).** Wordle-style: one word per UTC day for everyone, chosen
-  deterministically from the date. Solo canvas; score = fewest pixels (and judge calls) before Haiku guesses it.
-  Shareable emoji result grid plus a public daily results board. AI cost bounded by a few judgements per player
-  per day, inside the existing app-wide budget. Reuses the solo canvas, judge and scoring.
-- **Earned currency + cosmetics (tabled 2026-11-17).** Coins from wins, daily streaks and puzzle results; spent on
+- Generate more, harder daily prompts — the ~80 hand-written list repeats after ~80 days (Will, 2026-11-17).
+- **Earned currency + cosmetics (tabled 2026-11-17).** Coins from wins, daily streaks and challenge results; spent on
   palettes, cursor trails, name colours, canvas frames. Earned only, never paid. Mostly new records and UI; stronger
-  once the daily puzzle exists to drive streaks.
+  once daily play has enough repeat visitors to drive streaks.
 - **Pixel-themed redesign (next, Will's request).** Pixel font/borders, larger centered canvas while drawing.
 
 ## Open questions
@@ -259,6 +272,7 @@ AI image generation (the point is humans draw), ElevenLabs announcer (gimmick).
 |---|---|---|---|---|---|
 | 1 | `9859338` | `npm run verify` normal + credentials denied; signed-out/signed-in JWT WebSockets; one Haiku call; record create/delete/query | PASS: 6 unit tests; all three platform probes; probe removed | Implementer self-check only; controller review follows | Optional browser OAuth UI smoke; signed-in WebSocket identity already verified with real login JWT |
 | 1 fix round 1 | `add7097` — `fix: close client integration proxy, harden server tools` | Covering tests; `npm run verify` normal + credentials denied | PASS: 31 covering tests; 34 full-suite tests; lint, type-check, Worker/client build | Implementer self-check; controller review follows | None added |
+| 8 | `f19070a` | `npm run build && npx playwright test --config tests/offline.playwright.config.ts`; `npx playwright test --config tests/playwright.config.ts tests/api.spec.ts`; `npm run verify` | PASS: offline Playwright 9/9 (5 existing + 4 daily); API Playwright 3/3 including `/api/__test/ready` (`test_integration_disabled`); verify lint + type-check + 310 unit tests + build PASS. Verify tail: `Test Files 33 passed (33); Tests 310 passed (310); ✓ built in 813ms; [prerender] wrote 1 page(s) [/], _spa.html, robots.txt, sitemap.xml.` | Implementation self-check; controller review follows | Sign in and complete one daily attempt; optional real-judge check only with Will's go-ahead |
 
 ## Agent log
 
