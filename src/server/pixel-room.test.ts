@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { BUDGET, JUDGE } from '../game/config'
+import { decodeCells } from '../game/grid'
 import { newRoomState, serializeRoomState } from '../game/room-logic'
 import type { RoomState } from '../game/room-logic'
 import type { Env } from '../../worker.js'
@@ -734,5 +735,38 @@ describe('durable room boundaries', () => {
     expect(await request()).toEqual({ ok: true, used: 1, cap: BUDGET.dailyCalls })
     expect((await room.fetch(new Request('https://budget/reserve'))).status).toBe(404)
     database.close()
+  })
+
+  it('handles party erase, free empty erase during cooldown, and white 16/17 bounds', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(1_800_000_000_000)
+    const harness = roomHarness()
+    const alice = await harness.connect('alice')
+    const bob = await harness.connect('bob')
+
+    await harness.room.command(bob.connection, { t: 'place', x: 2, y: 2, c: 5 })
+    await harness.room.command(alice.connection, { t: 'place', x: 1, y: 1, c: 16 })
+    const savedCells = () => decodeCells(harness.saved().grid.cells as unknown as string, 1024)
+    expect(savedCells()[33]).toBe(16)
+    await harness.room.command(alice.connection, { t: 'place', x: 3, y: 3, c: 17 })
+    expect(messages(alice).at(-1)).toMatchObject({ t: 'reject', reason: 'bad_color', x: 3, y: 3 })
+
+    // During cooldown (players=2 -> 2000ms): erasing empty is a silent no-op, erasing non-empty is rejected
+    const sql = vi.spyOn(harness.durable.storage.sql, 'exec')
+    alice.send.mockClear()
+    await harness.room.command(alice.connection, { t: 'place', x: 9, y: 9, c: 0 })
+    expect(messages(alice)).toEqual([])
+    expect(sql.mock.calls.filter(([query]) => query.startsWith('INSERT'))).toHaveLength(0)
+
+    await harness.room.command(alice.connection, { t: 'place', x: 2, y: 2, c: 0 })
+    expect(messages(alice).at(-1)).toMatchObject({ t: 'reject', reason: 'cooldown', x: 2, y: 2 })
+
+    // After cooldown expires, erasing bob's pixel clears cell and attribution
+    vi.setSystemTime(Date.now() + 2500)
+    await harness.room.command(alice.connection, { t: 'place', x: 2, y: 2, c: 0 })
+    expect(savedCells()[2 * 32 + 2]).toBe(0)
+    expect(harness.saved().grid.placedBy[2 * 32 + 2]).toBe('')
+    expect(messages(bob).at(-1)).toEqual({ t: 'pixel', x: 2, y: 2, c: 0, by: 'alice' })
+    harness.database.close()
   })
 })

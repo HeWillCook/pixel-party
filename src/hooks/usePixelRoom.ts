@@ -8,7 +8,7 @@ import {
   initialClientState,
   type ClientState,
 } from '../game/client-state'
-import { PALETTE } from '../game/config'
+import { MAX_COLOR } from '../game/config'
 import { MAX_PLACE_BATCH, type Placement, type ClientMsg, type ServerMsg } from '../game/protocol'
 import { cooldownMs } from '../game/rules'
 import { pixelPreflight } from './pixelPreflight'
@@ -230,7 +230,7 @@ export function usePixelRoom(joinCode: string): UsePixelRoomResult {
       const current = stateRef.current
       if (!Number.isInteger(x) || !Number.isInteger(y)) return
       if (x < 0 || x >= current.width || y < 0 || y >= current.height) return
-      if (!Number.isInteger(c) || c < 1 || c >= PALETTE.length) return
+      if (!Number.isInteger(c) || c < 0 || c > MAX_COLOR) return
 
       // M3: Gate placement on active playing state and signed-in snapshot identity
       if (!current.connected || !current.you.userId || current.round?.state !== 'playing') return

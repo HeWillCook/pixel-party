@@ -342,7 +342,7 @@ test('fast solo drag paints a solid optimistic stroke and sends a frame batch wi
   // The fixture has sent no acceptance yet: these are all optimistic pixels.
   for (let x = 1; x <= 20; x++) expect(await pixelColor(page, x, 1)).toEqual([239, 68, 68, 255])
   server.send(JSON.stringify({ t: 'reject', reason: 'rate_limited', x: 10, y: 1, retryAt: Date.now() + 17 }))
-  await expect.poll(() => pixelColor(page, 10, 1)).toEqual([255, 255, 255, 255])
+  await expect.poll(() => pixelColor(page, 10, 1)).toEqual([239, 227, 204, 255])
   expect(await pixelColor(page, 11, 1)).toEqual([239, 68, 68, 255])
   expect(errors).toEqual([])
 })
@@ -542,3 +542,60 @@ test('banner-aware canvas sizing keeps palette inside 1280x720 with spectator ba
   expect(metrics.paletteBottom).toBeLessThanOrEqual(720)
   expect(errors).toEqual([])
 })
+
+test('room shows Paint, Erase and Pick colour; no Fill, Undo or Redo', async ({ page }) => {
+  const errors = await clientFixture(page, { signedIn: true })
+  const sent: { x: number; y: number; c: number }[][] = []
+  await page.routeWebSocket('**/api/pixel/**', socket => {
+    const state = snapshot('playing')
+    const cells = Buffer.alloc(1024)
+    cells[2 * 32 + 2] = 9
+    socket.send(JSON.stringify({ ...state, cells: cells.toString('base64') }))
+    socket.onMessage(raw => {
+      const message = JSON.parse(String(raw))
+      if (message.t === 'place') sent.push(message.cells)
+    })
+  })
+  await page.goto(`${origin}/r/AB2Z`)
+  const canvas = page.getByTestId('pixel-canvas')
+  await expect(canvas).toBeVisible()
+
+  const toolbar = page.getByTestId('toolbar')
+  await expect(toolbar).toBeVisible()
+  await expect(page.getByTestId('tool-paint')).toHaveText('Paint')
+  await expect(page.getByTestId('tool-paint')).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByTestId('tool-erase')).toHaveText('Erase')
+  await expect(page.getByTestId('tool-pick')).toHaveText('Pick colour')
+  await expect(page.getByTestId('tool-fill')).toHaveCount(0)
+  await expect(page.getByTestId('tool-undo')).toHaveCount(0)
+  await expect(page.getByTestId('tool-redo')).toHaveCount(0)
+  expect(await toolbar.innerText()).not.toMatch(/⌘|Ctrl|\b[BEFI]\b/)
+
+  const box = (await canvas.boundingBox())!
+  const point = (x: number, y: number) => ({ x: box.x + box.width * (x + 0.5) / 32, y: box.y + box.height * (y + 0.5) / 32 })
+
+  // Pick colour from painted pixel (2, 2) -> selects color 9 and returns to Paint
+  await page.getByTestId('tool-pick').click()
+  await expect(page.getByTestId('tool-pick')).toHaveAttribute('aria-pressed', 'true')
+  await canvas.dispatchEvent('pointerdown', { clientX: point(2, 2).x, clientY: point(2, 2).y, pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1 })
+  await canvas.dispatchEvent('pointerup', { pointerId: 1, pointerType: 'mouse' })
+  await expect(page.getByTestId('tool-paint')).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByTestId('swatch-9')).toHaveAttribute('aria-pressed', 'true')
+
+  // Switch to Erase and clear (2, 2) -> sends c: 0
+  await page.getByTestId('tool-erase').click()
+  await expect(page.getByTestId('tool-erase')).toHaveAttribute('aria-pressed', 'true')
+  await canvas.dispatchEvent('pointerdown', { clientX: point(2, 2).x, clientY: point(2, 2).y, pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1 })
+  await canvas.dispatchEvent('pointerup', { pointerId: 1, pointerType: 'mouse' })
+  await expect.poll(() => sent.flat()).toContainEqual({ x: 2, y: 2, c: 0 })
+  await expect.poll(() => pixelColor(page, 2, 2)).toEqual([243, 234, 216, 255])
+
+  // Pick colour on empty pixel (3, 3) -> switches to Erase
+  await page.getByTestId('tool-pick').click()
+  await canvas.dispatchEvent('pointerdown', { clientX: point(3, 3).x, clientY: point(3, 3).y, pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1 })
+  await canvas.dispatchEvent('pointerup', { pointerId: 1, pointerType: 'mouse' })
+  await expect(page.getByTestId('tool-erase')).toHaveAttribute('aria-pressed', 'true')
+
+  expect(errors).toEqual([])
+})
+

@@ -60,8 +60,8 @@ describe('validatePlacement', () => {
     })
   })
 
-  it('rejects color 0, >16, negative, or non-integer', () => {
-    expect(validatePlacement({ ...base, color: 0 })).toMatchObject({ ok: false, reason: 'bad_color' })
+  it('accepts 0 and 16, and rejects >16, negative, or non-integer', () => {
+    expect(validatePlacement({ ...base, color: 0 })).toEqual({ ok: true })
     expect(validatePlacement({ ...base, color: 16 })).toEqual({ ok: true })
     expect(validatePlacement({ ...base, color: 17 })).toMatchObject({ ok: false, reason: 'bad_color' })
     expect(validatePlacement({ ...base, color: -1 })).toMatchObject({ ok: false, reason: 'bad_color' })
