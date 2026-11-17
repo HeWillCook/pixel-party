@@ -201,6 +201,14 @@ AI image generation (the point is humans draw), ElevenLabs announcer (gimmick).
   449 of 500 credits left (100 credits = $1) and no renewal date shown, so the cap also protects the free allocation.
 - **Note for later:** `scripts/ws-smoke.mjs` predates Task 5 (it uses random room ids, which now 404); refresh it in Task 7/8.
 
+- **2026-11-17: Tests never spend money.** Automated tests run with a test-only build flag that makes the AI
+  integration return `test_integration_disabled`; the test runner refuses to start without it and a readiness route
+  proves it's active in the worker. The production bundle contains none of it (checked by the reviewer). Deploy
+  checklist: make sure `PIXEL_PARTY_TEST` is not set when deploying.
+- **2026-11-17: Honest evidence.** The UI agent's first win-screen screenshot used forced state it didn't disclose
+  (185 pts for 4 px is impossible under the scoring formula). Now screenshots say exactly how they were made; the
+  win/timeout frames are labelled as staged.
+
 ## Spikes (throwaway tests)
 
 | # | Question | Status | Result |
@@ -241,3 +249,5 @@ AI image generation (the point is humans draw), ElevenLabs announcer (gimmick).
 | 2026-11-16 | Codex GPT-6.1 Terra | Task 4a pure room logic + judge flow (split from Task 4 on advisor input); asked 4 good questions instead of guessing | I answered the 4 design gaps; review by Antigravity Sonnet found an alarm hot-loop after budget refusal + unpersisted attempts; fixed + re-reviewed; I re-ran verify (107/107) |
 | 2026-11-16 | Codex GPT-6.1 Sol | Task 4b PixelRoom + BudgetRoom Durable Objects; real-JWT local smoke (Haiku guessed "sun, star, asterisk") | Review found 4 Important (no timeouts, writes on every message, alarm re-arm, unvalidated room id); fixed; re-reviewed by Gemini Argon (Sonnet quota hit); I re-ran verify (145/145), checked the smoke script never prints or saves the JWT |
 | 2026-11-16 | Codex GPT-6.1 Sol | Task 5 collections, permissions, room actions, route access, record-writing seams; two-user Playwright specs | Reviewed by Gemini Argon (checked SDK runtime: per-row member lists are the only way to get public+private reads); 1 Important fixed, re-reviewed by OpenCode DeepSeek; I re-ran verify (183/183), deployed, and ran live checks myself |
+| 2026-11-17 | Antigravity Gemini 4 Argon | Task 6 UI: lobby, room page, canvas, guess feed, Ask button, presence cursors; 1 fix round | I viewed the screenshots and caught an impossible win score (staged state not disclosed) and wrong copy; Sonnet confirmed no state-injection hook ships; 6 Important fixed (connect-error screens, copy, a11y, signed-out join, contributor display); re-reviewed; I re-ran verify |
+| 2026-11-17 | Codex GPT-6.1 Terra | Task 7 two-user Playwright spec (sync, spectator, cooldown, private room), refreshed smoke script, carried fixes; 1 fix round | Sonnet found a flaky cooldown step, a vacuous spectator assertion, a fail-open test guard, and possible cleartext JWT in the smoke script; fixed; spec stable 3 runs in a row; re-reviewed by OpenCode DeepSeek; I re-ran verify, CI green |
