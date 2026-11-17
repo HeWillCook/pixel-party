@@ -13,6 +13,13 @@ export interface ZoneGuess {
   matched: boolean
 }
 
+export interface GuessLogEntry {
+  id: number
+  atMs: number
+  guesses: string[]
+  matched: boolean
+}
+
 export interface ClientState {
   connected: boolean
   snapshotLoaded: boolean
@@ -24,6 +31,8 @@ export interface ClientState {
   pending: Map<number, number>
   round: RoundView | null
   guesses: Record<ZoneId, ZoneGuess | undefined>
+  guessLog: GuessLogEntry[]
+  guessLogRoundId: string | null
   roster: { userId: string; name: string }[]
   players: number
   watching: number
@@ -45,6 +54,8 @@ export function initialClientState(): ClientState {
     pending: new Map<number, number>(),
     round: null,
     guesses: {} as Record<ZoneId, ZoneGuess | undefined>,
+    guessLog: [],
+    guessLogRoundId: null,
     players: 0,
     watching: 0,
     roster: [],
@@ -103,7 +114,7 @@ export function applyOptimisticPlace(
   }
 }
 
-export function applyServerMsg(s: ClientState, m: ServerMsg): ClientState {
+export function applyServerMsg(s: ClientState, m: ServerMsg, now: number = Date.now()): ClientState {
   switch (m.t) {
     case 'snapshot': {
       const cells = decodeCells(m.cells, m.width * m.height)
@@ -118,6 +129,8 @@ export function applyServerMsg(s: ClientState, m: ServerMsg): ClientState {
         cells,
         pending: new Map<number, number>(),
         round: m.round,
+        guessLog: m.round.id === s.guessLogRoundId ? s.guessLog : [],
+        guessLogRoundId: m.round.id,
         guesses: isNewRound
           ? ({} as Record<ZoneId, ZoneGuess | undefined>)
           : s.guesses,
@@ -207,14 +220,28 @@ export function applyServerMsg(s: ClientState, m: ServerMsg): ClientState {
       return {
         ...s,
         round: m.round,
+        guessLog: m.round.id === s.guessLogRoundId ? s.guessLog : [],
+        guessLogRoundId: m.round.id,
         guesses: isNewRound
           ? ({} as Record<ZoneId, ZoneGuess | undefined>)
           : s.guesses,
       }
     }
     case 'judgement': {
+      const loggedGuesses = new Set(s.guessLog.flatMap(entry => entry.guesses.map(guess => guess.trim().toLowerCase())))
+      const hasNewGuess = m.guesses.some(guess => !loggedGuesses.has(guess.trim().toLowerCase()))
+      const hasNewMatch = m.matched && !s.guessLog.some(entry => entry.matched)
+      const guessLog = hasNewGuess || hasNewMatch
+        ? [{
+            id: (s.guessLog[0]?.id ?? 0) + 1,
+            atMs: s.round ? Math.max(0, now - s.round.startedAt) : 0,
+            guesses: m.guesses,
+            matched: m.matched,
+          }, ...s.guessLog].slice(0, 50)
+        : s.guessLog
       return {
         ...s,
+        guessLog,
         guesses: {
           ...s.guesses,
           [m.zone]: {

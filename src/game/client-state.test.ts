@@ -23,6 +23,60 @@ function makeRound(id: string, word = 'mushroom'): RoundView {
 }
 
 describe('client-state', () => {
+  it('appends a judgement with new guesses newest-first, stamped with round-relative ms', () => {
+    let state = applyServerMsg(initialClientState(), { t: 'round', round: makeRound('r1') })
+    state = applyServerMsg(state, { t: 'judgement', zone: 'all', guesses: ['tower', 'rocket'], confidence: 0.5, matched: false }, 16000)
+    expect(state.guessLog[0]).toMatchObject({ atMs: 15000, guesses: ['tower', 'rocket'], matched: false })
+    const firstId = state.guessLog[0].id
+    state = applyServerMsg(state, { t: 'judgement', zone: 'all', guesses: ['castle'], confidence: 0.5, matched: false }, 500)
+    expect(state.guessLog.map(entry => entry.guesses)).toEqual([['castle'], ['tower', 'rocket']])
+    expect(state.guessLog[0].atMs).toBe(0)
+    expect(state.guessLog[0].id).toBeGreaterThan(firstId)
+  })
+
+  it('ignores a judgement that repeats already-logged guesses', () => {
+    let state = applyServerMsg(initialClientState(), { t: 'judgement', zone: 'all', guesses: ['tower'], confidence: 0.5, matched: false }, 100)
+    expect(state.guessLog[0].atMs).toBe(0)
+    state = applyServerMsg(state, { t: 'judgement', zone: 'all', guesses: ['rocket'], confidence: 0.5, matched: false }, 100)
+    state = applyServerMsg(state, { t: 'judgement', zone: 'all', guesses: [' ROCKET ', ' Tower '], confidence: 0.8, matched: false }, 100)
+    expect(state.guessLog).toHaveLength(2)
+    expect(state.guesses.all?.confidence).toBe(0.8)
+    state = applyServerMsg(state, { t: 'judgement', zone: 'all', guesses: ['tower'], confidence: 1, matched: true }, 100)
+    expect(state.guessLog).toHaveLength(3)
+    expect(state.guessLog[0].matched).toBe(true)
+    state = applyServerMsg(state, { t: 'judgement', zone: 'all', guesses: ['TOWER'], confidence: 1, matched: true }, 100)
+    expect(state.guessLog).toHaveLength(3)
+  })
+
+  it('clears the log on a new round id and keeps it on a same-round snapshot (reconnect)', () => {
+    const round = makeRound('r1')
+    const snapshot = { t: 'snapshot' as const, mode: 'coop' as const, width: 32, height: 32, cells: encodeCells(new Uint8Array(32 * 32)), round, you: { userId: null, cooldownUntil: 0 }, players: 1, aiResting: false }
+    let state = applyServerMsg(initialClientState(), { t: 'round', round })
+    state = applyServerMsg(state, { t: 'judgement', zone: 'all', guesses: ['tower'], confidence: 0.5, matched: false })
+    state = applyServerMsg(state, { t: 'round', round })
+    state = applyServerMsg(state, snapshot)
+    expect(state.guessLog).toHaveLength(1)
+    expect(state.guessLogRoundId).toBe('r1')
+    state = applyServerMsg(state, { ...snapshot, round: makeRound('r2') })
+    expect(state.guessLog).toEqual([])
+    expect(state.guessLogRoundId).toBe('r2')
+    state = applyServerMsg(state, { t: 'judgement', zone: 'all', guesses: ['rocket'], confidence: 0.5, matched: false })
+    state = applyServerMsg(state, { t: 'round', round: makeRound('r3') })
+    expect(state.guessLog).toEqual([])
+    expect(state.guessLogRoundId).toBe('r3')
+  })
+
+  it('caps the log at 50 entries', () => {
+    let state = initialClientState()
+    for (let index = 0; index < 55; index++) {
+      state = applyServerMsg(state, { t: 'judgement', zone: 'all', guesses: [`guess ${index}`], confidence: 0.5, matched: false }, index)
+    }
+    expect(state.guessLog).toHaveLength(50)
+    expect(state.guessLog[0].guesses).toEqual(['guess 54'])
+    expect(state.guessLog[49].guesses).toEqual(['guess 5'])
+    expect(state.guessLog[0].id).toBeGreaterThan(state.guessLog[49].id)
+  })
+
   it('stores watching from players and snapshot, defaulting to 0', () => {
     let state = initialClientState()
     expect(state.watching).toBe(0)
