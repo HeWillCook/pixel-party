@@ -166,6 +166,16 @@ AI image generation (the point is humans draw), ElevenLabs announcer (gimmick).
   GitHub source rule. Covering tests: **31 tests / 3 files**; full `npm run verify`: **34 tests / 5 files**,
   lint, type-check and Worker/client builds pass. No paid probe or deployment was repeated. M4/M5 remain deferred.
 
+- **2026-11-16: Task 1 platform probes all passed** (custom DO): anonymous socket with forged identity → `userId: null`;
+  invalid JWT → 401; real JWT → real account id; Haiku call from the DO via the proxy succeeded ($0.0000036);
+  record create/delete from the DO succeeded. Anonymous sockets get an SDK `anon-*` id: game code must use
+  `isAnonymousUserId`, not truthiness.
+- **2026-11-16: Closed a scaffold spend hole (integration note).** The DeepSpace starter's browser proxy
+  `/api/integrations/:name/:endpoint` let any signed-in user call any of the 38 integrations on the developer's bill,
+  bypassing our AI budget. The reviewer filed it Minor; I confirmed it in `src/server/http-routes.ts` and raised it.
+  Now default-deny (403 unless an integration is flagged `client: true`; none are), and the unused in-app AI
+  agent/chat surfaces are unmounted. All AI spend goes through PixelRoom, where the budget applies.
+
 ## Spikes (throwaway tests)
 
 | # | Question | Status | Result |
@@ -200,4 +210,4 @@ AI image generation (the point is humans draw), ElevenLabs announcer (gimmick).
 | 2026-11-16 | Codex GPT-6.1 Terra | Spike 2: read SDK + Tangent/PartyPack source for pixel storage options | Confirmed BaseRoom, Tangent's custom rooms, full-record broadcast in source |
 | 2026-11-16 | Antigravity Gemini 4 Hydrogen | Spike 1: generated test pixel art, ran 130 Claude vision calls | Recounted accuracy from results.json; inspected contact sheet and flagged test drawings as too clean |
 | 2026-11-16 | Claude Opus (me) | Checked AI integration schemas, found Claude-only vision | Ran `deepspace integrations info` myself |
-| 2026-11-16 | Codex GPT-6.1 Sol | Task 1 scaffold/CI, custom DO platform probes, fixture, cleanup | Self-verified: all probes and normal/credential-free verify passed; review pending controller |
+| 2026-11-16 | Codex GPT-6.1 Sol | Task 1 scaffold/CI, custom DO platform probes, fixture, cleanup; fix round closing the integrations proxy | Reviewed by Antigravity Sonnet (+ scoped re-review); I re-ran verify (34/34), read the proxy route myself and escalated M1, checked CI green |
