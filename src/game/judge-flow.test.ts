@@ -99,3 +99,11 @@ it.each(['tick', 'ask'] as const)('spends zero on %s for lobby, anonymous-only, 
     expect(deps.render, scenario).toHaveBeenCalledTimes(0)
   }
 })
+
+
+it('does not start a paid call when the room closes during rendering', async () => {
+  const { state, deps } = setup()
+  deps.render.mockImplementationOnce(async () => { state.status = 'closed'; return 'png' })
+  expect(await runJudge(deps, state, 'tick', 1, zone)).toEqual({ kind: 'stale' })
+  expect(deps.callJudge).not.toHaveBeenCalled()
+})

@@ -254,3 +254,12 @@ it('rolls back only the rejected batch cell, keeping accepted and later optimist
   expect([...state.pending.keys()]).toEqual([2])
   expect(state.you.cooldownUntil).toBe(1017)
 })
+
+
+it('host closure clears authorized board state and uses the terminal screen', () => {
+  const state = { ...initialClientState(), snapshotLoaded: true, connected: true }
+  const closed = applyServerMsg(state, { t: 'closed' })
+  expect(closed.snapshotLoaded).toBe(false)
+  expect(closed.round).toBeNull()
+  expect(roomAccessView(closed)).toBe('closed')
+})

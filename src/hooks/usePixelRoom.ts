@@ -146,11 +146,12 @@ export function usePixelRoom(joinCode: string): UsePixelRoomResult {
         if (typeof event.data !== 'string') return
         try {
           const msg = JSON.parse(event.data) as ServerMsg
+          if (msg.t === 'closed') terminalError = true
           if (msg.t === 'snapshot') {
             receivedSnapshot = true
             backoffMs = 500
           }
-          if (msg.t === 'snapshot' || (msg.t === 'round' && msg.round.id !== stateRef.current.round?.id)) {
+          if (msg.t === 'closed' || msg.t === 'snapshot' || (msg.t === 'round' && msg.round.id !== stateRef.current.round?.id)) {
             queuedRef.current = []
             if (frameRef.current !== null) cancelAnimationFrame(frameRef.current)
             frameRef.current = null
@@ -165,8 +166,12 @@ export function usePixelRoom(joinCode: string): UsePixelRoomResult {
         }
       }
 
-      socket.onclose = () => {
-        if (ws !== socket) return
+      socket.onclose = (event) => {
+        if (ws !== socket || !alive) return
+        if (event.code === 4001) {
+          terminalError = true
+          setState(prev => applyServerMsg(prev, { t: 'closed' }))
+        }
         ws = null
         wsRef.current = null
         setState((prev) => ({ ...prev, connected: false }))
