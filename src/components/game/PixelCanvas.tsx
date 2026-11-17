@@ -1,19 +1,25 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { boardCellSize } from '../../game/board-size'
+import { canvasIntent } from '../../game/canvas-intent'
 import { EMPTY_CANVAS, PALETTE } from '../../game/config'
-import { strokeCells } from '../../game/stroke'
+import type { Tool } from '../../game/tools'
 
 export interface PixelCanvasProps {
   width: number
   height: number
   cells: Uint8Array
   activeColor: number
+  tool?: Tool
   canDraw: boolean
   word?: string
   cooldownRemainingMs?: number
   availWidth?: number
   availHeight?: number
   onPlace: (x: number, y: number, color: number) => void
+  onFill?: (x: number, y: number) => void
+  onPick?: (x: number, y: number) => void
+  onStrokeStart?: () => void
+  onStrokeEnd?: () => void
   onHoverCell?: (cell: { x: number; y: number } | null) => void
   children?: ReactNode
 }
@@ -23,12 +29,17 @@ export function PixelCanvas({
   height,
   cells,
   activeColor,
+  tool = 'paint',
   canDraw,
   word,
   cooldownRemainingMs = 0,
   availWidth = 600,
   availHeight = 600,
   onPlace,
+  onFill,
+  onPick,
+  onStrokeStart,
+  onStrokeEnd,
   onHoverCell,
   children,
 }: PixelCanvasProps) {
@@ -83,13 +94,38 @@ export function PixelCanvas({
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (e.button !== 0 && e.pointerType === 'mouse') return
     e.currentTarget.setPointerCapture(e.pointerId)
-    isPointerDownRef.current = true
     const cell = getCellFromEvent(e.clientX, e.clientY)
-    if (cell) {
-      setHoverCell(cell)
-      onHoverCell?.(cell)
-      lastDragCellRef.current = cell
-      onPlace(cell.x, cell.y, activeColor)
+    if (!cell) return
+    setHoverCell(cell)
+    onHoverCell?.(cell)
+    const intent = canvasIntent({
+      tool,
+      phase: 'down',
+      cell,
+      prevCell: null,
+      activeColor,
+      canDraw,
+    })
+    if (intent.type === 'none') {
+      // Preserve click-to-sign-in / cooldown feedback for paint & erase when unable to draw
+      if (!canDraw && (tool === 'paint' || tool === 'erase')) {
+        onPlace(cell.x, cell.y, tool === 'erase' ? 0 : activeColor)
+      }
+      return
+    }
+    if (intent.type === 'fill') {
+      onFill?.(intent.x, intent.y)
+      return
+    }
+    if (intent.type === 'pick') {
+      onPick?.(intent.x, intent.y)
+      return
+    }
+    isPointerDownRef.current = true
+    lastDragCellRef.current = cell
+    onStrokeStart?.()
+    for (const point of intent.points) {
+      onPlace(point.x, point.y, intent.color)
     }
   }
 
@@ -97,26 +133,42 @@ export function PixelCanvas({
     const cell = getCellFromEvent(e.clientX, e.clientY)
     setHoverCell(cell)
     onHoverCell?.(cell)
-    if (!canDraw || !isPointerDownRef.current || !cell) return
-    const prev = lastDragCellRef.current
-    if (prev && prev.x === cell.x && prev.y === cell.y) return
+    if (!isPointerDownRef.current || !cell) return
+    const intent = canvasIntent({
+      tool,
+      phase: 'move',
+      cell,
+      prevCell: lastDragCellRef.current,
+      activeColor,
+      canDraw,
+    })
+    if (intent.type !== 'place') return
     lastDragCellRef.current = cell
-    for (const point of prev ? strokeCells(prev, cell).slice(1) : [cell]) {
-      onPlace(point.x, point.y, activeColor)
+    for (const point of intent.points) {
+      onPlace(point.x, point.y, intent.color)
     }
   }
 
-  const handlePointerUpOrCancel = () => {
+  const endStroke = () => {
+    if (!isPointerDownRef.current) return
     isPointerDownRef.current = false
     lastDragCellRef.current = null
+    onStrokeEnd?.()
   }
 
   const handlePointerLeave = () => {
-    isPointerDownRef.current = false
-    lastDragCellRef.current = null
+    endStroke()
     setHoverCell(null)
     onHoverCell?.(null)
   }
+
+  const hoverBackground = hoverCell
+    ? tool === 'erase'
+      ? EMPTY_CANVAS[(hoverCell.x + hoverCell.y) % 2]
+      : tool === 'pick'
+        ? 'transparent'
+        : PALETTE[activeColor]
+    : undefined
 
   return (
     <div
@@ -136,8 +188,8 @@ export function PixelCanvas({
           height={height}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerUpOrCancel}
-          onPointerCancel={handlePointerUpOrCancel}
+          onPointerUp={endStroke}
+          onPointerCancel={endStroke}
           onPointerLeave={handlePointerLeave}
           className={`pixelated block touch-none select-none ${
             canDraw ? 'cursor-crosshair' : 'cursor-not-allowed'
@@ -159,7 +211,7 @@ export function PixelCanvas({
               top: `${(hoverCell.y / height) * 100}%`,
               width: `${100 / width}%`,
               height: `${100 / height}%`,
-              backgroundColor: PALETTE[activeColor],
+              backgroundColor: hoverBackground,
               opacity: 0.75,
             }}
           >
