@@ -1,6 +1,7 @@
 import { expect, test, type Page, type WebSocketRoute } from '@playwright/test'
 import { mkdir, readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import type { ServerMsg } from '../../src/game/protocol'
 
 test.skip(process.env.SCREENSHOTS !== '1', 'Run with SCREENSHOTS=1 to capture redesign screenshots')
 
@@ -218,7 +219,7 @@ test('capture playing room, lobby, overlay, landing, and home screenshots', asyn
           { userId: 'u3', name: 'Sam' },
         ],
         aiResting: false,
-      }),
+      } satisfies Extract<ServerMsg, { t: 'snapshot' }>),
     )
     socket.send(
       JSON.stringify({
@@ -283,6 +284,10 @@ test('capture playing room, lobby, overlay, landing, and home screenshots', asyn
   expect(check1440.askBottom).toBeLessThanOrEqual(900)
 
   await page.screenshot({ path: resolve(screenshotsDir, 'room-playing-1440x900.png') })
+  await page.getByRole('button', { name: 'Delete room', exact: true }).click()
+  await expect(page.getByRole('dialog')).toContainText('Delete room QX3J?')
+  await page.screenshot({ path: resolve(screenshotsDir, 'delete-room-confirm-1440x900.png'), animations: 'disabled' })
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click()
 
   // 2. Playing at 1280x720
   await page.setViewportSize({ width: 1280, height: 720 })
@@ -348,6 +353,9 @@ test('capture playing room, lobby, overlay, landing, and home screenshots', asyn
   )
   await expect(page.getByTestId('round-overlay')).toBeVisible()
   await page.screenshot({ path: resolve(screenshotsDir, 'room-overlay-1440x900.png') })
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await page.waitForTimeout(150)
+  await page.screenshot({ path: resolve(screenshotsDir, 'room-overlay-1280x720.png') })
   await page.setViewportSize({ width: 375, height: 812 })
   await page.waitForTimeout(150)
   await page.screenshot({ path: resolve(screenshotsDir, 'room-overlay-375x812.png') })
@@ -404,4 +412,8 @@ test('capture playing room, lobby, overlay, landing, and home screenshots', asyn
   expect(home375.docScrollWidth).toBeLessThanOrEqual(375)
   expect(home375.bodyScrollWidth).toBeLessThanOrEqual(375)
   await page.screenshot({ path: resolve(screenshotsDir, 'home-375x812.png') })
+  const roomName = page.getByTestId('room-card-QX3J').locator('.truncate')
+  expect(await roomName.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
+  await page.getByTestId('join-room-form').scrollIntoViewIfNeeded()
+  await page.screenshot({ path: resolve(screenshotsDir, 'home-controls-375x812.png') })
 })

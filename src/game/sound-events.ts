@@ -4,7 +4,7 @@ import type { RoundView } from './protocol'
 export type SoundName = 'guess' | 'tick' | 'win' | 'timeout'
 
 export function soundEventsFor(prev: ClientState, next: ClientState): SoundName[] {
-  if (!prev.snapshotLoaded || !next.snapshotLoaded || prev.snapshotSeq !== next.snapshotSeq || !prev.round || prev.round.id !== next.round?.id) return []
+  if (!prev.connected || !next.connected || next.connectError || !prev.snapshotLoaded || !next.snapshotLoaded || prev.snapshotSeq !== next.snapshotSeq || !prev.round || prev.round.id !== next.round?.id) return []
   if (prev.round.state === 'playing' && next.round.state !== 'playing') {
     if (next.round.result?.outcome === 'won' || next.round.result?.outcome === 'teamWin') return ['win']
   }
@@ -19,12 +19,17 @@ export function createCountdownGate() {
   let lastSnapshotSeq: number | undefined
   let lastSecond: number | null = null
   let live = false
+  let awaitingSnapshot = false
   return (state: ClientState, now: number): boolean => {
     const second = countdownTickSecond(state.round, now)
     if (!state.connected || !state.snapshotLoaded) {
       live = false
+      awaitingSnapshot = true
+      lastSnapshotSeq = state.snapshotSeq
       return false
     }
+    if (awaitingSnapshot && lastSnapshotSeq === state.snapshotSeq) return false
+    awaitingSnapshot = false
     const resync = !live || lastRoundId !== state.round?.id || lastSnapshotSeq !== state.snapshotSeq
     const play = !resync && second !== null && second !== lastSecond
     live = true

@@ -61,7 +61,7 @@ export function Palette({
               )}
               style={{
                 backgroundColor: hex,
-                boxShadow: isSelected ? 'inset 0 0 0 3px #fde68a' : undefined,
+                boxShadow: isSelected ? 'inset 0 0 0 3px var(--sunset-1)' : undefined,
                 zIndex: isSelected ? 10 : undefined,
               }}
             >

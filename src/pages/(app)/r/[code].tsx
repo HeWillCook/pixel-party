@@ -48,6 +48,9 @@ interface RoomRecord {
   isDefaultBoard: boolean
 }
 
+// Space for the canvas/palette gap, frame shadow and page bottom padding.
+const CANVAS_BOTTOM_CHROME_PX = 24
+
 interface RoundRecord {
   roomId: string
   roundId: string
@@ -199,12 +202,13 @@ export default function RoomPage() {
       if (!col) return
       const colWidth = col.clientWidth || Math.max(280, window.innerWidth - 32)
       const slot = canvasSlotRef.current
-      const topOffset = slot ? slot.getBoundingClientRect().top : 140
+      const topOffset = slot
+        ? slot.getBoundingClientRect().top + window.scrollY + (slot.closest('main')?.scrollTop ?? 0)
+        : 140
       const paletteH = paletteWrapRef.current
         ? paletteWrapRef.current.getBoundingClientRect().height
         : 36
-      // Reserve vertical space for topOffset (includes nav, header, any banners, roundBar) + palette + gap + bottom shadow/padding (~24px)
-      const usedHeight = topOffset + paletteH + 24
+      const usedHeight = topOffset + paletteH + CANVAS_BOTTOM_CHROME_PX
       const availHeight = Math.max(200, window.innerHeight - usedHeight)
       setAvailBox((prev) =>
         prev.width === colWidth && prev.height === availHeight
@@ -647,7 +651,6 @@ export default function RoomPage() {
               connected={state.connected}
               now={now}
               joinCode={joinCode}
-              roomName={roomDoc?.data.name}
               pixelsCount={pixelsCount}
             />
           </div>
@@ -683,93 +686,95 @@ export default function RoomPage() {
                       setDismissedOverlayRoundId(state.round.id)
                     }
                   }}
-                  className="absolute inset-0 z-20 flex flex-col items-center overflow-y-auto bg-background/90 p-4 text-center focus:outline-none"
+                  className="pp-results absolute inset-0 z-20 flex flex-col items-center overflow-hidden bg-background/90 p-4 text-center focus:outline-none"
                 >
-                  <div className="pp-panel my-auto flex w-full max-w-sm shrink-0 flex-col items-center gap-3 p-5">
-                    {outcome === 'won' ? (
-                      <>
-                        <div className="pp-chip flex h-12 w-12 items-center justify-center">
-                          <Trophy className="h-6 w-6 text-[var(--sunset-1)]" aria-hidden />
-                        </div>
-                        <span
-                          id="overlay-heading"
-                          className="pp-chip px-2.5 py-0.5 text-base uppercase tracking-widest"
-                        >
-                          AI Guessed It!
-                        </span>
-                      </>
-                    ) : (
-                      <>
-                        <div className="pp-chip flex h-12 w-12 items-center justify-center">
-                          <Clock className="h-6 w-6 text-[var(--sunset-2)]" aria-hidden />
-                        </div>
-                        <span
-                          id="overlay-heading"
-                          className="pp-chip px-2.5 py-0.5 text-base uppercase tracking-widest"
-                        >
-                          Time&apos;s Up!
-                        </span>
-                      </>
-                    )}
-
-                    <div>
-                      <p className="text-sm uppercase tracking-wider text-muted-foreground">
-                        The word was
-                      </p>
-                      <h2
-                        data-testid="overlay-word"
-                        className="pp-word mt-0.5 text-3xl uppercase"
-                      >
-                        {state.round.word}
-                      </h2>
-                    </div>
-
-                    <div className="grid w-full grid-cols-2 gap-2 border border-border bg-background/60 p-2.5 text-base">
-                      <div className="flex flex-col items-center">
-                        <span className="text-muted-foreground">Score</span>
-                        <span
-                          data-testid="overlay-score"
-                          className="mt-0.5 flex items-center gap-1 text-xl text-[var(--sunset-1)]"
-                        >
-                          <Award className="h-4 w-4" aria-hidden />
-                          {state.round.result?.score ?? 0} pts
-                        </span>
-                      </div>
-                      <div className="flex flex-col items-center">
-                        <span className="text-muted-foreground">Pixels Used</span>
-                        <span className="mt-0.5 text-xl text-foreground">
-                          {currentRoundDoc?.data.pixelsUsed ?? pixelsCount} px
-                        </span>
-                      </div>
-                    </div>
-
-                    <div
-                      data-testid="overlay-contributors"
-                      className="w-full border border-border bg-background/40 px-3 py-2 text-left"
-                    >
-                      <div className="mb-1 flex items-center gap-1.5 text-sm uppercase tracking-wider text-[var(--sunset-2)]">
-                        <Users className="h-3.5 w-3.5" aria-hidden />
-                        <span>Contributors</span>
-                      </div>
-                      {contributorInfo.names.length > 0 ? (
-                        <div className="flex flex-wrap gap-1.5">
-                          {contributorInfo.names.map((name, idx) => (
-                            <span
-                              key={`${name}-${idx}`}
-                              className="pp-chip px-2 py-0.5 text-sm"
-                            >
-                              {name}
-                            </span>
-                          ))}
-                        </div>
+                  <div className="pp-panel my-auto flex max-h-full min-h-0 w-full max-w-sm flex-col overflow-hidden">
+                    <div className="pp-results-body flex min-h-0 flex-col items-center gap-3 overflow-y-auto p-5">
+                      {outcome === 'won' ? (
+                        <>
+                          <div className="pp-results-icon pp-chip flex h-12 w-12 shrink-0 items-center justify-center">
+                            <Trophy className="h-6 w-6 text-[var(--sunset-1)]" aria-hidden />
+                          </div>
+                          <span
+                            id="overlay-heading"
+                            className="pp-chip px-2.5 py-0.5 text-base uppercase tracking-widest"
+                          >
+                            AI Guessed It!
+                          </span>
+                        </>
                       ) : (
-                        <p className="text-sm text-foreground">
-                          {contributorInfo.fallbackText}
-                        </p>
+                        <>
+                          <div className="pp-results-icon pp-chip flex h-12 w-12 shrink-0 items-center justify-center">
+                            <Clock className="h-6 w-6 text-[var(--sunset-2)]" aria-hidden />
+                          </div>
+                          <span
+                            id="overlay-heading"
+                            className="pp-chip px-2.5 py-0.5 text-base uppercase tracking-widest"
+                          >
+                            Time&apos;s Up!
+                          </span>
+                        </>
                       )}
-                    </div>
 
-                    <div className="mt-1 flex w-full flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
+                      <div>
+                        <p className="text-sm uppercase tracking-wider text-muted-foreground">
+                          The word was
+                        </p>
+                        <h2
+                          data-testid="overlay-word"
+                          className="pp-results-word pp-word mt-0.5 text-3xl uppercase"
+                        >
+                          {state.round.word}
+                        </h2>
+                      </div>
+
+                      <div className="grid w-full shrink-0 grid-cols-2 gap-2 border border-border bg-background/60 p-2.5 text-base">
+                        <div className="flex flex-col items-center">
+                          <span className="text-muted-foreground">Score</span>
+                          <span
+                            data-testid="overlay-score"
+                            className="mt-0.5 flex items-center gap-1 text-xl text-[var(--sunset-1)]"
+                          >
+                            <Award className="h-4 w-4" aria-hidden />
+                            {state.round.result?.score ?? 0} pts
+                          </span>
+                        </div>
+                        <div className="flex flex-col items-center">
+                          <span className="text-muted-foreground">Pixels Used</span>
+                          <span className="mt-0.5 text-xl text-foreground">
+                            {currentRoundDoc?.data.pixelsUsed ?? pixelsCount} px
+                          </span>
+                        </div>
+                      </div>
+
+                      <div
+                        data-testid="overlay-contributors"
+                        className="w-full shrink-0 border border-border bg-background/40 px-3 py-2 text-left"
+                      >
+                        <div className="mb-1 flex items-center gap-1.5 text-sm uppercase tracking-wider text-[var(--sunset-2)]">
+                          <Users className="h-3.5 w-3.5" aria-hidden />
+                          <span>Contributors</span>
+                        </div>
+                        {contributorInfo.names.length > 0 ? (
+                          <div className="flex flex-wrap gap-1.5">
+                            {contributorInfo.names.map((name, idx) => (
+                              <span
+                                key={`${name}-${idx}`}
+                                className="pp-chip px-2 py-0.5 text-sm"
+                              >
+                                {name}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-sm text-foreground">
+                            {contributorInfo.fallbackText}
+                          </p>
+                        )}
+                      </div>
+
+                    </div>
+                    <div className="pp-results-footer flex w-full shrink-0 flex-col items-center gap-2 border-t border-border bg-card p-3 text-sm text-muted-foreground">
                       <span>{canStart ? 'Ready when you are.' : 'Waiting for the host to start a new game.'}</span>
                       <div className="flex items-center gap-2">
                         <Button
@@ -789,6 +794,7 @@ export default function RoomPage() {
                           <Button
                             type="button"
                             size="sm"
+                            data-testid="overlay-next"
                             onClick={next}
                             className="pp-btn h-8 px-3 text-sm uppercase"
                           >

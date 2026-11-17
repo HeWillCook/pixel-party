@@ -121,7 +121,7 @@ export function PixelCanvas({
       className="pp-frame relative mx-auto inline-flex items-center justify-center"
     >
       <div
-        className="relative overflow-hidden"
+        className="relative overflow-hidden [container-type:inline-size]"
         style={{ width: `${cssWidth}px`, height: `${cssHeight}px` }}
       >
         <canvas

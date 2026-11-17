@@ -33,14 +33,14 @@ export function DeleteRoomButton({ joinCode, onDeleted }: { joinCode: string; on
 
   return (
     <Dialog open={open} onOpenChange={value => { if (!deleting) setOpen(value) }}>
-      <Button size="sm" variant="destructive" onClick={() => setOpen(true)}>Delete room</Button>
+      <Button size="sm" variant="secondary" className="pp-chip h-8 text-base uppercase" onClick={() => setOpen(true)}>Delete room</Button>
       <DialogContent hideClose={deleting}>
         <DialogTitle>Delete room {joinCode}?</DialogTitle>
         <DialogDescription>This ends the room for everyone. This code cannot be used again.</DialogDescription>
-        {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+        {error && <p role="alert" className="text-base text-[var(--sunset-2)]">{error}</p>}
         <DialogFooter>
-          <Button variant="secondary" disabled={deleting} onClick={() => setOpen(false)}>Cancel</Button>
-          <Button variant="destructive" loading={deleting} onClick={() => void remove()}>End room</Button>
+          <Button variant="secondary" className="pp-chip text-base uppercase" disabled={deleting} onClick={() => setOpen(false)}>Cancel</Button>
+          <Button className="pp-btn text-base uppercase" loading={deleting} onClick={() => void remove()}>End room</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

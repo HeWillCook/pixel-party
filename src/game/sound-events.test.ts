@@ -1,13 +1,37 @@
 import { describe, expect, it } from 'vitest'
-import { initialClientState } from './client-state'
+import { applyConnectError, applyServerMsg, initialClientState } from './client-state'
 import type { RoundView } from './protocol'
 import { countdownTickSecond, createCountdownGate, soundEventsFor } from './sound-events'
 
 const round: RoundView = { id: 'r1', word: 'cat', state: 'playing', startedAt: 0, endsAt: 10000, askAvailableAt: 0 }
-const loaded = { ...initialClientState(), snapshotLoaded: true, round }
+const loaded = { ...initialClientState(), connected: true, snapshotLoaded: true, round }
 const entry = { id: 1, atMs: 0, guesses: ['cat'], matched: false }
 
 describe('sound events', () => {
+  it('waits across repeated reconnect intervals until a fresh snapshot arrives', () => {
+    const tick = createCountdownGate()
+    const live = { ...loaded, snapshotSeq: 1 }
+    expect(tick(live, 4000)).toBe(false)
+    expect(tick(live, 5000)).toBe(true)
+    expect(tick({ ...live, connected: false }, 5250)).toBe(false)
+    expect(tick(live, 5500)).toBe(false)
+    expect(tick(live, 6000)).toBe(false)
+    expect(tick(live, 7000)).toBe(false)
+    const refreshed = { ...live, snapshotSeq: 2 }
+    expect(tick(refreshed, 7250)).toBe(false)
+    expect(tick(refreshed, 7500)).toBe(false)
+    expect(tick(refreshed, 8000)).toBe(true)
+  })
+  it('silences every event when disconnected, closing, or deleted', () => {
+    for (const outcome of ['won', 'timeout'] as const) {
+      const result = { ...loaded, connected: false, guessLog: [entry], round: { ...round, state: 'intermission' as const, result: { outcome } } }
+      expect(soundEventsFor(loaded, result)).toEqual([])
+    }
+    expect(soundEventsFor(loaded, { ...loaded, connected: false, guessLog: [entry] })).toEqual([])
+    expect(soundEventsFor(loaded, applyConnectError(loaded, 'closed'))).toEqual([])
+    expect(soundEventsFor(loaded, applyServerMsg(loaded, { t: 'closed' }))).toEqual([])
+    expect(soundEventsFor({ ...loaded, connected: false }, { ...loaded, guessLog: [entry] })).toEqual([])
+  })
   it('plays a new non-matching guess when the log rolls over', () => {
     const log = Array.from({ length: 50 }, (_, index) => ({ ...entry, id: 50 - index }))
     expect(soundEventsFor({ ...loaded, guessLog: log }, { ...loaded, guessLog: [{ ...entry, id: 51 }, ...log.slice(0, 49)] })).toEqual(['guess'])

@@ -7,7 +7,6 @@ export interface RoundBarProps {
   connected: boolean
   now: number
   joinCode: string
-  roomName?: string
   pixelsCount?: number
 }
 

@@ -5,15 +5,17 @@ import { createSfx } from '@/lib/sfx'
 
 export function useGameSounds(state: ClientState): { muted: boolean; toggleMute: () => void } {
   const [sfx] = useState(createSfx)
+  const [shouldTick] = useState(createCountdownGate)
   const [muted, setMuted] = useState(() => sfx.isMuted())
   const previous = useRef(state)
   const current = useRef(state)
   current.current = state
 
   useEffect(() => {
+    if (shouldTick(state, Date.now())) sfx.play('tick')
     for (const sound of soundEventsFor(previous.current, state)) sfx.play(sound)
     previous.current = state
-  }, [state, sfx])
+  }, [state, sfx, shouldTick])
 
   useEffect(() => {
     let active = true
@@ -34,12 +36,11 @@ export function useGameSounds(state: ClientState): { muted: boolean; toggleMute:
   }, [sfx])
 
   useEffect(() => {
-    const shouldTick = createCountdownGate()
     const interval = window.setInterval(() => {
       if (shouldTick(current.current, Date.now())) sfx.play('tick')
     }, 250)
     return () => window.clearInterval(interval)
-  }, [sfx])
+  }, [sfx, shouldTick])
 
   return { muted, toggleMute: () => { const next = !sfx.isMuted(); sfx.setMuted(next); setMuted(next) } }
 }

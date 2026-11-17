@@ -97,9 +97,44 @@
 .pp-btn:focus-visible,
 .pp-chip:focus-visible,
 a.pp-panel:focus-visible,
+[data-testid^="room-card-"]:focus-visible,
+a.pp-logo:focus-visible,
+nav a:focus-visible,
+[data-testid="visibility-public"]:focus-visible,
+[data-testid="visibility-private"]:focus-visible,
 [data-testid="palette"] button:focus-visible {
-  outline: 3px solid var(--sunset-1, #fde68a);
+  outline: 3px solid var(--sunset-1);
   outline-offset: 2px;
+}
+
+@container (max-width: 400px) {
+  .pp-results {
+    padding: 8px;
+  }
+
+  .pp-results-body {
+    gap: 6px;
+    padding: 8px;
+  }
+
+  .pp-results-icon {
+    display: none;
+  }
+
+  .pp-results-word {
+    font-size: 24px;
+    line-height: 1;
+  }
+
+  .pp-results-body #overlay-heading {
+    font-size: 14px;
+    letter-spacing: 1px;
+  }
+
+  .pp-results-footer {
+    gap: 4px;
+    padding: 8px;
+  }
 }
 
 .pp-word {

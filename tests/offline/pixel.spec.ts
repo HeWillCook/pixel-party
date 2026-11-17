@@ -1,6 +1,7 @@
 import { expect, test, type Page, type WebSocketRoute } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import type { ServerMsg } from '../../src/game/protocol'
 
 const origin = 'http://pixel.test'
 const clientDir = resolve(import.meta.dirname, '../../dist/client')
@@ -46,11 +47,11 @@ async function clientFixture(page: Page, options: { signedIn?: boolean; hostId?:
   return errors
 }
 
-function snapshot(state: 'playing' | 'lobby') {
+function snapshot(state: 'playing' | 'lobby'): Extract<ServerMsg, { t: 'snapshot' }> {
   return {
     t: 'snapshot', mode: 'coop', width: 32, height: 32, cells: Buffer.alloc(1024).toString('base64'),
     round: { id: state, word: state === 'playing' ? 'sun' : '', state, startedAt: Date.now(), endsAt: state === 'playing' ? Date.now() + 300000 : null, askAvailableAt: Date.now() + 10000 },
-    you: { userId: 'host', cooldownUntil: 0 }, players: 1, roster: [{ userId: 'host', name: 'Offline host' }], aiResting: false,
+    you: { userId: 'host', cooldownUntil: 0 }, players: 1, watching: 0, roster: [{ userId: 'host', name: 'Offline host' }], aiResting: false,
   }
 }
 
@@ -77,13 +78,18 @@ for (const viewport of [{ width: 375, height: 812 }, { width: 1280, height: 720 
     const overlay = page.getByTestId('round-overlay')
     const next = overlay.getByRole('button', { name: 'New game' })
     await expect(next).toBeVisible()
-    await next.scrollIntoViewIfNeeded()
-    const bounds = await next.boundingBox()
     const frame = await page.getByTestId('pixel-canvas').boundingBox()
-    expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(frame!.y + frame!.height)
+    const dismiss = page.getByTestId('overlay-dismiss')
+    for (const control of [dismiss, next]) {
+      const bounds = await control.boundingBox()
+      expect(bounds).not.toBeNull()
+      expect(bounds!.x).toBeGreaterThanOrEqual(Math.max(0, frame!.x))
+      expect(bounds!.y).toBeGreaterThanOrEqual(Math.max(0, frame!.y))
+      expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(Math.min(viewport.width, frame!.x + frame!.width))
+      expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(Math.min(viewport.height, frame!.y + frame!.height))
+    }
     await next.click()
     await expect.poll(() => messages.some(message => JSON.parse(message).t === 'next')).toBe(true)
-    const dismiss = page.getByTestId('overlay-dismiss')
     await dismiss.click()
     await expect(overlay).toHaveCount(0)
   })
@@ -96,10 +102,50 @@ test('selected swatch displays a separate keyboard focus outline', async ({ page
   const selected = page.locator('[data-testid="palette"] button[aria-pressed="true"]')
   await expect(selected).toBeVisible()
   const before = await selected.evaluate(element => getComputedStyle(element).outlineOffset)
-  await page.keyboard.press('Tab')
+  await page.keyboard.press('Shift')
   await selected.focus()
   await expect(selected).toHaveCSS('outline-offset', '2px')
   expect(before).not.toBe('2px')
+})
+
+test('navigation, logo and home visibility controls use the palette focus outline', async ({ page }) => {
+  await clientFixture(page, { signedIn: true })
+  await page.goto(`${origin}/home`)
+  const input = page.getByTestId('join-code-input')
+  await expect(input).toHaveAttribute('placeholder', 'Enter 4-char code')
+  await expect(input).toHaveAttribute('maxlength', '64')
+  await page.keyboard.press('Shift')
+  const controls = [
+    ...await page.getByTestId('app-navigation').getByRole('link').all(),
+    page.getByTestId('visibility-public'), page.getByTestId('visibility-private'),
+  ]
+  for (const control of controls) {
+    if (!await control.isVisible()) continue
+    await control.focus()
+    await expect(control).toHaveCSS('outline-width', '3px')
+    await expect(control).toHaveCSS('outline-style', 'solid')
+    await expect(control).toHaveCSS('outline-color', 'rgb(253, 230, 138)')
+    await expect(control).toHaveCSS('outline-offset', '2px')
+  }
+})
+
+test('canvas sizing stays stable when the room scroll container is scrolled before remeasurement', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await clientFixture(page, { signedIn: true })
+  await page.routeWebSocket('**/api/pixel/**', socket => socket.send(JSON.stringify(snapshot('playing'))))
+  await page.goto(`${origin}/r/AB2Z`)
+  const canvas = page.getByTestId('pixel-canvas')
+  await expect(canvas).toBeVisible()
+  await page.evaluate(() => document.fonts.ready)
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+  const originalWidth = (await canvas.boundingBox())!.width
+  await page.evaluate(() => {
+    document.querySelector<HTMLElement>('[data-testid="room-page"]')!.style.minHeight = '2000px'
+    document.querySelector('main')!.scrollTop = 100
+    window.dispatchEvent(new Event('resize'))
+  })
+  expect(await page.evaluate(() => document.querySelector('main')!.scrollTop)).toBe(100)
+  await expect.poll(async () => (await canvas.boundingBox())!.width).toBe(originalWidth)
 })
 
 test('audio unlock retries on a later interaction until the context runs', async ({ page }) => {
@@ -299,6 +345,10 @@ test('host deletion asks for confirmation, closes the board, and never reconnect
   await expect(page.getByTestId('pixel-canvas')).toBeVisible()
   await page.getByRole('button', { name: 'Delete room', exact: true }).click()
   await expect(page.getByRole('dialog')).toContainText('This ends the room for everyone.')
+  await expect(page.getByRole('dialog')).toHaveClass(/pp-panel/)
+  await expect(page.getByRole('dialog')).toHaveCSS('border-radius', '0px')
+  await expect(page.getByRole('button', { name: 'End room', exact: true })).toHaveClass(/pp-btn/)
+  await expect(page.getByRole('button', { name: 'Cancel', exact: true })).toHaveClass(/pp-chip/)
   await page.getByRole('button', { name: 'Cancel', exact: true }).click()
   expect(deletes).toBe(0)
   await page.getByRole('button', { name: 'Delete room', exact: true }).click()
@@ -333,6 +383,30 @@ for (const code of ['AB2Z', 'play']) {
     await page.getByRole('button', { name: 'New game', exact: true }).last().click()
     await expect(page.getByTestId('round-word')).toContainText('sun')
     expect(commands).toEqual(['next'])
+    expect(errors).toEqual([])
+  })
+}
+
+for (const hostConnected of [true, false]) {
+  test(`non-host cannot skip a live round and ${hostConnected ? 'cannot' : 'can'} start results when host is ${hostConnected ? 'present' : 'absent'}`, async ({ page }) => {
+    const errors = await clientFixture(page, { signedIn: true, hostId: 'other-host' })
+    let server!: WebSocketRoute
+    await page.routeWebSocket('**/api/pixel/**', socket => {
+      server = socket
+      const state = snapshot('playing')
+      socket.send(JSON.stringify({ ...state, roster: [
+        ...state.roster!, ...(hostConnected ? [{ userId: 'other-host', name: 'Other host' }] : []),
+      ] }))
+    })
+    await page.goto(`${origin}/r/AB2Z`)
+    await expect(page.getByTestId('pixel-canvas')).toBeVisible()
+    await expect(page.getByTestId('host-next-button')).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Delete room', exact: true })).toHaveCount(0)
+    server.send(JSON.stringify({ t: 'round', round: { ...snapshot('playing').round, state: 'intermission', endedAt: Date.now(), result: { outcome: 'timeout' } } }))
+    await expect(page.getByTestId('round-timer')).toHaveText('ROUND OVER')
+    await expect(page.getByTestId('round-overlay')).toBeVisible()
+    await expect(page.getByTestId('overlay-next')).toHaveCount(hostConnected ? 0 : 1)
+    if (hostConnected) await expect(page.getByTestId('round-overlay')).toContainText('Waiting for the host to start a new game.')
     expect(errors).toEqual([])
   })
 }

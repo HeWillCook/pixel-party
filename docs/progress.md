@@ -382,3 +382,23 @@ AI image generation (the point is humans draw), ElevenLabs announcer (gimmick).
   prerender); `npx playwright test --config tests/offline.playwright.config.ts` PASS (9 tests, 3.1s).
   The four fewer unit tests are the removed routing-workaround cases. No deploy or push commands were run.
 - Provider: investigation, focused rollback, coverage and verification by Codex (implementation sub-agent).
+
+## 2026-11-17: Redesign merged with main and review findings closed
+
+- Merged `origin/main` (`fb45ffd`) into the redesign branch with merge commit `3fb7ba5`.
+  Resolved six textual conflicts by preserving main's room-code, lifecycle, permission,
+  routing and explicit-start behavior alongside the redesign's layout and state additions.
+- Results now keep View Canvas/New game in a fixed, non-scrolling card footer with compact
+  narrow-board content. Countdown audio waits for a fresh reconnect snapshot; disconnected
+  and terminal states stay silent. Preserved main's four-character invite copy and removed
+  the dead RoundBar room-name prop; canvas measurement now accounts for document/main scroll.
+- Delete-room controls/dialog, mobile host-room cards and nav/logo/toggle focus are consistent
+  with VT323, square panels and Sunset tokens. Protected palette, judge, scoring and budget
+  files are unchanged from main. The dependency lockfile was unchanged, so no reinstall.
+- Verification: `npm run verify` PASS (lint, TypeScript, 263 unit tests across 24 files,
+  Worker/client builds and prerender); offline Playwright PASS (19 tests, 1 intentionally
+  gated screenshot capture); explicit screenshot run PASS with all 13 captures inspected.
+  Both 375×812 and 1280×720 results-control bounds tests run in the ordinary offline suite.
+- Full conflict audit, per-finding tests, logs and screenshot list:
+  `.superpowers/sdd/2026-11-17-pixel-redesign/merge-and-fix-report.md`.
+- No push, deployment, PR or nested agents. Implementation and verification by Codex.

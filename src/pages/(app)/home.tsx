@@ -270,35 +270,39 @@ export default function HomePage() {
               </div>
             ) : (
               livePublicRooms.map((room) => (
-                <div key={room.recordId} className="pp-panel flex items-center gap-3 pr-4">
-                <Link
-                  to={`/r/${room.data.joinCode}`}
-                  data-testid={`room-card-${room.data.joinCode}`}
-                  className="group min-w-0 flex-1 flex items-center justify-between gap-4 p-4 transition-colors hover:border-[var(--sunset-1)]"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="truncate text-xl uppercase text-foreground group-hover:text-[var(--sunset-1)]">
-                        {room.data.name}
-                      </span>
-                      <Badge variant="secondary" className="pp-chip text-sm uppercase">
-                        {room.data.status}
-                      </Badge>
+                <div key={room.recordId} className="pp-panel flex flex-col items-stretch sm:flex-row sm:items-center sm:gap-3 sm:pr-4">
+                  <Link
+                    to={`/r/${room.data.joinCode}`}
+                    data-testid={`room-card-${room.data.joinCode}`}
+                    className="group flex min-w-0 flex-1 items-center justify-between gap-4 p-4 transition-colors"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="truncate text-xl uppercase text-foreground group-hover:text-[var(--sunset-1)]">
+                          {room.data.name}
+                        </span>
+                        <Badge variant="secondary" className="pp-chip text-sm uppercase">
+                          {room.data.status}
+                        </Badge>
+                      </div>
+                      <p className="mt-0.5 text-base text-muted-foreground">
+                        Code: <code className="text-[var(--sunset-1)]">{room.data.joinCode}</code> • Co-op 32×32
+                      </p>
                     </div>
-                    <p className="mt-0.5 text-base text-muted-foreground">
-                      Code: <code className="text-[var(--sunset-1)]">{room.data.joinCode}</code> • Co-op 32×32
-                    </p>
-                  </div>
 
-                  <div className="flex items-center gap-3">
-                    <span className="pp-chip inline-flex items-center gap-1.5 px-2.5 py-0.5 text-base">
-                      <Users className="h-4 w-4 text-[var(--sunset-1)]" aria-hidden />
-                      {room.data.playerCount ?? 0}
-                    </span>
-                    <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-1 group-hover:text-[var(--sunset-1)]" />
-                  </div>
-                </Link>
-                {user?.id === room.data.hostId && <DeleteRoomButton joinCode={room.data.joinCode} onDeleted={() => setDeletedRooms(previous => [...previous, room.recordId])} />}
+                    <div className="flex items-center gap-3">
+                      <span className="pp-chip inline-flex items-center gap-1.5 px-2.5 py-0.5 text-base">
+                        <Users className="h-4 w-4 text-[var(--sunset-1)]" aria-hidden />
+                        {room.data.playerCount ?? 0}
+                      </span>
+                      <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-1 group-hover:text-[var(--sunset-1)]" />
+                    </div>
+                  </Link>
+                  {user?.id === room.data.hostId && (
+                    <div className="flex justify-end px-4 pb-4 sm:p-0">
+                      <DeleteRoomButton joinCode={room.data.joinCode} onDeleted={() => setDeletedRooms(previous => [...previous, room.recordId])} />
+                    </div>
+                  )}
                 </div>
               ))
             )}
@@ -352,7 +356,7 @@ export default function HomePage() {
                   data-testid="visibility-public"
                   disabled={!mutationsReady || creating}
                   onClick={() => setVisibility('public')}
-                  className={`flex items-center justify-center gap-1.5 border-2 px-3 py-2 text-base uppercase transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                  className={`flex items-center justify-center gap-1.5 border-2 px-3 py-2 text-base uppercase transition-colors ${
                     visibility === 'public'
                       ? 'border-[var(--sunset-1)] bg-secondary text-[var(--sunset-1)]'
                       : 'border-border bg-secondary/40 text-muted-foreground hover:text-foreground'
@@ -366,7 +370,7 @@ export default function HomePage() {
                   data-testid="visibility-private"
                   disabled={!mutationsReady || creating}
                   onClick={() => setVisibility('private')}
-                  className={`flex items-center justify-center gap-1.5 border-2 px-3 py-2 text-base uppercase transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                  className={`flex items-center justify-center gap-1.5 border-2 px-3 py-2 text-base uppercase transition-colors ${
                     visibility === 'private'
                       ? 'border-[var(--sunset-1)] bg-secondary text-[var(--sunset-1)]'
                       : 'border-border bg-secondary/40 text-muted-foreground hover:text-foreground'
