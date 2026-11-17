@@ -263,11 +263,27 @@ export function applyServerMsg(s: ClientState, m: ServerMsg, now: number = Date.
       if (isPlacementReject && pending.size > 0) {
         // Batches identify the rejected cell; retain FIFO compatibility with older servers.
         const idx = m.x === undefined || m.y === undefined ? undefined : m.y * s.width + m.x
-        const firstEntry = idx === undefined
-          ? pending.entries().next().value as [number, number] | undefined
-          : pending.has(idx) ? [idx, pending.get(idx)!] : undefined
-        if (firstEntry) {
-          const [entryIdx, prevColor] = firstEntry
+        let entry: [number, number] | undefined
+        if (m.id !== undefined) {
+          if (idx !== undefined) {
+            if (pending.has(idx) && pendingIds.get(idx) === m.id) {
+              entry = [idx, pending.get(idx)!]
+            }
+          } else {
+            for (const [pendingIdx, pendingId] of pendingIds.entries()) {
+              if (pendingId === m.id && pending.has(pendingIdx)) {
+                entry = [pendingIdx, pending.get(pendingIdx)!]
+                break
+              }
+            }
+          }
+        } else {
+          entry = idx === undefined
+            ? pending.entries().next().value as [number, number] | undefined
+            : pending.has(idx) ? [idx, pending.get(idx)!] : undefined
+        }
+        if (entry) {
+          const [entryIdx, prevColor] = entry
           rejectedIdx = entryIdx
           rejectedId = pendingIds.get(entryIdx)
           cells[entryIdx] = prevColor
@@ -276,11 +292,13 @@ export function applyServerMsg(s: ClientState, m: ServerMsg, now: number = Date.
         }
       }
 
-      const clearsProvisional =
+      const settlesProvisional =
         s.provisionalCooldown !== null &&
-        rejectedIdx !== undefined &&
-        s.provisionalCooldown.idx === rejectedIdx &&
-        s.provisionalCooldown.id === rejectedId
+        (m.id === undefined
+          ? rejectedIdx !== undefined &&
+            s.provisionalCooldown.idx === rejectedIdx &&
+            s.provisionalCooldown.id === rejectedId
+          : s.provisionalCooldown.id === m.id)
 
       const you =
         (m.reason === 'cooldown' || m.reason === 'rate_limited') && m.retryAt !== undefined
@@ -300,7 +318,7 @@ export function applyServerMsg(s: ClientState, m: ServerMsg, now: number = Date.
         cells,
         pending,
         pendingIds,
-        provisionalCooldown: clearsProvisional ? null : s.provisionalCooldown,
+        provisionalCooldown: settlesProvisional ? null : s.provisionalCooldown,
         you,
         round,
         lastReject: m,

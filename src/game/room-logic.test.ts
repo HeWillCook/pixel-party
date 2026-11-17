@@ -192,9 +192,9 @@ describe('room logic', () => {
   it('erase during cooldown is rejected', () => {
     const s1 = applyPlacement(room(), { x: 0, y: 0, c: 4, userId: 'a' }, 2000, 2).state
     const s2 = applyPlacement(s1, { x: 1, y: 0, c: 5, userId: 'b' }, 2000, 2).state
-    const rejected = applyPlacement(s2, { x: 1, y: 0, c: 0, userId: 'a' }, 2001, 2)
+    const rejected = applyPlacement(s2, { x: 1, y: 0, c: 0, userId: 'a', id: 21 }, 2001, 2)
     expect(rejected.events).toEqual([
-      expect.objectContaining({ type: 'reject', reason: 'cooldown', x: 1, y: 0 }),
+      expect.objectContaining({ type: 'reject', reason: 'cooldown', x: 1, y: 0, id: 21 }),
     ])
     expect(rejected.state.grid.cells[1]).toBe(5)
   })

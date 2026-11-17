@@ -29,7 +29,7 @@ export type ServerMsg =
   | { t: 'snapshot'; mode: Mode; width: number; height: number; cells: string; round: RoundView; you: { userId: string | null; cooldownUntil: number; team?: 'red' | 'blue' }; players: number; roster?: ConnectedPlayer[]; watching?: number; aiResting: boolean }
   | { t: 'pixel'; x: number; y: number; c: number; by: string }
   | { t: 'noop'; x: number; y: number; id?: number }
-  | { t: 'reject'; reason: RejectReason | 'ask_too_soon' | 'not_host' | 'canvas_unchanged'; retryAt?: number; x?: number; y?: number }
+  | { t: 'reject'; reason: RejectReason | 'ask_too_soon' | 'not_host' | 'canvas_unchanged'; retryAt?: number; x?: number; y?: number; id?: number }
   | { t: 'round'; round: RoundView }
   | { t: 'judgement'; zone: ZoneId; guesses: string[]; confidence: number; matched: boolean }
   | { t: 'players'; count: number; roster?: ConnectedPlayer[]; watching?: number }
@@ -47,6 +47,18 @@ const SERVER_MSG_TYPES = new Set([
   'ai_resting',
 ])
 
+const REJECT_REASONS = new Set<string>([
+  'not_signed_in',
+  'round_inactive',
+  'out_of_bounds',
+  'bad_color',
+  'cooldown',
+  'rate_limited',
+  'ask_too_soon',
+  'not_host',
+  'canvas_unchanged',
+])
+
 function isValidPlacementId(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
 }
@@ -61,9 +73,9 @@ export function parseServerMsg(raw: string): ServerMsg | null {
         !('x' in value) ||
         !('y' in value) ||
         typeof value.x !== 'number' ||
-        !Number.isFinite(value.x) ||
+        !Number.isInteger(value.x) ||
         typeof value.y !== 'number' ||
-        !Number.isFinite(value.y)
+        !Number.isInteger(value.y)
       ) {
         return null
       }
@@ -72,6 +84,32 @@ export function parseServerMsg(raw: string): ServerMsg | null {
         return { t: 'noop', x: value.x, y: value.y, id: value.id }
       }
       return { t: 'noop', x: value.x, y: value.y }
+    }
+    if (value.t === 'reject') {
+      if (!('reason' in value) || typeof value.reason !== 'string' || !REJECT_REASONS.has(value.reason)) {
+        return null
+      }
+      const msg: Extract<ServerMsg, { t: 'reject' }> = {
+        t: 'reject',
+        reason: value.reason as Extract<ServerMsg, { t: 'reject' }>['reason'],
+      }
+      if ('retryAt' in value && value.retryAt !== undefined) {
+        if (typeof value.retryAt !== 'number' || !Number.isFinite(value.retryAt)) return null
+        msg.retryAt = value.retryAt
+      }
+      if ('x' in value && value.x !== undefined) {
+        if (typeof value.x !== 'number' || !Number.isInteger(value.x)) return null
+        msg.x = value.x
+      }
+      if ('y' in value && value.y !== undefined) {
+        if (typeof value.y !== 'number' || !Number.isInteger(value.y)) return null
+        msg.y = value.y
+      }
+      if ('id' in value && value.id !== undefined) {
+        if (!isValidPlacementId(value.id)) return null
+        msg.id = value.id
+      }
+      return msg
     }
     return value as ServerMsg
   } catch {

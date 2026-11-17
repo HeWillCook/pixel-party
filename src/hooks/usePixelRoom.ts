@@ -167,6 +167,12 @@ export function usePixelRoom(joinCode: string): UsePixelRoomResult {
             lastSendAtRef.current = provisionalRef.current.prevLastSendAt
             provisionalRef.current = null
           }
+        } else if (msg.t === 'reject') {
+          if (provisionalRef.current && msg.id !== undefined && provisionalRef.current.id === msg.id) {
+            lastSendAtRef.current =
+              msg.retryAt !== undefined ? -Infinity : provisionalRef.current.prevLastSendAt
+            provisionalRef.current = null
+          }
         }
         setState((prev) => {
           const updated = applyServerMsg(prev, msg)
@@ -271,10 +277,21 @@ export function usePixelRoom(joinCode: string): UsePixelRoomResult {
           for (let i = 0; i < queued.length; i += MAX_PLACE_BATCH) {
             const cells = queued.slice(i, i + MAX_PLACE_BATCH)
             if (!sendMsg({ t: 'place', cells })) {
-              provisionalRef.current = null
+              if (provisionalRef.current && cells.some(cell => cell.id === provisionalRef.current?.id)) {
+                lastSendAtRef.current = provisionalRef.current.prevLastSendAt
+                provisionalRef.current = null
+              }
               setState(prev => {
                 let updated = prev
-                for (const cell of cells) updated = applyServerMsg(updated, { t: 'reject', reason: 'round_inactive', x: cell.x, y: cell.y })
+                for (const cell of cells) {
+                  updated = applyServerMsg(updated, {
+                    t: 'reject',
+                    reason: 'round_inactive',
+                    x: cell.x,
+                    y: cell.y,
+                    ...(cell.id === undefined ? {} : { id: cell.id }),
+                  })
+                }
                 stateRef.current = updated
                 return updated
               })

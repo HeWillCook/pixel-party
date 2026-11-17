@@ -28,9 +28,43 @@ describe('parseServerMsg', () => {
       '{"t":"unknown"}',
       '{"t":"noop"}',
       '{"t":"noop","x":"3","y":4}',
+      '{"t":"noop","x":3.5,"y":4}',
+      '{"t":"noop","x":3,"y":4.5}',
       '{"t":"noop","x":3,"y":null}',
       '{"t":"noop","x":3,"y":4,"id":-1}',
       '{"t":"noop","x":3,"y":4,"id":"1"}',
+    ]) {
+      expect(parseServerMsg(bad)).toBeNull()
+    }
+  })
+
+  it('parses reject messages keeping optional id, retryAt, and integer coords while rejecting malformed payloads', () => {
+    expect(parseServerMsg(JSON.stringify({ t: 'reject', reason: 'not_signed_in' }))).toEqual({ t: 'reject', reason: 'not_signed_in' })
+    expect(parseServerMsg(JSON.stringify({ t: 'reject', reason: 'cooldown', x: 2, y: 5, retryAt: 2500, id: 4, extra: 'ignored' }))).toEqual({
+      t: 'reject',
+      reason: 'cooldown',
+      x: 2,
+      y: 5,
+      retryAt: 2500,
+      id: 4,
+    })
+    expect(parseServerMsg(JSON.stringify({ t: 'reject', reason: 'out_of_bounds', x: -1, y: 0, id: 0 }))).toEqual({
+      t: 'reject',
+      reason: 'out_of_bounds',
+      x: -1,
+      y: 0,
+      id: 0,
+    })
+    for (const bad of [
+      '{"t":"reject"}',
+      '{"t":"reject","reason":"bogus"}',
+      '{"t":"reject","reason":"cooldown","x":1.5,"y":2}',
+      '{"t":"reject","reason":"cooldown","x":1,"y":2.5}',
+      '{"t":"reject","reason":"cooldown","x":"1","y":2}',
+      '{"t":"reject","reason":"cooldown","retryAt":null}',
+      '{"t":"reject","reason":"cooldown","id":-1}',
+      '{"t":"reject","reason":"cooldown","id":1.5}',
+      '{"t":"reject","reason":"cooldown","id":"4"}',
     ]) {
       expect(parseServerMsg(bad)).toBeNull()
     }

@@ -296,7 +296,7 @@ export class PixelRoom extends BaseRoom<Env> {
           await this.statusWrite
           break
         case 'noop': if (sender) this.sendGame(sender, { t: 'noop', x: event.x, y: event.y, ...(event.id === undefined ? {} : { id: event.id }) }); break
-        case 'reject': if (sender) this.sendGame(sender, { t: 'reject', reason: event.reason, x: event.x, y: event.y, ...(event.retryAt === undefined ? {} : { retryAt: event.retryAt }) }); break
+        case 'reject': if (sender) this.sendGame(sender, { t: 'reject', reason: event.reason, x: event.x, y: event.y, ...(event.retryAt === undefined ? {} : { retryAt: event.retryAt }), ...(event.id === undefined ? {} : { id: event.id }) }); break
         default: {
           const { type, ...payload } = event
           this.broadcastGame({ t: type, ...payload } as ServerMsg)

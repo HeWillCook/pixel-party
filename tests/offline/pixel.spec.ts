@@ -652,3 +652,46 @@ test('party noop clears provisional cooldown so next paint sends immediately', a
   expect(sent.flat().some(cell => cell.x === 6 && cell.y === 6)).toBe(false)
   expect(errors).toEqual([])
 })
+
+test('party reject with id settles provisional cooldown after peer pixel and respects retryAt', async ({ page }) => {
+  const errors = await clientFixture(page, { signedIn: true })
+  const sent: { x: number; y: number; c: number; id?: number }[][] = []
+  await page.routeWebSocket('**/api/pixel/**', socket => {
+    socket.send(JSON.stringify({ ...snapshot('playing'), players: 2 }))
+    socket.onMessage(raw => {
+      const message = JSON.parse(String(raw))
+      if (message.t !== 'place') return
+      sent.push(message.cells)
+      const [first] = message.cells as { x: number; y: number; c: number; id?: number }[]
+      if (first?.id === 1) {
+        socket.send(JSON.stringify({ t: 'pixel', x: first.x, y: first.y, c: 9, by: 'peer' }))
+        socket.send(JSON.stringify({ t: 'reject', reason: 'cooldown', x: first.x, y: first.y, id: first.id, retryAt: Date.now() - 10 }))
+      } else if (first) {
+        socket.send(JSON.stringify({ t: 'pixel', x: first.x, y: first.y, c: first.c, by: 'host' }))
+      }
+    })
+  })
+  await page.goto(`${origin}/r/AB2Z`)
+  const canvas = page.getByTestId('pixel-canvas')
+  await expect(canvas).toBeVisible()
+
+  const box = (await canvas.boundingBox())!
+  const point = (x: number, y: number) => ({ x: box.x + box.width * (x + 0.5) / 32, y: box.y + box.height * (y + 0.5) / 32 })
+
+  // Paint (2, 2) starting 2s provisional cooldown; peer supersedes cell before reject(id=1) arrives
+  await canvas.dispatchEvent('pointerdown', { clientX: point(2, 2).x, clientY: point(2, 2).y, pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1 })
+  await canvas.dispatchEvent('pointerup', { pointerId: 1, pointerType: 'mouse' })
+  await expect.poll(() => sent.flat()).toContainEqual({ x: 2, y: 2, c: 4, id: 1 })
+  await expect.poll(() => pixelColor(page, 2, 2)).toEqual([6, 182, 212, 255])
+
+  // Wait for reject handling (banner triggers resize), then paint (4, 4) immediately without waiting 2s
+  await expect(page.getByTestId('reject-notice')).toBeVisible()
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+  const updatedBox = (await canvas.boundingBox())!
+  const updatedPoint = (x: number, y: number) => ({ x: updatedBox.x + updatedBox.width * (x + 0.5) / 32, y: updatedBox.y + updatedBox.height * (y + 0.5) / 32 })
+  await canvas.dispatchEvent('pointerdown', { clientX: updatedPoint(4, 4).x, clientY: updatedPoint(4, 4).y, pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1 })
+  await canvas.dispatchEvent('pointerup', { pointerId: 1, pointerType: 'mouse' })
+  await expect.poll(() => sent.flat()).toContainEqual({ x: 4, y: 4, c: 4, id: 2 })
+  await expect.poll(() => pixelColor(page, 4, 4)).toEqual([239, 68, 68, 255])
+  expect(errors).toEqual([])
+})

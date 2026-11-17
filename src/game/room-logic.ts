@@ -39,7 +39,7 @@ export type RoomStatusEvent = { roomId: string; status: RoomState['status']; pla
 export type RoomEvent =
   | { type: 'pixel'; x: number; y: number; c: number; by: string }
   | { type: 'noop'; x: number; y: number; id?: number }
-  | { type: 'reject'; reason: RejectReason; retryAt?: number; x?: number; y?: number }
+  | { type: 'reject'; reason: RejectReason; retryAt?: number; x?: number; y?: number; id?: number }
   | { type: 'judgement'; zone: ZoneId; guesses: string[]; confidence: number; matched: boolean }
   | { type: 'round'; round: RoundView }
   | { type: 'cleared' }
@@ -72,9 +72,9 @@ export function applyPlacement(s: RoomState, p: { x: number; y: number; c: numbe
     return { state: s, events: [{ type: 'noop', x: p.x, y: p.y, ...(p.id === undefined ? {} : { id: p.id }) }] }
   }
   const valid = validatePlacement({ width: s.grid.width, height: s.grid.height, x: p.x, y: p.y, color: p.c, userId: p.userId, roundPlaying, lastPlacedAt: p.userId === null ? undefined : s.lastPlacedAt[p.userId], now, playersConnected })
-  if (!valid.ok) return { state: s, events: [{ type: 'reject', x: p.x, y: p.y, reason: valid.reason, ...(valid.retryAt === undefined ? {} : { retryAt: valid.retryAt }) }] }
+  if (!valid.ok) return { state: s, events: [{ type: 'reject', x: p.x, y: p.y, reason: valid.reason, ...(valid.retryAt === undefined ? {} : { retryAt: valid.retryAt }), ...(p.id === undefined ? {} : { id: p.id }) }] }
   const token = playersConnected <= 1 ? consumeSoloToken(s.soloBuckets[p.userId!], now) : null
-  if (token && !token.ok) return { state: s, events: [{ type: 'reject', reason: 'rate_limited', retryAt: token.retryAt, x: p.x, y: p.y }] }
+  if (token && !token.ok) return { state: s, events: [{ type: 'reject', reason: 'rate_limited', retryAt: token.retryAt, x: p.x, y: p.y, ...(p.id === undefined ? {} : { id: p.id }) }] }
   const soloBuckets = Object.fromEntries(Object.entries(s.soloBuckets).filter(([, bucket]) => bucket.updatedAt >= now - 1000))
   if (token?.ok) soloBuckets[p.userId!] = token.bucket
   const grid = { ...s.grid, cells: s.grid.cells.slice(), placedBy: [...s.grid.placedBy] }

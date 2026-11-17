@@ -764,8 +764,8 @@ describe('durable room boundaries', () => {
     expect(messages(bob)).toEqual([])
     expect(sql.mock.calls.filter(([query]) => query.startsWith('INSERT'))).toHaveLength(0)
 
-    await harness.room.command(alice.connection, { t: 'place', x: 2, y: 2, c: 0 })
-    expect(messages(alice).at(-1)).toMatchObject({ t: 'reject', reason: 'cooldown', x: 2, y: 2 })
+    await harness.room.command(alice.connection, { t: 'place', x: 2, y: 2, c: 0, id: 9 })
+    expect(messages(alice).at(-1)).toMatchObject({ t: 'reject', reason: 'cooldown', x: 2, y: 2, id: 9 })
 
     // After cooldown expires, erasing bob's pixel clears cell and attribution
     vi.setSystemTime(Date.now() + 2500)

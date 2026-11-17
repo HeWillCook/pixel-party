@@ -484,3 +484,55 @@ it('noop clears only its own pending entry', () => {
   expect(s.pending.has(8 * 32 + 8)).toBe(true)
   expect(s.provisionalCooldown).toEqual({ id: 4, idx: 8 * 32 + 8, until: 7000 })
 })
+
+it('reject settles provisional cooldown by id after a peer pixel supersedes the cell and respects retryAt', () => {
+  const rawCells = new Uint8Array(32 * 32)
+  const idx = 4 * 32 + 3
+  let s = applyServerMsg(initialClientState(), {
+    t: 'snapshot',
+    mode: 'coop',
+    width: 32,
+    height: 32,
+    cells: encodeCells(rawCells),
+    round: makeRound('r1'),
+    you: { userId: 'user-a', cooldownUntil: 0 },
+    players: 2,
+    aiResting: false,
+  })
+
+  // Placement id=1 starts provisional cooldown until 5000 on (3,4)
+  s = applyOptimisticPlace(s, 3, 4, 4, { id: 1, provisionalCooldownUntil: 5000 })
+  expect(s.pending.has(idx)).toBe(true)
+  expect(s.pendingIds.get(idx)).toBe(1)
+  expect(effectiveCooldownUntil(s)).toBe(5000)
+
+  // Peer pixel on the same cell clears pending and pendingIds before reject arrives
+  s = applyServerMsg(s, { t: 'pixel', x: 3, y: 4, c: 9, by: 'user-b' })
+  expect(s.cells[idx]).toBe(9)
+  expect(s.pending.has(idx)).toBe(false)
+  expect(s.pendingIds.has(idx)).toBe(false)
+  expect(s.provisionalCooldown).toEqual({ id: 1, idx, until: 5000 })
+
+  // Cooldown reject arrives with id=1 and earlier retryAt=3500 -> provisional cleared, retryAt respected, peer pixel kept
+  s = applyServerMsg(s, { t: 'reject', reason: 'cooldown', x: 3, y: 4, retryAt: 3500, id: 1 })
+  expect(s.cells[idx]).toBe(9)
+  expect(s.provisionalCooldown).toBeNull()
+  expect(s.you.cooldownUntil).toBe(3500)
+  expect(effectiveCooldownUntil(s)).toBe(3500)
+
+  // Reject without retryAt after peer supersedes cell also clears provisional cooldown and restores prior authoritative cooldown
+  s = applyOptimisticPlace(s, 5, 5, 6, { id: 2, provisionalCooldownUntil: 8000 })
+  s = applyServerMsg(s, { t: 'pixel', x: 5, y: 5, c: 7, by: 'user-b' })
+  s = applyServerMsg(s, { t: 'reject', reason: 'round_inactive', x: 5, y: 5, id: 2 })
+  expect(s.provisionalCooldown).toBeNull()
+  expect(effectiveCooldownUntil(s)).toBe(3500)
+
+  // Stale reject with old id=1 must not roll back newer pending cell or clear newer provisional cooldown on same cell
+  const idx3 = 6 * 32 + 6
+  s = applyOptimisticPlace(s, 6, 6, 4, { id: 3, provisionalCooldownUntil: 9000 })
+  s = applyServerMsg(s, { t: 'reject', reason: 'round_inactive', x: 6, y: 6, id: 1 })
+  expect(s.cells[idx3]).toBe(4)
+  expect(s.pending.has(idx3)).toBe(true)
+  expect(s.pendingIds.get(idx3)).toBe(3)
+  expect(s.provisionalCooldown).toEqual({ id: 3, idx: idx3, until: 9000 })
+})
