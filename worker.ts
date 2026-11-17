@@ -19,9 +19,6 @@ import {
   YjsRoom,
 } from 'deepspace/worker'
 import type { DOBindings, DOManifest, Job, JobContext } from 'deepspace/worker'
-import { AI_CHATS_SCHEMA } from 'deepspace/schema'
-import { registerAgent } from './src/ai/agent.js'
-import { buildTools } from './src/ai/tools.js'
 import { tasks as cronTasks, runTask as runCronTask } from './src/cron.js'
 import { runJob } from './src/jobs.js'
 import { schemas } from './src/schemas.js'
@@ -135,16 +132,12 @@ app.use('*', async (c, next) => {
 })
 
 // Registration order is part of the worker contract. The wildcard auth route
-// follows its special cases, AI precedes platform proxies, and static is last.
+// follows its special cases, platform proxies follow app routes, and static is last.
 registerAuthAndIntegrationRoutes(app)
 registerRealtimeRoutes(app)
 registerActionRoutes(app, resolveAuth)
-// Every scaffold exposes selected tools through HTTP, MCP and browser tools.
-// Only copilot owns the collections needed for the in-app chat UI.
-registerAgent(app, {
-  tools: buildTools,
-  inApp: schemas.some((schema) => schema.name === AI_CHATS_SCHEMA.name),
-})
+// Pixel Party has no website chat or local/browser agent surface. Leave
+// registerAgent unmounted so these routes cannot bypass the game's AI budget.
 registerPlatformProxyRoutes(app)
 registerStaticRoutes(app)
 

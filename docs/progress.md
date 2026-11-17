@@ -156,6 +156,16 @@ AI image generation (the point is humans draw), ElevenLabs announcer (gimmick).
     Dev server stopped; task-generated `.dev.vars` removed; no `.dev.vars` remains in build output.
     No deploy, push, transfer, collaborator change, app init, or undeploy was run during this continuation.
 
+- **2026-11-16: Task 1 review fix round 1 (M1/M2/M3/M6/M7/M8).** Client integrations now deny
+  access with HTTP 403 unless explicitly configured with `client: true`; no integration opts in and the
+  redundant Anthropic entry is removed. Website chat and local/browser HTTP/MCP agent registrations are
+  unmounted, preventing a client bypass of PixelRoom's future AI budget. Empty action/cron registries,
+  no-op jobs, metadata/auth/file/payment proxies and realtime routes contain no other integration/AI spend path.
+  Server tools return ActionResult failures for fetch/JSON/null failures and reject missing owner credentials.
+  CI has read-only contents permission and cancels superseded runs; merged scaffold guidance now states the
+  GitHub source rule. Covering tests: **31 tests / 3 files**; full `npm run verify`: **34 tests / 5 files**,
+  lint, type-check and Worker/client builds pass. No paid probe or deployment was repeated. M4/M5 remain deferred.
+
 ## Spikes (throwaway tests)
 
 | # | Question | Status | Result |
@@ -178,7 +188,8 @@ AI image generation (the point is humans draw), ElevenLabs announcer (gimmick).
 
 | Task | Commit | Commands run | Result | Reviewer | Will to check by hand |
 |---|---|---|---|---|---|
-| 1 | `4b8e65c` + Task 1 binding change | `npm run verify` normal + credentials denied; signed-out/signed-in JWT WebSockets; one Haiku call; record create/delete/query | PASS: 6 unit tests; all three platform probes; probe removed | Implementer self-check only; controller review follows | Optional browser OAuth UI smoke; signed-in WebSocket identity already verified with real login JWT |
+| 1 | `9859338` | `npm run verify` normal + credentials denied; signed-out/signed-in JWT WebSockets; one Haiku call; record create/delete/query | PASS: 6 unit tests; all three platform probes; probe removed | Implementer self-check only; controller review follows | Optional browser OAuth UI smoke; signed-in WebSocket identity already verified with real login JWT |
+| 1 fix round 1 | `fix: close client integration proxy, harden server tools` (hash recorded after commit) | Covering tests; `npm run verify` normal + credentials denied | PASS: 31 covering tests; 34 full-suite tests; lint, type-check, Worker/client build | Implementer self-check; controller review follows | None added |
 
 ## Agent log
 

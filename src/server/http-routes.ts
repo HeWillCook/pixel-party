@@ -238,7 +238,10 @@ export function registerAuthAndIntegrationRoutes(app: Hono<AppContext>): void {
     const target = integrationPath(integrationName, c.req.param('endpoint'))
     if (!target) return c.json({ error: 'Unknown integration' }, 404)
     const config = lookupOwn(integrations, integrationName)
-    const billingMode = config?.billing ?? 'developer'
+    if (config?.client !== true) {
+      return c.json({ error: 'Integration not available to clients' }, 403)
+    }
+    const billingMode = config.billing
 
     // Sign-in is required unless the app opts this integration into anonymous
     // use; developer billing would otherwise let any visitor spend the owner's

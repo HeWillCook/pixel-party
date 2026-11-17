@@ -6,11 +6,13 @@
  * - 'developer': The app owner pays (default).
  * - 'user': The calling user pays.
  *
- * Every integration requires a signed-in caller. Set `anonymous: true` on a
- * 'developer' integration to let signed-out visitors call it too — the owner
- * then pays for anyone who can reach the app.
+ * Client calls are denied unless an entry explicitly sets `client: true`.
+ * Pixel Party enables none: AI runs server-side in PixelRoom via server-tools,
+ * where game budgets must be enforced before spending developer credits.
  *
- * Integrations not listed here default to 'developer' with sign-in required.
+ * Opted-in client integrations require sign-in by default. `anonymous: true`
+ * also permits signed-out callers for developer billing; user billing always
+ * requires sign-in. Server-side integration calls do not use the client flag.
  *
  * IMPORTANT: any integration backed by per-user connected accounts (Google,
  * Composio) must be 'user' — the api-worker resolves the account from the
@@ -22,10 +24,8 @@
 
 export const integrations: Record<
   string,
-  { billing: 'developer' | 'user'; anonymous?: boolean }
+  { billing: 'developer' | 'user'; anonymous?: boolean; client?: boolean }
 > = {
-  anthropic: { billing: 'developer' },
   google: { billing: 'user' },
   composio: { billing: 'user' },
-  // openai: { billing: 'developer', anonymous: true },
 }

@@ -15,6 +15,8 @@ This is a DeepSpace SDK app (Cloudflare Workers + React, deployed to `<name>.app
 
 <!-- Scaffold guidance; project instructions above take precedence. -->
 
+This project uses GitHub as source authority; agents must not deploy or push, per the project instructions above.
+
 # AGENTS.md
 
 Read <https://docs.deep.space/llms.txt>, then fetch the relevant documentation
