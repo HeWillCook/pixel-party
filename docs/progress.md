@@ -37,6 +37,7 @@ A live, shared pixel canvas turned into a game, judged by an AI.
 | 2026-11-16 | Cut quick play / matchmaking | Only useful with real traffic; with few players it lands people in empty rooms; default board covers "just play" |
 | 2026-11-16 | App-wide daily AI budget (default 3,000 judge calls/day ≈ $0.25), then "AI is resting" | Measured cost is tiny, but scripted accounts could otherwise run ~$3/day each; bounds worst case |
 | 2026-11-16 | Verification pipeline: implementer self-check → cross-family review → orchestrator re-runs checks → logged; CI runs `npm run verify` on every push | Nothing is done on an agent's say-so; gives the writeup a concrete "what I verified" record |
+| 2026-11-17 | First (smoke) deploy after Task 5 from a clean, CI-green commit | Catch production-only issues early; GitHub latched as source |
 | 2026-11-16 | Rooms (friends via link/code, or random quick-play) plus an always-on public co-op board | Reviewers likely visit alone; co-op works solo, team mode needs a room of friends or two tabs |
 
 ## DeepSpace features: planned use
@@ -188,6 +189,18 @@ AI image generation (the point is humans draw), ElevenLabs announcer (gimmick).
 - **2026-11-16: Smoke deploy approved by Will** for right after Task 5 (spec said deploy early; catches production-only
   issues: custom DO migration, owner credential, alarms).
 
+- **2026-11-17: Smoke deploy is live: https://pixel-party.app.space** (commit 65310b7 from `build/pixel-party`). The
+  first deploy permanently claimed GitHub (`hewillcook/pixel-party`) as the source; `deepspace status` had predicted it.
+  GitHub-source deploys ship the local working tree, so every deploy must come from a clean, pushed, CI-green commit.
+  Live checks I ran: anonymous spectator gets the canvas; signed-in player recognized; bad token → 401; spectator
+  can't place; pixels fan out live; cooldown enforced; Ask the AI → real Haiku guess ("mushroom, dome, hill" for a
+  drawn circle); room pauses when the last signed-in player leaves. A first "404" was my own HTTP/2 curl test
+  (WebSockets can't upgrade over HTTP/2), not the app; a real WebSocket client connected fine.
+- **2026-11-17: Real AI cost from `deepspace app usage`:** each judge call places a ~$0.0011 hold that settles to
+  ~$0.00009, matching spike 1. The 3,000-call daily cap is ≈ $0.27/day worst case. The account is on the free tier with
+  449 of 500 credits left (100 credits = $1) and no renewal date shown, so the cap also protects the free allocation.
+- **Note for later:** `scripts/ws-smoke.mjs` predates Task 5 (it uses random room ids, which now 404); refresh it in Task 7/8.
+
 ## Spikes (throwaway tests)
 
 | # | Question | Status | Result |
@@ -227,3 +240,4 @@ AI image generation (the point is humans draw), ElevenLabs announcer (gimmick).
 | 2026-11-16 | Codex GPT-6.1 Terra | Task 3 PNG renderer + judge request/response | Reviewed by Antigravity Sonnet (approved); I rendered red/blue zone PNGs and inspected them |
 | 2026-11-16 | Codex GPT-6.1 Terra | Task 4a pure room logic + judge flow (split from Task 4 on advisor input); asked 4 good questions instead of guessing | I answered the 4 design gaps; review by Antigravity Sonnet found an alarm hot-loop after budget refusal + unpersisted attempts; fixed + re-reviewed; I re-ran verify (107/107) |
 | 2026-11-16 | Codex GPT-6.1 Sol | Task 4b PixelRoom + BudgetRoom Durable Objects; real-JWT local smoke (Haiku guessed "sun, star, asterisk") | Review found 4 Important (no timeouts, writes on every message, alarm re-arm, unvalidated room id); fixed; re-reviewed by Gemini Argon (Sonnet quota hit); I re-ran verify (145/145), checked the smoke script never prints or saves the JWT |
+| 2026-11-16 | Codex GPT-6.1 Sol | Task 5 collections, permissions, room actions, route access, record-writing seams; two-user Playwright specs | Reviewed by Gemini Argon (checked SDK runtime: per-row member lists are the only way to get public+private reads); 1 Important fixed, re-reviewed by OpenCode DeepSeek; I re-ran verify (183/183), deployed, and ran live checks myself |
