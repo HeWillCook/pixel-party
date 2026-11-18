@@ -2,8 +2,8 @@ import type { Composition, Rect } from '../camera'
 
 export type StudioLayout = {
   windows: Rect[]
-  lamps: { x: number; y: number }[]
   upstairs: Rect
+  corkboard: Rect
   joinBooth: Rect
   joinCard: Rect
   publicBoardArt: Rect
@@ -12,22 +12,22 @@ export type StudioLayout = {
   moreEasels: Rect
   workbench: Rect
   workbenchBoard: Rect
+  magicEasel: Rect
+  shelf: Rect
   plant: { x: number; y: number }
 }
 
 export const studioLayout: Record<Composition, StudioLayout> = {
   landscape: {
     windows: [
-      { x: 92, y: 28, w: 46, h: 17 },
-      { x: 152, y: 28, w: 46, h: 17 },
+      { x: 64, y: 32, w: 72, h: 42 },
+      { x: 144, y: 32, w: 72, h: 42 },
+      { x: 224, y: 32, w: 76, h: 42 },
     ],
-    lamps: [
-      { x: 139, y: 24 },
-      { x: 202, y: 24 },
-    ],
-    upstairs: { x: 20, y: 40, w: 46, h: 58 },
-    joinBooth: { x: 18, y: 103, w: 66, h: 65 },
-    joinCard: { x: 21, y: 123, w: 60, h: 36 },
+    upstairs: { x: 12, y: 32, w: 46, h: 56 },
+    corkboard: { x: 12, y: 80, w: 82, h: 82 },
+    joinBooth: { x: 98, y: 78, w: 78, h: 36 },
+    joinCard: { x: 98, y: 78, w: 78, h: 36 },
     publicBoardArt: { x: 112, y: 49, w: 72, h: 26 },
     publicBoardPlaque: { x: 108, y: 78, w: 80, h: 12 },
     easels: [
@@ -36,19 +36,19 @@ export const studioLayout: Record<Composition, StudioLayout> = {
       { x: 176, y: 94, w: 42, h: 72 },
     ],
     moreEasels: { x: 88, y: 166, w: 130, h: 11 },
-    workbench: { x: 224, y: 26, w: 78, h: 142 },
-    workbenchBoard: { x: 226, y: 47, w: 74, h: 65 },
-    plant: { x: 288, y: 151 },
+    workbench: { x: 98, y: 78, w: 78, h: 86 },
+    workbenchBoard: { x: 98, y: 114, w: 78, h: 50 },
+    magicEasel: { x: 186, y: 58, w: 120, h: 105 },
+    shelf: { x: 182, y: 80, w: 28, h: 3 },
+    plant: { x: 198, y: 71 },
   },
   portrait: {
     windows: [
-      { x: 34, y: 48, w: 50, h: 18 },
-      { x: 96, y: 48, w: 50, h: 18 },
+      { x: 68, y: 54, w: 40, h: 36 },
+      { x: 112, y: 54, w: 40, h: 36 },
     ],
-    lamps: [
-      { x: 85, y: 45 },
-    ],
-    upstairs: { x: 30, y: 71, w: 34, h: 52 },
+    upstairs: { x: 28, y: 56, w: 36, h: 54 },
+    corkboard: { x: 30, y: 240, w: 120, h: 24 },
     joinBooth: { x: 30, y: 240, w: 120, h: 24 },
     joinCard: { x: 30, y: 240, w: 120, h: 24 },
     publicBoardArt: { x: 76, y: 72, w: 66, h: 24 },
@@ -60,6 +60,8 @@ export const studioLayout: Record<Composition, StudioLayout> = {
     moreEasels: { x: 34, y: 218, w: 112, h: 14 },
     workbench: { x: 30, y: 240, w: 120, h: 24 },
     workbenchBoard: { x: 30, y: 240, w: 120, h: 24 },
-    plant: { x: 32, y: 142 },
+    magicEasel: { x: 34, y: 120, w: 112, h: 120 },
+    shelf: { x: 32, y: 132, w: 24, h: 3 },
+    plant: { x: 34, y: 123 },
   },
 }
