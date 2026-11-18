@@ -90,6 +90,10 @@
 .room-play .hover-easel__shadow { bottom: -4px; }
 
 .room-top-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 10px; }
+.room-invite-ticket { display: inline-flex; align-items: stretch; border: 2px solid #8e5960; background: #ecd4b0; box-shadow: inset 0 1px #fff0cc; }
+.room-invite-ticket__code { display: inline-flex; align-items: center; padding: 0 10px; font-size: 18px; line-height: 1; letter-spacing: 0.14em; color: #392a45; background: #fff0cc; border-right: 2px dashed #8e5960; }
+.room-invite-ticket__copy { border: 0; border-radius: 0; box-shadow: none; background: transparent; color: #392a45; min-height: 30px; height: 30px; padding: 0 10px; }
+.room-invite-ticket__copy:hover:not(:disabled) { background: #ecae7d; }
 .room-exit { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 40px; padding: 6px 10px; font-size: 18px; line-height: 1.1; text-decoration: none; color: #392a45; }
 .room-exit--full { width: 100%; }
 

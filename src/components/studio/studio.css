@@ -19,8 +19,16 @@
 }
 
 /* Match porch nav sign & username sizing */
+html:has(.studio-world) .porch-nav__row {
+  gap: var(--px);
+}
+
 html:has(.studio-world) .porch-nav__logo {
-  margin-right: calc(var(--px) * 2);
+  margin-right: 0;
+}
+
+html:has(.studio-world) .porch-nav__links {
+  gap: var(--px);
 }
 
 html:has(.studio-world) .porch-nav__sign {
@@ -28,8 +36,9 @@ html:has(.studio-world) .porch-nav__sign {
 }
 
 html:has(.studio-world) .porch-nav__username {
-  font-size: 18px;
-  max-width: 100px;
+  font-size: clamp(16px, calc(var(--px) * 4.5), 18px);
+  max-width: clamp(120px, 16vw, 180px);
+  flex-shrink: 0;
 }
 
 .studio-world .pixel-hotspot__label {
@@ -327,10 +336,11 @@ html:has(.studio-world) .porch-nav__username {
 }
 
 .studio-ticket-card__btn {
-  height: calc(var(--px) * 6.5);
-  padding: 0 calc(var(--px) * 1.5);
-  font-size: calc(var(--px) * 3.4);
-  line-height: 1;
+  height: auto;
+  min-height: 32px;
+  padding: 4px 10px;
+  font-size: max(16px, calc(var(--px) * 3.6));
+  line-height: 1.1;
   text-transform: uppercase;
 }
 
@@ -436,11 +446,22 @@ html:has(.studio-world) .porch-nav__username {
 
 .studio-order-form__submit {
   width: 100%;
-  height: calc(var(--px) * 7);
-  gap: var(--px);
-  font-size: calc(var(--px) * 3.2);
-  line-height: 1;
+  height: auto;
+  min-height: 36px;
+  padding: 6px 10px;
+  gap: 6px;
+  font-size: max(16px, calc(var(--px) * 3.8));
+  line-height: 1.1;
   text-transform: uppercase;
+}
+
+.studio-order-form__submit:disabled,
+.studio-ticket-card__btn:disabled {
+  opacity: 1;
+  background: #ecd4b0;
+  color: #614052;
+  border-color: #8e5960;
+  box-shadow: none;
 }
 
 .studio-dock {

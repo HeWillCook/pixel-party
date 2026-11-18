@@ -513,3 +513,84 @@ test('capture studio room states across viewports', async ({ page }) => {
   }
 })
 
+test('studio mailbox tag fits username and order form submit uses readable button sizing', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await setup(page)
+  await page.goto(`${origin}/party`)
+  const tag = page.getByTestId('nav-user-name')
+  await expect(tag).toHaveText('Offline host')
+  const tagMetrics = await tag.evaluate((el) => ({
+    scrollWidth: el.scrollWidth,
+    clientWidth: el.clientWidth,
+    right: el.getBoundingClientRect().right,
+    viewportWidth: window.innerWidth,
+  }))
+  expect(tagMetrics.scrollWidth).toBeLessThanOrEqual(tagMetrics.clientWidth + 1)
+  expect(tagMetrics.right).toBeLessThanOrEqual(tagMetrics.viewportWidth)
+
+  const submit = page.getByTestId('create-room-submit')
+  await expect(submit).toBeVisible()
+  const submitStyle = await submit.evaluate((el) => {
+    const cs = getComputedStyle(el)
+    return { fontSize: parseFloat(cs.fontSize), height: el.getBoundingClientRect().height }
+  })
+  expect(submitStyle.fontSize).toBeGreaterThanOrEqual(14)
+  expect(submitStyle.height).toBeGreaterThanOrEqual(32)
+})
+
+test('remaining screens use porch-wood panels, letter settings, and empty beach 404', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await setup(page)
+  await page.goto(`${origin}/settings`)
+  await expect(page.getByTestId('settings-letter')).toContainText('From the porch mailbox')
+  await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible()
+
+  await page.goto(`${origin}/does-not-exist`)
+  await expect(page.getByTestId('not-found-page')).toContainText('You wandered off the porch')
+  await expect(page.getByTestId('not-found-home')).toHaveAttribute('href', '/home')
+  await expect(page.locator('.pixel-scene__canvas')).toBeVisible()
+
+  await setup(page, true)
+  await page.goto(`${origin}/settings`)
+  await expect(page.getByRole('heading', { name: 'Sign in to continue' })).toBeVisible()
+  await expect(page.locator('.pp-wood-panel')).toBeVisible()
+})
+
+test('capture Task 6 remaining screens across viewports', async ({ page }) => {
+  test.skip(process.env.SCREENSHOTS !== '1')
+  const dir = resolve(import.meta.dirname, '../../docs/superpowers/screenshots/2026-11-18-porch')
+  await mkdir(dir, { recursive: true })
+  const viewports = [{ width: 1440, height: 900 }, { width: 1280, height: 720 }, { width: 375, height: 812 }]
+
+  // 404 empty beach at dusk
+  await setup(page)
+  for (const vp of viewports) {
+    await page.setViewportSize(vp)
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await page.goto(`${origin}/no-such-page`)
+    await expect(page.getByTestId('not-found-page')).toBeVisible()
+    await page.evaluate(() => document.fonts.ready)
+    await page.waitForTimeout(120)
+    await page.screenshot({ path: resolve(dir, `not-found-${vp.width}x${vp.height}.png`) })
+  }
+
+  // Protected signed-out panel (porch-wood panel)
+  await setup(page, true)
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await page.goto(`${origin}/settings`)
+  await expect(page.getByRole('heading', { name: 'Sign in to continue' })).toBeVisible()
+  await page.evaluate(() => document.fonts.ready)
+  await page.screenshot({ path: resolve(dir, 'signed-out-1280x720.png') })
+
+  // API status (porch-wood panel)
+  await setup(page)
+  await page.route('**/api/integrations', (route) =>
+    route.fulfill({ json: { success: true, data: { integrations: { anthropic: {}, deepgram: {} } } } }),
+  )
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await page.goto(`${origin}/api-status`)
+  await expect(page.getByText('Integration catalog ready')).toBeVisible()
+  await page.evaluate(() => document.fonts.ready)
+  await page.screenshot({ path: resolve(dir, 'api-status-1280x720.png') })
+})
+

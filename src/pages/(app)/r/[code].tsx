@@ -11,17 +11,19 @@ import {
   AlertCircle,
   ArrowLeft,
   Award,
+  ChevronDown,
   Clock,
   Copy,
   Eye,
   FastForward,
   LogIn,
+  Trash2,
   Trophy,
   Users,
   WifiOff,
 } from 'lucide-react'
 import { AskAiButton } from '../../../components/game/AskAiButton'
-import { DeleteRoomButton } from '../../../components/game/DeleteRoomButton'
+import { DeleteRoomDialog } from '../../../components/game/DeleteRoomButton'
 import { MuteButton } from '../../../components/game/MuteButton'
 import { PainterTray } from '../../../components/game/PainterTray'
 import { Palette } from '../../../components/game/Palette'
@@ -36,7 +38,14 @@ import { PartyScoreNote } from '../../../components/play/PartyScoreNote'
 import { PlayLayout } from '../../../components/play/PlayLayout'
 import { StudioBackdrop } from '../../../components/play/StudioBackdrop'
 import { StudioSprite } from '../../../components/play/StudioSprite'
-import { Button } from '../../../components/ui'
+import {
+  Button,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '../../../components/ui'
 import { effectiveCooldownUntil, roomAccessView, type RejectMsg } from '../../../game/client-state'
 import { MODES } from '../../../game/config'
 import { contributorLabel } from '../../../game/contributor-label'
@@ -113,19 +122,17 @@ function rejectMessage(reject: RejectMsg | null, now: number): string | null {
 function InviteBadge({ code }: { code: string }) {
   const [copyStatus, setCopyStatus] = useState('Copy link')
   return (
-    <div className="flex items-center gap-2">
+    <div className="room-invite-ticket">
       <span
         data-testid="room-code"
-        className="pp-chip px-2.5 py-0.5 text-lg tracking-widest"
+        className="room-invite-ticket__code uppercase"
         aria-label={`Room code ${code}`}
       >
         {code}
       </span>
-      <Button
+      <button
         type="button"
-        variant="secondary"
-        size="sm"
-        className="pp-btn h-8 gap-1.5 px-3 text-base uppercase"
+        className="room-invite-ticket__copy inline-flex cursor-pointer items-center gap-1.5 text-base uppercase"
         data-testid="copy-room-link"
         onClick={async () => {
           try {
@@ -138,9 +145,9 @@ function InviteBadge({ code }: { code: string }) {
           }
         }}
       >
-        <Copy className="h-3.5 w-3.5" aria-hidden />
+        <Copy className="h-3.5 w-3.5 shrink-0" aria-hidden />
         <span aria-live="polite">{copyStatus}</span>
-      </Button>
+      </button>
     </div>
   )
 }
@@ -176,6 +183,7 @@ export default function RoomPage() {
   const [tool, setTool] = useState<Tool>('paint')
   const [now, setNow] = useState<number>(() => Date.now())
   const [showAuthModal, setShowAuthModal] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
   const [dismissedOverlayRoundId, setDismissedOverlayRoundId] = useState<string | null>(null)
   const lastPresenceSentRef = useRef<number>(0)
   const trailingCursorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -536,32 +544,82 @@ export default function RoomPage() {
       ? roomDoc.data.name
       : null
 
+  const effectiveCode = roomDoc?.data.joinCode ?? joinCode
+  const inviteTicket =
+    effectiveCode !== 'play' ? (
+      <InviteBadge code={effectiveCode} />
+    ) : (
+      <span
+        data-testid="room-code"
+        className="pp-chip uppercase"
+        aria-label={`Room code ${effectiveCode}`}
+      >
+        ROOM {effectiveCode}
+      </span>
+    )
+
   const roomControls = (
-    <div className="flex flex-wrap items-center gap-2 text-base">
-      {roomDoc?.data.visibility === 'private' || state.round?.state === 'lobby' ? (
-        <InviteBadge code={roomDoc?.data.joinCode ?? joinCode} />
+    <div className="flex items-center gap-2 text-base">
+      {isHost ? (
+        <>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  data-testid="host-menu-button"
+                  className="pp-chip h-8 gap-1 px-2.5 text-base uppercase text-foreground hover:bg-secondary"
+                >
+                  Host
+                  <ChevronDown className="h-3.5 w-3.5" aria-hidden />
+                </Button>
+              }
+            />
+            <DropdownMenuContent align="end" className="min-w-[10.5rem]">
+              {canStart && state.round?.state !== 'lobby' && (
+                <>
+                  <DropdownMenuItem
+                    data-testid="host-next-button"
+                    onClick={next}
+                    className="cursor-pointer gap-2 text-base uppercase"
+                  >
+                    <FastForward className="h-3.5 w-3.5 text-[var(--sunset-1)]" aria-hidden />
+                    {state.round?.state === 'intermission' ? 'New game' : 'Skip round'}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                </>
+              )}
+              <DropdownMenuItem
+                variant="destructive"
+                data-testid="delete-room-button"
+                onClick={() => setDeleteOpen(true)}
+                className="pp-danger cursor-pointer gap-2 text-base uppercase"
+              >
+                <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                Delete room
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <DeleteRoomDialog joinCode={joinCode} open={deleteOpen} onOpenChange={setDeleteOpen} />
+        </>
       ) : (
-        <span
-          data-testid="room-code"
-          className="pp-chip uppercase"
-          aria-label={`Room code ${roomDoc?.data.joinCode ?? joinCode}`}
-        >
-          ROOM {roomDoc?.data.joinCode ?? joinCode}
-        </span>
-      )}
-      {isHost && <DeleteRoomButton joinCode={joinCode} />}
-      {canStart && state.round?.state !== 'lobby' && (state.round?.state === 'intermission' || isHost) && (
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          data-testid="host-next-button"
-          onClick={next}
-          className="pp-btn h-8 gap-1.5 px-3 text-base uppercase"
-        >
-          <FastForward className="h-3.5 w-3.5 text-[var(--sunset-1)]" aria-hidden />
-          {state.round?.state === 'intermission' ? 'New game' : 'Skip Round'}
-        </Button>
+        canStart &&
+        state.round?.state !== 'lobby' &&
+        state.round?.state === 'intermission' && (
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            data-testid="host-next-button"
+            onClick={next}
+            className="pp-btn h-8 gap-1.5 px-3 text-base uppercase"
+          >
+            <FastForward className="h-3.5 w-3.5 text-[var(--sunset-1)]" aria-hidden />
+            New game
+          </Button>
+        )
       )}
       <MuteButton muted={muted} onToggle={toggleMute} />
     </div>
@@ -571,7 +629,7 @@ export default function RoomPage() {
     return (
       <div
         data-testid="room-page"
-        className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-6"
+        className="mx-auto flex w-full max-w-4xl flex-col gap-4 px-4 py-6"
       >
         <div className="pp-panel room-top-bar">
           <div className="flex flex-wrap items-center gap-3">
@@ -583,6 +641,7 @@ export default function RoomPage() {
               <ArrowLeft className="h-4 w-4" aria-hidden />
               Back downstairs to the studio
             </Link>
+            {inviteTicket}
             {customRoomName && (
               <span data-testid="room-name" className="text-xl uppercase text-[var(--soft-text)]">
                 {customRoomName}
@@ -659,7 +718,7 @@ export default function RoomPage() {
     <>
       <div ref={headerRef} className="pp-panel room-top-bar">
         <div className="flex flex-wrap items-center gap-2.5">
-          <span className="pp-chip uppercase text-base">Studio Easel</span>
+          {inviteTicket}
           {customRoomName ? (
             <span data-testid="room-name" className="text-xl uppercase text-[var(--soft-text)]">
               {customRoomName}

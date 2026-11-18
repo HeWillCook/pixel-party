@@ -152,7 +152,7 @@ function CreateEaselForm({
           disabled={!mutationsReady || creating || !roomName.trim()}
           className={compact ? 'pp-btn studio-order-form__submit' : 'pp-btn h-9 w-full gap-1.5 text-base uppercase'}
         >
-          <Plus className={compact ? 'studio-order-form__icon shrink-0' : 'h-4 w-4 shrink-0'} aria-hidden />
+          <Plus className="h-4 w-4 shrink-0" aria-hidden />
           {creating ? 'Setting up…' : 'Set up & open'}
         </Button>
       ) : (
