@@ -41,7 +41,7 @@ export function AskAiButton({
       data-testid="ask-ai-button"
       disabled={isDisabled}
       onClick={onAsk}
-      className="pp-btn room-bell-btn h-auto w-full gap-2 whitespace-normal px-3 py-1.5 text-[22px] leading-tight uppercase tracking-wider disabled:opacity-75"
+      className="pp-btn room-bell-btn h-auto w-full gap-2 whitespace-normal px-3 py-1.5 text-[22px] leading-tight uppercase tracking-wider"
     >
       {aiResting ? (
         <Moon className="h-4 w-4 shrink-0" aria-hidden />

@@ -619,6 +619,50 @@ test('capture Task 6 remaining screens across viewports', async ({ page }) => {
     await page.screenshot({ path: resolve(dir, `party-rooms-${vp.width}x${vp.height}.png`), fullPage: true })
   }
 
+  // Magic Easel live preview (1440x900 & 375x812) and puff of smoke (1280x720)
+  const easelCells = new Uint8Array(32 * 32)
+  for (let y = 6; y < 22; y++) for (let x = 8; x < 24; x++) easelCells[y * 32 + x] = (x + y) % 2 === 0 ? 4 : 6
+  const easelEncoded = Buffer.from(easelCells).toString('base64')
+  const easelNow = Date.now()
+  await page.routeWebSocket('**/api/pixel/**', (socket) => {
+    socket.send(JSON.stringify({
+      t: 'snapshot',
+      mode: 'coop',
+      width: 32,
+      height: 32,
+      cells: easelEncoded,
+      round: { id: 'r1', word: 'LIGHTHOUSE', state: 'playing', startedAt: easelNow - 30_000, endsAt: easelNow + 270_000, askAvailableAt: easelNow - 1000 },
+      you: { userId: null, cooldownUntil: 0 },
+      players: 3,
+      watching: 1,
+      roster: [{ userId: 'host', name: 'Will' }],
+      aiResting: false,
+    }))
+  })
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.goto(`${origin}/party`)
+  await page.getByTestId('room-card-QX3J').click()
+  await expect(page.getByTestId('magic-easel-canvas')).toBeVisible()
+  await expect(page.getByTestId('magic-easel-word')).toHaveText('_ _ _ _ _ _ _ _ _ _')
+  await page.evaluate(() => document.fonts.ready)
+  await page.screenshot({ path: resolve(dir, 'party-easel-preview-1440x900.png') })
+
+  await page.setViewportSize({ width: 375, height: 812 })
+  await page.goto(`${origin}/party`)
+  await page.getByTestId('room-card-QX3J').first().click()
+  await expect(page.getByTestId('magic-easel-canvas')).toBeVisible()
+  await page.evaluate(() => document.fonts.ready)
+  await page.screenshot({ path: resolve(dir, 'party-easel-preview-375x812.png') })
+
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await page.goto(`${origin}/party`)
+  await page.getByTestId('join-code-input').fill('NOPE')
+  await page.getByTestId('join-code-submit').click()
+  await expect(page.getByTestId('magic-easel-smoke')).toBeVisible()
+  await page.evaluate(() => document.fonts.ready)
+  await page.screenshot({ path: resolve(dir, 'party-easel-smoke-1280x720.png') })
+
   // Protected signed-out panel (porch-wood panel)
   await setup(page, true)
   await page.setViewportSize({ width: 1280, height: 720 })

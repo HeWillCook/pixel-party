@@ -276,6 +276,10 @@
   color: #fff0cc;
 }
 
+.room-play .critic-bubble__speech [data-testid="guess-list"] p > span:first-child {
+  color: #ecae7d;
+}
+
 .room-play .critic-bubble__speech [data-testid="ai-resting-banner"] {
   color: #ffe29a;
 }
@@ -321,8 +325,10 @@
 }
 
 .room-play .room-bell-btn:disabled {
+  opacity: 1;
   background: #d1b5a3;
   color: #392a45;
+  border-color: #614052;
   box-shadow: inset 0 1px 0 #ecd4b0;
 }
 

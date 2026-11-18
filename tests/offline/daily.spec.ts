@@ -371,7 +371,7 @@ test('no local canvas, no auto', async ({ page }) => {
   expect(grades).toBe(0)
   await page.getByRole('button', { name: /Account menu:/ }).click()
   await page.getByRole('menuitem', { name: 'Party', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Live Public Rooms' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Room tickets' })).toBeVisible()
   await page.clock.fastForward(470_000)
   expect(grades).toBe(0)
   expect(ends).toBe(0)
@@ -419,7 +419,7 @@ test('timeout on party uses the latest stored canvas', async ({ page }) => {
     return route.fulfill({ json: playing })
   })
   await page.goto(`${origin}/party`)
-  await expect(page.getByRole('heading', { name: 'Live Public Rooms' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Room tickets' })).toBeVisible()
   const latest = await page.evaluate(() => {
     const cells = new Uint8Array(1024).fill(7)
     const encoded = btoa(String.fromCharCode(...cells))
@@ -464,7 +464,7 @@ test('auto-grade fires on another route', async ({ page }) => {
   await page.getByTestId('pixel-canvas').click({ position: { x: 5, y: 5 } })
   await page.getByRole('button', { name: /Account menu:/ }).click()
   await page.getByRole('menuitem', { name: 'Party', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Live Public Rooms' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Room tickets' })).toBeVisible()
   const latestCells = await page.evaluate(() => {
     const cells = new Uint8Array(1024)
     cells[50] = 7
@@ -606,7 +606,7 @@ test('signed-out profile renders its heading and empty state without errors', as
 test('party route still renders the lobby', async ({ page }) => {
   const errors = await offlineClient(page)
   await page.goto(`${origin}/party`)
-  await expect(page.getByRole('heading', { name: 'Live Public Rooms' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Room tickets' })).toBeVisible()
   await expect(page.getByTestId('lobby-play-now')).toBeVisible()
   expect(errors).toEqual([])
 })

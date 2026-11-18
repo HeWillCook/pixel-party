@@ -299,6 +299,7 @@ for (const entry of ['direct', 'home-join'] as const) {
     if (entry === 'home-join') {
       await page.getByTestId('join-code-input').fill('ab2z')
       await page.getByTestId('join-code-submit').click()
+      await page.getByTestId('magic-easel-step-in').click()
       await expect(page).toHaveURL(`${origin}/r/AB2Z`)
     }
     await expect(page.getByTestId('room-loading')).toHaveText('Setting up your easel…')
@@ -702,7 +703,7 @@ test('party reject with id settles provisional cooldown after peer pixel and res
 })
 
 for (const viewport of [{ width: 1280, height: 720 }, { width: 1366, height: 768 }]) {
-  test(`lobby easels link to rooms and More easels overflow clicks at ${viewport.width}x${viewport.height}`, async ({ page }) => {
+  test(`studio corkboard tickets conjure Magic Easel and step into room at ${viewport.width}x${viewport.height}`, async ({ page }) => {
     await page.setViewportSize(viewport)
     const errors = await clientFixture(page, {
       signedIn: true,
@@ -716,27 +717,34 @@ for (const viewport of [{ width: 1280, height: 720 }, { width: 1366, height: 768
     })
     await page.goto(`${origin}/party`)
     await expect(page.locator('.studio-world .pixel-scene__canvas')).toBeVisible()
+    await expect(page.getByTestId('magic-easel')).toHaveAttribute('data-easel-state', 'idle')
+    await expect(page.getByTestId('magic-easel-idle')).toBeVisible()
+
     const list = page.getByTestId('public-rooms-list')
-    await expect(list.getByTestId('room-card-QX3J')).toHaveAttribute('href', '/r/QX3J')
     await expect(list.getByTestId('room-card-QX3J')).toContainText("Will's Studio")
-    const packUp = page.getByRole('button', { name: 'Pack up easel', exact: true })
+    const packUp = page.getByRole('button', { name: 'Pack up', exact: true })
     await expect(packUp).toBeVisible()
-    await expect(page.getByText('More easels')).toBeVisible()
-    const overflowLink = page.getByTestId('room-card-Z7T1')
-    await expect(overflowLink).toHaveAttribute('href', '/r/Z7T1')
-    const overflowBox = (await overflowLink.boundingBox())!
-    const packUpBox = (await packUp.boundingBox())!
+
+    const overflowTicket = list.getByTestId('room-card-Z7T1')
+    await overflowTicket.scrollIntoViewIfNeeded()
+    await expect(overflowTicket).toBeVisible()
     const mailBox = (await page.locator('.porch-nav__mail').boundingBox())!
-    expect(overflowBox.y + overflowBox.height).toBeLessThanOrEqual(viewport.height)
-    expect(packUpBox.y + packUpBox.height).toBeLessThanOrEqual(overflowBox.y)
+    const corkBox = (await list.boundingBox())!
+    expect(corkBox.y + corkBox.height).toBeLessThanOrEqual(viewport.height)
     expect(mailBox.x + mailBox.width).toBeLessThanOrEqual(viewport.width)
-    await overflowLink.click()
+
+    await overflowTicket.click()
+    await expect(page.getByTestId('magic-easel')).toHaveAttribute('data-easel-state', 'preview')
+    await expect(page.getByTestId('magic-easel-room-name')).toContainText('Overflow Easel')
+    const stepIn = page.getByTestId('magic-easel-step-in')
+    await expect(stepIn).toHaveAttribute('href', '/r/Z7T1')
+    await stepIn.click()
     await expect(page).toHaveURL(`${origin}/r/Z7T1`)
     expect(errors).toEqual([])
   })
 }
 
-test('portrait tablet 1024x1366 keeps create, join, More easels, and nav inside viewport', async ({ page }) => {
+test('portrait tablet 1024x1366 keeps create, join, corkboard, Magic Easel, and nav inside viewport', async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 1366 })
   const errors = await clientFixture(page, {
     signedIn: true,
@@ -750,42 +758,91 @@ test('portrait tablet 1024x1366 keeps create, join, More easels, and nav inside 
   await page.goto(`${origin}/party`)
   await expect(page.getByTestId('lobby-page')).toHaveAttribute('data-composition', 'portrait')
   await expect(page.locator('.studio-world .pixel-scene__canvas')).toBeVisible()
+  await expect(page.getByTestId('magic-easel')).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1024)
   await page.getByTestId('create-room-form').scrollIntoViewIfNeeded()
   await expect(page.getByTestId('create-room-form')).toBeVisible()
   await page.getByTestId('join-room-form').scrollIntoViewIfNeeded()
   await expect(page.getByTestId('join-room-form')).toBeVisible()
-  await expect(page.getByText('More easels')).toBeVisible()
+  await expect(page.getByTestId('public-rooms-list')).toBeVisible()
   await expect(page.getByTestId('room-card-Z7T1')).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1024)
   expect(errors).toEqual([])
 })
 
-test('public board frame opens play room', async ({ page }) => {
+test('gold Public board ticket conjures Magic Easel and Play opens play room', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 })
   await clientFixture(page, { signedIn: true })
   await page.goto(`${origin}/party`)
   await expect(page.locator('.studio-world .pixel-scene__canvas')).toBeVisible()
-  await expect(page.getByTestId('room-card-play')).toHaveAttribute('href', '/r/play')
   await expect(page.getByTestId('lobby-play-now')).toHaveAttribute('href', '/r/play')
   await page.getByTestId('room-card-play').click()
+  await expect(page.getByTestId('magic-easel')).toHaveAttribute('data-easel-state', 'preview')
+  await expect(page.getByTestId('magic-easel-room-name')).toHaveText('Public board')
+  await expect(page.getByTestId('magic-easel-step-in')).toHaveAttribute('href', '/r/play')
+  await page.getByTestId('lobby-play-now').click()
   await expect(page).toHaveURL(`${origin}/r/play`)
 })
 
-test('ticket booth joins by code', async ({ page }) => {
+test('top hat conjures room by code onto Magic Easel and smoke shows on invalid code', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 })
   await clientFixture(page, { signedIn: true })
   let joinedCode = ''
   await page.route('**/api/actions/joinRoom', async route => {
     joinedCode = (route.request().postDataJSON() as { joinCode: string }).joinCode
+    if (joinedCode === 'NOPE') {
+      await route.fulfill({ json: { success: false, error: 'Room not found' } })
+      return
+    }
     await route.fulfill({ json: { success: true } })
   })
   await page.goto(`${origin}/party`)
   await expect(page.getByTestId('join-room-form')).toContainText('Got a code?')
+
+  await page.getByTestId('join-code-input').fill('nope')
+  await page.getByTestId('join-code-submit').click()
+  await expect.poll(() => joinedCode).toBe('NOPE')
+  await expect(page.getByTestId('magic-easel')).toHaveAttribute('data-easel-state', 'smoke')
+  await expect(page.getByTestId('magic-easel-smoke')).toContainText('No easel by that name')
+
   await page.getByTestId('join-code-input').fill('ab2z')
   await page.getByTestId('join-code-submit').click()
   await expect.poll(() => joinedCode).toBe('AB2Z')
+  await expect(page.getByTestId('magic-easel')).toHaveAttribute('data-easel-state', 'preview')
+  await expect(page.getByTestId('magic-easel-step-in')).toHaveAttribute('href', '/r/AB2Z')
+  await page.getByTestId('magic-easel').press('Enter')
   await expect(page).toHaveURL(`${origin}/r/AB2Z`)
+})
+
+test('magic easel streams live spectator preview without revealing secret word', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 })
+  const errors = await clientFixture(page, {
+    signedIn: true,
+    rooms: [
+      { recordId: 'r-1', data: { name: 'Sky Studio', mode: 'coop', visibility: 'public', joinCode: 'QX3J', hostId: 'host', status: 'playing', playerCount: 3, lastActiveAt: 4000, isDefaultBoard: false } },
+    ],
+  })
+  const cells = Buffer.alloc(1024)
+  cells[0] = 4
+  cells[1] = 10
+  await page.routeWebSocket('**/api/pixel/**', (socket) => {
+    const snap = snapshot('playing')
+    socket.send(JSON.stringify({
+      ...snap,
+      cells: cells.toString('base64'),
+      players: 3,
+      you: { userId: null, cooldownUntil: 0 },
+      round: { ...snap.round, word: 'HOUSE' },
+    }))
+  })
+  await page.goto(`${origin}/party`)
+  await page.getByTestId('room-card-QX3J').click()
+  await expect(page.getByTestId('magic-easel-canvas')).toBeVisible()
+  await expect(page.getByTestId('magic-easel-painters')).toContainText('3 painters')
+  await expect(page.getByTestId('magic-easel-state')).toContainText('Playing')
+  await expect(page.getByTestId('magic-easel-word')).toHaveText('_ _ _ _ _')
+  await expect(page.getByTestId('magic-easel')).not.toContainText('HOUSE')
+  expect(errors).toEqual([])
 })
 
 test('workbench sign creates room', async ({ page }) => {
@@ -892,7 +949,7 @@ test('room exit returns to studio', async ({ page }) => {
   await page.goto(`${origin}/r/AB2Z`)
   await expect(page.getByTestId('pixel-canvas')).toBeVisible()
   await expect(page.getByTestId('critic-bubble')).toBeVisible()
-  await expect(page.getByTestId('party-score-note')).toHaveText('Fewer pixels and a faster guess score higher. The round ends when the critic guesses the word.')
+  await expect(page.getByTestId('party-score-note')).toHaveText('Fewer pixels and a faster guess score higher. The round ends when Haiku guesses the word.')
   const exit = page.getByTestId('room-exit')
   await expect(exit).toBeVisible()
   await expect(exit).toHaveText(/Back downstairs to the studio/)
@@ -986,6 +1043,7 @@ test('results show pixels and time saved and exclude unconfirmed pending pixels'
   await expect(overlay).toContainText('Pixels saved: 375/500')
   await expect(overlay).toContainText('Time saved: 400/500')
   await expect(page.getByTestId('overlay-score')).toContainText('775')
+  await expect(page.locator('#overlay-heading')).toHaveText('Haiku Guessed It!')
   expect(errors).toEqual([])
 })
 
@@ -1019,6 +1077,62 @@ test('intermission shows standalone New game button and Host menu restores focus
   await page.keyboard.press('Escape')
   await expect(deleteItem).toBeHidden()
   await expect(menuBtn).toBeFocused()
+  expect(errors).toEqual([])
+})
+
+test('Haiku critic transitions across idle, thinking, guess, correct, and resting states', async ({ page }) => {
+  const errors = await clientFixture(page, { signedIn: true })
+  let server!: WebSocketRoute
+  await page.routeWebSocket('**/api/pixel/**', (socket) => {
+    server = socket
+    const snap = snapshot('playing')
+    socket.send(JSON.stringify({
+      ...snap,
+      round: { ...snap.round, askAvailableAt: Date.now() - 1000 },
+    }))
+  })
+  await page.goto(`${origin}/r/AB2Z`)
+  const haiku = page.getByTestId('haiku')
+  await expect(haiku).toHaveAttribute('data-haiku-state', 'idle')
+
+  const askBtn = page.getByTestId('ask-ai-button')
+  await expect(askBtn).toContainText('Ask Haiku')
+  await askBtn.click()
+  await expect(haiku).toHaveAttribute('data-haiku-state', 'thinking')
+  await expect(page.getByTestId('haiku-bubble')).toHaveText('…')
+
+  server.send(JSON.stringify({
+    t: 'judgement',
+    zone: 'all',
+    guesses: ['lighthouse', 'tower'],
+    confidence: 0.72,
+    matched: false,
+  }))
+  await expect(haiku).toHaveAttribute('data-haiku-state', 'guess')
+  await expect(page.getByTestId('haiku-bubble')).toContainText('lighthouse')
+
+  const now = Date.now()
+  server.send(JSON.stringify({
+    t: 'round',
+    round: {
+      id: 'round-1',
+      word: 'LIGHTHOUSE',
+      state: 'intermission',
+      startedAt: now - 30_000,
+      endsAt: null,
+      endedAt: now,
+      askAvailableAt: 0,
+      result: { outcome: 'won', score: 840, contributorCount: 1 },
+    },
+  }))
+  await expect(haiku).toHaveAttribute('data-haiku-state', 'correct')
+
+  server.send(JSON.stringify({
+    ...snapshot('playing'),
+    aiResting: true,
+  }))
+  await expect(haiku).toHaveAttribute('data-haiku-state', 'resting')
+  await expect(page.getByTestId('ai-resting-banner')).toContainText("Haiku's napping, back tomorrow")
   expect(errors).toEqual([])
 })
 

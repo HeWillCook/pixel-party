@@ -265,7 +265,7 @@ export function drawStudio(ctx: CanvasRenderingContext2D, frame: number): void {
     rect(bench.x + 1, topY + 1, bench.w - 2, 1, P.wood[4])
     // Magician top hat + ticket slot resting on the left of the tabletop
     drawSprite(ctx, studioSprites.topHat, bench.x + 4, topY - 11)
-    drawSprite(ctx, studioSprites.ticketSlot, bench.x + 22, topY - 5)
+    drawSprite(ctx, studioSprites.ticketSlot, bench.x + 20, topY - 5)
     // Framed workbench front backboard for the order pad
     rect(boardBox.x + 1, boardBox.y, boardBox.w - 2, boardBox.h, P.wood[0])
     rect(boardBox.x + 2, boardBox.y + 1, boardBox.w - 4, boardBox.h - 2, P.wood[2])

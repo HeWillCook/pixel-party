@@ -10,7 +10,6 @@ import {
 import { DeleteRoomButton } from '../../components/game/DeleteRoomButton'
 import { StudioLobby, type StudioRoomItem } from '../../components/studio/StudioLobby'
 import { useToast } from '../../components/ui'
-import { pixelPreflight } from '../../hooks/pixelPreflight'
 
 interface RoomRecord {
   name: string
@@ -123,22 +122,7 @@ export default function PartyPage() {
       return { status: 'ok', joinCode: 'play' }
     }
     if (!isSignedIn) {
-      if (livePublicRooms.some((r) => r.joinCode === normalized)) {
-        return { status: 'ok', joinCode: normalized }
-      }
-      try {
-        const probe = await pixelPreflight(
-          `${window.location.origin}/api/pixel/${encodeURIComponent(normalized)}/ws`,
-          false,
-          new AbortController().signal,
-        )
-        if (probe.error === 'not_found' || probe.error === 'closed') {
-          return { status: 'not_found' }
-        }
-        return { status: 'ok', joinCode: normalized }
-      } catch {
-        return { status: 'not_found' }
-      }
+      return { status: 'ok', joinCode: normalized }
     }
     setJoining(true)
     try {
@@ -164,7 +148,7 @@ export default function PartyPage() {
     } finally {
       setJoining(false)
     }
-  }, [isSignedIn, livePublicRooms])
+  }, [isSignedIn])
 
   return (
     <>

@@ -2,8 +2,6 @@ import { useCallback } from 'react'
 import { P } from '../../scene/palette'
 import { PixelScene } from '../../scene/PixelScene'
 import { drawSun } from '../../scene/procedural'
-import { drawSprite } from '../../scene/sprite'
-import { studioSprites } from '../../scene/studio/sprites'
 
 export function StudioBackdrop() {
   const draw = useCallback((ctx: CanvasRenderingContext2D) => {
@@ -74,15 +72,6 @@ export function StudioBackdrop() {
       rect(win.x - 3, win.y + win.h, win.w + 6, 3, P.stone[0])
       rect(win.x - 2, win.y + win.h, win.w + 4, 2, P.stone[3])
       rect(win.x - 2, win.y + win.h, win.w + 4, 1, P.sun[3])
-    }
-
-    // Warm studio hanging lamps
-    const lamps = portrait ? [62, width - 72] : [96, width - 106]
-    for (const lx of lamps) {
-      const ly = ceilingBottom + 6
-      for (let y = ceilingBottom; y < ly + 1; y++) rect(lx + 4, y, 2, 1, P.stone[0])
-      rect(lx + 1, ly + 7, 8, 2, P.sun[3])
-      drawSprite(ctx, studioSprites.lamp, lx, ly)
     }
 
     // Wainscoting & dado rail

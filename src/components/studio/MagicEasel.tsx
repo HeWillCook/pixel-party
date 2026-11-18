@@ -136,8 +136,14 @@ export function MagicEasel({
   const roundLabel = roundStateLabel(state.round?.state ?? fallbackRoom?.status)
   const hiddenWord = maskWord(state.round?.word)
 
+  const effectiveSmoke =
+    smokeMessage ??
+    (state.connectError === 'not_found' || state.connectError === 'closed'
+      ? 'No easel by that name'
+      : null)
+
   const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === 'Enter' && selectedCode && !smokeMessage) {
+    if (e.key === 'Enter' && selectedCode && !effectiveSmoke) {
       if (e.target instanceof HTMLElement && e.target.closest('a, button')) return
       e.preventDefault()
       navigate(`/r/${encodeURIComponent(selectedCode)}`)
@@ -147,8 +153,8 @@ export function MagicEasel({
   return (
     <div
       data-testid="magic-easel"
-      data-easel-state={smokeMessage ? 'smoke' : selectedCode ? 'preview' : 'idle'}
-      tabIndex={selectedCode && !smokeMessage ? 0 : -1}
+      data-easel-state={effectiveSmoke ? 'smoke' : selectedCode ? 'preview' : 'idle'}
+      tabIndex={selectedCode && !effectiveSmoke ? 0 : -1}
       onKeyDown={handleKeyDown}
       className={`studio-magic-easel ${transforming ? 'studio-magic-easel--transforming' : ''}`}
     >
@@ -170,14 +176,14 @@ export function MagicEasel({
         <div className="studio-magic-easel__surface">
           {transforming && <div className="studio-magic-easel__wipe" aria-hidden="true" />}
 
-          {smokeMessage ? (
+          {effectiveSmoke ? (
             <div data-testid="magic-easel-smoke" role="status" className="studio-magic-easel__smoke">
               <div className="studio-magic-easel__smoke-clouds" aria-hidden="true">
                 <span className="studio-easel-cloud studio-easel-cloud--1" />
                 <span className="studio-easel-cloud studio-easel-cloud--2" />
                 <span className="studio-easel-cloud studio-easel-cloud--3" />
               </div>
-              <p className="studio-magic-easel__smoke-text">{smokeMessage}</p>
+              <p className="studio-magic-easel__smoke-text">{effectiveSmoke}</p>
             </div>
           ) : selectedCode ? (
             <div data-testid="magic-easel-preview" className="studio-magic-easel__preview">

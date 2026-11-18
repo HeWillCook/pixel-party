@@ -341,7 +341,7 @@ html:has(.studio-world) .porch-nav__username {
 
 .studio-hat-card {
   pointer-events: auto;
-  width: 66%;
+  width: 61%;
   padding: calc(var(--px) * 1.25);
   display: flex;
   flex-direction: column;
@@ -505,10 +505,12 @@ html:has(.studio-world) .porch-nav__username {
 }
 
 .studio-order-form__submit:disabled,
-.studio-hat-card__btn:disabled {
+.studio-hat-card__btn:disabled,
+.studio-workbench-form .pp-btn:disabled,
+.studio-booth-form .pp-btn:disabled {
   opacity: 1;
   background: #ecd4b0;
-  color: #614052;
+  color: #392a45;
   border-color: #8e5960;
   box-shadow: none;
 }
