@@ -20,6 +20,12 @@ export interface GuessLogEntry {
   matched: boolean
 }
 
+export interface ProvisionalCooldown {
+  id?: number
+  idx: number
+  until: number
+}
+
 export interface ClientState {
   connected: boolean
   snapshotLoaded: boolean
@@ -31,6 +37,8 @@ export interface ClientState {
   height: number
   cells: Uint8Array
   pending: Map<number, number>
+  pendingIds: Map<number, number>
+  provisionalCooldown: ProvisionalCooldown | null
   round: RoundView | null
   guesses: Record<ZoneId, ZoneGuess | undefined>
   guessLog: GuessLogEntry[]
@@ -56,6 +64,8 @@ export function initialClientState(): ClientState {
     height,
     cells: new Uint8Array(width * height),
     pending: new Map<number, number>(),
+    pendingIds: new Map<number, number>(),
+    provisionalCooldown: null,
     round: null,
     guesses: {} as Record<ZoneId, ZoneGuess | undefined>,
     guessLog: [],
@@ -67,6 +77,10 @@ export function initialClientState(): ClientState {
     aiResting: false,
     lastReject: null,
   }
+}
+
+export function effectiveCooldownUntil(s: ClientState): number {
+  return Math.max(s.you.cooldownUntil, s.provisionalCooldown?.until ?? 0)
 }
 
 export function statusToConnectError(status: number): ConnectError | null {
@@ -100,20 +114,33 @@ export function applyOptimisticPlace(
   x: number,
   y: number,
   c: number,
+  options?: { id?: number; provisionalCooldownUntil?: number },
 ): ClientState {
   if (!Number.isInteger(x) || !Number.isInteger(y)) return s
   if (x < 0 || x >= s.width || y < 0 || y >= s.height) return s
   const idx = y * s.width + x
   const cells = s.cells.slice()
   const pending = new Map(s.pending)
+  const pendingIds = new Map(s.pendingIds)
   if (!pending.has(idx)) {
     pending.set(idx, s.cells[idx])
   }
+  if (options?.id !== undefined) {
+    pendingIds.set(idx, options.id)
+  } else {
+    pendingIds.delete(idx)
+  }
   cells[idx] = c
+  const provisionalCooldown =
+    options?.provisionalCooldownUntil !== undefined
+      ? { id: options.id, idx, until: options.provisionalCooldownUntil }
+      : s.provisionalCooldown
   return {
     ...s,
     cells,
     pending,
+    pendingIds,
+    provisionalCooldown,
     lastReject: null,
   }
 }
@@ -134,6 +161,8 @@ export function applyServerMsg(s: ClientState, m: ServerMsg, now: number = Date.
         height: m.height,
         cells,
         pending: new Map<number, number>(),
+        pendingIds: new Map<number, number>(),
+        provisionalCooldown: null,
         round: m.round,
         guessLog: m.round.id === s.guessLogRoundId ? s.guessLog : [],
         guessLogRoundId: m.round.id,
@@ -154,25 +183,67 @@ export function applyServerMsg(s: ClientState, m: ServerMsg, now: number = Date.
       const cells = s.cells.slice()
       cells[idx] = m.c
       const pending = new Map(s.pending)
+      const pendingIds = new Map(s.pendingIds)
+      const resolvedId = pendingIds.get(idx)
       // M4: Any authoritative pixel (from self or another player) resolves/supersedes the pending entry for that cell
       if (pending.has(idx)) {
         pending.delete(idx)
+        pendingIds.delete(idx)
       }
-      const you =
-        m.by === s.you.userId
-          ? {
-              ...s.you,
-              cooldownUntil: Math.max(
-                s.you.cooldownUntil,
-                Date.now() + cooldownMs(Math.max(1, s.players)),
-              ),
-            }
-          : s.you
+      const isSelf = m.by === s.you.userId
+      const you = isSelf
+        ? {
+            ...s.you,
+            cooldownUntil: Math.max(
+              s.you.cooldownUntil,
+              now + cooldownMs(Math.max(1, s.players)),
+            ),
+          }
+        : s.you
+      const clearsProvisional =
+        isSelf &&
+        s.provisionalCooldown !== null &&
+        s.provisionalCooldown.idx === idx &&
+        s.provisionalCooldown.id === resolvedId
       return {
         ...s,
         cells,
         pending,
+        pendingIds,
+        provisionalCooldown: clearsProvisional ? null : s.provisionalCooldown,
         you,
+      }
+    }
+    case 'noop': {
+      if (m.x < 0 || m.x >= s.width || m.y < 0 || m.y >= s.height) return s
+      const idx = m.y * s.width + m.x
+      const matchesPending = s.pending.has(idx) && s.pendingIds.get(idx) === m.id
+      const matchesCooldown =
+        s.provisionalCooldown !== null &&
+        (m.id === undefined
+          ? s.provisionalCooldown.id === undefined && s.provisionalCooldown.idx === idx
+          : s.provisionalCooldown.id === m.id)
+      if (!matchesPending && !matchesCooldown) return s
+
+      let pending = s.pending
+      let pendingIds = s.pendingIds
+      let cells = s.cells
+      if (matchesPending) {
+        pending = new Map(s.pending)
+        pending.delete(idx)
+        pendingIds = new Map(s.pendingIds)
+        pendingIds.delete(idx)
+        if (s.cells[idx] !== 0) {
+          cells = s.cells.slice()
+          cells[idx] = 0
+        }
+      }
+      return {
+        ...s,
+        cells,
+        pending,
+        pendingIds,
+        provisionalCooldown: matchesCooldown ? null : s.provisionalCooldown,
       }
     }
     case 'reject': {
@@ -186,18 +257,48 @@ export function applyServerMsg(s: ClientState, m: ServerMsg, now: number = Date.
         m.reason === 'rate_limited'
 
       const pending = new Map(s.pending)
+      const pendingIds = new Map(s.pendingIds)
+      let rejectedIdx: number | undefined
+      let rejectedId: number | undefined
       if (isPlacementReject && pending.size > 0) {
         // Batches identify the rejected cell; retain FIFO compatibility with older servers.
         const idx = m.x === undefined || m.y === undefined ? undefined : m.y * s.width + m.x
-        const firstEntry = idx === undefined
-          ? pending.entries().next().value as [number, number] | undefined
-          : pending.has(idx) ? [idx, pending.get(idx)!] : undefined
-        if (firstEntry) {
-          const [idx, prevColor] = firstEntry
-          cells[idx] = prevColor
-          pending.delete(idx)
+        let entry: [number, number] | undefined
+        if (m.id !== undefined) {
+          if (idx !== undefined) {
+            if (pending.has(idx) && pendingIds.get(idx) === m.id) {
+              entry = [idx, pending.get(idx)!]
+            }
+          } else {
+            for (const [pendingIdx, pendingId] of pendingIds.entries()) {
+              if (pendingId === m.id && pending.has(pendingIdx)) {
+                entry = [pendingIdx, pending.get(pendingIdx)!]
+                break
+              }
+            }
+          }
+        } else {
+          entry = idx === undefined
+            ? pending.entries().next().value as [number, number] | undefined
+            : pending.has(idx) ? [idx, pending.get(idx)!] : undefined
+        }
+        if (entry) {
+          const [entryIdx, prevColor] = entry
+          rejectedIdx = entryIdx
+          rejectedId = pendingIds.get(entryIdx)
+          cells[entryIdx] = prevColor
+          pending.delete(entryIdx)
+          pendingIds.delete(entryIdx)
         }
       }
+
+      const settlesProvisional =
+        s.provisionalCooldown !== null &&
+        (m.id === undefined
+          ? rejectedIdx !== undefined &&
+            s.provisionalCooldown.idx === rejectedIdx &&
+            s.provisionalCooldown.id === rejectedId
+          : s.provisionalCooldown.id === m.id)
 
       const you =
         (m.reason === 'cooldown' || m.reason === 'rate_limited') && m.retryAt !== undefined
@@ -216,6 +317,8 @@ export function applyServerMsg(s: ClientState, m: ServerMsg, now: number = Date.
         ...s,
         cells,
         pending,
+        pendingIds,
+        provisionalCooldown: settlesProvisional ? null : s.provisionalCooldown,
         you,
         round,
         lastReject: m,

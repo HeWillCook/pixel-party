@@ -1,4 +1,4 @@
-import { PALETTE } from '../../game/config'
+import { EMPTY_CANVAS, PALETTE } from '../../game/config'
 import { decodeCells } from '../../game/grid'
 
 export function PixelThumb({ cells, size }: { cells: string; size: number }) {
@@ -10,9 +10,12 @@ export function PixelThumb({ cells, size }: { cells: string; size: number }) {
   }
   return (
     <svg role="img" aria-label="Pixel drawing" width={size} height={size} viewBox="0 0 32 32" shapeRendering="crispEdges" className="pixelated shrink-0 border-2 border-border bg-white">
-      {Array.from(pixels, (color, index) => (
-        <rect key={index} x={index % 32} y={Math.floor(index / 32)} width="1" height="1" fill={PALETTE[color] ?? PALETTE[0]} />
-      ))}
+      {Array.from(pixels, (color, index) => {
+        const x = index % 32
+        const y = Math.floor(index / 32)
+        const fill = color === 0 ? EMPTY_CANVAS[(x + y) % 2] : (PALETTE[color] ?? EMPTY_CANVAS[(x + y) % 2])
+        return <rect key={index} x={x} y={y} width="1" height="1" fill={fill} />
+      })}
     </svg>
   )
 }

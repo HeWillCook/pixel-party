@@ -7,6 +7,7 @@ import {
   applyOptimisticPlace,
   applyServerMsg,
   clearLastReject,
+  effectiveCooldownUntil,
   initialClientState,
   statusToConnectError,
 } from './client-state'
@@ -346,4 +347,192 @@ it('host closure clears authorized board state and uses the terminal screen', ()
   expect(closed.snapshotLoaded).toBe(false)
   expect(closed.round).toBeNull()
   expect(roomAccessView(closed)).toBe('closed')
+})
+
+it('noop clears pending empty erase and resets provisional cooldown without touching authoritative cooldown', () => {
+  const rawCells = new Uint8Array(32 * 32)
+  const idx = 5 * 32 + 4
+  rawCells[idx] = 6
+  let s = applyServerMsg(initialClientState(), {
+    t: 'snapshot',
+    mode: 'coop',
+    width: 32,
+    height: 32,
+    cells: encodeCells(rawCells),
+    round: makeRound('r1'),
+    you: { userId: 'user-a', cooldownUntil: 1500 },
+    players: 2,
+    aiResting: false,
+  })
+
+  // Case 1: optimistic erase starts provisional cooldown, then matching noop clears only provisional cooldown
+  s = applyOptimisticPlace(s, 4, 5, 0, { id: 1, provisionalCooldownUntil: 9_999_999 })
+  expect(s.pending.has(idx)).toBe(true)
+  expect(s.you.cooldownUntil).toBe(1500)
+  expect(effectiveCooldownUntil(s)).toBe(9_999_999)
+  s = applyServerMsg(s, { t: 'noop', x: 4, y: 5, id: 1 })
+  expect(s.pending.has(idx)).toBe(false)
+  expect(s.cells[idx]).toBe(0)
+  expect(s.provisionalCooldown).toBeNull()
+  expect(s.you.cooldownUntil).toBe(1500)
+  expect(effectiveCooldownUntil(s)).toBe(1500)
+
+  // Case 2: peer's erase pixel arrives first (clearing pending), then sender's noop arrives
+  rawCells[idx] = 8
+  s = applyServerMsg(s, {
+    t: 'snapshot',
+    mode: 'coop',
+    width: 32,
+    height: 32,
+    cells: encodeCells(rawCells),
+    round: makeRound('r1'),
+    you: { userId: 'user-a', cooldownUntil: 0 },
+    players: 2,
+    aiResting: false,
+  })
+  s = applyOptimisticPlace(s, 4, 5, 0, { id: 2, provisionalCooldownUntil: 9_999_999 })
+  s = applyServerMsg(s, { t: 'pixel', x: 4, y: 5, c: 0, by: 'user-b' })
+  expect(s.pending.has(idx)).toBe(false)
+  expect(s.provisionalCooldown?.until).toBe(9_999_999)
+  s = applyServerMsg(s, { t: 'noop', x: 4, y: 5, id: 2 })
+  expect(s.cells[idx]).toBe(0)
+  expect(s.provisionalCooldown).toBeNull()
+  expect(effectiveCooldownUntil(s)).toBe(0)
+})
+
+it('stale noop does not clear newer cooldown', () => {
+  const rawCells = new Uint8Array(32 * 32)
+  rawCells[5 * 32 + 4] = 6
+  let s = applyServerMsg(initialClientState(), {
+    t: 'snapshot',
+    mode: 'coop',
+    width: 32,
+    height: 32,
+    cells: encodeCells(rawCells),
+    round: makeRound('r1'),
+    you: { userId: 'user-a', cooldownUntil: 1200 },
+    players: 2,
+    aiResting: false,
+  })
+
+  // Placement id=1 (erase at 4,5) starts provisional cooldown until 3000
+  s = applyOptimisticPlace(s, 4, 5, 0, { id: 1, provisionalCooldownUntil: 3000 })
+  // Provisional window expires, client sends placement id=2 (paint at 6,6) with cooldown until 5500
+  s = applyOptimisticPlace(s, 6, 6, 4, { id: 2, provisionalCooldownUntil: 5500 })
+
+  // Stale noop for id=1 arrives (even out-of-bounds or old coords) -> newer cooldown & authoritative cooldown stay intact
+  s = applyServerMsg(s, { t: 'noop', x: -1, y: -1, id: 1 })
+  expect(s.provisionalCooldown).toEqual({ id: 2, idx: 6 * 32 + 6, until: 5500 })
+  expect(s.you.cooldownUntil).toBe(1200)
+  expect(effectiveCooldownUntil(s)).toBe(5500)
+
+  s = applyServerMsg(s, { t: 'noop', x: 4, y: 5, id: 1 })
+  expect(s.provisionalCooldown).toEqual({ id: 2, idx: 6 * 32 + 6, until: 5500 })
+  expect(s.you.cooldownUntil).toBe(1200)
+  expect(effectiveCooldownUntil(s)).toBe(5500)
+  expect(s.pending.has(6 * 32 + 6)).toBe(true)
+
+  // Untagged stale noop also does not clear id-correlated newer cooldown
+  s = applyServerMsg(s, { t: 'noop', x: 6, y: 6 })
+  expect(s.provisionalCooldown).toEqual({ id: 2, idx: 6 * 32 + 6, until: 5500 })
+})
+
+it('noop clears only its own pending entry', () => {
+  const rawCells = new Uint8Array(32 * 32)
+  const idx = 5 * 32 + 4
+  rawCells[idx] = 6
+  let s = applyServerMsg(initialClientState(), {
+    t: 'snapshot',
+    mode: 'coop',
+    width: 32,
+    height: 32,
+    cells: encodeCells(rawCells),
+    round: makeRound('r1'),
+    you: { userId: 'user-a', cooldownUntil: 0 },
+    players: 2,
+    aiResting: false,
+  })
+
+  // Placement id=1 erases (4,5); peer resolves or client paints newer placement id=2 on the same cell (4,5)
+  s = applyOptimisticPlace(s, 4, 5, 0, { id: 1, provisionalCooldownUntil: 3000 })
+  s = applyOptimisticPlace(s, 4, 5, 9, { id: 2, provisionalCooldownUntil: 5500 })
+  expect(s.pending.get(idx)).toBe(6)
+  expect(s.pendingIds.get(idx)).toBe(2)
+  expect(s.cells[idx]).toBe(9)
+
+  // Stale noop for id=1 arrives on the SAME cell (4,5) -> must preserve newer pending entry, cell colour, and cooldown
+  s = applyServerMsg(s, { t: 'noop', x: 4, y: 5, id: 1 })
+  expect(s.pending.has(idx)).toBe(true)
+  expect(s.pendingIds.get(idx)).toBe(2)
+  expect(s.cells[idx]).toBe(9)
+  expect(s.provisionalCooldown).toEqual({ id: 2, idx, until: 5500 })
+
+  // Even after peer overwrites (4,5) to colour 5 (clearing pending), stale noop(id=1) must not zero cells[idx]
+  s = applyServerMsg(s, { t: 'pixel', x: 4, y: 5, c: 5, by: 'user-b' })
+  expect(s.pending.has(idx)).toBe(false)
+  expect(s.cells[idx]).toBe(5)
+  s = applyServerMsg(s, { t: 'noop', x: 4, y: 5, id: 1 })
+  expect(s.cells[idx]).toBe(5)
+  expect(s.provisionalCooldown).toEqual({ id: 2, idx, until: 5500 })
+
+  // Exact matching noop for an id-2 erase clears only its own pending entry
+  const idx2 = 7 * 32 + 7
+  s = applyOptimisticPlace(s, 7, 7, 0, { id: 3, provisionalCooldownUntil: 6000 })
+  s = applyOptimisticPlace(s, 8, 8, 4, { id: 4, provisionalCooldownUntil: 7000 })
+  s = applyServerMsg(s, { t: 'noop', x: 7, y: 7, id: 3 })
+  expect(s.pending.has(idx2)).toBe(false)
+  expect(s.pending.has(8 * 32 + 8)).toBe(true)
+  expect(s.provisionalCooldown).toEqual({ id: 4, idx: 8 * 32 + 8, until: 7000 })
+})
+
+it('reject settles provisional cooldown by id after a peer pixel supersedes the cell and respects retryAt', () => {
+  const rawCells = new Uint8Array(32 * 32)
+  const idx = 4 * 32 + 3
+  let s = applyServerMsg(initialClientState(), {
+    t: 'snapshot',
+    mode: 'coop',
+    width: 32,
+    height: 32,
+    cells: encodeCells(rawCells),
+    round: makeRound('r1'),
+    you: { userId: 'user-a', cooldownUntil: 0 },
+    players: 2,
+    aiResting: false,
+  })
+
+  // Placement id=1 starts provisional cooldown until 5000 on (3,4)
+  s = applyOptimisticPlace(s, 3, 4, 4, { id: 1, provisionalCooldownUntil: 5000 })
+  expect(s.pending.has(idx)).toBe(true)
+  expect(s.pendingIds.get(idx)).toBe(1)
+  expect(effectiveCooldownUntil(s)).toBe(5000)
+
+  // Peer pixel on the same cell clears pending and pendingIds before reject arrives
+  s = applyServerMsg(s, { t: 'pixel', x: 3, y: 4, c: 9, by: 'user-b' })
+  expect(s.cells[idx]).toBe(9)
+  expect(s.pending.has(idx)).toBe(false)
+  expect(s.pendingIds.has(idx)).toBe(false)
+  expect(s.provisionalCooldown).toEqual({ id: 1, idx, until: 5000 })
+
+  // Cooldown reject arrives with id=1 and earlier retryAt=3500 -> provisional cleared, retryAt respected, peer pixel kept
+  s = applyServerMsg(s, { t: 'reject', reason: 'cooldown', x: 3, y: 4, retryAt: 3500, id: 1 })
+  expect(s.cells[idx]).toBe(9)
+  expect(s.provisionalCooldown).toBeNull()
+  expect(s.you.cooldownUntil).toBe(3500)
+  expect(effectiveCooldownUntil(s)).toBe(3500)
+
+  // Reject without retryAt after peer supersedes cell also clears provisional cooldown and restores prior authoritative cooldown
+  s = applyOptimisticPlace(s, 5, 5, 6, { id: 2, provisionalCooldownUntil: 8000 })
+  s = applyServerMsg(s, { t: 'pixel', x: 5, y: 5, c: 7, by: 'user-b' })
+  s = applyServerMsg(s, { t: 'reject', reason: 'round_inactive', x: 5, y: 5, id: 2 })
+  expect(s.provisionalCooldown).toBeNull()
+  expect(effectiveCooldownUntil(s)).toBe(3500)
+
+  // Stale reject with old id=1 must not roll back newer pending cell or clear newer provisional cooldown on same cell
+  const idx3 = 6 * 32 + 6
+  s = applyOptimisticPlace(s, 6, 6, 4, { id: 3, provisionalCooldownUntil: 9000 })
+  s = applyServerMsg(s, { t: 'reject', reason: 'round_inactive', x: 6, y: 6, id: 1 })
+  expect(s.cells[idx3]).toBe(4)
+  expect(s.pending.has(idx3)).toBe(true)
+  expect(s.pendingIds.get(idx3)).toBe(3)
+  expect(s.provisionalCooldown).toEqual({ id: 3, idx: idx3, until: 9000 })
 })

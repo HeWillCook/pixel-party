@@ -31,12 +31,15 @@ import { PixelCanvas } from '../../../components/game/PixelCanvas'
 import { PlayerCursors } from '../../../components/game/PlayerCursors'
 import { PlayersPanel } from '../../../components/game/PlayersPanel'
 import { RoundBar } from '../../../components/game/RoundBar'
+import { ToolBar } from '../../../components/game/ToolBar'
 import { useGameSounds } from '../../../components/game/useGameSounds'
 import { Button } from '../../../components/ui'
-import { roomAccessView, type RejectMsg } from '../../../game/client-state'
+import { effectiveCooldownUntil, roomAccessView, type RejectMsg } from '../../../game/client-state'
 import { contributorLabel } from '../../../game/contributor-label'
 import { cooldownMs } from '../../../game/rules'
+import { PARTY_TOOLS, pickAt, type Tool } from '../../../game/tools'
 import { usePixelRoom } from '../../../hooks/usePixelRoom'
+import { useToolShortcuts } from '../../../hooks/useToolShortcuts'
 
 interface RoomRecord {
   name: string
@@ -156,6 +159,7 @@ export default function RoomPage() {
   )
 
   const [activeColor, setActiveColor] = useState<number>(4) // Default red
+  const [tool, setTool] = useState<Tool>('paint')
   const [now, setNow] = useState<number>(() => Date.now())
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [dismissedOverlayRoundId, setDismissedOverlayRoundId] = useState<string | null>(null)
@@ -193,7 +197,7 @@ export default function RoomPage() {
   const roundPlaying = state.round?.state === 'playing'
   const canDraw = Boolean(state.you.userId) && Boolean(roundPlaying)
   const cooldownTotalMs = cooldownMs(Math.max(1, state.players))
-  const cooldownRemainingMs = Math.max(0, state.you.cooldownUntil - now)
+  const cooldownRemainingMs = Math.max(0, effectiveCooldownUntil(state) - now)
   const friendlyReject = rejectMessage(state.lastReject, now)
 
   useEffect(() => {
@@ -298,6 +302,20 @@ export default function RoomPage() {
     [isSpectator, canDraw, place],
   )
 
+  const handlePick = useCallback(
+    (x: number, y: number) => {
+      if (!canDraw) return
+      const picked = pickAt(state.cells, state.width, x, y)
+      if (picked.tool === 'erase') {
+        setTool('erase')
+      } else {
+        setActiveColor(picked.color)
+        setTool('paint')
+      }
+    },
+    [canDraw, state.cells, state.width],
+  )
+
   const contributorInfo = useMemo(() => {
     const rawIds = currentRoundDoc?.data.contributorIds
     const ids = Array.isArray(rawIds) ? rawIds : []
@@ -328,6 +346,12 @@ export default function RoomPage() {
     state.round.result != null &&
     dismissedOverlayRoundId !== state.round.id
   const outcome = state.round?.result?.outcome
+
+  useToolShortcuts({
+    tools: PARTY_TOOLS,
+    onSelect: setTool,
+    enabled: canDraw && !showOverlay && !showAuthModal,
+  })
 
   useEffect(() => {
     if (showOverlay) {
@@ -662,12 +686,14 @@ export default function RoomPage() {
               height={state.height}
               cells={state.cells}
               activeColor={activeColor}
+              tool={tool}
               canDraw={canDraw}
               cooldownRemainingMs={cooldownRemainingMs}
               availWidth={availBox.width}
               availHeight={availBox.height}
               word={state.round?.word}
               onPlace={handlePlace}
+              onPick={handlePick}
               onHoverCell={handleHoverCell}
             >
               <PlayerCursors peers={peers} width={state.width} height={state.height} />
@@ -840,8 +866,14 @@ export default function RoomPage() {
           </GuessFeed>
         </div>
 
-        {/* Left Column on lg, 3rd on mobile: PlayersPanel */}
-        <div className="order-3 lg:order-1">
+        {/* Left Column on lg, 3rd on mobile: ToolBar + PlayersPanel */}
+        <div className="order-3 flex flex-col gap-3 lg:order-1">
+          <ToolBar
+            tools={PARTY_TOOLS}
+            active={tool}
+            onSelect={setTool}
+            disabled={isSpectator}
+          />
           <PlayersPanel
             players={state.players}
             roster={state.roster}

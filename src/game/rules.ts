@@ -1,4 +1,4 @@
-import { PALETTE } from './config'
+import { MAX_COLOR } from './config'
 
 export type RejectReason =
   | 'not_signed_in'
@@ -43,7 +43,7 @@ export function validatePlacement(p: {
   ) {
     return { ok: false, reason: 'out_of_bounds' }
   }
-  if (!Number.isInteger(p.color) || p.color < 1 || p.color >= PALETTE.length) {
+  if (!Number.isInteger(p.color) || p.color < 0 || p.color > MAX_COLOR) {
     return { ok: false, reason: 'bad_color' }
   }
   if (p.lastPlacedAt !== undefined) {

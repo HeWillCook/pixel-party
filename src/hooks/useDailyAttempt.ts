@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { getAuthToken, useAuthProfileReady } from 'deepspace'
-import { DAILY, PALETTE } from '../game/config'
+import { DAILY, MAX_COLOR, PALETTE } from '../game/config'
 import type { GradeKind } from '../game/daily/attempt'
 import {
   canAskDaily,
@@ -36,7 +36,7 @@ function readLocalCells(day: string, userId: string): Uint8Array | null {
     const raw = window.localStorage.getItem(storageKey(day, userId))
     if (!raw) return null
     const decoded = decodeCells(raw, GRID_CELLS)
-    if (decoded.every((c) => c <= 15)) return decoded
+    if (decoded.every((c) => c <= MAX_COLOR)) return decoded
   } catch {
     // Ignore storage or decode errors
   }
@@ -56,7 +56,7 @@ function decodeValidCells(encoded: string | undefined): Uint8Array | null {
   if (!encoded) return null
   try {
     const decoded = decodeCells(encoded, GRID_CELLS)
-    if (decoded.every((c) => c <= 15)) return decoded
+    if (decoded.every((c) => c <= MAX_COLOR)) return decoded
   } catch {
     // Ignore invalid base64
   }
@@ -79,6 +79,7 @@ export function useDailyAttempt(): {
   state: DailyClientState
   cells: Uint8Array
   paint(x: number, y: number, color: number): void
+  replaceCells(next: Uint8Array): void
   start(): Promise<void>
   askNow(): Promise<void>
   done(): Promise<void>
@@ -464,6 +465,24 @@ export function useDailyAttempt(): {
     }
   }, [])
 
+  const replaceCells = useCallback((next: Uint8Array) => {
+    const now = Date.now()
+    if (finalizingRef.current || !canPaintDaily(stateRef.current, now)) return
+    if (next.length !== GRID_CELLS) return
+    for (let i = 0; i < next.length; i++) {
+      const c = next[i]!
+      if (!Number.isInteger(c) || c < 0 || c > MAX_COLOR) return
+    }
+
+    const copy = new Uint8Array(next)
+    cellsRef.current = copy
+    setCells(copy)
+
+    if (stateRef.current.day && userIdRef.current) {
+      writeLocalCells(stateRef.current.day, userIdRef.current, copy)
+    }
+  }, [])
+
   const start = useCallback(async (): Promise<void> => {
     mutationEpochRef.current++
     try {
@@ -511,5 +530,5 @@ export function useDailyAttempt(): {
     await finishAttempt()
   }, [finishAttempt])
 
-  return { state: isSignedIn && (!userId || loadedUserId !== userId) ? { ...state, loaded: false } : state, cells, paint, start, askNow, done, tick }
+  return { state: isSignedIn && (!userId || loadedUserId !== userId) ? { ...state, loaded: false } : state, cells, paint, replaceCells, start, askNow, done, tick }
 }

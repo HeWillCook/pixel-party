@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { AuthOverlay, useAuthProfileReady, useQuery } from 'deepspace'
 import {
@@ -19,10 +19,15 @@ import { AutoGradeTimeline } from '../../components/daily/AutoGradeTimeline'
 import { ExitDailyButton } from '../../components/daily/ExitDailyButton'
 import { Palette } from '../../components/game/Palette'
 import { PixelCanvas } from '../../components/game/PixelCanvas'
+import { ToolBar } from '../../components/game/ToolBar'
 import { Badge, Button } from '../../components/ui'
+import { MAX_COLOR } from '../../game/config'
 import { canAskDaily, canPaintDaily } from '../../game/daily/client-schedule'
 import { decodeCells } from '../../game/grid'
+import { emptyHistory, record, redo, undo, type History } from '../../game/history'
+import { DAILY_TOOLS, floodFill, pickAt, type Tool } from '../../game/tools'
 import { useDaily } from '../../hooks/DailyAttemptProvider'
+import { useToolShortcuts } from '../../hooks/useToolShortcuts'
 import type { GradeView } from '../../server/daily-service'
 
 interface DailyDrawingRecord {
@@ -55,7 +60,7 @@ function decodeSnapshotOrFallback(encoded: string | undefined, fallback: Uint8Ar
   if (!encoded) return fallback
   try {
     const decoded = decodeCells(encoded, 1024)
-    if (decoded.every((c) => c <= 15)) return decoded
+    if (decoded.every((c) => c <= MAX_COLOR)) return decoded
   } catch {
     // Ignore invalid base64
   }
@@ -64,7 +69,7 @@ function decodeSnapshotOrFallback(encoded: string | undefined, fallback: Uint8Ar
 
 export default function DailyHomePage() {
   const { isLoaded, isSignedIn, user } = useAuthProfileReady({ requireUser: false })
-  const { state, cells, paint, start, askNow, done } = useDaily()
+  const { state, cells, paint, replaceCells, start, askNow, done } = useDaily()
   const { muted, toggleMute } = useDailySounds(state)
   const boardRef = useRef<HTMLDivElement>(null)
   const paletteRef = useRef<HTMLDivElement>(null)
@@ -105,9 +110,34 @@ export default function DailyHomePage() {
   const bestScoreDoc = myScores[0]?.data
 
   const [activeColor, setActiveColor] = useState<number>(4)
+  const [tool, setTool] = useState<Tool>('paint')
+  const [history, setHistory] = useState<History>(() => emptyHistory())
+  const [strokeActive, setStrokeActive] = useState(false)
   const [starting, setStarting] = useState(false)
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [now, setNow] = useState<number>(() => Date.now())
+
+  const cellsRef = useRef(cells)
+  const historyRef = useRef(history)
+  const strokeActiveRef = useRef(false)
+  const strokeSnapshotRef = useRef<Uint8Array | null>(null)
+
+  useEffect(() => {
+    cellsRef.current = cells
+  }, [cells])
+
+  useEffect(() => {
+    historyRef.current = history
+  }, [history])
+
+  useEffect(() => {
+    const reset = emptyHistory()
+    historyRef.current = reset
+    setHistory(reset)
+    strokeSnapshotRef.current = null
+    strokeActiveRef.current = false
+    setStrokeActive(false)
+  }, [state.day, state.startedAt])
 
   useEffect(() => {
     if (state.status !== 'playing') return
@@ -120,6 +150,102 @@ export default function DailyHomePage() {
   const asksLeft = state.asksLeft
   const canDraw = isSignedIn && canPaintDaily(state, now)
   const canAsk = isSignedIn && canAskDaily(state, now)
+
+  useEffect(() => {
+    if (canDraw) return
+    strokeSnapshotRef.current = null
+    if (strokeActiveRef.current) {
+      strokeActiveRef.current = false
+      setStrokeActive(false)
+    }
+  }, [canDraw])
+
+  const handleStrokeStart = useCallback(() => {
+    if (!canDraw) return
+    strokeSnapshotRef.current = new Uint8Array(cellsRef.current)
+    strokeActiveRef.current = true
+    setStrokeActive(true)
+  }, [canDraw])
+
+  const handleStrokeEnd = useCallback(() => {
+    strokeSnapshotRef.current = null
+    if (!strokeActiveRef.current) return
+    strokeActiveRef.current = false
+    setStrokeActive(false)
+  }, [])
+
+  const handlePlace = useCallback(
+    (x: number, y: number, color: number) => {
+      if (!canDraw) return
+      if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || x >= 32 || y < 0 || y >= 32) return
+      if (!Number.isInteger(color) || color < 0 || color > MAX_COLOR) return
+      const idx = y * 32 + x
+      if (cellsRef.current[idx] === color) return
+      if (strokeSnapshotRef.current) {
+        const nextHistory = record(historyRef.current, strokeSnapshotRef.current)
+        historyRef.current = nextHistory
+        setHistory(nextHistory)
+        strokeSnapshotRef.current = null
+      }
+      const next = cellsRef.current.slice()
+      next[idx] = color
+      cellsRef.current = next
+      paint(x, y, color)
+    },
+    [canDraw, paint],
+  )
+
+  const handleFill = useCallback(
+    (x: number, y: number) => {
+      if (!canDraw) return
+      const next = floodFill(cellsRef.current, 32, 32, x, y, activeColor)
+      if (next === cellsRef.current) return
+      const nextHistory = record(historyRef.current, cellsRef.current)
+      historyRef.current = nextHistory
+      setHistory(nextHistory)
+      cellsRef.current = next
+      replaceCells(next)
+    },
+    [canDraw, activeColor, replaceCells],
+  )
+
+  const handlePick = useCallback((x: number, y: number) => {
+    const picked = pickAt(cellsRef.current, 32, x, y)
+    if (picked.tool === 'erase') {
+      setTool('erase')
+    } else {
+      setActiveColor(picked.color)
+      setTool('paint')
+    }
+  }, [])
+
+  const handleUndo = useCallback(() => {
+    if (!canDraw || strokeActiveRef.current) return
+    const result = undo(historyRef.current, cellsRef.current)
+    if (!result) return
+    historyRef.current = result.history
+    setHistory(result.history)
+    cellsRef.current = result.cells
+    replaceCells(result.cells)
+  }, [canDraw, replaceCells])
+
+  const handleRedo = useCallback(() => {
+    if (!canDraw || strokeActiveRef.current) return
+    const result = redo(historyRef.current, cellsRef.current)
+    if (!result) return
+    historyRef.current = result.history
+    setHistory(result.history)
+    cellsRef.current = result.cells
+    replaceCells(result.cells)
+  }, [canDraw, replaceCells])
+
+  useToolShortcuts({
+    tools: DAILY_TOOLS,
+    onSelect: setTool,
+    onUndo: strokeActive ? undefined : handleUndo,
+    onRedo: strokeActive ? undefined : handleRedo,
+    enabled: isSignedIn && state.loaded && state.status === 'playing' && canDraw && !showAuthModal,
+  })
 
   const endedBestScore = Math.max(
     state.best,
@@ -319,9 +445,23 @@ export default function DailyHomePage() {
           </div>
 
           {/* Main Stage */}
-          <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
-            {/* Left: Canvas + Palette */}
-            <div ref={boardRef} className="flex min-w-0 flex-col gap-4">
+          <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[168px_minmax(0,1fr)_300px]">
+            {/* Left: Tools */}
+            <div className="order-2 min-w-0 lg:order-1">
+              <ToolBar
+                tools={DAILY_TOOLS}
+                active={tool}
+                onSelect={setTool}
+                onUndo={handleUndo}
+                onRedo={handleRedo}
+                canUndo={!strokeActive && history.past.length > 0}
+                canRedo={!strokeActive && history.future.length > 0}
+                disabled={!canDraw}
+              />
+            </div>
+
+            {/* Center: Canvas + Palette */}
+            <div ref={boardRef} className="order-1 flex min-w-0 flex-col gap-4 lg:order-2">
               <PixelCanvas
                 width={32}
                 height={32}
@@ -329,9 +469,14 @@ export default function DailyHomePage() {
                 availHeight={boardBox.height}
                 cells={cells}
                 activeColor={activeColor}
+                tool={tool}
                 canDraw={canDraw}
                 word={state.prompt}
-                onPlace={paint}
+                onPlace={handlePlace}
+                onFill={handleFill}
+                onPick={handlePick}
+                onStrokeStart={handleStrokeStart}
+                onStrokeEnd={handleStrokeEnd}
               />
 
               <div ref={paletteRef}>
@@ -344,7 +489,7 @@ export default function DailyHomePage() {
             </div>
 
             {/* Right: Controls + GradePanel */}
-            <div className="flex min-w-0 flex-col gap-4">
+            <div className="order-3 flex min-w-0 flex-col gap-4">
               {state.notice && <div role="status" className="pp-panel p-4">{state.notice}</div>}
               <AutoGradeTimeline windows={state.windows} now={now + state.clockOffsetMs} />
               <GradePanel

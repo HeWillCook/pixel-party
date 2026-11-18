@@ -342,7 +342,7 @@ test('fast solo drag paints a solid optimistic stroke and sends a frame batch wi
   // The fixture has sent no acceptance yet: these are all optimistic pixels.
   for (let x = 1; x <= 20; x++) expect(await pixelColor(page, x, 1)).toEqual([239, 68, 68, 255])
   server.send(JSON.stringify({ t: 'reject', reason: 'rate_limited', x: 10, y: 1, retryAt: Date.now() + 17 }))
-  await expect.poll(() => pixelColor(page, 10, 1)).toEqual([255, 255, 255, 255])
+  await expect.poll(() => pixelColor(page, 10, 1)).toEqual([239, 227, 204, 255])
   expect(await pixelColor(page, 11, 1)).toEqual([239, 68, 68, 255])
   expect(errors).toEqual([])
 })
@@ -540,5 +540,158 @@ test('banner-aware canvas sizing keeps palette inside 1280x720 with spectator ba
   console.log('1280x720 banner-case metrics:', JSON.stringify(metrics))
   expect(metrics.canvasBottom).toBeLessThanOrEqual(720)
   expect(metrics.paletteBottom).toBeLessThanOrEqual(720)
+  expect(errors).toEqual([])
+})
+
+test('room shows Paint, Erase and Pick colour; no Fill, Undo or Redo', async ({ page }) => {
+  const errors = await clientFixture(page, { signedIn: true })
+  const sent: { x: number; y: number; c: number }[][] = []
+  await page.routeWebSocket('**/api/pixel/**', socket => {
+    const state = snapshot('playing')
+    const cells = Buffer.alloc(1024)
+    cells[2 * 32 + 2] = 9
+    socket.send(JSON.stringify({ ...state, cells: cells.toString('base64') }))
+    socket.onMessage(raw => {
+      const message = JSON.parse(String(raw))
+      if (message.t === 'place') sent.push(message.cells)
+    })
+  })
+  await page.goto(`${origin}/r/AB2Z`)
+  const canvas = page.getByTestId('pixel-canvas')
+  await expect(canvas).toBeVisible()
+
+  const toolbar = page.getByTestId('toolbar')
+  await expect(toolbar).toBeVisible()
+  await expect(page.getByTestId('tool-paint')).toHaveText('Paint')
+  await expect(page.getByTestId('tool-paint')).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByTestId('tool-erase')).toHaveText('Erase')
+  await expect(page.getByTestId('tool-pick')).toHaveText('Pick colour')
+  await expect(page.getByTestId('tool-fill')).toHaveCount(0)
+  await expect(page.getByTestId('tool-undo')).toHaveCount(0)
+  await expect(page.getByTestId('tool-redo')).toHaveCount(0)
+  expect(await toolbar.innerText()).not.toMatch(/⌘|Ctrl|\b[BEFI]\b/)
+
+  const box = (await canvas.boundingBox())!
+  const point = (x: number, y: number) => ({ x: box.x + box.width * (x + 0.5) / 32, y: box.y + box.height * (y + 0.5) / 32 })
+
+  // Pick colour from painted pixel (2, 2) -> selects color 9 and returns to Paint
+  await page.getByTestId('tool-pick').click()
+  await expect(page.getByTestId('tool-pick')).toHaveAttribute('aria-pressed', 'true')
+  await canvas.dispatchEvent('pointerdown', { clientX: point(2, 2).x, clientY: point(2, 2).y, pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1 })
+  await canvas.dispatchEvent('pointerup', { pointerId: 1, pointerType: 'mouse' })
+  await expect(page.getByTestId('tool-paint')).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByTestId('swatch-9')).toHaveAttribute('aria-pressed', 'true')
+
+  // Switch to Erase and clear (2, 2) -> sends c: 0
+  await page.getByTestId('tool-erase').click()
+  await expect(page.getByTestId('tool-erase')).toHaveAttribute('aria-pressed', 'true')
+  await canvas.dispatchEvent('pointerdown', { clientX: point(2, 2).x, clientY: point(2, 2).y, pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1 })
+  await canvas.dispatchEvent('pointerup', { pointerId: 1, pointerType: 'mouse' })
+  await expect.poll(() => sent.flat()).toContainEqual({ x: 2, y: 2, c: 0, id: 1 })
+  await expect.poll(() => pixelColor(page, 2, 2)).toEqual([243, 234, 216, 255])
+
+  // Pick colour on empty pixel (3, 3) -> switches to Erase
+  await page.getByTestId('tool-pick').click()
+  await canvas.dispatchEvent('pointerdown', { clientX: point(3, 3).x, clientY: point(3, 3).y, pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1 })
+  await canvas.dispatchEvent('pointerup', { pointerId: 1, pointerType: 'mouse' })
+  await expect(page.getByTestId('tool-erase')).toHaveAttribute('aria-pressed', 'true')
+
+  expect(errors).toEqual([])
+})
+
+test('party noop clears provisional cooldown so next paint sends immediately', async ({ page }) => {
+  const errors = await clientFixture(page, { signedIn: true })
+  const sent: { x: number; y: number; c: number; id?: number }[][] = []
+  let serverSocket!: WebSocketRoute
+  await page.routeWebSocket('**/api/pixel/**', socket => {
+    serverSocket = socket
+    const state = snapshot('playing')
+    const cells = Buffer.alloc(1024)
+    cells[2 * 32 + 2] = 9
+    socket.send(JSON.stringify({ ...state, players: 2, cells: cells.toString('base64') }))
+    socket.onMessage(raw => {
+      const message = JSON.parse(String(raw))
+      if (message.t !== 'place') return
+      sent.push(message.cells)
+      for (const cell of message.cells as { x: number; y: number; c: number; id?: number }[]) {
+        if (cell.c === 0) {
+          socket.send(JSON.stringify({ t: 'noop', x: cell.x, y: cell.y, ...(cell.id === undefined ? {} : { id: cell.id }) }))
+        } else {
+          socket.send(JSON.stringify({ t: 'pixel', x: cell.x, y: cell.y, c: cell.c, by: 'host' }))
+        }
+      }
+    })
+  })
+  await page.goto(`${origin}/r/AB2Z`)
+  const canvas = page.getByTestId('pixel-canvas')
+  await expect(canvas).toBeVisible()
+
+  const box = (await canvas.boundingBox())!
+  const point = (x: number, y: number) => ({ x: box.x + box.width * (x + 0.5) / 32, y: box.y + box.height * (y + 0.5) / 32 })
+
+  // Erase (2, 2); client starts provisional 2s cooldown, server echoes placement id in noop
+  await page.getByTestId('tool-erase').click()
+  await canvas.dispatchEvent('pointerdown', { clientX: point(2, 2).x, clientY: point(2, 2).y, pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1 })
+  await canvas.dispatchEvent('pointerup', { pointerId: 1, pointerType: 'mouse' })
+  await expect.poll(() => sent.flat()).toContainEqual({ x: 2, y: 2, c: 0, id: 1 })
+  await expect.poll(() => pixelColor(page, 2, 2)).toEqual([243, 234, 216, 255])
+
+  // Immediately paint (4, 4) without waiting 2s; succeeds because matching noop cleared provisional cooldown
+  await page.getByTestId('tool-paint').click()
+  await page.getByTestId('swatch-4').click()
+  await canvas.dispatchEvent('pointerdown', { clientX: point(4, 4).x, clientY: point(4, 4).y, pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1 })
+  await canvas.dispatchEvent('pointerup', { pointerId: 1, pointerType: 'mouse' })
+  await expect.poll(() => sent.flat()).toContainEqual({ x: 4, y: 4, c: 4, id: 2 })
+  await expect.poll(() => pixelColor(page, 4, 4)).toEqual([239, 68, 68, 255])
+
+  // Stale noop with old id=1 must NOT clear the active cooldown from placement id=2
+  serverSocket.send(JSON.stringify({ t: 'noop', x: 2, y: 2, id: 1 }))
+  await canvas.dispatchEvent('pointerdown', { clientX: point(6, 6).x, clientY: point(6, 6).y, pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1 })
+  await canvas.dispatchEvent('pointerup', { pointerId: 1, pointerType: 'mouse' })
+  await page.waitForTimeout(100)
+  expect(sent.flat().some(cell => cell.x === 6 && cell.y === 6)).toBe(false)
+  expect(errors).toEqual([])
+})
+
+test('party reject with id settles provisional cooldown after peer pixel and respects retryAt', async ({ page }) => {
+  const errors = await clientFixture(page, { signedIn: true })
+  const sent: { x: number; y: number; c: number; id?: number }[][] = []
+  await page.routeWebSocket('**/api/pixel/**', socket => {
+    socket.send(JSON.stringify({ ...snapshot('playing'), players: 2 }))
+    socket.onMessage(raw => {
+      const message = JSON.parse(String(raw))
+      if (message.t !== 'place') return
+      sent.push(message.cells)
+      const [first] = message.cells as { x: number; y: number; c: number; id?: number }[]
+      if (first?.id === 1) {
+        socket.send(JSON.stringify({ t: 'pixel', x: first.x, y: first.y, c: 9, by: 'peer' }))
+        socket.send(JSON.stringify({ t: 'reject', reason: 'cooldown', x: first.x, y: first.y, id: first.id, retryAt: Date.now() - 10 }))
+      } else if (first) {
+        socket.send(JSON.stringify({ t: 'pixel', x: first.x, y: first.y, c: first.c, by: 'host' }))
+      }
+    })
+  })
+  await page.goto(`${origin}/r/AB2Z`)
+  const canvas = page.getByTestId('pixel-canvas')
+  await expect(canvas).toBeVisible()
+
+  const box = (await canvas.boundingBox())!
+  const point = (x: number, y: number) => ({ x: box.x + box.width * (x + 0.5) / 32, y: box.y + box.height * (y + 0.5) / 32 })
+
+  // Paint (2, 2) starting 2s provisional cooldown; peer supersedes cell before reject(id=1) arrives
+  await canvas.dispatchEvent('pointerdown', { clientX: point(2, 2).x, clientY: point(2, 2).y, pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1 })
+  await canvas.dispatchEvent('pointerup', { pointerId: 1, pointerType: 'mouse' })
+  await expect.poll(() => sent.flat()).toContainEqual({ x: 2, y: 2, c: 4, id: 1 })
+  await expect.poll(() => pixelColor(page, 2, 2)).toEqual([6, 182, 212, 255])
+
+  // Wait for reject handling (banner triggers resize), then paint (4, 4) immediately without waiting 2s
+  await expect(page.getByTestId('reject-notice')).toBeVisible()
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+  const updatedBox = (await canvas.boundingBox())!
+  const updatedPoint = (x: number, y: number) => ({ x: updatedBox.x + updatedBox.width * (x + 0.5) / 32, y: updatedBox.y + updatedBox.height * (y + 0.5) / 32 })
+  await canvas.dispatchEvent('pointerdown', { clientX: updatedPoint(4, 4).x, clientY: updatedPoint(4, 4).y, pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1 })
+  await canvas.dispatchEvent('pointerup', { pointerId: 1, pointerType: 'mouse' })
+  await expect.poll(() => sent.flat()).toContainEqual({ x: 4, y: 4, c: 4, id: 2 })
+  await expect.poll(() => pixelColor(page, 4, 4)).toEqual([239, 68, 68, 255])
   expect(errors).toEqual([])
 })

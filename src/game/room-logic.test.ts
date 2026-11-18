@@ -158,6 +158,53 @@ describe('room logic', () => {
     expect(result.state.lastGuesses).toEqual(['house'])
     expect(result.events).toContainEqual(expect.objectContaining({ type: 'roundEnded', event: expect.objectContaining({ finalGuesses: ['house'] }) }))
   })
+  it('erase clears a pixel and credit', () => {
+    const painted = applyPlacement(room(), { x: 1, y: 1, c: 4, userId: 'a' }, 2000, 1).state
+    const erased = applyPlacement(painted, { x: 1, y: 1, c: 0, userId: 'b' }, 2001, 1)
+    expect(erased.state.grid.cells[33]).toBe(0)
+    expect(erased.state.grid.placedBy[33]).toBe('')
+    expect(erased.events).toEqual([{ type: 'pixel', x: 1, y: 1, c: 0, by: 'b' }])
+  })
+  it('erase lowers pixels used at round end', () => {
+    let s = room()
+    s = applyPlacement(s, { x: 0, y: 0, c: 4, userId: 'a' }, 2000, 1).state
+    s = applyPlacement(s, { x: 1, y: 0, c: 4, userId: 'a' }, 2001, 1).state
+    s = applyPlacement(s, { x: 2, y: 0, c: 4, userId: 'a' }, 2002, 1).state
+    s = applyPlacement(s, { x: 1, y: 0, c: 0, userId: 'a' }, 2003, 1).state
+    const ended = applyJudgeOutcome(s, judged, 4000)
+    expect(ended.events).toContainEqual(expect.objectContaining({
+      type: 'roundEnded',
+      event: expect.objectContaining({ pixelsUsed: 2 }),
+    }))
+  })
+  it('erasing empty is a free no-op', () => {
+    const s = room()
+    const noop = applyPlacement(s, { x: 5, y: 5, c: 0, userId: 'a', id: 11 }, 2000, 2)
+    expect(noop.events).toEqual([{ type: 'noop', x: 5, y: 5, id: 11 }])
+    expect(noop.state).toBe(s)
+    expect(noop.state.lastPlacedAt).toEqual({})
+    const painted = applyPlacement(noop.state, { x: 1, y: 1, c: 4, userId: 'a' }, 2001, 2)
+    expect(painted.events[0]).toMatchObject({ type: 'pixel', x: 1, y: 1, c: 4, by: 'a' })
+    const noopDuringCooldown = applyPlacement(painted.state, { x: 6, y: 6, c: 0, userId: 'a' }, 2002, 2)
+    expect(noopDuringCooldown.events).toEqual([{ type: 'noop', x: 6, y: 6 }])
+    expect(noopDuringCooldown.state).toBe(painted.state)
+  })
+  it('erase during cooldown is rejected', () => {
+    const s1 = applyPlacement(room(), { x: 0, y: 0, c: 4, userId: 'a' }, 2000, 2).state
+    const s2 = applyPlacement(s1, { x: 1, y: 0, c: 5, userId: 'b' }, 2000, 2).state
+    const rejected = applyPlacement(s2, { x: 1, y: 0, c: 0, userId: 'a', id: 21 }, 2001, 2)
+    expect(rejected.events).toEqual([
+      expect.objectContaining({ type: 'reject', reason: 'cooldown', x: 1, y: 0, id: 21 }),
+    ])
+    expect(rejected.state.grid.cells[1]).toBe(5)
+  })
+  it('white 16 accepted; 17 rejected', () => {
+    const s = room()
+    const white = applyPlacement(s, { x: 2, y: 2, c: 16, userId: 'a' }, 2000, 1)
+    expect(white.events).toEqual([{ type: 'pixel', x: 2, y: 2, c: 16, by: 'a' }])
+    const bad = applyPlacement(white.state, { x: 3, y: 2, c: 17, userId: 'a' }, 2001, 1)
+    expect(bad.events).toEqual([{ type: 'reject', reason: 'bad_color', x: 3, y: 2 }])
+  })
 })
 
 describe('solo placement abuse cap', () => {
