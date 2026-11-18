@@ -63,12 +63,12 @@ function drawSittingHaiku(
   beret: boolean,
 ) {
   const step = frame % 24
-  const leanX = state === 'guess' ? 1 : 0
+  const leanX = state === 'guess' ? 2 : 0
   const jumpY =
     state === 'correct'
       ? frame === 0
-        ? -2
-        : -[0, 2, 3, 2, 0, 1][frame % 6]
+        ? -3
+        : -[0, 2, 4, 3, 1, 2][frame % 6]
       : 0
   const baseX = 6 + leanX
   const baseY = 7 + jumpY
@@ -76,19 +76,22 @@ function drawSittingHaiku(
   // Ground shadow stays anchored on floor
   px(ctx, baseX + 2, 24, 12, 1, P.wood[0])
 
-  // Ears
-  px(ctx, baseX + 1, baseY + 1, 3, 3, P.wood[0])
-  px(ctx, baseX + 2, baseY + 2, 1, 2, P.fur[3])
-  px(ctx, baseX + 10, baseY + 1, 3, 3, P.wood[0])
-  px(ctx, baseX + 11, baseY + 2, 1, 2, P.fur[3])
+  // Ears (perk slightly during thinking)
+  const earLift = state === 'thinking' ? -1 : 0
+  px(ctx, baseX + 1, baseY + 1 + earLift, 3, 3, P.wood[0])
+  px(ctx, baseX + 2, baseY + 2 + earLift, 1, 2, P.fur[3])
+  px(ctx, baseX + 10, baseY + 1 + earLift, 3, 3, P.wood[0])
+  px(ctx, baseX + 11, baseY + 2 + earLift, 1, 2, P.fur[3])
 
-  // Tail behind body
+  // Expressive tail behind body (2px flick in idle, rapid wag on guess/correct)
   const tailFlick =
     state === 'guess' || state === 'correct'
-      ? (frame % 4 < 2 ? -1 : 0)
-      : step >= 16 && step <= 20
-        ? -1
-        : 0
+      ? (frame % 4 < 2 ? -2 : 0)
+      : step >= 17 && step <= 20
+        ? -2
+        : step === 16 || step === 21
+          ? -1
+          : 0
   px(ctx, baseX + 13, baseY + 14, 3, 2, P.wood[0])
   px(ctx, baseX + 13, baseY + 14, 2, 1, P.fur[3])
   px(ctx, baseX + 15, baseY + 11 + tailFlick, 3, 4, P.wood[0])
@@ -104,14 +107,14 @@ function drawSittingHaiku(
   px(ctx, baseX + 3, baseY + 4, 8, 2, P.fur[3])
   px(ctx, baseX + 2, baseY + 9, 10, 1, P.fur[3])
 
-  // Beret (flies slightly higher during correct jump)
+  // Beret (flies higher during celebration jump)
   if (beret) {
-    const beretFly = state === 'correct' ? (jumpY < -1 ? -3 : -2) : 0
+    const beretFly = state === 'correct' ? (jumpY < -1 ? -4 : -2) : 0
     drawBeret(ctx, baseX + 3, baseY + beretFly, state === 'correct' ? -1 : 0)
   }
 
   // Face / eyes
-  const blinking = state === 'idle' && (step === 10 || step === 11)
+  const blinking = state === 'idle' && (step === 10 || step === 11 || step === 12)
   if (state === 'correct') {
     // Happy ^ ^ eyes
     px(ctx, baseX + 3, baseY + 6, 3, 1, P.fur[0])
@@ -119,8 +122,8 @@ function drawSittingHaiku(
     px(ctx, baseX + 8, baseY + 6, 3, 1, P.fur[0])
     px(ctx, baseX + 9, baseY + 5, 1, 1, P.fur[0])
   } else if (blinking) {
-    px(ctx, baseX + 3, baseY + 6, 2, 1, P.fur[0])
-    px(ctx, baseX + 9, baseY + 6, 2, 1, P.fur[0])
+    px(ctx, baseX + 3, baseY + 7, 3, 1, P.fur[0])
+    px(ctx, baseX + 9, baseY + 7, 3, 1, P.fur[0])
   } else {
     const lookUp = state === 'thinking' ? -1 : 0
     px(ctx, baseX + 3, baseY + 6, 2, 2, P.sun[3])
@@ -136,7 +139,7 @@ function drawSittingHaiku(
   // Nose & mouth
   px(ctx, baseX + 6, baseY + 7, 2, 1, P.flame[1])
   if (state === 'guess' || state === 'correct') {
-    px(ctx, baseX + 6, baseY + 8, 2, 1, P.flame[0])
+    px(ctx, baseX + 6, baseY + 8, 2, 2, P.flame[0])
   } else {
     px(ctx, baseX + 5, baseY + 8, 4, 1, P.fur[2])
   }
@@ -151,17 +154,19 @@ function drawSittingHaiku(
 
   // Paws
   if (state === 'thinking') {
-    // Left paw down, right paw raised to chin
+    // Left paw resting, right arm bent up to chin in thoughtful pose
     px(ctx, baseX + 3, baseY + 16, 3, 2, P.wood[0])
     px(ctx, baseX + 4, baseY + 16, 1, 1, P.fur[4])
+    px(ctx, baseX + 10, baseY + 11, 3, 4, P.wood[0])
+    px(ctx, baseX + 11, baseY + 12, 1, 3, P.fur[3])
     px(ctx, baseX + 8, baseY + 9, 3, 3, P.wood[0])
     px(ctx, baseX + 9, baseY + 10, 1, 1, P.fur[4])
   } else if (state === 'correct') {
-    // Both paws cheering up
-    px(ctx, baseX, baseY + 10, 3, 3, P.wood[0])
-    px(ctx, baseX + 1, baseY + 11, 1, 1, P.fur[4])
-    px(ctx, baseX + 11, baseY + 10, 3, 3, P.wood[0])
-    px(ctx, baseX + 12, baseY + 11, 1, 1, P.fur[4])
+    // Both paws cheering up wide
+    px(ctx, baseX - 1, baseY + 9, 3, 4, P.wood[0])
+    px(ctx, baseX, baseY + 10, 1, 2, P.fur[4])
+    px(ctx, baseX + 12, baseY + 9, 3, 4, P.wood[0])
+    px(ctx, baseX + 13, baseY + 10, 1, 2, P.fur[4])
   } else {
     px(ctx, baseX + 3, baseY + 16, 3, 2, P.wood[0])
     px(ctx, baseX + 4, baseY + 16, 1, 1, P.fur[4])
@@ -190,7 +195,7 @@ function drawSleepingHaiku(
   frame: number,
   beret: boolean,
 ) {
-  const breath = frame === 0 ? 0 : Math.floor(frame / 10) % 2
+  const breath = frame === 0 ? 0 : Math.floor(frame / 8) % 2
   const baseX = 4
   const baseY = 14 + breath
 

@@ -25,6 +25,21 @@ export function CriticBubble({
   const lastSeenGuessIdRef = useRef<number | null>(null)
   const guessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  const [wide, setWide] = useState(() =>
+    typeof window === 'undefined' ? true : window.innerWidth >= 768,
+  )
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const media = window.matchMedia('(min-width: 768px)')
+    const update = () => setWide(media.matches)
+    update()
+    media.addEventListener('change', update)
+    return () => media.removeEventListener('change', update)
+  }, [])
+
+  const scale = wide ? 5 : 4
+
   useEffect(() => {
     lastSeenGuessIdRef.current = null
     setGuessPoseActive(false)
@@ -77,12 +92,12 @@ export function CriticBubble({
       <div className="critic-bubble__stage">
         <div className="critic-bubble__perch">
           <div className="critic-bubble__stool" aria-hidden="true">
-            <StudioSprite sprite={studioSprites.criticStool} scale={2} />
+            <StudioSprite sprite={studioSprites.criticStool} scale={scale} />
           </div>
           <Haiku
             state={haikuState}
             bubble={haikuBubble}
-            scale={2}
+            scale={scale}
             beret
             paused={paused}
             className="critic-bubble__haiku"

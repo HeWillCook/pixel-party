@@ -1,8 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Sparkles, Users } from 'lucide-react'
 import { EMPTY_CANVAS, PALETTE } from '../../game/config'
 import { usePixelRoom } from '../../hooks/usePixelRoom'
+import { drawSprite, type Sprite } from '../../scene/sprite'
+import { studioSprites } from '../../scene/studio/sprites'
+import { useSceneClock } from '../../scene/useSceneClock'
 
 export interface MagicEaselRoomInfo {
   name: string
@@ -17,6 +20,33 @@ export interface MagicEaselProps {
   smokeMessage: string | null
   transformSeq: number
 }
+
+interface MagicSparkSpec {
+  id: number
+  tone: 'gold' | 'sun' | 'teal' | 'pink'
+  left: string
+  top: string
+  sx: number
+  sy: number
+  delayMs: number
+}
+
+const MAGIC_SPARKS: MagicSparkSpec[] = [
+  { id: 1, tone: 'gold', left: '-4%', top: '8%', sx: 14, sy: 10, delayMs: 0 },
+  { id: 2, tone: 'teal', left: '14%', top: '-2%', sx: 10, sy: 14, delayMs: 280 },
+  { id: 3, tone: 'pink', left: '84%', top: '-1%', sx: -10, sy: 14, delayMs: 560 },
+  { id: 4, tone: 'sun', left: '99%', top: '12%', sx: -14, sy: 9, delayMs: 140 },
+  { id: 5, tone: 'teal', left: '-6%', top: '30%', sx: 16, sy: 4, delayMs: 700 },
+  { id: 6, tone: 'gold', left: '101%', top: '34%', sx: -16, sy: 4, delayMs: 420 },
+  { id: 7, tone: 'pink', left: '-5%', top: '54%', sx: 15, sy: -3, delayMs: 980 },
+  { id: 8, tone: 'gold', left: '100%', top: '56%', sx: -15, sy: -3, delayMs: 840 },
+  { id: 9, tone: 'sun', left: '-2%', top: '74%', sx: 13, sy: -8, delayMs: 320 },
+  { id: 10, tone: 'teal', left: '98%', top: '76%', sx: -13, sy: -8, delayMs: 1120 },
+  { id: 11, tone: 'pink', left: '10%', top: '86%', sx: 9, sy: -12, delayMs: 620 },
+  { id: 12, tone: 'gold', left: '86%', top: '86%', sx: -9, sy: -12, delayMs: 1260 },
+  { id: 13, tone: 'sun', left: '34%', top: '-4%', sx: 4, sy: 16, delayMs: 500 },
+  { id: 14, tone: 'teal', left: '64%', top: '-4%', sx: -4, sy: 16, delayMs: 910 },
+]
 
 function maskWord(word?: string): string {
   const trimmed = word?.trim()
@@ -37,6 +67,39 @@ function roundStateLabel(state?: string): string {
     default:
       return 'Ready'
   }
+}
+
+function ScenePixelSprite({ sprite, className = '' }: { sprite: Sprite; className?: string }) {
+  const ref = useRef<HTMLCanvasElement>(null)
+
+  useEffect(() => {
+    const ctx = ref.current?.getContext('2d')
+    if (!ctx) return
+    ctx.imageSmoothingEnabled = false
+    ctx.clearRect(0, 0, sprite.w, sprite.h)
+    drawSprite(ctx, sprite, 0, 0)
+  }, [sprite])
+
+  return (
+    <canvas
+      ref={ref}
+      width={sprite.w}
+      height={sprite.h}
+      className={`porch-sprite ${className}`.trim()}
+      style={{
+        width: `calc(var(--px) * ${sprite.w})`,
+        height: `calc(var(--px) * ${sprite.h})`,
+      }}
+      aria-hidden="true"
+    />
+  )
+}
+
+function MagicBooster() {
+  const frame = useSceneClock(8, false)
+  const frames = studioSprites.magicBoosterFrames
+  const sprite = frames[frame % frames.length]
+  return <ScenePixelSprite sprite={sprite} className="studio-magic-easel__booster-sprite" />
 }
 
 function LiveBoardPreview({
@@ -158,14 +221,31 @@ export function MagicEasel({
       onKeyDown={handleKeyDown}
       className={`studio-magic-easel ${transforming ? 'studio-magic-easel--transforming' : ''}`}
     >
+      <div className="studio-magic-easel__aura" aria-hidden="true" />
+
       <div className="studio-magic-easel__sparkles" aria-hidden="true">
-        <span className="studio-magic-spark studio-magic-spark--1" />
-        <span className="studio-magic-spark studio-magic-spark--2" />
-        <span className="studio-magic-spark studio-magic-spark--3" />
-        <span className="studio-magic-spark studio-magic-spark--4" />
+        {MAGIC_SPARKS.map((spark) => (
+          <svg
+            key={spark.id}
+            viewBox="0 0 5 5"
+            shapeRendering="crispEdges"
+            className={`studio-magic-spark studio-magic-spark--${spark.tone}`}
+            style={{
+              left: spark.left,
+              top: spark.top,
+              animationDelay: `${spark.delayMs}ms`,
+              '--sx': `${spark.sx}`,
+              '--sy': `${spark.sy}`,
+            } as CSSProperties}
+          >
+            <path d="M2 0h1v2h2v1H3v2H2V3H0V2h2z" fill="currentColor" />
+          </svg>
+        ))}
       </div>
 
-      <div className="studio-magic-easel__clamp" aria-hidden="true" />
+      <div className="studio-magic-easel__crest" aria-hidden="true">
+        <ScenePixelSprite sprite={studioSprites.easelCrest} />
+      </div>
 
       <div className="studio-magic-easel__frame">
         <span className="studio-magic-easel__corner studio-magic-easel__corner--tl" aria-hidden="true" />
@@ -174,7 +254,12 @@ export function MagicEasel({
         <span className="studio-magic-easel__corner studio-magic-easel__corner--br" aria-hidden="true" />
 
         <div className="studio-magic-easel__surface">
-          {transforming && <div className="studio-magic-easel__wipe" aria-hidden="true" />}
+          {transforming && (
+            <>
+              <div data-testid="magic-easel-flash" className="studio-magic-easel__flash" aria-hidden="true" />
+              <div className="studio-magic-easel__wipe" aria-hidden="true" />
+            </>
+          )}
 
           {effectiveSmoke ? (
             <div data-testid="magic-easel-smoke" role="status" className="studio-magic-easel__smoke">
@@ -187,12 +272,16 @@ export function MagicEasel({
             </div>
           ) : selectedCode ? (
             <div data-testid="magic-easel-preview" className="studio-magic-easel__preview">
-              <div className="studio-magic-easel__meta">
-                <span data-testid="magic-easel-room-name" className="truncate studio-magic-easel__title">
-                  {previewTitle}
-                </span>
+              <div className="studio-magic-easel__hud">
                 <span className="studio-magic-easel__code">
                   {selectedCode === 'play' ? 'OPEN' : selectedCode}
+                </span>
+                <span data-testid="magic-easel-painters" className="studio-magic-easel__stat">
+                  <Users className="studio-magic-easel__stat-icon" aria-hidden />
+                  {painters} {painters === 1 ? 'painter' : 'painters'}
+                </span>
+                <span data-testid="magic-easel-state" className="studio-magic-easel__round">
+                  {roundLabel}
                 </span>
               </div>
 
@@ -204,16 +293,6 @@ export function MagicEasel({
                   snapshotLoaded={state.snapshotLoaded}
                   connectError={state.connectError}
                 />
-              </div>
-
-              <div className="studio-magic-easel__stats">
-                <span data-testid="magic-easel-painters" className="inline-flex items-center gap-1">
-                  <Users className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                  {painters} {painters === 1 ? 'painter' : 'painters'}
-                </span>
-                <span data-testid="magic-easel-state" className="uppercase">
-                  {roundLabel}
-                </span>
               </div>
 
               <div data-testid="magic-easel-word" className="studio-magic-easel__word" aria-label="Word hidden">
@@ -232,8 +311,16 @@ export function MagicEasel({
         </div>
       </div>
 
+      {selectedCode && !effectiveSmoke && (
+        <div className="studio-magic-easel__plaque">
+          <span data-testid="magic-easel-room-name" className="truncate studio-magic-easel__title">
+            {previewTitle}
+          </span>
+        </div>
+      )}
+
       <div className="studio-magic-easel__tray">
-        {selectedCode && !smokeMessage ? (
+        {selectedCode && !effectiveSmoke ? (
           <Link
             to={`/r/${encodeURIComponent(selectedCode)}`}
             data-testid="magic-easel-step-in"
@@ -253,11 +340,18 @@ export function MagicEasel({
       <div className="studio-magic-easel__base" aria-hidden="true">
         <span className="studio-magic-easel__leg studio-magic-easel__leg--left" />
         <span className="studio-magic-easel__leg studio-magic-easel__leg--right" />
-        <span className="studio-magic-easel__booster" />
-        <span className="studio-magic-easel__booster" />
-        <span className="studio-magic-easel__booster" />
+        <span className="studio-magic-easel__booster">
+          <MagicBooster />
+        </span>
+        <span className="studio-magic-easel__booster">
+          <MagicBooster />
+        </span>
+        <span className="studio-magic-easel__booster">
+          <MagicBooster />
+        </span>
       </div>
       <div className="studio-magic-easel__shadow" aria-hidden="true" />
     </div>
   )
 }
+

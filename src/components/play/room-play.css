@@ -173,7 +173,13 @@
   color: #fff0cc;
 }
 
-/* Right column: Haiku perched on studio stool + chalk slate + brass bell shelf */
+/* Right column: larger Haiku perched on studio stool + chalk slate + brass bell shelf */
+@media (min-width: 1024px) {
+  .room-play .play-layout {
+    grid-template-columns: 220px minmax(0, 1fr) 312px;
+  }
+}
+
 .room-play .play-layout__right > div:first-of-type {
   gap: 0;
 }
@@ -185,7 +191,7 @@
 }
 
 .critic-bubble__stage {
-  padding: 2px 4px 0;
+  padding: 2px 2px 0;
 }
 
 .critic-bubble__perch {
@@ -193,13 +199,13 @@
   display: flex;
   align-items: flex-end;
   gap: 8px;
-  min-height: 68px;
-  padding-bottom: 14px;
+  min-height: 146px;
+  padding-bottom: 24px;
 }
 
 .critic-bubble__stool {
   position: absolute;
-  left: 6px;
+  left: 10px;
   bottom: 0;
   z-index: 0;
   pointer-events: none;
@@ -209,38 +215,42 @@
   position: relative;
   z-index: 1;
   align-items: center;
+  gap: 10px;
+  width: 100%;
   max-width: 100%;
 }
 
 .critic-bubble__haiku .haiku__bubble {
   flex: 1 1 auto;
   min-width: 0;
-  max-width: 196px;
-  padding: 4px 8px;
-  font-size: 16px;
-  line-height: 1.1;
+  max-width: 162px;
+  padding: 8px 10px;
+  font-size: 21px;
+  font-weight: 700;
+  line-height: 1.08;
   word-break: break-word;
 }
 
 .critic-bubble__caption {
   display: flex;
   flex-direction: column;
-  margin-bottom: 6px;
-  padding: 3px 8px;
+  margin-bottom: 18px;
+  padding: 6px 10px;
   background: #ecd4b0;
   border: 2px solid #8e5960;
   box-shadow: inset 0 1px #fff0cc, 2px 2px #392a45;
-  line-height: 1.05;
+  line-height: 1.08;
 }
 
 .critic-bubble__caption .critic-bubble__role {
-  font-size: 17px;
+  font-size: 19px;
+  font-weight: 700;
   color: #392a45;
   text-transform: uppercase;
 }
 
 .critic-bubble__caption .critic-bubble__hint {
-  font-size: 14px;
+  font-size: 15px;
   color: #614052;
 }
 
@@ -269,7 +279,7 @@
 }
 
 .room-play .critic-bubble__speech [data-testid="guess-list"] {
-  max-height: 112px;
+  max-height: 92px;
 }
 
 .room-play .critic-bubble__speech [data-testid="guess-list"] p {
@@ -335,6 +345,20 @@
 @media (max-width: 767px) {
   .room-play .play-layout__left {
     gap: 8px;
+  }
+
+  .critic-bubble__perch {
+    min-height: 118px;
+    padding-bottom: 18px;
+  }
+
+  .critic-bubble__stool {
+    left: 8px;
+  }
+
+  .critic-bubble__haiku .haiku__bubble {
+    max-width: none;
+    font-size: 20px;
   }
 
   .room-play .play-layout__mobile-actions .room-bell-shelf {

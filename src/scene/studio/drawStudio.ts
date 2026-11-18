@@ -44,9 +44,9 @@ export function drawStudio(ctx: CanvasRenderingContext2D, frame: number): void {
   }
   ctx.imageSmoothingEnabled = false
 
-  const ceilingBottom = portrait ? 44 : 24
-  const dadoY = portrait ? 122 : 90
-  const floorY = portrait ? 142 : 110
+  const ceilingBottom = portrait ? 48 : 18
+  const dadoY = portrait ? 82 : 78
+  const floorY = portrait ? 96 : 98
 
   // 1. Basement brick wall with subtle warm highlights near the big windows
   rect(0, ceilingBottom, width, dadoY - ceilingBottom, P.fur[1])
@@ -56,7 +56,7 @@ export function drawStudio(ctx: CanvasRenderingContext2D, frame: number): void {
     const stagger = (row % 2) * 7
     for (let x = stagger; x < width; x += 14) {
       rect(x, y + 1, 1, 4, P.wood[0])
-      const nearWindow = y < dadoY - 8 && x > 58 && x < width - 16
+      const nearWindow = y < dadoY - 6 && x > 58 && x < width - 16
       if (nearWindow && (row + x) % 3 === 0) {
         rect(x + 2, y + 1, 10, 3, P.wood[2])
       } else if ((row + x) % 5 === 0) {
@@ -98,7 +98,7 @@ export function drawStudio(ctx: CanvasRenderingContext2D, frame: number): void {
       rect(win.x, win.y + row, win.w, 1, color)
     }
 
-    const cloudY = win.y + Math.max(4, Math.floor(skyH * 0.35))
+    const cloudY = win.y + Math.max(3, Math.floor(skyH * 0.35))
     rect(win.x + 8, cloudY, 16, 1, P.sky[4])
     rect(win.x + 6, cloudY + 1, 20, 1, P.sky[3])
     if (win.w >= 60) {
@@ -107,7 +107,7 @@ export function drawStudio(ctx: CanvasRenderingContext2D, frame: number): void {
 
     if (idx === layout.windows.length - 1) {
       const sunX = win.x + Math.round(win.w * 0.72)
-      drawSun(ctx, sunX, horizon + 1, portrait ? 7 : 9, horizon)
+      drawSun(ctx, sunX, horizon + 1, portrait ? 6 : 9, horizon)
     } else if (idx === 0) {
       rect(win.x + 8, horizon - 4, 16, 4, P.sky[2])
       rect(win.x + 14, horizon - 10, 3, 6, P.paper[3])
@@ -160,7 +160,7 @@ export function drawStudio(ctx: CanvasRenderingContext2D, frame: number): void {
   rect(0, floorY - 3, width, 3, P.wood[0])
   rect(0, floorY - 2, width, 1, P.wood[1])
 
-  // 5. Wood floor planks + woven rug on the right / Magic Easel zone
+  // 5. Wood floor planks (clean floor under the floating Magic Easel)
   rect(0, floorY, width, height - floorY, P.wood[2])
   for (let y = floorY; y < height; y += 7) {
     rect(0, y, width, 1, P.wood[0])
@@ -171,33 +171,19 @@ export function drawStudio(ctx: CanvasRenderingContext2D, frame: number): void {
     }
   }
 
-  const rug = portrait ? { x: 34, y: 212, w: 112, h: 38 } : { x: 202, y: 132, w: 98, h: 32 }
-  rect(rug.x, rug.y, rug.w, rug.h, P.wood[0])
-  rect(rug.x + 1, rug.y + 1, rug.w - 2, rug.h - 2, P.ui[1])
-  rect(rug.x + 3, rug.y + 3, rug.w - 6, rug.h - 6, P.ui[2])
-  rect(rug.x + 5, rug.y + 5, rug.w - 10, rug.h - 10, P.paper[2])
-  for (let x = rug.x + 6; x < rug.x + rug.w - 6; x += 6) {
-    rect(x, rug.y + 3, 3, 1, P.sun[3])
-    rect(x, rug.y + rug.h - 4, 3, 1, P.sun[3])
-  }
-  for (let y = rug.y + 2; y < rug.y + rug.h - 2; y += 2) {
-    rect(rug.x - 2, y, 2, 1, P.paper[3])
-    rect(rug.x + rug.w, y, 2, 1, P.paper[3])
-  }
-
-  // 6. Stairs on the left leading up to the porch doorway, with a proper angled banister
+  // 6. Stairs on the left leading up to the porch doorway, placed cleanly below the logo
   const stairs = layout.upstairs
-  const doorW = portrait ? 16 : 20
-  const doorH = 22
+  const doorW = portrait ? 14 : 17
+  const doorH = portrait ? 14 : 16
   rect(stairs.x + 1, stairs.y, doorW, doorH, P.wood[0])
   rect(stairs.x + 3, stairs.y + 2, doorW - 4, doorH - 2, P.sun[4])
-  rect(stairs.x + 4, stairs.y + 3, doorW - 6, 7, P.sky[5])
-  rect(stairs.x + 4, stairs.y + 11, doorW - 6, 2, P.wood[3])
+  rect(stairs.x + 4, stairs.y + 3, doorW - 6, 5, P.sky[5])
+  rect(stairs.x + 4, stairs.y + 9, doorW - 6, 2, P.wood[3])
 
-  const stepCount = 5
+  const stepCount = 4
   const stepDx = portrait ? 4 : 5
-  const stepDy = portrait ? 5 : 4
-  const stepW = portrait ? 15 : 18
+  const stepDy = 4
+  const stepW = portrait ? 13 : 16
   const strStartX = stairs.x + doorW - 1
   const strStartY = stairs.y + doorH - 1
   const strEndX = stairs.x + 2 + (stepCount - 1) * stepDx + stepW - 1
@@ -205,30 +191,29 @@ export function drawStudio(ctx: CanvasRenderingContext2D, frame: number): void {
   for (let x = strStartX; x <= strEndX; x++) {
     const t = (x - strStartX) / Math.max(1, strEndX - strStartX)
     const sy = Math.round(strStartY + t * (strEndY - strStartY))
-    rect(x, sy - 1, 1, 6, P.wood[0])
-    rect(x, sy, 1, 4, P.wood[2])
+    rect(x, sy - 1, 1, 5, P.wood[0])
+    rect(x, sy, 1, 3, P.wood[2])
   }
   for (let i = 0; i < stepCount; i++) {
     const sx = stairs.x + 2 + i * stepDx
     const sy = stairs.y + doorH - 2 + i * stepDy
-    rect(sx, sy, stepW, 5, P.wood[0])
+    rect(sx, sy, stepW, 4, P.wood[0])
     rect(sx + 1, sy + 1, stepW - 2, 2, i < 2 ? P.sun[3] : P.wood[4])
-    rect(sx + 1, sy + 3, stepW - 2, 1, P.wood[2])
   }
 
   const topPostX = strStartX
   const topPostBottom = strStartY + 1
-  const topPostTop = topPostBottom - 15
+  const topPostTop = topPostBottom - 12
   const botPostX = strEndX - 1
-  const botPostBottom = strEndY + 2
-  const botPostTop = botPostBottom - 17
+  const botPostBottom = strEndY + 1
+  const botPostTop = botPostBottom - 13
   const railSpanX = Math.max(1, botPostX - topPostX)
-  for (let b = 1; b <= 4; b++) {
-    const bx = Math.round(topPostX + (b / 5) * railSpanX)
+  for (let b = 1; b <= 3; b++) {
+    const bx = Math.round(topPostX + (b / 4) * railSpanX)
     const t = (bx - topPostX) / railSpanX
     const railY = Math.round(topPostTop + t * (botPostTop - topPostTop)) + 2
     const deckY = Math.round(strStartY + t * (strEndY - strStartY))
-    const bh = Math.max(4, deckY - railY)
+    const bh = Math.max(3, deckY - railY)
     rect(bx, railY, 2, bh, P.wood[0])
     rect(bx, railY, 1, bh, P.wood[3])
   }
@@ -241,15 +226,17 @@ export function drawStudio(ctx: CanvasRenderingContext2D, frame: number): void {
   drawNewelPost(rect, topPostX, topPostTop, topPostBottom)
   drawNewelPost(rect, botPostX, botPostTop, botPostBottom)
 
-  // 7. Wall shelf + potted studio plant
-  const shelf = layout.shelf
-  rect(shelf.x, shelf.y, shelf.w, shelf.h, P.wood[0])
-  rect(shelf.x + 1, shelf.y + 1, shelf.w - 2, 1, P.wood[4])
-  rect(shelf.x + 3, shelf.y + shelf.h, 2, 3, P.wood[0])
-  rect(shelf.x + shelf.w - 5, shelf.y + shelf.h, 2, 3, P.wood[0])
-  drawSprite(ctx, studioSprites.plant, layout.plant.x, layout.plant.y)
+  // 7. Wall shelf + potted studio plant (landscape only so portrait top band stays airy)
+  if (!portrait) {
+    const shelf = layout.shelf
+    rect(shelf.x, shelf.y, shelf.w, shelf.h, P.wood[0])
+    rect(shelf.x + 1, shelf.y + 1, shelf.w - 2, 1, P.wood[4])
+    rect(shelf.x + 3, shelf.y + shelf.h, 2, 3, P.wood[0])
+    rect(shelf.x + shelf.w - 5, shelf.y + shelf.h, 2, 3, P.wood[0])
+    drawSprite(ctx, studioSprites.plant, layout.plant.x, layout.plant.y)
+  }
 
-  // 8. Left-side Corkboard & Workbench (Top hat + Ticket slot + Order pad)
+  // 8. Left-side Corkboard & Craftsman Workbench (prominent Top hat + Brush jar + Shelf + Paint can)
   if (!portrait) {
     const cork = layout.corkboard
     rect(cork.x, cork.y, cork.w, cork.h, P.wood[0])
@@ -257,24 +244,28 @@ export function drawStudio(ctx: CanvasRenderingContext2D, frame: number): void {
     rect(cork.x + 2, cork.y + 2, cork.w - 4, cork.h - 4, P.wood[2])
 
     const bench = layout.workbench
-    const boardBox = layout.workbenchBoard
-    const topY = boardBox.y - 4
-    // Clean wooden tabletop
-    rect(bench.x, topY, bench.w, 5, P.wood[0])
-    rect(bench.x + 1, topY + 1, bench.w - 2, 2, P.wood[3])
-    rect(bench.x + 1, topY + 1, bench.w - 2, 1, P.wood[4])
-    // Magician top hat + ticket slot resting on the left of the tabletop
-    drawSprite(ctx, studioSprites.topHat, bench.x + 4, topY - 11)
-    drawSprite(ctx, studioSprites.ticketSlot, bench.x + 20, topY - 5)
-    // Framed workbench front backboard for the order pad
-    rect(boardBox.x + 1, boardBox.y, boardBox.w - 2, boardBox.h, P.wood[0])
-    rect(boardBox.x + 2, boardBox.y + 1, boardBox.w - 4, boardBox.h - 2, P.wood[2])
-    rect(boardBox.x + 3, boardBox.y + 2, boardBox.w - 6, boardBox.h - 4, P.wood[1])
-    // Workbench legs grounded cleanly
-    rect(bench.x + 2, topY + 5, 4, bench.y + bench.h - (topY + 5), P.wood[0])
-    rect(bench.x + 3, topY + 5, 2, bench.y + bench.h - (topY + 5), P.wood[2])
-    rect(bench.x + bench.w - 6, topY + 5, 4, bench.y + bench.h - (topY + 5), P.wood[0])
-    rect(bench.x + bench.w - 5, topY + 5, 2, bench.y + bench.h - (topY + 5), P.wood[2])
-    drawPaintCan(rect, bench.x + 8, bench.y + bench.h - 10, P.sea[3])
+    const topY = 109
+    // Perspective wooden tabletop with bevelled front apron
+    rect(bench.x, topY - 4, bench.w, 10, P.wood[0])
+    rect(bench.x + 2, topY - 3, bench.w - 4, 4, P.wood[4])
+    rect(bench.x + 1, topY + 1, bench.w - 2, 4, P.wood[3])
+    rect(bench.x + 2, topY + 5, bench.w - 4, 3, P.wood[1])
+
+    // Sturdy workbench legs & lower wooden shelf visible behind the compact order pad
+    const legH = bench.y + bench.h - (topY + 6)
+    rect(bench.x + 3, topY + 6, 5, legH, P.wood[0])
+    rect(bench.x + 4, topY + 6, 3, legH - 1, P.wood[2])
+    rect(bench.x + bench.w - 8, topY + 6, 5, legH, P.wood[0])
+    rect(bench.x + bench.w - 7, topY + 6, 3, legH - 1, P.wood[2])
+
+    // Lower workbench plank shelf with paint can on left leg side
+    const shelfY = bench.y + bench.h - 14
+    rect(bench.x + 6, shelfY, bench.w - 12, 4, P.wood[0])
+    rect(bench.x + 7, shelfY + 1, bench.w - 14, 2, P.wood[3])
+    drawPaintCan(rect, bench.x + 10, shelfY - 9, P.sea[3])
+
+    // Right-side brush jar & prominent Magician's Top Hat standing cleanly on left tabletop
+    drawSprite(ctx, studioSprites.brushJar, bench.x + bench.w - 13, topY - 10)
+    drawSprite(ctx, studioSprites.topHat, bench.x + 3, topY - 18)
   }
 }

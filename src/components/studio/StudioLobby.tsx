@@ -311,6 +311,7 @@ function CorkboardTickets({
   renderPackUp,
   onSelectTicket,
   mobile = false,
+  strip = false,
   style,
 }: {
   rooms: StudioRoomItem[]
@@ -321,13 +322,14 @@ function CorkboardTickets({
   renderPackUp: (room: StudioRoomItem) => ReactNode
   onSelectTicket: (code: string) => void
   mobile?: boolean
+  strip?: boolean
   style?: CSSProperties
 }) {
   return (
     <div
       data-testid="public-rooms-list"
       style={style}
-      className={`studio-corkboard ${mobile ? 'studio-corkboard--mobile' : ''}`}
+      className={`studio-corkboard ${mobile ? 'studio-corkboard--mobile' : ''} ${strip ? 'studio-corkboard--strip' : ''}`.trim()}
     >
       <div className="studio-corkboard__header">
         <h2 className="studio-corkboard__title">Room tickets</h2>
@@ -462,7 +464,7 @@ function StudioObjects({
         onClick={onUpstairs}
       />
 
-      {composition === 'landscape' && (
+      {composition === 'landscape' ? (
         <>
           <CorkboardTickets
             rooms={props.rooms}
@@ -508,6 +510,18 @@ function StudioObjects({
             />
           </div>
         </>
+      ) : (
+        <CorkboardTickets
+          rooms={props.rooms}
+          roomsLoading={props.roomsLoading}
+          defaultBoardPlayers={props.defaultBoardPlayers}
+          selectedCode={selectedCode}
+          currentUserId={props.currentUserId}
+          renderPackUp={props.renderPackUp}
+          onSelectTicket={onSelectTicket}
+          strip
+          style={rectToPercent(rect.corkboard, composition)}
+        />
       )}
 
       <div
@@ -724,16 +738,6 @@ export function StudioLobby(props: StudioLobbyProps) {
 
       {composition === 'portrait' && (
         <div className="studio-mobile-shelf">
-          <CorkboardTickets
-            rooms={props.rooms}
-            roomsLoading={props.roomsLoading}
-            defaultBoardPlayers={props.defaultBoardPlayers}
-            selectedCode={selectedCode}
-            currentUserId={props.currentUserId}
-            renderPackUp={props.renderPackUp}
-            onSelectTicket={handleSelectTicket}
-            mobile
-          />
           <JoinCodeForm
             joinCodeInput={props.joinCodeInput}
             joining={props.joining}
