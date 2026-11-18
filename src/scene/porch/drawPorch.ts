@@ -18,7 +18,7 @@ export function drawPorchRoof(ctx: CanvasRenderingContext2D, roofTop: number): v
   const width = ctx.canvas.width
   const rect = (x: number, y: number, w: number, h: number, color: string) => { ctx.fillStyle = color; ctx.fillRect(x, y, w, h) }
   rect(0, roofTop, width, 18, P.wood[1])
-  for (let x = 0; x < width; x += 18) { rect(x, roofTop, 3, 8, P.wood[0]); rect(x + 3, roofTop, 1, 8, P.wood[2]) }
+  for (let y = 1; y < 7; y += 3) { rect(0, roofTop + y, width, 1, P.wood[0]); rect(0, roofTop + y + 1, width, 1, P.wood[2]) }
   rect(0, roofTop + 7, width, 6, P.wood[0]); rect(0, roofTop + 8, width, 4, P.wood[2]); rect(0, roofTop + 12, width, 1, P.wood[4])
 }
 

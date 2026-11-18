@@ -1,5 +1,6 @@
 .play-layout { position: relative; display: grid; grid-template-columns: 220px minmax(0, 1fr) 280px; grid-template-rows: minmax(0, 1fr) auto; grid-template-areas: 'left canvas right' 'bottom bottom bottom'; gap: 12px; width: 100%; height: calc(100dvh - 104px); }
-.porch-shell:has(.daily-play) > .porch-nav { --px: 2px; z-index: 2; }
+.porch-shell:has(.daily-play) > .porch-nav { --px: 2px; z-index: 2; height: 56px; }
+.porch-shell:has(.daily-play) .porch-nav__row { min-height: 56px; height: 56px; }
 .porch-shell:has(.daily-play) .porch-nav__links { display: none; }
 .porch-shell:has(.daily-play) .porch-nav__roof { display: none; }
 .porch-shell:has(.daily-play) .porch-nav__compact-roof { display: block; position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
