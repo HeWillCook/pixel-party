@@ -54,6 +54,10 @@ test('mobile painter tray and grading actions stay accessible', async ({ page })
   await playFixture(page, true)
   await page.goto(`${origin}/home`)
   await expect(page.getByTestId('painter-tray').getByTestId('toolbar')).toBeVisible()
+  const lastSwatch = page.getByTestId('swatch-15')
+  await lastSwatch.scrollIntoViewIfNeeded()
+  await lastSwatch.click()
+  await expect(lastSwatch).toHaveAttribute('aria-pressed', 'true')
   for (const id of ['daily-ask-button', 'daily-done-button']) {
     const bounds = (await page.getByTestId(id).boundingBox())!
     expect(bounds.x).toBeGreaterThanOrEqual(0)
@@ -76,7 +80,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720
       const bounds = (await target.boundingBox())!
       expect(bounds.y + bounds.height).toBeLessThanOrEqual(viewport.height)
     }
-    if (viewport.width === 1440) expect((await page.getByTestId('pixel-canvas').boundingBox())!.width).toBeGreaterThanOrEqual(576)
+    if (viewport.width === 1440) await expect.poll(async () => (await page.getByTestId('pixel-canvas').boundingBox())!.width).toBeGreaterThanOrEqual(576)
   })
 }
 

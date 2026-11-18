@@ -69,6 +69,32 @@ function drawRoofStrip(ctx: CanvasRenderingContext2D) {
   const roofTop = root && scale ? Math.max(0, Math.floor((height - root.getBoundingClientRect().height / scale) / 2)) : 0
   drawPorchRoof(ctx, roofTop)
 }
+function CompactRoof() {
+  const ref = useRef<HTMLCanvasElement>(null)
+  useEffect(() => {
+    const canvas = ref.current
+    const container = canvas?.parentElement
+    if (!canvas || !container) return
+    const draw = () => {
+      const bounds = container.getBoundingClientRect()
+      canvas.width = Math.ceil(bounds.width / 2)
+      canvas.height = Math.ceil(bounds.height / 2)
+      canvas.style.width = `${canvas.width * 2}px`
+      canvas.style.height = `${canvas.height * 2}px`
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return
+      ctx.imageSmoothingEnabled = false
+      ctx.fillStyle = P.wood[1]
+      ctx.fillRect(0, 0, canvas.width, canvas.height)
+      drawPorchRoof(ctx, Math.max(0, canvas.height - 18))
+    }
+    const observer = new ResizeObserver(draw)
+    observer.observe(container)
+    draw()
+    return () => observer.disconnect()
+  }, [])
+  return <div className="porch-nav__compact-roof" aria-hidden="true"><canvas ref={ref} /></div>
+}
 const lantern = defineSprite([
   '.......a.......', '......aba......', '.....ababa.....', '...j.abeba.j...', '..j.jafffa.jj..',
   '.j.j.abffba.j..', '..j..abgfba..j.', '.j.j.abffba.j..', '..j.jabffbaj...', '...j.abbba.j...',
@@ -123,7 +149,8 @@ export default function Navigation() {
   }
   return <>
     <nav data-testid="app-navigation" className="porch-nav">
-      {location.pathname !== '/home' && <PixelScene draw={drawRoofStrip} className="porch-nav__roof" />}
+      <PixelScene draw={drawRoofStrip} className="porch-nav__roof" />
+      <CompactRoof />
       <div className="porch-nav__row">
         <Link to="/home" aria-label="Pixel Party, home" className="porch-nav__logo"><SpriteImage sprite={logoSign} /></Link>
         <div className="porch-nav__links">{visibleNav.map(navLink)}</div>

@@ -381,7 +381,7 @@ export default function DailyHomePage() {
                 {state.prompt}
               </span>
               <DailyTimer startedAt={state.startedAt} endsAt={state.endsAt} clockOffsetMs={state.clockOffsetMs} />
-          </div>} timeline={<><AutoGradeTimeline windows={state.windows} now={now + state.clockOffsetMs} startedAt={state.startedAt} /><div className="play-manual">Manual grades: {3 - asksLeft} of 3 used</div></>} exit={<ExitDailyButton onExit={() => setPlayTransition('leaving')} />} canvas={<div ref={boardRef} className="flex w-full min-w-0 justify-center">
+          </div>} timeline={<AutoGradeTimeline windows={state.windows} now={now + state.clockOffsetMs} startedAt={state.startedAt} manualUsed={state.asksUsed} />} exit={<ExitDailyButton onExit={() => setPlayTransition('leaving')} />} canvas={<div ref={boardRef} className="flex w-full min-w-0 justify-center">
               <HoverEasel>
               <PixelCanvas
                 width={32}

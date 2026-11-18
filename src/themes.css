@@ -66,6 +66,7 @@
 .animate-guess-pop { animation: guess-pop 280ms cubic-bezier(.22, 1, .36, 1) both; }
 
 .porch-nav { position: relative; flex: none; background: transparent; }
+.porch-nav__compact-roof { display: none; }
 .porch-nav .porch-nav__roof { position: absolute; inset: 0; pointer-events: none; }
 .porch-shell:has(.porch-home) { position: relative; }
 .porch-shell:has(.porch-home) > .porch-nav { position: absolute; z-index: 15; top: 0; left: 0; right: 0; }
