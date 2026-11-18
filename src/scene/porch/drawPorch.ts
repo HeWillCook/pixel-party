@@ -23,6 +23,38 @@ export function drawPorchRoof(ctx: CanvasRenderingContext2D, roofTop: number): v
   rect(0, roofTop + 7, width, 6, P.wood[0]); rect(0, roofTop + 8, width, 4, P.wood[2]); rect(0, roofTop + 12, width, 1, P.wood[4])
 }
 
+function drawPixelZ(ctx: CanvasRenderingContext2D, x: number, y: number, size: 3 | 4, color: string): void {
+  ctx.fillStyle = color
+  if (size === 3) {
+    ctx.fillRect(x, y, 3, 1)
+    ctx.fillRect(x + 1, y + 1, 1, 1)
+    ctx.fillRect(x, y + 2, 3, 1)
+  } else {
+    ctx.fillRect(x, y, 4, 1)
+    ctx.fillRect(x + 2, y + 1, 1, 1)
+    ctx.fillRect(x + 1, y + 2, 1, 1)
+    ctx.fillRect(x, y + 3, 4, 1)
+  }
+}
+
+export function drawCatSleepZs(ctx: CanvasRenderingContext2D, headX: number, headY: number, frame: number): void {
+  if (frame === 0) {
+    drawPixelZ(ctx, headX, headY - 5, 3, P.paper[4])
+    drawPixelZ(ctx, headX + 2, headY - 14, 4, P.paper[2])
+    return
+  }
+  const period = 36
+  for (let i = 0; i < 2; i++) {
+    const phase = (frame + i * 18) % period
+    const step = Math.floor(phase / 3)
+    if (step >= 10) continue
+    const x = headX + (step >= 5 ? 1 : 0) + i
+    const y = headY - 4 - step
+    const color = step < 4 ? P.paper[4] : step < 7 ? P.paper[3] : P.paper[2]
+    drawPixelZ(ctx, x, y, step < 4 ? 3 : 4, color)
+  }
+}
+
 export function drawPorch(ctx: CanvasRenderingContext2D, frame: number, opts: PorchOptions): void {
   const portrait = ctx.canvas.height > ctx.canvas.width
   const layout = porchLayout[portrait ? 'portrait' : 'landscape']
@@ -164,6 +196,7 @@ export function drawPorch(ctx: CanvasRenderingContext2D, frame: number, opts: Po
     const catY = layout.cat.y + (Math.floor(frame / 12) % 2)
     drawSprite(ctx, sprites.cat, layout.cat.x, catY)
     rect(layout.cat.x + 4, catY + 5, 3, 1, P.fur[0]); rect(layout.cat.x + 19, catY + 8, 4, 1, P.fur[4])
+    drawCatSleepZs(ctx, layout.cat.x + 2, catY, frame)
   }
   const note = layout.note
   rect(note.x, note.y, 13, 18, P.wood[0]); rect(note.x + 1, note.y + 1, 11, 15, P.paper[3]); rect(note.x + 6, note.y, 2, 2, P.flame[1])
