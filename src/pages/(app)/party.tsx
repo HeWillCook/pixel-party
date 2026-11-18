@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useCallback, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   AuthOverlay,
@@ -10,6 +10,7 @@ import {
 import { DeleteRoomButton } from '../../components/game/DeleteRoomButton'
 import { StudioLobby, type StudioRoomItem } from '../../components/studio/StudioLobby'
 import { useToast } from '../../components/ui'
+import { pixelPreflight } from '../../hooks/pixelPreflight'
 
 interface RoomRecord {
   name: string
@@ -22,6 +23,10 @@ interface RoomRecord {
   lastActiveAt: number
   isDefaultBoard: boolean
 }
+
+export type ConjureCodeResult =
+  | { status: 'ok'; joinCode: string }
+  | { status: 'not_found' }
 
 export default function PartyPage() {
   const navigate = useNavigate()
@@ -110,18 +115,30 @@ export default function PartyPage() {
     }
   }
 
-  const handleJoinCode = async (e: FormEvent) => {
-    e.preventDefault()
-    const raw = joinCodeInput.trim()
-    if (!raw) return
+  const handleJoinCode = useCallback(async (rawCode: string): Promise<ConjureCodeResult> => {
+    const raw = rawCode.trim()
+    if (!raw) return { status: 'not_found' }
     const normalized = raw.toLowerCase() === 'play' ? 'play' : raw.toUpperCase()
     if (normalized === 'play') {
-      navigate('/r/play')
-      return
+      return { status: 'ok', joinCode: 'play' }
     }
     if (!isSignedIn) {
-      navigate(`/r/${normalized}`)
-      return
+      if (livePublicRooms.some((r) => r.joinCode === normalized)) {
+        return { status: 'ok', joinCode: normalized }
+      }
+      try {
+        const probe = await pixelPreflight(
+          `${window.location.origin}/api/pixel/${encodeURIComponent(normalized)}/ws`,
+          false,
+          new AbortController().signal,
+        )
+        if (probe.error === 'not_found' || probe.error === 'closed') {
+          return { status: 'not_found' }
+        }
+        return { status: 'ok', joinCode: normalized }
+      } catch {
+        return { status: 'not_found' }
+      }
     }
     setJoining(true)
     try {
@@ -139,16 +156,15 @@ export default function PartyPage() {
         error?: string
       }
       if (!res.ok || !payload.success) {
-        toastError('Could not join room', payload.error ?? 'Check the code and try again.')
-        return
+        return { status: 'not_found' }
       }
-      navigate(`/r/${normalized}`)
+      return { status: 'ok', joinCode: normalized }
     } catch {
-      toastError('Network error', 'Failed to join room.')
+      return { status: 'not_found' }
     } finally {
       setJoining(false)
     }
-  }
+  }, [isSignedIn, livePublicRooms])
 
   return (
     <>
@@ -169,11 +185,11 @@ export default function PartyPage() {
         onCreateRoom={handleCreateRoom}
         onRequestSignIn={() => setShowAuthModal(true)}
         onJoinCodeChange={setJoinCodeInput}
-        onJoinCode={handleJoinCode}
+        onConjureCode={handleJoinCode}
         renderPackUp={(room) => (
           <DeleteRoomButton
             joinCode={room.joinCode}
-            label="Pack up easel"
+            label="Pack up"
             onDeleted={() => setDeletedRooms((previous) => [...previous, room.recordId])}
           />
         )}

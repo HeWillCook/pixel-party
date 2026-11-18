@@ -11,7 +11,8 @@ import {
   type ReactNode,
 } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Globe, Hash, Lock, Plus, Users } from 'lucide-react'
+import { Globe, Hash, Lock, Plus, Sparkles, Users } from 'lucide-react'
+import type { ConjureCodeResult } from '../../pages/(app)/party'
 import { Hotspot } from '../../scene/Hotspot'
 import { PixelScene, SceneComposition } from '../../scene/PixelScene'
 import { compositionFor, integerScale, rectToPercent, sceneSize } from '../../scene/camera'
@@ -48,9 +49,11 @@ export interface StudioLobbyProps {
   onCreateRoom: (e: FormEvent) => void
   onRequestSignIn: () => void
   onJoinCodeChange: (value: string) => void
-  onJoinCode: (e: FormEvent) => void
+  onConjureCode: (code: string) => Promise<ConjureCodeResult>
   renderPackUp: (room: StudioRoomItem) => ReactNode
 }
+
+type HatEffect = 'idle' | 'dropping' | 'sparkle' | 'smoke'
 
 function CreateEaselForm({
   signedIn,
@@ -153,7 +156,7 @@ function CreateEaselForm({
           className={compact ? 'pp-btn studio-order-form__submit' : 'pp-btn h-9 w-full gap-1.5 text-base uppercase'}
         >
           <Plus className="h-4 w-4 shrink-0" aria-hidden />
-          {creating ? 'Setting up…' : 'Set up & open'}
+          {creating ? 'Conjuring…' : 'Conjure'}
         </Button>
       ) : (
         <Button
@@ -172,25 +175,53 @@ function CreateEaselForm({
 function JoinCodeForm({
   joinCodeInput,
   joining,
+  hatEffect,
+  hatError,
   onJoinCodeChange,
-  onJoinCode,
-  boothCounter = false,
-}: Pick<StudioLobbyProps, 'joinCodeInput' | 'joining' | 'onJoinCodeChange' | 'onJoinCode'> & {
-  boothCounter?: boolean
+  onSubmitCode,
+  workbench = false,
+}: {
+  joinCodeInput: string
+  joining: boolean
+  hatEffect: HatEffect
+  hatError: string | null
+  onJoinCodeChange: (value: string) => void
+  onSubmitCode: (e: FormEvent) => void
+  workbench?: boolean
 }) {
-  if (boothCounter) {
+  if (workbench) {
     return (
       <form
         data-testid="join-room-form"
-        onSubmit={onJoinCode}
-        className="studio-ticket-booth"
+        onSubmit={onSubmitCode}
+        className="studio-hat-booth"
       >
-        <h3 className="studio-ticket-booth__sign">Got a code?</h3>
-        <div className="pp-panel studio-ticket-card">
-          <div className="studio-ticket-card__row">
+        {/* Hat drop / sparkle / smoke stage positioned over the pixel top hat */}
+        <div className="studio-hat-stage" aria-hidden="true">
+          {hatEffect === 'dropping' && (
+            <span data-testid="hat-dropping-ticket" className="studio-hat-ticket" />
+          )}
+          {(hatEffect === 'dropping' || hatEffect === 'sparkle') && (
+            <span data-testid="hat-sparkles" className="studio-hat-sparkles">
+              <span className="studio-hat-spark studio-hat-spark--1" />
+              <span className="studio-hat-spark studio-hat-spark--2" />
+              <span className="studio-hat-spark studio-hat-spark--3" />
+            </span>
+          )}
+          {hatEffect === 'smoke' && (
+            <span data-testid="hat-smoke" className="studio-hat-smoke">
+              <span className="studio-smoke-puff studio-smoke-puff--1" />
+              <span className="studio-smoke-puff studio-smoke-puff--2" />
+            </span>
+          )}
+        </div>
+
+        <div className="pp-panel studio-hat-card">
+          <h3 className="studio-hat-card__title">Got a code?</h3>
+          <div className="studio-hat-card__row">
             <div className="relative flex-1 min-w-0">
               <Hash
-                className="pointer-events-none absolute left-1.5 top-1/2 studio-ticket-card__hash -translate-y-1/2 text-muted-foreground"
+                className="pointer-events-none absolute left-1.5 top-1/2 studio-hat-card__hash -translate-y-1/2 text-muted-foreground"
                 aria-hidden
               />
               <Input
@@ -200,7 +231,7 @@ function JoinCodeForm({
                 value={joinCodeInput}
                 onChange={(e) => onJoinCodeChange(e.target.value.toUpperCase())}
                 disabled={joining}
-                className="studio-ticket-card__input"
+                className="studio-hat-card__input"
               />
             </div>
             <Button
@@ -208,11 +239,16 @@ function JoinCodeForm({
               variant="secondary"
               data-testid="join-code-submit"
               disabled={joining || !joinCodeInput.trim()}
-              className="pp-btn studio-ticket-card__btn"
+              className="pp-btn studio-hat-card__btn"
             >
-              {joining ? '…' : 'Join'}
+              {joining ? 'Dropping…' : 'Drop it in'}
             </Button>
           </div>
+          {hatError && (
+            <p role="status" data-testid="hat-error" className="studio-hat-error">
+              {hatError}
+            </p>
+          )}
         </div>
       </form>
     )
@@ -221,10 +257,15 @@ function JoinCodeForm({
   return (
     <form
       data-testid="join-room-form"
-      onSubmit={onJoinCode}
+      onSubmit={onSubmitCode}
       className="pp-panel studio-booth-form"
     >
-      <h3 className="studio-booth-form__title">Got a code?</h3>
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="studio-booth-form__title">Got a code?</h3>
+        {hatEffect === 'sparkle' && (
+          <Sparkles className="h-4 w-4 text-[var(--sunset-1)]" aria-hidden />
+        )}
+      </div>
       <div className="studio-booth-form__row">
         <div className="relative flex-1 min-w-0">
           <Hash
@@ -248,49 +289,117 @@ function JoinCodeForm({
           disabled={joining || !joinCodeInput.trim()}
           className="pp-btn h-8 shrink-0 px-3 text-base uppercase"
         >
-          {joining ? 'Joining…' : 'Join'}
+          {joining ? 'Dropping…' : 'Drop it in'}
         </Button>
       </div>
+      {hatError && (
+        <p role="status" data-testid="hat-error" className="text-sm text-[var(--sunset-2)]">
+          {hatError}
+        </p>
+      )}
     </form>
   )
 }
 
-function MoreEaselsList({
+function CorkboardTickets({
   rooms,
+  roomsLoading,
+  defaultBoardPlayers,
+  selectedCode,
   currentUserId,
   renderPackUp,
+  onSelectTicket,
   mobile = false,
   style,
 }: {
   rooms: StudioRoomItem[]
+  roomsLoading: boolean
+  defaultBoardPlayers: number
+  selectedCode: string | null
   currentUserId?: string
   renderPackUp: (room: StudioRoomItem) => ReactNode
+  onSelectTicket: (code: string) => void
   mobile?: boolean
   style?: CSSProperties
 }) {
-  if (rooms.length === 0) return null
   return (
     <div
+      data-testid="public-rooms-list"
       style={style}
-      className={`pp-panel studio-more-easels ${mobile ? 'studio-more-easels--mobile' : ''}`}
+      className={`studio-corkboard ${mobile ? 'studio-corkboard--mobile' : ''}`}
     >
-      <div className="studio-more-easels__heading">More easels</div>
-      <div className="studio-more-easels__items">
-        {rooms.map((room) => (
-          <div key={room.recordId} className="studio-more-easels__row">
-            <Link
-              to={`/r/${room.joinCode}`}
-              data-testid={`room-card-${room.joinCode}`}
-              className="studio-more-easels__link"
-            >
-              <span className="truncate">{room.name}</span>
-              <span className="shrink-0 text-[var(--soft-text)]">
-                {room.joinCode} · {room.playerCount}
+      <div className="studio-corkboard__header">
+        <h2 className="studio-corkboard__title">Room tickets</h2>
+        <span className="studio-corkboard__count">{rooms.length + 1}</span>
+      </div>
+
+      <div className="studio-corkboard__tickets">
+        {/* Gold Public board ticket pinned first */}
+        <div
+          className={`studio-ticket studio-ticket--gold ${
+            selectedCode === 'play' ? 'studio-ticket--selected' : ''
+          }`}
+        >
+          <button
+            type="button"
+            data-testid="room-card-play"
+            aria-pressed={selectedCode === 'play'}
+            onClick={() => onSelectTicket('play')}
+            className="studio-ticket__main"
+          >
+            <span className="truncate studio-ticket__name">Public board</span>
+            <span className="studio-ticket__meta">
+              <span>OPEN</span>
+              <span className="inline-flex items-center gap-0.5">
+                <Users className="studio-ticket__user-icon shrink-0" aria-hidden />
+                {defaultBoardPlayers}
               </span>
-            </Link>
-            {currentUserId === room.hostId && renderPackUp(room)}
-          </div>
-        ))}
+            </span>
+          </button>
+          <Link
+            to="/r/play"
+            data-testid="lobby-play-now"
+            aria-label="Play Public board now"
+            className="studio-ticket__go"
+          >
+            Play
+          </Link>
+        </div>
+
+        {rooms.length === 0 ? (
+          <p className="studio-corkboard__empty">
+            {roomsLoading ? 'Looking around…' : 'No custom tickets yet'}
+          </p>
+        ) : (
+          rooms.map((room) => (
+            <div
+              key={room.recordId}
+              className={`studio-ticket ${
+                selectedCode === room.joinCode ? 'studio-ticket--selected' : ''
+              }`}
+            >
+              <button
+                type="button"
+                data-testid={`room-card-${room.joinCode}`}
+                aria-pressed={selectedCode === room.joinCode}
+                onClick={() => onSelectTicket(room.joinCode)}
+                className="studio-ticket__main"
+              >
+                <span className="truncate studio-ticket__name">{room.name}</span>
+                <span className="studio-ticket__meta">
+                  <span>{room.joinCode}</span>
+                  <span className="inline-flex items-center gap-0.5">
+                    <Users className="studio-ticket__user-icon shrink-0" aria-hidden />
+                    {room.playerCount}
+                  </span>
+                </span>
+              </button>
+              {currentUserId === room.hostId && (
+                <div className="studio-pack-wrap">{renderPackUp(room)}</div>
+              )}
+            </div>
+          ))
+        )}
       </div>
     </div>
   )
@@ -298,14 +407,24 @@ function MoreEaselsList({
 
 function StudioObjects({
   props,
+  selectedCode,
+  hatEffect,
+  hatError,
+  onSelectTicket,
+  onJoinCodeChange,
+  onSubmitCode,
   onUpstairs,
   onComposition,
-  onJumpToForm,
 }: {
   props: StudioLobbyProps
+  selectedCode: string | null
+  hatEffect: HatEffect
+  hatError: string | null
+  onSelectTicket: (code: string) => void
+  onJoinCodeChange: (value: string) => void
+  onSubmitCode: (e: FormEvent) => void
   onUpstairs: (event: MouseEvent) => void
   onComposition: (c: 'landscape' | 'portrait') => void
-  onJumpToForm: (testId: 'create-room-name' | 'join-code-input') => void
 }) {
   const composition = useContext(SceneComposition)
   useEffect(() => {
@@ -313,11 +432,15 @@ function StudioObjects({
   }, [composition, onComposition])
 
   const rect = studioLayout[composition]
-  const visibleEasels = props.rooms.slice(0, rect.easels.length)
-  const overflowEasels = props.rooms.slice(rect.easels.length)
-  const slotLift = overflowEasels.length > 0
-    ? 'max(0px, calc(var(--studio-crop-bottom, 0px) - var(--px) * 2))'
-    : 'max(0px, calc(var(--studio-crop-bottom, 0px) - var(--px) * 12))'
+  const selectedRoom = selectedCode
+    ? selectedCode === 'play'
+      ? { name: 'Public board', joinCode: 'play', playerCount: props.defaultBoardPlayers }
+      : props.rooms.find((r) => r.joinCode === selectedCode) ?? {
+          name: `Room ${selectedCode}`,
+          joinCode: selectedCode,
+          playerCount: 0,
+        }
+    : null
 
   return (
     <>
@@ -328,103 +451,19 @@ function StudioObjects({
         onClick={onUpstairs}
       />
 
-      <Hotspot
-        rect={rect.publicBoardArt}
-        label="Public board"
-        href="/r/play"
-        testId="room-card-play"
-      />
-
-      <div
-        className="studio-plaque-wrap"
-        style={rectToPercent(rect.publicBoardPlaque, composition)}
-      >
-        <Link
-          to="/r/play"
-          data-testid="lobby-play-now"
-          className="studio-plaque"
-        >
-          <span className="truncate font-normal">
-            Public board · {props.defaultBoardPlayers}
-          </span>
-          <span className="studio-plaque__cta">Play now</span>
-        </Link>
-      </div>
-
-      <div
-        data-testid="public-rooms-list"
-        className="studio-rooms-layer"
-        style={{ '--studio-slot-lift': slotLift } as CSSProperties}
-      >
-        <h2 className="sr-only">Live Public Rooms</h2>
-        {visibleEasels.length === 0 ? (
-          <>
-            <div
-              className="studio-easel-slot studio-easel-slot--empty"
-              style={rectToPercent(rect.easels[0], composition)}
-            >
-              <div className="studio-easel-chalk">
-                {props.roomsLoading ? 'Looking around…' : 'No custom easels yet'}
-              </div>
-            </div>
-            {rect.easels[rect.easels.length - 1] && (
-              <div
-                className="studio-easel-slot studio-easel-slot--empty"
-                style={rectToPercent(rect.easels[rect.easels.length - 1], composition)}
-              >
-                <button
-                  type="button"
-                  onClick={() => onJumpToForm('create-room-name')}
-                  className="studio-easel-tag"
-                >
-                  Set up an easel
-                </button>
-              </div>
-            )}
-          </>
-        ) : (
-          visibleEasels.map((room, index) => {
-            const slot = rect.easels[index]
-            return (
-              <div
-                key={room.recordId}
-                className="studio-easel-slot"
-                style={rectToPercent(slot, composition)}
-              >
-                <Link
-                  to={`/r/${room.joinCode}`}
-                  data-testid={`room-card-${room.joinCode}`}
-                  className="studio-pennant"
-                >
-                  <span className="truncate studio-pennant__name">{room.name}</span>
-                  <span className="studio-pennant__meta">
-                    <span>{room.joinCode}</span>
-                    <span className="inline-flex items-center gap-0.5">
-                      <Users className="studio-pennant__user-icon shrink-0" aria-hidden />
-                      {room.playerCount}
-                    </span>
-                  </span>
-                </Link>
-                {props.currentUserId === room.hostId && (
-                  <div className="studio-pack-wrap">{props.renderPackUp(room)}</div>
-                )}
-              </div>
-            )
-          })
-        )}
-
-        {composition === 'landscape' && (
-          <MoreEaselsList
-            rooms={overflowEasels}
-            currentUserId={props.currentUserId}
-            renderPackUp={props.renderPackUp}
-            style={rectToPercent(rect.moreEasels, composition)}
-          />
-        )}
-      </div>
-
       {composition === 'landscape' && (
         <>
+          <CorkboardTickets
+            rooms={props.rooms}
+            roomsLoading={props.roomsLoading}
+            defaultBoardPlayers={props.defaultBoardPlayers}
+            selectedCode={selectedCode}
+            currentUserId={props.currentUserId}
+            renderPackUp={props.renderPackUp}
+            onSelectTicket={onSelectTicket}
+            style={rectToPercent(rect.corkboard, composition)}
+          />
+
           <div
             className="studio-booth-slot"
             style={rectToPercent(rect.joinBooth, composition)}
@@ -432,11 +471,14 @@ function StudioObjects({
             <JoinCodeForm
               joinCodeInput={props.joinCodeInput}
               joining={props.joining}
-              onJoinCodeChange={props.onJoinCodeChange}
-              onJoinCode={props.onJoinCode}
-              boothCounter
+              hatEffect={hatEffect}
+              hatError={hatError}
+              onJoinCodeChange={onJoinCodeChange}
+              onSubmitCode={onSubmitCode}
+              workbench
             />
           </div>
+
           <div
             className="studio-workbench-slot"
             style={rectToPercent(rect.workbenchBoard, composition)}
@@ -456,6 +498,38 @@ function StudioObjects({
           </div>
         </>
       )}
+
+      {/* Right-side easel preview placeholder (upgraded to animated Magic Easel in S3) */}
+      <div
+        data-testid="magic-easel"
+        className="studio-magic-placeholder"
+        style={rectToPercent(rect.magicEasel, composition)}
+      >
+        <div className="pp-panel studio-magic-placeholder__card">
+          {selectedRoom ? (
+            <>
+              <div className="text-lg uppercase text-[var(--sunset-1)] truncate">
+                {selectedRoom.name}
+              </div>
+              <div className="text-sm text-muted-foreground">
+                {selectedRoom.joinCode === 'play' ? 'OPEN' : selectedRoom.joinCode} · {selectedRoom.playerCount}{' '}
+                {selectedRoom.playerCount === 1 ? 'painter' : 'painters'}
+              </div>
+              <Link
+                to={`/r/${selectedRoom.joinCode}`}
+                data-testid="magic-easel-step-in"
+                className="pp-btn px-3 py-1 text-base uppercase"
+              >
+                Step in
+              </Link>
+            </>
+          ) : (
+            <div className="text-sm uppercase text-[var(--soft-text)]">
+              Pick a ticket to conjure an easel
+            </div>
+          )}
+        </div>
+      </div>
     </>
   )
 }
@@ -464,9 +538,13 @@ export function StudioLobby(props: StudioLobbyProps) {
   const navigate = useNavigate()
   const root = useRef<HTMLDivElement>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const hatTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [composition, setComposition] = useState<'landscape' | 'portrait'>(() =>
     typeof window !== 'undefined' ? compositionFor(window.innerWidth, window.innerHeight) : 'landscape',
   )
+  const [selectedCode, setSelectedCode] = useState<string | null>(null)
+  const [hatEffect, setHatEffect] = useState<HatEffect>('idle')
+  const [hatError, setHatError] = useState<string | null>(null)
   const [settling, setSettling] = useState(() => {
     if (typeof window === 'undefined') return false
     let fromPorch = false
@@ -480,8 +558,6 @@ export function StudioLobby(props: StudioLobbyProps) {
   })
   const [panningUp, setPanningUp] = useState(false)
 
-  // Keep .porch-shell (including nav) at the exact integer scene scale of the studio
-  // without mutating document.documentElement.style.--px.
   useIsomorphicLayoutEffect(() => {
     const stage = root.current?.querySelector('.studio-world__stage') as HTMLElement | null
     const shell = root.current?.closest('.porch-shell') as HTMLElement | null
@@ -515,6 +591,7 @@ export function StudioLobby(props: StudioLobbyProps) {
   useEffect(() => {
     return () => {
       if (timer.current) clearTimeout(timer.current)
+      if (hatTimer.current) clearTimeout(hatTimer.current)
     }
   }, [])
 
@@ -535,14 +612,9 @@ export function StudioLobby(props: StudioLobbyProps) {
     [navigate],
   )
 
-  const draw = useCallback(
-    (ctx: CanvasRenderingContext2D, frame: number) => {
-      drawStudio(ctx, frame, {
-        easelCount: props.rooms.length,
-      })
-    },
-    [props.rooms.length],
-  )
+  const draw = useCallback((ctx: CanvasRenderingContext2D, frame: number) => {
+    drawStudio(ctx, frame)
+  }, [])
 
   const jumpToForm = useCallback((testId: 'create-room-name' | 'join-code-input') => {
     const el = document.querySelector<HTMLElement>(`[data-testid="${testId}"]`)
@@ -554,13 +626,60 @@ export function StudioLobby(props: StudioLobbyProps) {
     el.focus({ preventScroll: true })
   }, [])
 
+  const handleSelectTicket = useCallback(
+    (code: string) => {
+      setHatError(null)
+      setSelectedCode(code)
+      if (composition === 'portrait') {
+        root.current?.querySelector('.studio-world__stage')?.scrollIntoView({
+          behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+          block: 'start',
+        })
+      }
+    },
+    [composition],
+  )
+
+  const handleCodeSubmit = useCallback(
+    async (e: FormEvent) => {
+      e.preventDefault()
+      const trimmed = props.joinCodeInput.trim()
+      if (!trimmed) return
+      if (hatTimer.current) {
+        clearTimeout(hatTimer.current)
+        hatTimer.current = null
+      }
+      setHatError(null)
+      const reduced =
+        typeof window !== 'undefined' &&
+        window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      setHatEffect(reduced ? 'sparkle' : 'dropping')
+
+      const result = await props.onConjureCode(trimmed)
+      if (result.status === 'not_found') {
+        setHatEffect('smoke')
+        setHatError('No easel by that name')
+        hatTimer.current = setTimeout(() => setHatEffect('idle'), 1400)
+        return
+      }
+      setHatEffect('sparkle')
+      setSelectedCode(result.joinCode)
+      hatTimer.current = setTimeout(() => setHatEffect('idle'), 900)
+      if (composition === 'portrait') {
+        root.current?.querySelector('.studio-world__stage')?.scrollIntoView({
+          behavior: reduced ? 'auto' : 'smooth',
+          block: 'start',
+        })
+      }
+    },
+    [composition, props],
+  )
+
   const cameraY = panningUp
     ? Math.max(240, Math.round((root.current?.clientHeight ?? 600) * 0.45))
     : settling
       ? 36
       : 0
-
-  const overflowEasels = props.rooms.slice(studioLayout[composition].easels.length)
 
   return (
     <div ref={root} data-testid="lobby-page" className="studio-world" data-composition={composition}>
@@ -573,9 +692,17 @@ export function StudioLobby(props: StudioLobbyProps) {
         >
           <StudioObjects
             props={props}
+            selectedCode={selectedCode}
+            hatEffect={hatEffect}
+            hatError={hatError}
+            onSelectTicket={handleSelectTicket}
+            onJoinCodeChange={(v) => {
+              setHatError(null)
+              props.onJoinCodeChange(v)
+            }}
+            onSubmitCode={handleCodeSubmit}
             onUpstairs={goUpstairs}
             onComposition={setComposition}
-            onJumpToForm={jumpToForm}
           />
         </PixelScene>
 
@@ -593,11 +720,26 @@ export function StudioLobby(props: StudioLobbyProps) {
 
       {composition === 'portrait' && (
         <div className="studio-mobile-shelf">
-          <MoreEaselsList
-            rooms={overflowEasels}
+          <CorkboardTickets
+            rooms={props.rooms}
+            roomsLoading={props.roomsLoading}
+            defaultBoardPlayers={props.defaultBoardPlayers}
+            selectedCode={selectedCode}
             currentUserId={props.currentUserId}
             renderPackUp={props.renderPackUp}
+            onSelectTicket={handleSelectTicket}
             mobile
+          />
+          <JoinCodeForm
+            joinCodeInput={props.joinCodeInput}
+            joining={props.joining}
+            hatEffect={hatEffect}
+            hatError={hatError}
+            onJoinCodeChange={(v) => {
+              setHatError(null)
+              props.onJoinCodeChange(v)
+            }}
+            onSubmitCode={handleCodeSubmit}
           />
           <CreateEaselForm
             signedIn={props.signedIn}
@@ -609,12 +751,6 @@ export function StudioLobby(props: StudioLobbyProps) {
             onVisibilityChange={props.onVisibilityChange}
             onCreateRoom={props.onCreateRoom}
             onRequestSignIn={props.onRequestSignIn}
-          />
-          <JoinCodeForm
-            joinCodeInput={props.joinCodeInput}
-            joining={props.joining}
-            onJoinCodeChange={props.onJoinCodeChange}
-            onJoinCode={props.onJoinCode}
           />
         </div>
       )}
