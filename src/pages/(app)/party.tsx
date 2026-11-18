@@ -156,7 +156,6 @@ export default function PartyPage() {
         rooms={livePublicRooms}
         roomsLoading={roomsStatus === 'loading'}
         defaultBoardPlayers={defaultBoardRoom?.data.playerCount ?? 0}
-        defaultBoardStatus={defaultBoardRoom?.data.status}
         signedIn={!!isSignedIn}
         currentUserId={user?.id}
         mutationsReady={mutationsReady}

@@ -38,6 +38,7 @@ import { PartyScoreNote } from '../../../components/play/PartyScoreNote'
 import { PlayLayout } from '../../../components/play/PlayLayout'
 import { StudioBackdrop } from '../../../components/play/StudioBackdrop'
 import { StudioSprite } from '../../../components/play/StudioSprite'
+import { NeutralPorchLoading } from '../../../components/porch/PorchScene'
 import {
   Button,
   DropdownMenu,
@@ -305,6 +306,15 @@ export default function RoomPage() {
     return count
   }, [state.cells])
 
+  const confirmedPixelsCount = useMemo(() => {
+    let count = 0
+    for (let i = 0; i < state.cells.length; i++) {
+      const value = state.pending.has(i) ? state.pending.get(i)! : state.cells[i]
+      if (value !== 0) count++
+    }
+    return count
+  }, [state.cells, state.pending])
+
   const isHost =
     Boolean(user?.id) &&
     Boolean(roomDoc?.data.hostId) &&
@@ -354,7 +364,7 @@ export default function RoomPage() {
         fallbackText: null as string | null,
       }
     }
-    const usedPx = currentRoundDoc?.data.pixelsUsed ?? pixelsCount
+    const usedPx = currentRoundDoc?.data.pixelsUsed ?? confirmedPixelsCount
     if (usedPx > 0) {
       const painterCount =
         state.round?.result?.contributorCount ?? currentRoundDoc?.data.contributorIds?.length
@@ -367,7 +377,7 @@ export default function RoomPage() {
       names: [] as string[],
       fallbackText: 'No pixels placed this round.',
     }
-  }, [currentRoundDoc, getName, pixelsCount, state.round?.result?.contributorCount, user])
+  }, [currentRoundDoc, getName, confirmedPixelsCount, state.round?.result?.contributorCount, user])
 
   const showOverlay =
     state.round?.state === 'intermission' &&
@@ -375,7 +385,7 @@ export default function RoomPage() {
     dismissedOverlayRoundId !== state.round.id
   const outcome = state.round?.result?.outcome
 
-  const roundPixelsUsed = currentRoundDoc?.data.pixelsUsed ?? pixelsCount
+  const roundPixelsUsed = currentRoundDoc?.data.pixelsUsed ?? confirmedPixelsCount
   const roundDurationMs = useMemo(() => {
     if (currentRoundDoc?.data.durationMs != null) return currentRoundDoc.data.durationMs
     const round = state.round
@@ -384,7 +394,7 @@ export default function RoomPage() {
     return MODES[state.mode].capMs
   }, [currentRoundDoc?.data.durationMs, state.mode, state.round])
 
-  const scoreParts = useMemo(() => {
+  const baseParts = useMemo(() => {
     if (outcome !== 'won') return { pixels: 0, time: 0, total: 0 }
     return coopScoreParts({
       pixelsUsed: roundPixelsUsed,
@@ -393,6 +403,21 @@ export default function RoomPage() {
       capMs: MODES[state.mode].capMs,
     })
   }, [outcome, roundPixelsUsed, roundDurationMs, state.mode, state.width, state.height])
+
+  const shownTotal =
+    outcome === 'won'
+      ? (state.round?.result?.score ?? baseParts.total)
+      : (state.round?.result?.score ?? 0)
+
+  const scoreParts = useMemo(() => {
+    if (outcome !== 'won') return { pixels: 0, time: 0, total: shownTotal }
+    if (shownTotal === baseParts.total) return baseParts
+    const pixels = Math.max(
+      Math.max(0, shownTotal - 500),
+      Math.min(500, Math.min(shownTotal, baseParts.pixels)),
+    )
+    return { pixels, time: shownTotal - pixels, total: shownTotal }
+  }, [outcome, shownTotal, baseParts])
 
   useToolShortcuts({
     tools: PARTY_TOOLS,
@@ -409,12 +434,8 @@ export default function RoomPage() {
   const accessView = roomAccessView(state)
   if (accessView === 'loading') {
     return (
-      <div
-        role="status"
-        data-testid="room-loading"
-        className="mx-auto max-w-2xl px-4 py-10 text-center text-muted-foreground"
-      >
-        Connecting…
+      <div className="porch-home">
+        <NeutralPorchLoading testId="room-loading" />
       </div>
     )
   }
@@ -558,9 +579,26 @@ export default function RoomPage() {
       </span>
     )
 
+  const showIntermissionNext = canStart && state.round?.state === 'intermission'
+  const showPlayingSkip =
+    canStart && (state.round?.state === 'playing' || state.round?.state === 'paused')
+
   const roomControls = (
     <div className="flex items-center gap-2 text-base">
-      {isHost ? (
+      {showIntermissionNext && (
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          data-testid="host-next-button"
+          onClick={next}
+          className="pp-btn h-8 gap-1.5 px-3 text-base uppercase"
+        >
+          <FastForward className="h-3.5 w-3.5 text-[var(--sunset-1)]" aria-hidden />
+          New game
+        </Button>
+      )}
+      {isHost && (
         <>
           <DropdownMenu>
             <DropdownMenuTrigger
@@ -578,7 +616,7 @@ export default function RoomPage() {
               }
             />
             <DropdownMenuContent align="end" className="min-w-[10.5rem]">
-              {canStart && state.round?.state !== 'lobby' && (
+              {showPlayingSkip && (
                 <>
                   <DropdownMenuItem
                     data-testid="host-next-button"
@@ -586,7 +624,7 @@ export default function RoomPage() {
                     className="cursor-pointer gap-2 text-base uppercase"
                   >
                     <FastForward className="h-3.5 w-3.5 text-[var(--sunset-1)]" aria-hidden />
-                    {state.round?.state === 'intermission' ? 'New game' : 'Skip round'}
+                    Skip round
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                 </>
@@ -604,22 +642,6 @@ export default function RoomPage() {
           </DropdownMenu>
           <DeleteRoomDialog joinCode={joinCode} open={deleteOpen} onOpenChange={setDeleteOpen} />
         </>
-      ) : (
-        canStart &&
-        state.round?.state !== 'lobby' &&
-        state.round?.state === 'intermission' && (
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            data-testid="host-next-button"
-            onClick={next}
-            className="pp-btn h-8 gap-1.5 px-3 text-base uppercase"
-          >
-            <FastForward className="h-3.5 w-3.5 text-[var(--sunset-1)]" aria-hidden />
-            New game
-          </Button>
-        )
       )}
       <MuteButton muted={muted} onToggle={toggleMute} />
     </div>
@@ -933,7 +955,7 @@ export default function RoomPage() {
                           className="mt-0.5 flex items-center gap-1 text-lg text-[var(--sunset-1)]"
                         >
                           <Award className="h-4 w-4" aria-hidden />
-                          {state.round.result?.score ?? scoreParts.total} pts
+                          {scoreParts.total} pts
                         </span>
                       </div>
                       <div className="room-results-stat">

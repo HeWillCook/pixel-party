@@ -6,7 +6,6 @@ import { studioSprites } from './sprites'
 
 export interface StudioDrawOptions {
   easelCount: number
-  hasDefaultBoard?: boolean
 }
 
 function drawStool(

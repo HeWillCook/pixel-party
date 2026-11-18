@@ -73,7 +73,8 @@
 .porch-nav__compact-roof { display: none; }
 .porch-shell:not(:has(.porch-home)) .porch-nav__compact-roof { display: block; position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
 .porch-nav__compact-roof canvas { display: block; image-rendering: pixelated; }
-.porch-nav .porch-nav__roof { position: absolute; inset: 0; pointer-events: none; }
+.porch-nav .porch-nav__roof { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.porch-nav__roof canvas { display: block; image-rendering: pixelated; }
 .porch-shell:has(.porch-home), .porch-shell:has(.studio-world) { position: relative; }
 .porch-shell:has(.porch-home) > .porch-nav, .porch-shell:has(.studio-world) > .porch-nav { position: absolute; z-index: 15; top: 0; left: 0; right: 0; pointer-events: none; }
 .porch-shell:has(.studio-world) > .porch-nav .porch-nav__row > :is(a, button), .porch-shell:has(.studio-world) > .porch-nav .porch-nav__links, .porch-shell:has(.studio-world) > .porch-nav .porch-nav__mobile { pointer-events: auto; }
@@ -97,6 +98,7 @@
 .porch-nav__flag { position: absolute; top: calc(var(--px) * 3); right: 0; }
 .porch-nav__username { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: #fff0cc; border: var(--px) solid #8e5960; padding: var(--px) calc(var(--px) * 2); font-size: 18px; }
 .porch-nav__toggle { display: none; align-self: center; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; color: #fff0cc; }
+.porch-shell:not(:has(.porch-home), :has(.studio-world), :has(.room-play), :has(.daily-play)) .porch-nav__toggle { color: #392a45; background: #fff0cc; border: var(--px) solid #8e5960; }
 .porch-nav__mobile { display: none; }
 @media (max-width: 767px) {
   .porch-nav__links { display: none; }

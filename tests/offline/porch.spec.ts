@@ -556,6 +556,35 @@ test('remaining screens use porch-wood panels, letter settings, and empty beach 
   await expect(page.locator('.pp-wood-panel')).toBeVisible()
 })
 
+test('non-scene pages render porch roof overhang immediately without flat dark slab below beam', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await setup(page)
+  await page.route('**/api/integrations', (route) =>
+    route.fulfill({ json: { success: true, data: { integrations: { anthropic: {}, deepgram: {} } } } }),
+  )
+  for (const [path, signedOut] of [['/settings', false], ['/settings', true], ['/api-status', false]] as const) {
+    if (signedOut) await setup(page, true)
+    await page.goto(`${origin}${path}`)
+    const roofCanvas = page.locator('.porch-nav__roof canvas').first()
+    await expect(roofCanvas).toBeVisible()
+    const metrics = await roofCanvas.evaluate((el) => {
+      const canvas = el as HTMLCanvasElement
+      const ctx = canvas.getContext('2d')!
+      const beamHighlight = ctx.getImageData(0, 12, 1, 1).data
+      const belowBeam = ctx.getImageData(0, 18, 1, 1).data
+      return {
+        height: canvas.height,
+        beamHighlight: Array.from(beamHighlight),
+        belowBeamAlpha: belowBeam[3],
+      }
+    })
+    // Row 12 in drawPorchRoof is P.wood[4] (#ecae7d = 236,174,125,255); rows >= 18 are transparent
+    expect(metrics.height).toBeGreaterThanOrEqual(18)
+    expect(metrics.beamHighlight).toEqual([236, 174, 125, 255])
+    expect(metrics.belowBeamAlpha).toBe(0)
+  }
+})
+
 test('capture Task 6 remaining screens across viewports', async ({ page }) => {
   test.skip(process.env.SCREENSHOTS !== '1')
   const dir = resolve(import.meta.dirname, '../../docs/superpowers/screenshots/2026-11-18-porch')
@@ -572,6 +601,22 @@ test('capture Task 6 remaining screens across viewports', async ({ page }) => {
     await page.evaluate(() => document.fonts.ready)
     await page.waitForTimeout(120)
     await page.screenshot({ path: resolve(dir, `not-found-${vp.width}x${vp.height}.png`) })
+  }
+
+  // Studio overflow at 1366x768 and portrait tablet at 1024x1366
+  await setup(page, false, [
+    { recordId: 'r-play', data: { name: 'Pixel Party', mode: 'coop', visibility: 'public', joinCode: 'play', hostId: 'system', status: 'playing', playerCount: 5, lastActiveAt: 5000, isDefaultBoard: true } },
+    { recordId: 'r-1', data: { name: "Will's Studio", mode: 'coop', visibility: 'public', joinCode: 'QX3J', hostId: 'host', status: 'playing', playerCount: 3, lastActiveAt: 4000, isDefaultBoard: false } },
+    { recordId: 'r-2', data: { name: 'Sunset Cove', mode: 'coop', visibility: 'public', joinCode: 'M9K2', hostId: 'other', status: 'lobby', playerCount: 2, lastActiveAt: 3000, isDefaultBoard: false } },
+    { recordId: 'r-3', data: { name: 'Night Owls', mode: 'coop', visibility: 'public', joinCode: 'P4W8', hostId: 'other', status: 'playing', playerCount: 4, lastActiveAt: 2000, isDefaultBoard: false } },
+    { recordId: 'r-4', data: { name: 'Extra Easel', mode: 'coop', visibility: 'public', joinCode: 'Z7T1', hostId: 'other', status: 'lobby', playerCount: 1, lastActiveAt: 1000, isDefaultBoard: false } },
+  ])
+  for (const vp of [{ width: 1366, height: 768 }, { width: 1024, height: 1366 }]) {
+    await page.setViewportSize(vp)
+    await page.goto(`${origin}/party`)
+    await expect(page.getByTestId('room-card-QX3J')).toBeVisible()
+    await page.evaluate(() => document.fonts.ready)
+    await page.screenshot({ path: resolve(dir, `party-rooms-${vp.width}x${vp.height}.png`), fullPage: true })
   }
 
   // Protected signed-out panel (porch-wood panel)

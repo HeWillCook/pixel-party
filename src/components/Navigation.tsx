@@ -5,7 +5,6 @@ import { Menu, X } from 'lucide-react'
 import type { Role } from '../constants'
 import { nav } from '../nav'
 import { P } from '../scene/palette'
-import { PixelScene } from '../scene/PixelScene'
 import { drawPorchRoof } from '../scene/porch/drawPorch'
 import { defineSprite, drawSprite, type Sprite } from '../scene/sprite'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from './ui'
@@ -61,24 +60,42 @@ const logoSign = (() => {
   for (let offset = 0; offset < 6; offset++) put(3 + offset, 31 - Math.floor(offset / 2), offset < 2 ? 'k' : 'h')
   return defineSprite(pixels.map(row => row.join('')), logoPalette)
 })()
-function renderRoofStrip(ctx: CanvasRenderingContext2D, transparentUnderlay: boolean) {
-  const { width, height } = ctx.canvas
-  if (transparentUnderlay) {
-    ctx.clearRect(0, 0, width, height)
-  } else {
-    ctx.fillStyle = P.wood[1]
-    ctx.fillRect(0, 0, width, height)
-  }
-  const root = ctx.canvas.closest('.pixel-scene')
-  const scale = ctx.canvas.getBoundingClientRect().width / width
-  const roofTop = root && scale ? Math.max(0, Math.floor((height - root.getBoundingClientRect().height / scale) / 2)) : 0
-  drawPorchRoof(ctx, roofTop)
-}
-function drawRoofStrip(ctx: CanvasRenderingContext2D) {
-  renderRoofStrip(ctx, false)
-}
-function drawTransparentRoofStrip(ctx: CanvasRenderingContext2D) {
-  renderRoofStrip(ctx, true)
+function PorchNavRoof({ pathname }: { pathname: string }) {
+  const ref = useRef<HTMLCanvasElement>(null)
+  useEffect(() => {
+    const canvas = ref.current
+    const container = canvas?.parentElement
+    const nav = container?.parentElement
+    if (!canvas || !container || !nav) return
+    const draw = () => {
+      const bounds = container.getBoundingClientRect()
+      if (!bounds.width || !bounds.height) return
+      const rawPx = parseFloat(getComputedStyle(nav).getPropertyValue('--px'))
+      const px = Number.isFinite(rawPx) && rawPx >= 2 ? Math.round(rawPx) : 3
+      const w = Math.max(1, Math.ceil(bounds.width / px))
+      const h = Math.max(18, Math.ceil(bounds.height / px))
+      canvas.width = w
+      canvas.height = h
+      canvas.style.width = `${w * px}px`
+      canvas.style.height = `${h * px}px`
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return
+      ctx.imageSmoothingEnabled = false
+      ctx.clearRect(0, 0, w, h)
+      drawPorchRoof(ctx, 0)
+    }
+    const observer = new ResizeObserver(draw)
+    observer.observe(container)
+    const shell = nav.closest('.porch-shell')
+    const styleObserver = shell ? new MutationObserver(draw) : null
+    if (shell && styleObserver) styleObserver.observe(shell, { attributes: true, attributeFilter: ['style'] })
+    draw()
+    return () => {
+      observer.disconnect()
+      styleObserver?.disconnect()
+    }
+  }, [pathname])
+  return <div className="porch-nav__roof" aria-hidden="true"><canvas ref={ref} className="porch-sprite" /></div>
 }
 function CompactRoof() {
   const ref = useRef<HTMLCanvasElement>(null)
@@ -160,7 +177,7 @@ export default function Navigation() {
   }
   return <>
     <nav data-testid="app-navigation" className="porch-nav">
-      {location.pathname !== '/home' && <PixelScene draw={location.pathname === '/party' ? drawTransparentRoofStrip : drawRoofStrip} className="porch-nav__roof" />}
+      {location.pathname !== '/home' && <PorchNavRoof pathname={location.pathname} />}
       {location.pathname === '/home' && <CompactRoof />}
       <div className="porch-nav__row">
         <Link to="/home" aria-label="Pixel Party, home" className="porch-nav__logo"><SpriteImage sprite={logoSign} /></Link>

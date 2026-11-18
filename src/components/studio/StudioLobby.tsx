@@ -5,6 +5,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type CSSProperties,
   type FormEvent,
   type MouseEvent,
   type ReactNode,
@@ -13,7 +14,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { Globe, Hash, Lock, Plus, Users } from 'lucide-react'
 import { Hotspot } from '../../scene/Hotspot'
 import { PixelScene, SceneComposition } from '../../scene/PixelScene'
-import { compositionFor, integerScale, rectToPercent } from '../../scene/camera'
+import { compositionFor, integerScale, rectToPercent, sceneSize } from '../../scene/camera'
 import { drawStudio } from '../../scene/studio/drawStudio'
 import { studioLayout } from '../../scene/studio/layout'
 import { Badge, Button, Input, Label } from '../ui'
@@ -34,7 +35,6 @@ export interface StudioLobbyProps {
   rooms: StudioRoomItem[]
   roomsLoading: boolean
   defaultBoardPlayers: number
-  defaultBoardStatus?: string
   signedIn: boolean
   currentUserId?: string
   mutationsReady: boolean
@@ -266,7 +266,7 @@ function MoreEaselsList({
   currentUserId?: string
   renderPackUp: (room: StudioRoomItem) => ReactNode
   mobile?: boolean
-  style?: React.CSSProperties
+  style?: CSSProperties
 }) {
   if (rooms.length === 0) return null
   return (
@@ -315,6 +315,9 @@ function StudioObjects({
   const rect = studioLayout[composition]
   const visibleEasels = props.rooms.slice(0, rect.easels.length)
   const overflowEasels = props.rooms.slice(rect.easels.length)
+  const slotLift = overflowEasels.length > 0
+    ? 'max(0px, calc(var(--studio-crop-bottom, 0px) - var(--px) * 2))'
+    : 'max(0px, calc(var(--studio-crop-bottom, 0px) - var(--px) * 12))'
 
   return (
     <>
@@ -348,7 +351,11 @@ function StudioObjects({
         </Link>
       </div>
 
-      <div data-testid="public-rooms-list" className="studio-rooms-layer">
+      <div
+        data-testid="public-rooms-list"
+        className="studio-rooms-layer"
+        style={{ '--studio-slot-lift': slotLift } as CSSProperties}
+      >
         <h2 className="sr-only">Live Public Rooms</h2>
         {visibleEasels.length === 0 ? (
           <>
@@ -456,9 +463,10 @@ function StudioObjects({
 export function StudioLobby(props: StudioLobbyProps) {
   const navigate = useNavigate()
   const root = useRef<HTMLDivElement>(null)
-  const shelfRef = useRef<HTMLDivElement>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const [composition, setComposition] = useState<'landscape' | 'portrait'>('landscape')
+  const [composition, setComposition] = useState<'landscape' | 'portrait'>(() =>
+    typeof window !== 'undefined' ? compositionFor(window.innerWidth, window.innerHeight) : 'landscape',
+  )
   const [settling, setSettling] = useState(() => {
     if (typeof window === 'undefined') return false
     let fromPorch = false
@@ -484,7 +492,9 @@ export function StudioLobby(props: StudioLobbyProps) {
       if (!bounds.width || !bounds.height) return
       const comp = compositionFor(bounds.width, bounds.height)
       const scale = integerScale(bounds.width, bounds.height, comp)
+      const cropBottom = Math.max(0, (sceneSize(comp).h * scale - bounds.height) / 2)
       shell.style.setProperty('--px', `${scale}px`)
+      stage.style.setProperty('--studio-crop-bottom', `${cropBottom}px`)
     }
     sync()
     const observer = new ResizeObserver(sync)
@@ -529,7 +539,6 @@ export function StudioLobby(props: StudioLobbyProps) {
     (ctx: CanvasRenderingContext2D, frame: number) => {
       drawStudio(ctx, frame, {
         easelCount: props.rooms.length,
-        hasDefaultBoard: true,
       })
     },
     [props.rooms.length],
@@ -554,7 +563,7 @@ export function StudioLobby(props: StudioLobbyProps) {
   const overflowEasels = props.rooms.slice(studioLayout[composition].easels.length)
 
   return (
-    <div ref={root} data-testid="lobby-page" className="studio-world">
+    <div ref={root} data-testid="lobby-page" className="studio-world" data-composition={composition}>
       <div className="studio-world__stage">
         <PixelScene
           draw={draw}
@@ -583,7 +592,7 @@ export function StudioLobby(props: StudioLobbyProps) {
       </div>
 
       {composition === 'portrait' && (
-        <div ref={shelfRef} className="studio-mobile-shelf">
+        <div className="studio-mobile-shelf">
           <MoreEaselsList
             rooms={overflowEasels}
             currentUserId={props.currentUserId}

@@ -101,12 +101,12 @@ export function PorchScene(props: PorchSceneProps) {
   </div>
 }
 
-export function NeutralPorchLoading() {
+export function NeutralPorchLoading({ testId = 'daily-loading' }: { testId?: string }) {
   const draw = useCallback((ctx: CanvasRenderingContext2D, frame: number) => {
     const width = ctx.canvas.width, height = ctx.canvas.height, horizon = Math.floor(height * 0.55), sun = Math.floor(width * 0.72)
     drawSunsetSky(ctx, width, horizon, frame)
     drawSun(ctx, sun, horizon, 20, horizon)
     drawSea(ctx, width, horizon, height - horizon, sun, frame, mulberry32(394))
   }, [])
-  return <div className="porch-world"><PixelScene draw={draw} className="porch-world__scene" syncScale /><div data-testid="daily-loading" role="status" className="porch-loading pp-panel">Setting up your easel…</div></div>
+  return <div className="porch-world"><PixelScene draw={draw} className="porch-world__scene" syncScale /><div data-testid={testId} role="status" className="porch-loading pp-panel">Setting up your easel…</div></div>
 }
