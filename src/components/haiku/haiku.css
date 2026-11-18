@@ -1,0 +1,50 @@
+.haiku {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: calc(var(--px, 2px) * 3);
+}
+
+.haiku--stack {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: calc(var(--px, 2px) * 2);
+}
+
+.haiku__canvas {
+  display: block;
+  flex: none;
+  image-rendering: pixelated;
+}
+
+.haiku__bubble {
+  position: relative;
+  padding: calc(var(--px, 2px) * 2) calc(var(--px, 2px) * 3);
+  background: #fff0cc;
+  color: #392a45;
+  border: var(--px, 2px) solid #8e5960;
+  box-shadow: inset 0 0 0 var(--px, 2px) #e3b28a, var(--px, 2px) var(--px, 2px) 0 #614052;
+  font-size: 18px;
+  line-height: 1.15;
+  max-width: 240px;
+}
+
+.haiku__bubble--pop {
+  animation: haiku-bubble-pop 220ms steps(3) both;
+}
+
+@keyframes haiku-bubble-pop {
+  0% {
+    opacity: 0;
+    transform: translateY(4px) scale(0.92);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .haiku__bubble--pop {
+    animation: none;
+  }
+}
