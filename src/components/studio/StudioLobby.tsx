@@ -19,6 +19,7 @@ import { compositionFor, integerScale, rectToPercent, sceneSize } from '../../sc
 import { drawStudio } from '../../scene/studio/drawStudio'
 import { studioLayout } from '../../scene/studio/layout'
 import { Badge, Button, Input, Label } from '../ui'
+import { MagicEasel } from './MagicEasel'
 import './studio.css'
 
 const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect
@@ -408,6 +409,8 @@ function CorkboardTickets({
 function StudioObjects({
   props,
   selectedCode,
+  easelSmoke,
+  transformSeq,
   hatEffect,
   hatError,
   onSelectTicket,
@@ -418,6 +421,8 @@ function StudioObjects({
 }: {
   props: StudioLobbyProps
   selectedCode: string | null
+  easelSmoke: string | null
+  transformSeq: number
   hatEffect: HatEffect
   hatError: string | null
   onSelectTicket: (code: string) => void
@@ -432,13 +437,19 @@ function StudioObjects({
   }, [composition, onComposition])
 
   const rect = studioLayout[composition]
-  const selectedRoom = selectedCode
+  const fallbackRoom = selectedCode
     ? selectedCode === 'play'
-      ? { name: 'Public board', joinCode: 'play', playerCount: props.defaultBoardPlayers }
+      ? {
+          name: 'Public board',
+          joinCode: 'play',
+          playerCount: props.defaultBoardPlayers,
+          status: 'playing' as const,
+        }
       : props.rooms.find((r) => r.joinCode === selectedCode) ?? {
           name: `Room ${selectedCode}`,
           joinCode: selectedCode,
           playerCount: 0,
+          status: 'playing' as const,
         }
     : null
 
@@ -499,36 +510,16 @@ function StudioObjects({
         </>
       )}
 
-      {/* Right-side easel preview placeholder (upgraded to animated Magic Easel in S3) */}
       <div
-        data-testid="magic-easel"
-        className="studio-magic-placeholder"
+        className="studio-magic-slot"
         style={rectToPercent(rect.magicEasel, composition)}
       >
-        <div className="pp-panel studio-magic-placeholder__card">
-          {selectedRoom ? (
-            <>
-              <div className="text-lg uppercase text-[var(--sunset-1)] truncate">
-                {selectedRoom.name}
-              </div>
-              <div className="text-sm text-muted-foreground">
-                {selectedRoom.joinCode === 'play' ? 'OPEN' : selectedRoom.joinCode} · {selectedRoom.playerCount}{' '}
-                {selectedRoom.playerCount === 1 ? 'painter' : 'painters'}
-              </div>
-              <Link
-                to={`/r/${selectedRoom.joinCode}`}
-                data-testid="magic-easel-step-in"
-                className="pp-btn px-3 py-1 text-base uppercase"
-              >
-                Step in
-              </Link>
-            </>
-          ) : (
-            <div className="text-sm uppercase text-[var(--soft-text)]">
-              Pick a ticket to conjure an easel
-            </div>
-          )}
-        </div>
+        <MagicEasel
+          selectedCode={selectedCode}
+          fallbackRoom={fallbackRoom}
+          smokeMessage={easelSmoke}
+          transformSeq={transformSeq}
+        />
       </div>
     </>
   )
@@ -543,6 +534,8 @@ export function StudioLobby(props: StudioLobbyProps) {
     typeof window !== 'undefined' ? compositionFor(window.innerWidth, window.innerHeight) : 'landscape',
   )
   const [selectedCode, setSelectedCode] = useState<string | null>(null)
+  const [easelSmoke, setEaselSmoke] = useState<string | null>(null)
+  const [transformSeq, setTransformSeq] = useState(0)
   const [hatEffect, setHatEffect] = useState<HatEffect>('idle')
   const [hatError, setHatError] = useState<string | null>(null)
   const [settling, setSettling] = useState(() => {
@@ -629,7 +622,9 @@ export function StudioLobby(props: StudioLobbyProps) {
   const handleSelectTicket = useCallback(
     (code: string) => {
       setHatError(null)
+      setEaselSmoke(null)
       setSelectedCode(code)
+      setTransformSeq((seq) => seq + 1)
       if (composition === 'portrait') {
         root.current?.querySelector('.studio-world__stage')?.scrollIntoView({
           behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
@@ -650,20 +645,27 @@ export function StudioLobby(props: StudioLobbyProps) {
         hatTimer.current = null
       }
       setHatError(null)
+      setEaselSmoke(null)
       const reduced =
         typeof window !== 'undefined' &&
         window.matchMedia('(prefers-reduced-motion: reduce)').matches
       setHatEffect(reduced ? 'sparkle' : 'dropping')
 
       const result = await props.onConjureCode(trimmed)
+      if (!reduced) {
+        await new Promise((resolve) => setTimeout(resolve, 260))
+      }
       if (result.status === 'not_found') {
         setHatEffect('smoke')
         setHatError('No easel by that name')
+        setEaselSmoke('No easel by that name')
+        setSelectedCode(null)
         hatTimer.current = setTimeout(() => setHatEffect('idle'), 1400)
         return
       }
       setHatEffect('sparkle')
       setSelectedCode(result.joinCode)
+      setTransformSeq((seq) => seq + 1)
       hatTimer.current = setTimeout(() => setHatEffect('idle'), 900)
       if (composition === 'portrait') {
         root.current?.querySelector('.studio-world__stage')?.scrollIntoView({
@@ -693,6 +695,8 @@ export function StudioLobby(props: StudioLobbyProps) {
           <StudioObjects
             props={props}
             selectedCode={selectedCode}
+            easelSmoke={easelSmoke}
+            transformSeq={transformSeq}
             hatEffect={hatEffect}
             hatError={hatError}
             onSelectTicket={handleSelectTicket}
