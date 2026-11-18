@@ -346,7 +346,8 @@ export default function DailyHomePage() {
       <section className="porch-home__scene" data-testid={signedOut ? 'daily-signed-out' : ended ? 'daily-ended' : 'daily-not-started'}>
         <PorchScene easelState={signedOut ? 'signin' : ended ? 'finished' : 'cover'} easelLabel={signedOut ? 'Sign in to paint' : ended ? 'View result' : showPorch ? 'Resume painting' : 'Start Daily Challenge'}
           easelTestId={signedOut ? 'daily-sign-in-button' : ended ? undefined : 'daily-start-button'} easelDisabled={starting}
-          easelText={signedOut ? <span className="porch-easel-action">Sign in to paint</span> : ended ? <span className="porch-easel-action">View your painting</span> : <><strong>Today’s prompt</strong><span>10 minutes · your best grade counts</span><span className="porch-easel-action">{showPorch ? 'Resume painting' : 'Start painting'}</span></>}
+          easelCells={ended ? endedCells : undefined}
+          easelText={signedOut ? <span className="porch-easel-action">Sign in to paint</span> : ended ? <span className="porch-easel-tag" data-testid="porch-easel-tag">Today&apos;s painting · {endedBestScore}/1000</span> : <><strong>Today’s prompt</strong><span>10 minutes · your best grade counts</span><span className="porch-easel-action">{showPorch ? 'Resume painting' : 'Start painting'}</span></>}
           signedIn={!!isSignedIn} galleryHref={`/u/${encodeURIComponent(userId)}`} topThree={topThree} muted={muted}
           onEasel={() => { if (signedOut) setShowAuthModal(true); else if (ended) setResultDay(state.day); else void handleStart() }}
           onAccount={() => { if (signedOut) setShowAuthModal(true); else setShowAccount(true) }} onToggleMute={toggleMute}>

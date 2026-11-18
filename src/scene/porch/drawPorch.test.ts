@@ -7,10 +7,10 @@ function captureRects(frame: number) {
   const ctx = {
     fillStyle: '',
     fillRect(x: number, y: number, w: number, h: number) {
-      rects.push({ x, y, w, h, fillStyle: this.fillStyle })
+      rects.push({ x, y, w, h, fillStyle: ctx.fillStyle })
     },
-  } as unknown as CanvasRenderingContext2D
-  drawCatSleepZs(ctx, 45, 130, frame)
+  }
+  drawCatSleepZs(ctx as unknown as CanvasRenderingContext2D, 45, 130, frame)
   return rects
 }
 

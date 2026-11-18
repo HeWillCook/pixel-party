@@ -5,6 +5,7 @@
 .porch-loading { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 16px; }
 .porch-error { position: absolute; left: 50%; bottom: 8%; transform: translateX(-50%); padding: calc(var(--px) * 3); }
 .porch-easel-copy { position: absolute; left: 23%; top: 28%; width: 55%; display: grid; gap: var(--px); padding: calc(var(--px) * 2); color: #392a45; background: #fff0cc; border: var(--px) solid #d1b5a3; box-shadow: var(--px) var(--px) #8e5960; font-size: calc(var(--px) * 4); line-height: 1; white-space: normal; text-align: center; }
+.porch-easel-copy--tag { left: 10%; top: 56%; width: 80%; padding: var(--px) calc(var(--px) * 1.5); }
 .porch-easel-copy::before { content: ''; width: calc(var(--px) * 2); height: calc(var(--px) * 2); position: absolute; top: calc(var(--px) * -1); left: 50%; background: #d86a58; }
 .porch-easel-action { display: block; padding: var(--px); background: #8e5960; color: #fff0cc; border: var(--px) solid #392a45; box-shadow: var(--px) var(--px) #bc806e; }
 .porch-scores { position: absolute; pointer-events: none; padding: calc(var(--px) * 8); color: #fff0cc; font-size: calc(var(--px) * 4); line-height: 1.1; overflow: hidden; animation: porch-board-bob 3.33s steps(1) infinite; }

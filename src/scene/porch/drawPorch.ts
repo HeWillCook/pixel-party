@@ -1,3 +1,4 @@
+import { EMPTY_CANVAS, PALETTE } from '../../game/config'
 import { P } from '../palette'
 import { drawSea, drawSun, drawSunsetSky, mulberry32 } from '../procedural'
 import { drawSprite } from '../sprite'
@@ -13,6 +14,7 @@ export interface PorchOptions {
   roofTop?: number
   hideEasel?: boolean
   backgroundOnly?: boolean
+  easelCells?: Uint8Array
 }
 
 export function drawPorchRoof(ctx: CanvasRenderingContext2D, roofTop: number): void {
@@ -212,7 +214,18 @@ export function drawPorch(ctx: CanvasRenderingContext2D, frame: number, opts: Po
     rect(ex + 32 - spread, ey + y, 3, 1, P.wood[0]); rect(ex + 34 + spread, ey + y, 3, 1, P.wood[2])
   }
   rect(ex + 11, ey + 18, 47, 61, P.wood[0]); rect(ex + 13, ey + 20, 43, 57, P.wood[3]); rect(ex + 15, ey + 23, 39, 51, opts.easelState === 'draped' ? P.paper[2] : P.paper[4])
-  for (let y = ey + 25; y < ey + 73; y += 4) for (let x = ex + 17 + (y % 3); x < ex + 53; x += 7) rect(x, y, 2, 1, P.paper[3])
+  if (opts.easelState === 'finished' && opts.easelCells && opts.easelCells.length >= 1024) {
+    rect(ex + 17, ey + 24, 34, 34, P.wood[1])
+    for (let py = 0; py < 32; py++) {
+      for (let px = 0; px < 32; px++) {
+        const c = opts.easelCells[py * 32 + px] ?? 0
+        ctx.fillStyle = c === 0 ? EMPTY_CANVAS[(px + py) % 2] : (PALETTE[c] ?? EMPTY_CANVAS[(px + py) % 2])
+        ctx.fillRect(ex + 18 + px, ey + 25 + py, 1, 1)
+      }
+    }
+  } else {
+    for (let y = ey + 25; y < ey + 73; y += 4) for (let x = ex + 17 + (y % 3); x < ex + 53; x += 7) rect(x, y, 2, 1, P.paper[3])
+  }
   rect(ex + 28, ey + 15, 12, 5, P.wood[0]); rect(ex + 30, ey + 16, 8, 2, P.wood[4])
   rect(ex + 4, ey + 78, 61, 4, P.wood[0]); rect(ex + 5, ey + 78, 60, 1, P.wood[4])
   rect(ex + 11, ey + 76, 8, 2, P.stone[2]); rect(ex + 23, ey + 76, 6, 2, P.flame[1]); rect(ex + 45, ey + 75, 9, 1, P.wood[4]); rect(ex + 53, ey + 74, 3, 2, P.stone[1])
