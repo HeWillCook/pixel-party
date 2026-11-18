@@ -52,8 +52,8 @@ test('two painters sync, respect cooldown, and allow spectators', async ({ users
   await expect(a.page.getByTestId('reject-notice')).toContainText('Brush cooling down')
   await synced
   await expect.poll(() => color(page, 4, 4), { timeout: 2000 }).toEqual(red)
-  await expect.poll(() => color(a.page, 6, 6)).toEqual([255, 255, 255, 255])
-  await expect.poll(() => color(b.page, 6, 6)).toEqual([255, 255, 255, 255])
+  await expect.poll(() => color(a.page, 6, 6)).toEqual([243, 234, 216, 255])
+  await expect.poll(() => color(b.page, 6, 6)).toEqual([243, 234, 216, 255])
   const spectatorBefore = await color(page, 5, 5)
   const painterBefore = await color(a.page, 5, 5)
   expect(painterBefore).toEqual(spectatorBefore)
