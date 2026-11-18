@@ -21,8 +21,8 @@ function plank(width: number, active = false): Sprite {
     return active ? 'h' : 'e'
   }).join('')), woodPalette)
 }
-const sign = plank(40)
-const activeSign = plank(40, true)
+const sign = plank(36)
+const activeSign = plank(36, true)
 const logoPalette = { ...woodPalette, k: P.flame[2], l: P.sun[3], m: P.sea[2], n: P.sky[3], o: P.sun[4] }
 const logoSign = (() => {
   const width = 70, height = 34
@@ -105,6 +105,7 @@ function CompactRoof() {
     if (!canvas || !container) return
     const draw = () => {
       const bounds = container.getBoundingClientRect()
+      if (!bounds.width || !bounds.height) return
       canvas.width = Math.ceil(bounds.width / 2)
       canvas.height = Math.ceil(bounds.height / 2)
       canvas.style.width = `${canvas.width * 2}px`
@@ -121,7 +122,7 @@ function CompactRoof() {
     draw()
     return () => observer.disconnect()
   }, [])
-  return <div className="porch-nav__compact-roof" aria-hidden="true"><canvas ref={ref} /></div>
+  return <div className="porch-nav__compact-roof" aria-hidden="true"><canvas ref={ref} className="porch-sprite" /></div>
 }
 const lantern = defineSprite([
   '.......a.......', '......aba......', '.....ababa.....', '...j.abeba.j...', '..j.jafffa.jj..',
@@ -129,12 +130,12 @@ const lantern = defineSprite([
   '.....aaaaa.....', '......aaa......',
 ], woodPalette)
 const mailbox = defineSprite([
-  '.....aaaaaaaaa..........', '...aabbbbbbbbbaa........', '..abcccccccccccba.......', '.abcccccccccccccba......',
-  '.abcccccccccccccba......', 'abcccccccccccccccba.....', 'abcccceeeccccccccba.....', 'abcccccccccccccccba.....',
-  'abcccccccccccccccba.....', 'abcccccccccccccccba.....', 'abcccccccccccccccba.....', 'abcccccccccccccccba.....',
-  'abbbbbbbbbbbbbbbbba.....', '.aaaaaaaaaaaaaaaaa......', '......abbbba............', '......abbbba............',
-  '......abbbba............', '......abbbba............', '......abbbba............', '......abbbba............',
-  '.....aabbbbaa...........', '....aaaaaaaaaa..........', '........................',
+  '.....aaaaaaaaa.......', '...aabbbbbbbbbaa.....', '..abcccccccccccba....', '.abcccccccccccccba...',
+  '.abcccccccccccccba...', 'abcccccccccccccccba..', 'abcccceeeccccccccba..', 'abcccccccccccccccba..',
+  'abcccccccccccccccba..', 'abcccccccccccccccba..', 'abcccccccccccccccba..', 'abcccccccccccccccba..',
+  'abbbbbbbbbbbbbbbbba..', '.aaaaaaaaaaaaaaaaa...', '......abbbba.........', '......abbbba.........',
+  '......abbbba.........', '......abbbba.........', '......abbbba.........', '......abbbba.........',
+  '.....aabbbbaa........', '....aaaaaaaaaa.......', '.....................',
 ], woodPalette)
 const flagUp = defineSprite(['ggggg', 'gffgg', 'ggggg', 'g....', 'g....', 'g....', 'g....'], woodPalette)
 const flagDown = defineSprite(['.......', '.......', '.......', '.......', '.......', 'ggggggg', 'gggffgg'], woodPalette)
@@ -149,6 +150,41 @@ function SpriteImage({ sprite, className = '' }: { sprite: Sprite; className?: s
     }
   }, [sprite])
   return <canvas ref={ref} className={`porch-sprite ${className}`} width={sprite.w} height={sprite.h} style={{ width: `calc(var(--px) * ${sprite.w})`, height: `calc(var(--px) * ${sprite.h})` }} aria-hidden="true" />
+}
+
+const staticNavItems = nav.filter((item) => !item.devOnly && !item.roles)
+
+export function StaticPorchNav() {
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const navLink = (item: (typeof nav)[number]) => {
+    const active = item.label === 'Daily'
+    const to = item.label === 'Gallery' ? '/home' : item.path
+    return (
+      <Link key={item.label} to={to} aria-current={active ? 'page' : undefined} className="porch-nav__sign">
+        <SpriteImage sprite={active ? activeSign : sign} />
+        <span>{item.label}</span>
+        {active && <SpriteImage sprite={lantern} className="porch-nav__lantern" />}
+      </Link>
+    )
+  }
+  return (
+    <nav data-testid="app-navigation" className="porch-nav">
+      <PorchNavRoof pathname="/" />
+      <div className="porch-nav__row">
+        <Link to="/" aria-label="Pixel Party, home" className="porch-nav__logo"><SpriteImage sprite={logoSign} /></Link>
+        <div className="porch-nav__links">{staticNavItems.map(navLink)}</div>
+        <div className="porch-nav__spacer" />
+        <Link to="/home" data-testid="nav-sign-in-button" className="porch-nav__mail">
+          <span className="porch-nav__mail-art"><SpriteImage sprite={mailbox} /><SpriteImage sprite={flagUp} className="porch-nav__flag" /></span>
+          <span className="porch-nav__username">Sign in</span>
+        </Link>
+        <button type="button" className="porch-nav__toggle" onClick={() => setMobileMenuOpen((previous) => !previous)} aria-label="Toggle menu" aria-expanded={mobileMenuOpen}>
+          {mobileMenuOpen ? <X aria-hidden /> : <Menu aria-hidden />}
+        </button>
+      </div>
+      {mobileMenuOpen && <div className="porch-nav__mobile">{staticNavItems.map(navLink)}</div>}
+    </nav>
+  )
 }
 
 export default function Navigation() {
@@ -177,8 +213,8 @@ export default function Navigation() {
   }
   return <>
     <nav data-testid="app-navigation" className="porch-nav">
-      {location.pathname !== '/home' && <PorchNavRoof pathname={location.pathname} />}
-      {location.pathname === '/home' && <CompactRoof />}
+      <PorchNavRoof pathname={location.pathname} />
+      <CompactRoof />
       <div className="porch-nav__row">
         <Link to="/home" aria-label="Pixel Party, home" className="porch-nav__logo"><SpriteImage sprite={logoSign} /></Link>
         <div className="porch-nav__links">{visibleNav.map(navLink)}</div>

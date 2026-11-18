@@ -559,7 +559,6 @@ export default function DailyHomePage() {
                     <div className="daily-haiku-perch__cat">
                       <Haiku state={haikuState} bubble={haikuBubble} scale={3} />
                     </div>
-                    <div className="daily-haiku-perch__crate" aria-hidden="true" />
                   </div>
                   <ScoreCard
                     latest={state.latest}
@@ -800,8 +799,7 @@ export default function DailyHomePage() {
             </div>
 
             <div className="flex min-w-0 flex-col gap-4">
-              <AutoGradeTimeline windows={state.windows} now={now + state.clockOffsetMs} />
-              <p>Manual grades: {state.asksUsed} of 3 used</p>
+              <AutoGradeTimeline windows={state.windows} now={now + state.clockOffsetMs} manualUsed={state.asksUsed} />
               <GradePanel
                 latest={endedGrade}
                 best={endedBestScore}

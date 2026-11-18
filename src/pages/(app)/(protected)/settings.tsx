@@ -93,11 +93,11 @@ export default function SettingsPage() {
             <dl className="mt-5 space-y-4 text-lg">
               <div className="border-b-2 border-[#d1b5a3] pb-2">
                 <dt className="text-sm uppercase tracking-wider text-muted-foreground">Name</dt>
-                <dd className="mt-0.5 text-2xl text-foreground">{user?.name ?? '—'}</dd>
+                <dd className="mt-0.5 text-2xl text-foreground">{user?.name || '—'}</dd>
               </div>
               <div className="border-b-2 border-[#d1b5a3] pb-2">
                 <dt className="text-sm uppercase tracking-wider text-muted-foreground">Email</dt>
-                <dd className="mt-0.5 break-all text-2xl text-foreground">{user?.email ?? '—'}</dd>
+                <dd className="mt-0.5 break-all text-2xl text-foreground">{user?.email || '—'}</dd>
               </div>
             </dl>
 

@@ -344,7 +344,51 @@
 
 @media (max-width: 767px) {
   .room-play .play-layout__left {
-    gap: 8px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .room-play [data-testid="round-bar"] {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px 8px;
+    padding: 6px 10px;
+  }
+
+  .room-play [data-testid="round-bar"]::before,
+  .room-play [data-testid="round-bar"]::after {
+    display: none;
+  }
+
+  .room-play [data-testid="round-bar"] > div:first-child {
+    width: auto;
+  }
+
+  .room-play [data-testid="round-bar"] [data-testid="round-word"] {
+    font-size: 20px;
+  }
+
+  .room-play [data-testid="round-bar"] > div:last-child {
+    width: 100%;
+    padding-top: 4px;
+    font-size: 15px;
+  }
+
+  .room-play .room-exit--full {
+    width: auto;
+    max-width: 148px;
+    min-height: 44px;
+    padding: 6px 10px;
+    font-size: 14px;
+  }
+
+  .room-play .room-exit::before,
+  .room-play .room-exit::after {
+    display: none;
   }
 
   .critic-bubble__perch {

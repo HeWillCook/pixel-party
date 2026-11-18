@@ -27,14 +27,14 @@
 .porch-more-actions { display: grid; gap: 8px; }
 .porch-more-actions :is(a, button) { min-height: 44px; text-align: left; }
 .porch-dock { display: none; }
-.porch-landing-copy { margin: 0 auto; max-width: 60rem; padding: 20px; }
+.porch-landing-copy { margin: 16px auto; max-width: 60rem; padding: 20px; }
 .porch-landing-copy h1 { font-size: 28px; }
 .porch-landing-copy p { font-size: 20px; }
-html:has(.porch-home) .porch-nav__sign { font-size: calc(var(--px) * 7); }
-html:has(.porch-home) .porch-nav__username { font-size: calc(var(--px) * 5); max-width: calc(var(--px) * 34); }
-@media (min-width: 768px) { html:has(.porch-home) .porch-nav__mail-art { display: none; } }
+:is(html:has(.porch-home), .porch-shell--landing) .porch-nav__sign { font-size: calc(var(--px) * 7); }
+:is(html:has(.porch-home), .porch-shell--landing) .porch-nav__username { font-size: calc(var(--px) * 5); max-width: calc(var(--px) * 34); }
+@media (min-width: 768px) { :is(html:has(.porch-home), .porch-shell--landing) .porch-nav__mail-art { display: none; } }
 @media (max-width: 640px) {
-  html:has(.porch-home) .porch-nav__mail { display: none; }
+  :is(html:has(.porch-home), .porch-shell--landing) .porch-nav__mail { display: none; }
   .porch-world .pixel-hotspot__label, .porch-more-ticket { display: none; }
   .porch-world--landing { height: 100dvh; }
   .porch-dock { position: absolute; z-index: 8; display: grid; grid-template-columns: repeat(5, 1fr); gap: var(--px); left: var(--px); right: var(--px); bottom: var(--px); }

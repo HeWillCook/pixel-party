@@ -205,18 +205,55 @@
   width: calc(100% - 4px);
 }
 
-/* Rooms mobile keeps existing compact 3x2/3-col grid */
+/* Rooms mobile uses single-row toolbar + 2x8 compact swatch grid */
 @media (max-width: 767px) {
   .room-play .painter-tray {
     width: 100%;
+    padding: 4px 6px 5px;
+    gap: 4px;
+  }
+  .room-play .painter-tray__tools {
+    width: 100%;
+    gap: 6px;
+  }
+  .room-play .painter-tray__current {
+    width: 42px;
+    height: 42px;
+    font-size: 22px;
+  }
+  .room-play .painter-tray__caption {
+    display: none;
   }
   .room-play .painter-tray [data-testid="palette"] > div {
-    grid-template-columns: repeat(8, minmax(0, 44px));
-    gap: 2px;
+    display: grid;
+    grid-template-columns: repeat(8, 34px);
+    gap: 4px;
+  }
+  .room-play .painter-tray [data-testid="palette"] button {
+    width: 34px;
+    height: 34px;
+    padding: 2px;
+  }
+  .room-play .painter-tray [data-testid="swatch-16"] span[aria-hidden] {
+    margin-right: 0;
+    width: 100%;
   }
   .room-play .painter-tray [data-testid="toolbar"] {
-    display: grid;
-    grid-template-columns: repeat(3, 52px);
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    gap: 6px;
+  }
+  .room-play .painter-tray [data-testid="toolbar"] button {
+    width: 48px;
+    min-width: 48px;
+    min-height: 42px;
+    padding: 2px 0;
+    font-size: 13px;
+  }
+  .room-play .painter-tray [data-testid="toolbar"] button svg {
+    width: 24px;
+    height: 24px;
   }
   .room-play .painter-tray [data-testid="tool-undo"] {
     margin-left: 0;

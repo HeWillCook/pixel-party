@@ -192,7 +192,7 @@ export function drawPorch(ctx: CanvasRenderingContext2D, frame: number, opts: Po
   scaledSprite('mailbox', layout.mailbox.x, layout.mailbox.y)
   if (!portrait) drawSprite(ctx, sprites.plant, layout.plant.x, floor - sprites.plant.h)
   const lanternX = layout.lantern.x
-  for (let y = 8; y < layout.lantern.y; y += 2) rect(lanternX + 9, y, 1, 1, P.wood[3])
+  for (let y = roofTop + 13; y < layout.lantern.y; y += 2) rect(lanternX + 9, y, 1, 1, P.wood[3])
   scaledSprite('lantern', lanternX, layout.lantern.y)
   if (!portrait) {
     const catY = layout.cat.y + (Math.floor(frame / 12) % 2)

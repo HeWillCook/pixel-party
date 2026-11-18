@@ -100,9 +100,9 @@ export function StudioBackdrop() {
     const rugY = floorY + 8
     const rugH = Math.max(24, height - rugY - 8)
     rect(rugX, rugY, rugW, rugH, P.wood[0])
-    rect(rugX + 1, rugY + 1, rugW - 2, rugH - 2, P.ui[1])
-    rect(rugX + 3, rugY + 3, rugW - 6, rugH - 6, P.ui[2])
-    rect(rugX + 5, rugY + 5, rugW - 10, rugH - 10, P.paper[2])
+    rect(rugX + 1, rugY + 1, rugW - 2, rugH - 2, P.ui[0])
+    rect(rugX + 3, rugY + 3, rugW - 6, rugH - 6, P.ui[1])
+    rect(rugX + 5, rugY + 5, rugW - 10, rugH - 10, P.wood[1])
   }, [])
 
   return (
