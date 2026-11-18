@@ -830,3 +830,75 @@ test('arriving from porch settles cleanly into the studio', async ({ page }) => 
   await expect.poll(() => page.locator('.studio-world .pixel-scene').evaluate(el => getComputedStyle(el).transform)).toMatch(/matrix\(1, 0, 0, 1, 0, 0\)|none/)
   expect(errors).toEqual([])
 })
+
+test('room exit returns to studio', async ({ page }) => {
+  const errors = await clientFixture(page, { signedIn: true })
+  await page.routeWebSocket('**/api/pixel/**', socket => socket.send(JSON.stringify(snapshot('playing'))))
+  await page.goto(`${origin}/r/AB2Z`)
+  await expect(page.getByTestId('pixel-canvas')).toBeVisible()
+  await expect(page.getByTestId('critic-bubble')).toBeVisible()
+  await expect(page.getByTestId('party-score-note')).toHaveText('Fewer pixels and a faster guess score higher. The round ends when the critic guesses the word.')
+  const exit = page.getByTestId('room-exit')
+  await expect(exit).toBeVisible()
+  await expect(exit).toHaveText(/Back downstairs to the studio/)
+  await expect(exit).toHaveAttribute('href', '/party')
+  await exit.click()
+  await expect(page).toHaveURL(`${origin}/party`)
+  await expect(page.getByTestId('lobby-page')).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('lobby shows stools per painter', async ({ page }) => {
+  const errors = await clientFixture(page, { signedIn: true })
+  await page.routeWebSocket('**/api/pixel/**', socket => {
+    const state = snapshot('lobby')
+    socket.send(JSON.stringify({
+      ...state,
+      players: 3,
+      watching: 1,
+      roster: [
+        { userId: 'host', name: 'Offline host' },
+        { userId: 'u2', name: 'Alex' },
+        { userId: 'u3', name: 'Sam' },
+      ],
+    }))
+  })
+  await page.goto(`${origin}/r/AB2Z`)
+  await expect(page.getByTestId('room-lobby')).toBeVisible()
+  await expect(page.getByTestId('round-players')).toHaveText('3 painters')
+  await expect(page.getByTestId('round-watching')).toHaveText('1 watching')
+  await expect(page.getByTestId('lobby-stool')).toHaveCount(3)
+  await expect(page.getByRole('list', { name: 'Connected players' })).toContainText('Alex')
+  await expect(page.getByRole('list', { name: 'Connected players' })).toContainText('Sam')
+  await expect(page.getByTestId('host-start-button')).toHaveText('Start painting')
+  expect(errors).toEqual([])
+})
+
+test('results show pixels and time saved', async ({ page }) => {
+  const errors = await clientFixture(page, { signedIn: true })
+  const cells = Buffer.alloc(1024)
+  for (let i = 0; i < 256; i++) cells[i] = 4
+  const now = Date.now()
+  await page.routeWebSocket('**/api/pixel/**', socket => {
+    const state = snapshot('playing')
+    socket.send(JSON.stringify({
+      ...state,
+      cells: cells.toString('base64'),
+      round: {
+        ...state.round,
+        state: 'intermission',
+        startedAt: now - 60_000,
+        endedAt: now,
+        result: { outcome: 'won', score: 775, contributorCount: 2 },
+      },
+    }))
+  })
+  await page.goto(`${origin}/r/AB2Z`)
+  const overlay = page.getByTestId('round-overlay')
+  await expect(overlay).toBeVisible()
+  await expect(overlay).toContainText('Pixels saved: 375/500')
+  await expect(overlay).toContainText('Time saved: 400/500')
+  await expect(page.getByTestId('overlay-score')).toContainText('775')
+  expect(errors).toEqual([])
+})
+

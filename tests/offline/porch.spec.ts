@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page, type WebSocketRoute } from '@playwright/test'
 import { readFile, mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
@@ -424,3 +424,92 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720
     })
   }
 }
+
+test('capture studio room states across viewports', async ({ page }) => {
+  test.skip(process.env.SCREENSHOTS !== '1')
+  const dir = resolve(import.meta.dirname, '../../docs/superpowers/screenshots/2026-11-18-porch')
+  await mkdir(dir, { recursive: true })
+  const viewports = [{ width: 1440, height: 900 }, { width: 1280, height: 720 }, { width: 375, height: 812 }]
+  const cells = new Uint8Array(32 * 32)
+  for (let y = 6; y < 22; y++) for (let x = 8; x < 24; x++) cells[y * 32 + x] = (x + y) % 2 === 0 ? 4 : 6
+  const encodedCells = Buffer.from(cells).toString('base64')
+  const now = Date.now()
+
+  await setup(page, false, [
+    { recordId: 'room', data: { name: "Will's Studio", mode: 'coop', visibility: 'private', joinCode: 'QX3J', hostId: 'host', status: 'playing', playerCount: 3, isDefaultBoard: false } },
+  ])
+  let server!: WebSocketRoute
+  await page.routeWebSocket('**/api/pixel/**', (socket) => {
+    server = socket
+    socket.send(JSON.stringify({
+      t: 'snapshot',
+      mode: 'coop',
+      width: 32,
+      height: 32,
+      cells: encodedCells,
+      round: { id: 'r1', word: 'LIGHTHOUSE', state: 'playing', startedAt: now - 45_000, endsAt: now + 255_000, askAvailableAt: now - 1000 },
+      you: { userId: 'host', cooldownUntil: 0 },
+      players: 3,
+      watching: 1,
+      roster: [
+        { userId: 'host', name: 'Will' },
+        { userId: 'u2', name: 'Alex' },
+        { userId: 'u3', name: 'Sam' },
+      ],
+      aiResting: false,
+    }))
+    socket.send(JSON.stringify({ t: 'judgement', zone: 'all', guesses: ['beacon', 'tower'], confidence: 0.55, matched: false }))
+    socket.send(JSON.stringify({ t: 'judgement', zone: 'all', guesses: ['lighthouse', 'beacon'], confidence: 0.91, matched: false }))
+  })
+
+  await page.setViewportSize(viewports[0])
+  await page.goto(`${origin}/r/QX3J`)
+  await expect(page.getByTestId('pixel-canvas')).toBeVisible()
+  await expect(page.getByTestId('guess-list')).toContainText('lighthouse, beacon')
+  await page.evaluate(() => document.fonts.ready)
+
+  for (const vp of viewports) {
+    await page.setViewportSize(vp)
+    await page.waitForTimeout(160)
+    await page.screenshot({ path: resolve(dir, `room-playing-${vp.width}x${vp.height}.png`) })
+  }
+
+  // Results overlay
+  server.send(JSON.stringify({
+    t: 'round',
+    round: { id: 'r1', word: 'LIGHTHOUSE', state: 'intermission', startedAt: now - 60_000, endsAt: null, endedAt: now, askAvailableAt: 0, result: { outcome: 'won', score: 836, contributorCount: 3 } },
+  }))
+  await expect(page.getByTestId('round-overlay')).toBeVisible()
+  for (const vp of viewports) {
+    await page.setViewportSize(vp)
+    await page.waitForTimeout(160)
+    await page.screenshot({ path: resolve(dir, `room-overlay-${vp.width}x${vp.height}.png`) })
+  }
+
+  // Lobby
+  server.send(JSON.stringify({
+    t: 'round',
+    round: { id: 'r-lobby', word: '', state: 'lobby', startedAt: now, endsAt: null, askAvailableAt: 0 },
+  }))
+  await expect(page.getByTestId('room-lobby')).toBeVisible()
+  for (const vp of viewports) {
+    await page.setViewportSize(vp)
+    await page.waitForTimeout(160)
+    await page.screenshot({ path: resolve(dir, `room-lobby-${vp.width}x${vp.height}.png`) })
+  }
+
+  // Error states (unauthorized, not_found, closed)
+  for (const err of [
+    { name: 'unauthorized', status: 401, testId: 'room-error-unauthorized' },
+    { name: 'not_found', status: 404, testId: 'room-error-not-found' },
+    { name: 'closed', status: 410, testId: 'room-error-closed' },
+  ] as const) {
+    await page.route('**/api/pixel/**', (route) => route.fulfill({ status: err.status, body: err.name }))
+    await page.routeWebSocket('**/api/pixel/**', (socket) => socket.close({ code: 1008 }))
+    await page.setViewportSize({ width: 1280, height: 720 })
+    await page.goto(`${origin}/r/MISS`)
+    await expect(page.getByTestId(err.testId)).toBeVisible()
+    await page.screenshot({ path: resolve(dir, `room-error-${err.name}-1280x720.png`) })
+  }
+})
+
