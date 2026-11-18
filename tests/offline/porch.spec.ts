@@ -37,8 +37,8 @@ test('porch objects are present and labelled', async ({ page }) => {
   await setup(page)
   await page.goto(`${origin}/home`)
   const scene = page.locator('.porch-world')
-  for (const name of ['Start Daily Challenge', "Today's scores", 'Party beach', 'Public board', 'Account menu', 'My gallery', 'Mute sounds', 'Scoring rules']) {
-    await expect(scene.getByRole(name === "Today's scores" || name === 'Party beach' || name === 'Public board' || name === 'My gallery' ? 'link' : 'button', { name, exact: true })).toBeVisible()
+  for (const name of ['Start Daily Challenge', "Today's scores", 'Party beach', 'Public board', 'Account menu', 'Your gallery', 'Mute sounds', 'Scoring rules']) {
+    await expect(scene.getByRole(name === "Today's scores" || name === 'Party beach' || name === 'Public board' || name === 'Your gallery' ? 'link' : 'button', { name, exact: true })).toBeVisible()
   }
 })
 
@@ -60,7 +60,7 @@ test('porch keyboard tour reaches objects with labels and focus rings', async ({
   await setup(page)
   await page.goto(`${origin}/home`)
   const scene = page.locator('.porch-world')
-  const names = ['Start Daily Challenge', "Today's scores", 'Party beach', 'Public board', 'Account menu', 'My gallery', 'Mute sounds', 'Scoring rules']
+  const names = ['Start Daily Challenge', "Today's scores", 'Party beach', 'Public board', 'Account menu', 'Your gallery', 'Mute sounds', 'Scoring rules']
   await scene.getByRole('button', { name: names[0] }).focus()
   for (const [index, name] of names.entries()) {
     const focused = scene.locator(':focus')
@@ -115,7 +115,7 @@ test('portrait porch keeps every object in view and tappable', async ({ page }) 
   await setup(page)
   await page.goto(`${origin}/home`)
   const hotspots = page.locator('.porch-world .pixel-hotspot')
-  await expect(hotspots).toHaveCount(8)
+  await expect(hotspots).toHaveCount(5)
   for (const hotspot of await hotspots.all()) {
     await expect(hotspot.locator('.pixel-hotspot__label')).toBeVisible()
     const labelBox = await hotspot.locator('.pixel-hotspot__label').boundingBox()
@@ -140,6 +140,9 @@ test('portrait porch keeps every object in view and tappable', async ({ page }) 
       expect(first.x + first.width <= second.x || second.x + second.width <= first.x || first.y + first.height <= second.y || second.y + second.height <= first.y).toBe(true)
     }
   }
+  await page.getByRole('button', { name: 'More', exact: true }).click()
+  const menu = page.getByRole('group', { name: 'More porch actions' })
+  for (const name of ['Public board', 'Mute sounds', 'Scoring rules']) await expect(menu.getByText(name, { exact: true })).toBeVisible()
 })
 
 test('porch and navigation share the scene pixel scale', async ({ page }) => {
@@ -221,7 +224,7 @@ test('the logo has a 44px mobile target', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 })
   await setup(page)
   await page.goto(`${origin}/party`)
-  const logo = page.getByRole('link', { name: 'Pixel Party', exact: true })
+  const logo = page.getByRole('link', { name: 'Pixel Party, home', exact: true })
   expect((await logo.boundingBox())!.height).toBeGreaterThanOrEqual(44)
 })
 
@@ -248,6 +251,21 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720
       await page.screenshot({ path: resolve(dir, `${route}-${viewport.width}x${viewport.height}.png`), fullPage: true })
     })
   }
+}
+
+for (const viewport of [{ width: 1440, height: 900 }, { width: 375, height: 812 }]) {
+  test(`capture porch beam ${viewport.width}`, async ({ page }) => {
+    test.skip(process.env.SCREENSHOTS !== '1')
+    await page.setViewportSize(viewport)
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await setup(page)
+    await page.goto(`${origin}/home`)
+    await expect(page.getByTestId('daily-start-button')).toBeVisible()
+    await page.evaluate(() => document.fonts.ready)
+    const dir = resolve(import.meta.dirname, '../../docs/superpowers/screenshots/2026-11-18-porch')
+    await mkdir(dir, { recursive: true })
+    await page.getByTestId('app-navigation').screenshot({ path: resolve(dir, `porch-beam-${viewport.width}x${viewport.height}.png`) })
+  })
 }
 
 test('capture home 1280', async ({ page }) => {

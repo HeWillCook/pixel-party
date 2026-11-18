@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { AuthOverlay, useAuthProfileReady, signOut } from 'deepspace'
 import { Menu, X } from 'lucide-react'
-import { APP_NAME } from '../constants'
 import type { Role } from '../constants'
 import { nav } from '../nav'
 import { P } from '../scene/palette'
@@ -32,7 +31,43 @@ function plank(width: number, active = false): Sprite {
 }
 const sign = plank(40)
 const activeSign = plank(40, true)
-const logoSign = plank(51)
+const logoPalette = { ...woodPalette, k: P.flame[2], l: P.sun[3], m: P.sea[2], n: P.sky[3], o: P.sun[4] }
+const logoSign = (() => {
+  const width = 52, height = 32
+  const pixels = Array.from({ length: height }, () => Array<string>(width).fill('.'))
+  const put = (x: number, y: number, color: string) => { if (x >= 0 && x < width && y >= 0 && y < height) pixels[y][x] = color }
+  for (let y = 0; y < 4; y++) for (const x of [8, 9, 42, 43]) put(x, y, y % 2 ? 'h' : 'a')
+  for (let y = 4; y < height; y++) for (let x = 1; x < width - 1; x++) {
+    const inset = y < 7 ? 7 - y : y > 28 ? y - 28 : 0
+    if (x < inset + 1 || x >= width - inset - 1) continue
+    put(x, y, y === 4 || y === 31 || x === inset + 1 || x === width - inset - 2 ? 'a' : y === 5 ? 'f' : 'e')
+  }
+  const glyphs: Record<string, string[]> = {
+    P: ['110', '101', '110', '100', '100'], I: ['111', '010', '010', '010', '111'],
+    X: ['101', '101', '010', '101', '101'], E: ['111', '100', '110', '100', '111'],
+    L: ['100', '100', '100', '100', '111'], A: ['010', '101', '111', '101', '101'],
+    R: ['110', '101', '110', '101', '101'], T: ['111', '010', '010', '010', '010'],
+    Y: ['101', '101', '010', '010', '010'],
+  }
+  const colors = ['k', 'l', 'm', 'n', 'g', 'n', 'k', 'l', 'm', 'g']
+  const lettering: { marks: [number, number][], color: string }[] = []
+  ;['PIXEL', 'PARTY'].forEach((word, row) => Array.from(word).forEach((letter, index) => {
+    const x = 6 + index * 8, y = 6 + row * 12
+    const marks: [number, number][] = []
+    glyphs[letter].forEach((line, lineIndex) => Array.from(line).forEach((pixel, column) => {
+      if (pixel === '1') for (let dx = 0; dx < 2; dx++) for (let dy = 0; dy < 2; dy++) marks.push([x + column * 2 + dx, y + lineIndex * 2 + dy])
+    }))
+    lettering.push({ marks, color: colors[row * 5 + index] })
+  }))
+  lettering.forEach(({ marks }) => marks.forEach(([px, py]) => { put(px - 1, py, 'a'); put(px + 1, py, 'a'); put(px, py - 1, 'a'); put(px, py + 1, 'a') }))
+  lettering.forEach(({ marks, color }) => {
+    marks.forEach(([px, py]) => put(px, py, color))
+    if (marks[0]) put(marks[0][0], marks[0][1], 'o')
+  })
+  put(45, 17, 'g'); put(45, 18, 'g'); put(46, 19, 'g')
+  for (let x = 46; x < 50; x++) put(x, 26, x === 49 ? 'f' : 'b')
+  return defineSprite(pixels.map(row => row.join('')), logoPalette)
+})()
 const lantern = defineSprite([
   '.......a.......', '......aba......', '.....ababa.....', '...j.abeba.j...', '..j.jafffa.jj..',
   '.j.j.abffba.j..', '..j..abgfba..j.', '.j.j.abffba.j..', '..j.jabffbaj...', '...j.abbba.j...',
@@ -86,7 +121,7 @@ export default function Navigation() {
     <nav data-testid="app-navigation" className="porch-nav">
       <div className="porch-nav__beam" aria-hidden="true">{Array.from({ length: 40 }, (_, index) => <SpriteImage key={index} sprite={beam} />)}</div>
       <div className="porch-nav__row">
-        <Link to="/home" className="porch-nav__logo"><SpriteImage sprite={logoSign} /><span>{APP_NAME}</span></Link>
+        <Link to="/home" aria-label="Pixel Party, home" className="porch-nav__logo"><SpriteImage sprite={logoSign} /></Link>
         <div className="porch-nav__links">{visibleNav.map(navLink)}</div>
         <div className="porch-nav__spacer" />
         {!isLoaded || !profileReady ? null : isSignedIn && user ? <DropdownMenu>

@@ -4,14 +4,14 @@
   --sunset-2: #67435d;
   --sunset-3: #a94958;
   --sunset-4: #34516a;
-  --word-shadow: #e3b28a;
+  --word-shadow: #ecae7d;
   --soft-text: #614052;
   --text: #392a45;
   --panel-bg: #fff0cc;
   --sunset-gradient: linear-gradient(#fff0bb, #e3b28a);
-  --frame-gradient: linear-gradient(#e3b28a, #8e5960);
-  --button-gradient: linear-gradient(#e3b28a, #bc806e);
-  --color-background: #f6bd91;
+  --frame-gradient: linear-gradient(#ecae7d, #985c5a);
+  --button-gradient: linear-gradient(#ecae7d, #c57d63);
+  --color-background: #ffbd88;
   --color-foreground: #392a45;
   --color-card: #fff0cc;
   --color-card-foreground: #392a45;
@@ -27,10 +27,10 @@
   --color-accent-foreground: #392a45;
   --color-destructive: #a94958;
   --color-destructive-foreground: #fff0cc;
-  --color-border: #8e5960;
-  --color-input: #8e5960;
+  --color-border: #985c5a;
+  --color-input: #985c5a;
   --color-ring: #392a45;
-  --color-shell: #f6bd91;
+  --color-shell: #ffbd88;
   --color-shell-panel: #fff0cc;
 }
 
@@ -46,7 +46,7 @@
 .pp-chip.pp-danger { background: #fff0cc; }
 .pp-danger-solid { background: #a94958; color: #fff0cc; }
 .pp-chip.pp-danger-solid { background: #a94958; }
-.pp-btn { background: #e3b28a; color: #392a45; border: var(--px) solid #614052; box-shadow: inset 0 var(--px) #fff0cc, 0 var(--px) #614052; border-radius: 0; }
+.pp-btn { background: #ecae7d; color: #392a45; border: var(--px) solid #614052; box-shadow: inset 0 var(--px) #fff0cc, 0 var(--px) #614052; border-radius: 0; }
 .pp-btn:hover:not(:disabled) { background: #ecd4b0; }
 .pp-btn:active:not(:disabled) { transform: translateY(var(--px)); box-shadow: inset 0 var(--px) #e3b28a; }
 .pp-btn:disabled { opacity: .55; }
@@ -65,12 +65,14 @@
 @keyframes guess-pop { 0% { opacity: 0; transform: translateY(6px) scale(.94); } 60% { opacity: 1; transform: translateY(-2px) scale(1.03); } 100% { opacity: 1; transform: translateY(0) scale(1); } }
 .animate-guess-pop { animation: guess-pop 280ms cubic-bezier(.22, 1, .36, 1) both; }
 
-.porch-nav { position: relative; flex: none; background: #bc806e; }
+.porch-nav { position: relative; flex: none; background: #c57d63; }
 .porch-nav__beam { position: absolute; top: 0; left: 0; right: 0; display: flex; overflow: hidden; pointer-events: none; }
 .porch-sprite { display: block; flex: none; }
 .porch-nav__row { position: relative; display: flex; align-items: flex-start; gap: calc(var(--px) * 2); min-height: calc(var(--px) * 24); max-width: 1280px; margin: auto; padding: 0 calc(var(--px) * 3); }
-.porch-nav__logo { position: relative; display: block; flex: none; min-height: max(44px, calc(var(--px) * 15)); margin-top: calc(var(--px) * 8); color: #392a45; font-size: calc(var(--px) * 8); white-space: nowrap; line-height: 1; }
-.porch-nav__logo > span { position: absolute; top: calc(var(--px) * 7); left: 0; right: 0; text-align: center; }
+.porch-nav__logo { position: relative; z-index: 2; display: block; flex: none; min-height: 44px; margin-right: calc(var(--px) * 4); transform-origin: 50% 0; transition: transform 180ms steps(3); }
+.porch-nav__logo:hover, .porch-nav__logo:focus-visible { transform: rotate(-2deg); }
+.porch-nav__logo::after { content: '✦'; position: absolute; top: 25%; left: 10%; color: #fff0bb; font-size: calc(var(--px) * 4); opacity: 0; animation: logo-glint 7s steps(1) infinite; pointer-events: none; }
+@keyframes logo-glint { 0%, 88%, 100% { opacity: 0; } 90% { opacity: .9; left: 20%; } 92% { opacity: .9; left: 70%; } }
 .porch-nav__links { display: flex; align-items: flex-start; gap: calc(var(--px) * 2); margin-top: calc(var(--px) * 8); }
 .porch-nav__sign { position: relative; display: block; flex: none; min-height: 44px; color: #392a45; text-align: center; font-size: 21px; line-height: 1; transition: transform 100ms steps(1); }
 .porch-nav__sign > span { position: absolute; top: calc(var(--px) * 7); left: 0; right: 0; }
@@ -90,4 +92,4 @@
   .porch-nav__username { display: none; }
 }
 @media (max-width: 640px) { .porch-nav__sign { font-size: calc(var(--px) * 8); } }
-@media (prefers-reduced-motion: reduce) { .porch-nav__sign { transition: none; } .porch-nav__sign:hover, .porch-nav__sign:focus-visible { transform: none; } }
+@media (prefers-reduced-motion: reduce) { .porch-nav__sign, .porch-nav__logo { transition: none; } .porch-nav__sign:hover, .porch-nav__sign:focus-visible, .porch-nav__logo:hover, .porch-nav__logo:focus-visible { transform: none; } .porch-nav__logo::after { animation: none; } }

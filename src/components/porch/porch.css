@@ -10,7 +10,7 @@
 .porch-easel-copy { position: absolute; left: 23%; top: 28%; width: 55%; display: grid; gap: var(--px); padding: calc(var(--px) * 2); color: #392a45; background: #fff0cc; border: var(--px) solid #d1b5a3; box-shadow: var(--px) var(--px) #8e5960; font-size: calc(var(--px) * 4); line-height: 1; white-space: normal; text-align: center; }
 .porch-easel-copy::before { content: ''; width: calc(var(--px) * 2); height: calc(var(--px) * 2); position: absolute; top: calc(var(--px) * -1); left: 50%; background: #d86a58; }
 .porch-easel-action { display: block; padding: var(--px); background: #8e5960; color: #fff0cc; border: var(--px) solid #392a45; box-shadow: var(--px) var(--px) #bc806e; }
-.porch-scores { position: absolute; pointer-events: none; padding: calc(var(--px) * 7); color: #fff0cc; font-size: calc(var(--px) * 5); line-height: 1.1; overflow: hidden; }
+.porch-scores { position: absolute; pointer-events: none; padding: calc(var(--px) * 5); color: #fff0cc; font-size: calc(var(--px) * 4); line-height: 1.1; overflow: hidden; }
 .porch-scores strong { display: block; margin-bottom: var(--px); }
 .porch-world .pixel-hotspot__label { z-index: 3; background: #ecd4b0; color: #392a45; border: var(--px) solid #8e5960; box-shadow: var(--px) var(--px) #392a45; font-size: calc(var(--px) * 4); line-height: 1; }
 @media (hover: hover) and (pointer: fine) {
@@ -21,6 +21,10 @@
 @keyframes porch-glint { 0%, 88%, 100% { opacity: .25; } 90%, 94% { opacity: .85; } }
 @media (prefers-reduced-motion: reduce) { .porch-world .pixel-hotspot::after { animation: none; } }
 .porch-account { position: fixed; z-index: 20; top: 25%; right: 10%; display: grid; gap: 12px; padding: 20px; }
+.porch-more-ticket { position: absolute; z-index: 4; min-width: 44px; min-height: 44px; color: #392a45; background: #ecd4b0; border: var(--px) solid #8e5960; box-shadow: var(--px) var(--px) #392a45; font-size: calc(var(--px) * 5); }
+.porch-more-menu { position: absolute; z-index: 5; left: 30%; bottom: 14%; display: grid; gap: var(--px); padding: calc(var(--px) * 3); font-size: calc(var(--px) * 5); }
+.porch-more-menu :is(a, button) { min-height: 44px; text-align: left; color: #392a45; }
+.porch-more-ticket:focus-visible, .porch-more-menu :is(a, button):focus-visible { outline: var(--px) solid #392a45; }
 .porch-landing-copy { margin: 0 auto; max-width: 60rem; padding: 20px; }
 .porch-landing-copy h1 { font-size: 28px; }
 .porch-landing-copy p { font-size: 20px; }
@@ -32,8 +36,7 @@ html:has(.porch-home) .porch-nav__username { font-size: calc(var(--px) * 5); max
   .porch-scores { font-size: calc(var(--px) * 4); }
   .pixel-hotspot[aria-label="Scoring rules"] .pixel-hotspot__label,
   .pixel-hotspot[aria-label="Public board"] .pixel-hotspot__label { left: 0; transform: none; }
-  .pixel-hotspot[aria-label="My gallery"] .pixel-hotspot__label,
-  .pixel-hotspot[aria-label="Sign in for gallery"] .pixel-hotspot__label { left: auto; right: calc(var(--px) * -1); top: auto; bottom: 100%; transform: none; }
+  .pixel-hotspot[aria-label="Your gallery"] .pixel-hotspot__label { left: 0; top: auto; bottom: 100%; transform: none; }
   .pixel-hotspot[aria-label="Mute sounds"] .pixel-hotspot__label,
   .pixel-hotspot[aria-label="Unmute sounds"] .pixel-hotspot__label { left: auto; right: 100%; top: 40%; transform: none; }
   .pixel-hotspot[aria-label="Account menu"] .pixel-hotspot__label,

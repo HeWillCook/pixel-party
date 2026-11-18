@@ -8,6 +8,7 @@ export interface PorchOptions {
   easelState: 'draped' | 'cover' | 'finished' | 'signin'
   bob: boolean
   soundOn?: boolean
+  signedIn?: boolean
 }
 
 export function drawPorch(ctx: CanvasRenderingContext2D, frame: number, opts: PorchOptions): void {
@@ -58,22 +59,35 @@ export function drawPorch(ctx: CanvasRenderingContext2D, frame: number, opts: Po
     rect(x, 8, 9, floor - 8, P.wood[0]); rect(x + 2, 8, 4, floor - 8, P.wood[2]); rect(x + 6, 8, 1, floor - 8, P.wood[4])
     for (let y = 19; y < floor; y += 27) rect(x + 3, y, 1, 10, P.wood[1])
   }
-  rect(0, floor - 29, width, 4, P.wood[1]); rect(0, floor - 29, width, 1, P.wood[4])
+  const gapStart = layout.steps.x - 3, gapEnd = layout.steps.x + layout.steps.w + 2
+  rect(0, floor - 29, gapStart, 4, P.wood[1]); rect(gapEnd, floor - 29, width - gapEnd, 4, P.wood[1])
+  rect(0, floor - 29, gapStart, 1, P.wood[4]); rect(gapEnd, floor - 29, width - gapEnd, 1, P.wood[4])
   for (let x = 11; x < width - 9; x += 11) {
+    if (x >= gapStart && x < gapEnd) continue
     rect(x, floor - 25, 3, 25, P.wood[1]); rect(x + 2, floor - 25, 1, 25, P.wood[3])
   }
+  rect(gapStart - 3, floor - 32, 4, 32, P.wood[0]); rect(gapStart - 2, floor - 32, 2, 30, P.wood[3])
+  rect(gapEnd, floor - 32, 4, 32, P.wood[0]); rect(gapEnd + 1, floor - 32, 2, 30, P.wood[3])
   rect(0, floor - 3, width, 3, P.wood[1]); rect(0, floor, width, height - floor, P.wood[2])
   for (let y = floor; y < height; y += 7) {
     rect(0, y, width, 1, P.wood[0]); rect(0, y + 1, width, 1, P.wood[3])
     for (let x = (y * 7) % 45; x < width; x += 53) { rect(x, y + 3, 17, 1, P.wood[1]); rect(x + 20, y + 5, 8, 1, P.wood[3]) }
   }
 
-  const door = layout.door
-  rect(door.x, door.y, door.w, door.h, P.wood[0]); rect(door.x + 3, door.y + 3, door.w - 6, door.h - 6, P.wood[1])
-  rect(door.x + 5, door.y + 7, door.w - 10, 22, P.wood[3]); rect(door.x + 7, door.y + 9, door.w - 14, 18, P.sun[3])
-  rect(door.x + 12, door.y + 9, 2, 18, P.wood[1]); rect(door.x + 7, door.y + 17, door.w - 14, 2, P.wood[1])
-  for (let y = door.y + 38; y < door.y + door.h - 9; y += 25) { rect(door.x + 6, y, door.w - 12, 19, P.wood[0]); rect(door.x + 8, y + 2, door.w - 16, 15, P.wood[2]) }
-  rect(door.x + door.w - 8, door.y + 64, 2, 3, P.sun[4])
+  const wallWidth = portrait ? 42 : 55
+  rect(0, 8, wallWidth, floor - 8, P.wood[2])
+  for (let y = 12; y < floor; y += 7) { rect(0, y, wallWidth, 1, P.wood[1]); rect(0, y + 1, wallWidth, 1, P.wood[3]) }
+  rect(wallWidth - 5, 8, 5, floor - 8, P.wood[0]); rect(wallWidth - 3, 8, 2, floor - 8, P.wood[4])
+  if (!portrait) {
+    rect(19, 38, 25, 32, P.wood[0]); rect(21, 40, 21, 28, P.wood[3]); rect(23, 42, 17, 24, P.sun[3])
+    rect(30, 42, 2, 24, P.wood[1]); rect(23, 53, 17, 2, P.wood[1])
+  }
+  const gallery = layout.gallery
+  for (let offset = 0; offset < 3; offset++) {
+    const x = gallery.x + offset * 3, y = gallery.y + (2 - offset) * 2
+    rect(x, y, 17, 24, P.wood[0]); rect(x + 1, y + 1, 15, 22, P.wood[4]); rect(x + 3, y + 3, 11, 18, P.paper[3])
+  }
+  rect(gallery.x + 9, gallery.y + 6, 8, 7, P.sky[3]); rect(gallery.x + 9, gallery.y + 13, 8, 6, P.sea[2]); rect(gallery.x + 14, gallery.y + 8, 2, 2, P.sun[4])
 
   const board = layout.chalkboard
   rect(board.x + 3, board.y + 8, 3, board.h - 4, P.wood[0]); rect(board.x + board.w - 6, board.y + 8, 3, board.h - 4, P.wood[0])
@@ -85,31 +99,30 @@ export function drawPorch(ctx: CanvasRenderingContext2D, frame: number, opts: Po
   const scaledSprite = (key: 'mailbox' | 'radio' | 'plant' | 'lantern', x: number, y: number) => {
     const sprite = sprites[key]
     sprite.rows.forEach((row, rowIndex) => Array.from(row).forEach((pixel, column) => {
-      if (pixel !== '.') rect(x + column * 2, y + rowIndex * 2, 2, 2, sprite.palette[pixel])
+      if (pixel !== '.' && !(key === 'mailbox' && pixel === 'r' && opts.signedIn)) rect(x + column * 2, y + rowIndex * 2, 2, 2, sprite.palette[pixel])
     }))
   }
-  rect(layout.radio.x + 3, layout.radio.y + 17, 25, 8, P.wood[0]); rect(layout.radio.x + 5, layout.radio.y + 19, 21, 5, P.wood[2])
-  rect(layout.radio.x + 5, layout.radio.y + 25, 3, Math.max(0, floor - layout.radio.y - 25), P.wood[1])
-  rect(layout.radio.x + 24, layout.radio.y + 25, 3, Math.max(0, floor - layout.radio.y - 25), P.wood[3])
-  scaledSprite('radio', layout.radio.x, layout.radio.y)
-  if (opts.soundOn) {
-    rect(layout.radio.x + 26, layout.radio.y - 8, 1, 7, P.sun[4]); rect(layout.radio.x + 24, layout.radio.y - 3, 2, 2, P.sun[4]); rect(layout.radio.x + 27, layout.radio.y - 8, 3, 1, P.sun[4])
+  if (!portrait) {
+    const chairX = layout.cat.x - 3, chairY = layout.cat.y - 11
+    rect(chairX, chairY, 3, 34, P.wood[0]); rect(chairX + 2, chairY + 3, 28, 2, P.wood[3])
+    for (let x = chairX + 4; x < chairX + 29; x += 4) rect(x, chairY + 4, 2, 18, P.wood[2])
+    rect(chairX + 2, chairY + 21, 31, 5, P.wood[0]); rect(chairX + 4, chairY + 20, 27, 3, P.paper[2])
+    rect(chairX + 4, chairY + 26, 3, 8, P.wood[1]); rect(chairX + 27, chairY + 26, 3, 8, P.wood[1]); rect(chairX, chairY + 33, 34, 2, P.wood[0])
+    rect(layout.radio.x, layout.radio.y + 9, 19, 3, P.wood[0]); rect(layout.radio.x + 2, layout.radio.y + 12, 2, floor - layout.radio.y - 12, P.wood[2]); rect(layout.radio.x + 15, layout.radio.y + 12, 2, floor - layout.radio.y - 12, P.wood[2])
+    drawSprite(ctx, sprites.radio, layout.radio.x + 1, layout.radio.y)
+    if (opts.soundOn) { rect(layout.radio.x + 15, layout.radio.y - 5, 1, 4, P.sun[4]); rect(layout.radio.x + 13, layout.radio.y - 2, 2, 1, P.sun[4]) }
   }
   scaledSprite('mailbox', layout.mailbox.x, layout.mailbox.y)
   rect(layout.mailbox.x + 7, layout.mailbox.y + 24, 4, Math.max(0, floor - layout.mailbox.y - 24), P.wood[1])
-  rect(layout.plant.x, layout.plant.y + 20, 26, 2, P.wood[3])
-  if (portrait) {
-    rect(layout.plant.x + 3, layout.plant.y + 22, 2, Math.max(0, floor - layout.plant.y - 22), P.wood[1])
-    rect(layout.plant.x + 22, layout.plant.y + 22, 2, Math.max(0, floor - layout.plant.y - 22), P.wood[3])
-  }
-  scaledSprite('plant', layout.plant.x, layout.plant.y)
+  if (!portrait) drawSprite(ctx, sprites.plant, layout.plant.x, floor - sprites.plant.h)
   const lanternX = layout.lantern.x
   for (let y = 8; y < layout.lantern.y; y += 2) rect(lanternX + 9, y, 1, 1, P.wood[3])
   scaledSprite('lantern', lanternX, layout.lantern.y)
-  const catY = layout.cat.y + (Math.floor(frame / 12) % 2)
-  drawSprite(ctx, sprites.cat, layout.cat.x, catY)
-  rect(layout.cat.x + 4, catY + 5, 3, 1, P.fur[0])
-  rect(layout.cat.x + 19, catY + 8, 4, 1, P.fur[4])
+  if (!portrait) {
+    const catY = layout.cat.y + (Math.floor(frame / 12) % 2)
+    drawSprite(ctx, sprites.cat, layout.cat.x, catY)
+    rect(layout.cat.x + 4, catY + 5, 3, 1, P.fur[0]); rect(layout.cat.x + 19, catY + 8, 4, 1, P.fur[4])
+  }
   const note = layout.note
   rect(note.x, note.y, 13, 18, P.wood[0]); rect(note.x + 1, note.y + 1, 11, 15, P.paper[3]); rect(note.x + 6, note.y, 2, 2, P.flame[1])
   for (let y = 4; y < 13; y += 3) rect(note.x + 3, note.y + y, 7, 1, P.paper[0])
@@ -132,6 +145,12 @@ export function drawPorch(ctx: CanvasRenderingContext2D, frame: number, opts: Po
     rect(ex + offset + 2, ey + 98, 3, 5 + (Math.floor(frame / 3 + offset) % 3), P.flame[1]); rect(ex + offset + 3, ey + 98, 1, 4, P.flame[4])
   }
   const steps = layout.steps
-  rect(steps.x - 3, steps.y + 22, steps.w + 6, 10, P.sun[2])
-  for (let row = 0; row < 4; row++) { rect(steps.x + row * 2, steps.y + row * 7, steps.w - row * 4, 6, P.wood[0]); rect(steps.x + row * 2 + 1, steps.y + row * 7, steps.w - row * 4 - 2, 2, P.wood[4]) }
+  rect(steps.x - 4, floor, steps.w + 8, height - floor, P.sun[2])
+  for (let row = 0; row < 5; row++) { rect(steps.x + row, steps.y + row * 7, steps.w - row * 2, 6, P.wood[0]); rect(steps.x + row + 1, steps.y + row * 7, steps.w - row * 2 - 2, 2, P.wood[4]) }
+  for (let x = steps.x - 3; x < steps.x + steps.w + 4; x += 10) { rect(x, floor + 25, 1, 5, P.foliage[2]); rect(x + 1, floor + 27, 1, 3, P.foliage[3]) }
+  rect(steps.x + 4, floor - 25, 2, 25, P.wood[0]); rect(steps.x - 2, floor - 29, 22, 8, P.wood[0]); rect(steps.x - 1, floor - 28, 20, 6, P.wood[4])
+  const beachLetters = ['110|101|110|101|110', '111|100|110|100|111', '010|101|111|101|101', '011|100|100|100|011', '101|101|111|101|101']
+  beachLetters.forEach((letter, index) => letter.split('|').forEach((row, rowIndex) => Array.from(row).forEach((pixel, column) => {
+    if (pixel === '1') rect(steps.x + index * 4 + column, floor - 28 + rowIndex, 1, 1, P.wood[0])
+  })))
 }

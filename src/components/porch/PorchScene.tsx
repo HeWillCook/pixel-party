@@ -30,22 +30,33 @@ function Objects(props: PorchSceneProps) {
   const composition = useContext(SceneComposition)
   const rect = porchLayout[composition]
   const [rulesOpen, setRulesOpen] = useState(false)
+  const [moreOpen, setMoreOpen] = useState(false)
   return <>
     <Hotspot rect={rect.easel} label={props.easelLabel} href={props.landing ? '/home' : undefined} onClick={props.landing ? undefined : props.onEasel} testId={props.easelTestId} disabled={props.easelDisabled}><span className="porch-easel-copy">{props.easelText}</span></Hotspot>
     <Hotspot rect={rect.chalkboard} label="Today's scores" href="/scores" />
     <div className="porch-scores" style={rectToPercent(rect.chalkboard, composition)}><strong>Today's top three</strong>{props.topThree.length ? props.topThree.map((score, index) => <div key={index}>{index + 1}. {score.name} … {score.score}</div>) : <div>No scores yet</div>}</div>
     <Hotspot rect={rect.steps} label="Party beach" href="/party" testId={props.landing ? 'landing-browse-lobby' : undefined} />
-    <Hotspot rect={rect.lighthouse} label="Public board" href="/r/play" />
+    {composition === 'landscape' && <Hotspot rect={rect.lighthouse} label="Public board" href="/r/play" />}
     <Hotspot rect={rect.mailbox} label={props.signedIn ? 'Account menu' : 'Sign in'} onClick={props.onAccount} />
-    <Hotspot rect={rect.door} label={props.signedIn ? 'My gallery' : 'Sign in for gallery'} href={props.signedIn ? props.galleryHref : undefined} onClick={props.signedIn ? undefined : props.onAccount} />
-    <Hotspot rect={rect.radio} label={props.muted ? 'Unmute sounds' : 'Mute sounds'} pressed={props.muted} onClick={props.onToggleMute} />
-    <Hotspot rect={rect.note} label="Scoring rules" onClick={() => setRulesOpen(true)} />
+    <Hotspot rect={rect.gallery} label="Your gallery" href={props.signedIn ? props.galleryHref : undefined} onClick={props.signedIn ? undefined : props.onAccount} />
+    {composition === 'landscape' ? <>
+      <Hotspot rect={rect.radio} label={props.muted ? 'Unmute sounds' : 'Mute sounds'} pressed={props.muted} onClick={props.onToggleMute} />
+      <Hotspot rect={rect.note} label="Scoring rules" onClick={() => setRulesOpen(true)} />
+    </> : <>
+      <button type="button" className="porch-more-ticket" style={rectToPercent(rect.more, composition)} aria-expanded={moreOpen} onClick={() => setMoreOpen(!moreOpen)}>More</button>
+      {moreOpen && <div className="porch-more-menu pp-panel" role="group" aria-label="More porch actions">
+        <a href="/r/play">Public board</a>
+        <button type="button" onClick={props.onToggleMute}>{props.muted ? 'Unmute sounds' : 'Mute sounds'}</button>
+        <button type="button" onClick={() => { setMoreOpen(false); setRulesOpen(true) }}>Scoring rules</button>
+        <button type="button" onClick={() => setMoreOpen(false)}>Close</button>
+      </div>}
+    </>}
     {rulesOpen && <RulesNote onClose={() => setRulesOpen(false)} />}
   </>
 }
 
 export function PorchScene(props: PorchSceneProps) {
-  const draw = useCallback((ctx: CanvasRenderingContext2D, frame: number) => drawPorch(ctx, frame, { easelState: props.easelState, bob: true, soundOn: !props.muted }), [props.easelState, props.muted])
+  const draw = useCallback((ctx: CanvasRenderingContext2D, frame: number) => drawPorch(ctx, frame, { easelState: props.easelState, bob: true, soundOn: !props.muted, signedIn: props.signedIn }), [props.easelState, props.muted, props.signedIn])
   return <div className={props.landing ? 'porch-world porch-world--landing' : 'porch-world'}>
     <PixelScene draw={draw} className="porch-world__scene" syncScale><Objects {...props} /></PixelScene>
     {props.children}
