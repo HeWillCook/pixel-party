@@ -1,0 +1,25 @@
+.play-layout { position: relative; display: grid; grid-template-columns: 168px minmax(0, 1fr) 280px; grid-template-areas: 'top top top' 'left canvas right' 'bottom bottom bottom'; gap: 12px; width: 100%; }
+.play-layout__top { grid-area: top; min-width: 0; }
+.play-layout__left { grid-area: left; min-width: 0; }
+.play-layout__canvas { grid-area: canvas; min-width: 0; display: flex; justify-content: center; align-items: start; }
+.play-layout__right { grid-area: right; min-width: 0; }
+.play-layout__bottom { grid-area: bottom; min-width: 0; }
+.hover-easel { position: relative; display: flex; flex-direction: column; align-items: center; padding: 10px 12px 0; }
+.hover-easel__frame { position: relative; padding: 4px; background: #c57d63; border: 4px solid #392a45; box-shadow: inset -4px -4px #985c5a; }
+.hover-easel__frame > [data-testid="pixel-canvas-frame"] { display: flex; }
+.hover-easel__clamp { position: absolute; top: 3px; z-index: 1; width: 40px; height: 12px; background: #ecae7d; border: 4px solid #392a45; }
+.hover-easel__tray { height: 10px; width: calc(100% + 8px); background: #c57d63; border: 4px solid #392a45; border-top-color: #ecae7d; }
+.hover-easel__base { position: relative; display: flex; justify-content: space-around; width: 80%; height: 55px; }
+.hover-easel__leg { position: absolute; top: 0; width: 8px; height: 35px; background: #985c5a; border-left: 3px solid #392a45; transform-origin: top; }
+.hover-easel__leg--left { left: 25%; transform: rotate(18deg); }
+.hover-easel__leg--right { right: 25%; transform: rotate(-18deg); }
+.hover-easel__booster { position: relative; align-self: end; width: 17px; height: 16px; background: #7b7880; border: 3px solid #343447; }
+.hover-easel__booster::after { content: ''; position: absolute; top: 100%; left: 3px; width: 5px; height: 9px; background: #f0955f; box-shadow: inset 2px 0 #ffe29a; animation: play-flame .4s steps(2) infinite; }
+@keyframes play-flame { 50% { height: 6px; } }
+.play-score-card > h2 { padding: 8px 12px; color: #392a45; background: #ecd4b0; font-size: 20px; }
+@media (max-width: 767px) {
+  .play-layout { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'top' 'canvas' 'left' 'bottom' 'right'; }
+  .play-layout__left [data-testid="toolbar"] { flex-direction: row; flex-wrap: wrap; }
+  .play-layout__left [data-testid="toolbar"] button { width: auto; flex: 1; min-width: 44px; }
+}
+@media (prefers-reduced-motion: reduce) { .hover-easel__booster::after { animation: none; } }
