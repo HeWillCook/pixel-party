@@ -1007,3 +1007,133 @@ test('capture Task 7 scores chalkboard across viewports', async ({ page }) => {
     await page.screenshot({ path: resolve(dir, `scores-${vp.width}x${vp.height}.png`), fullPage: true })
   }
 })
+
+test('gallery shows framed dailies newest first', async ({ page }) => {
+  const cells = samplePaintingBase64()
+  await setup(page, false, (query) => {
+    if (query.collection === 'dailyDrawings' && query.where?.userId === 'alice') {
+      return [
+        { recordId: 'd1', data: { day: '2026-11-15', userId: 'alice', displayName: 'Alice', prompt: 'An anchor', cells, score: 610, guess: 'anchor' } },
+        { recordId: 'd2', data: { day: '2026-11-17', userId: 'alice', displayName: 'Alice', prompt: 'A lighthouse', cells, score: 912, guess: 'lighthouse' } },
+        { recordId: 'd3', data: { day: '2026-11-16', userId: 'alice', displayName: 'Alice', prompt: 'A windmill', cells, score: 0, guess: '' } },
+      ]
+    }
+    if (query.collection === 'dailyScores' && query.where?.userId === 'alice') {
+      return [
+        { recordId: 's1', data: { day: '2026-11-15', userId: 'alice', displayName: 'Alice', medal: 0 } },
+        { recordId: 's2', data: { day: '2026-11-17', userId: 'alice', displayName: 'Alice', medal: 1 } },
+      ]
+    }
+    return []
+  })
+
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await page.goto(`${origin}/u/alice`)
+  await expect(page.getByTestId('gallery-page')).toBeVisible()
+  await expect(page.getByTestId('gallery-wall')).toBeVisible()
+  await expect(page.getByRole('heading', { name: "Alice's gallery" })).toBeVisible()
+
+  const frames = page.locator('[data-testid^="gallery-frame-"]')
+  await expect(frames).toHaveCount(2)
+  await expect(frames.nth(0)).toHaveAttribute('data-testid', 'gallery-frame-2026-11-17')
+  await expect(frames.nth(0)).toHaveAttribute('data-frame-kind', 'gilt')
+  await expect(frames.nth(0)).toContainText('A lighthouse')
+  await expect(frames.nth(0)).toContainText('2026-11-17')
+  await expect(frames.nth(0)).toContainText('912 / 1000')
+  await expect(frames.nth(0)).toContainText('Haiku guessed: lighthouse')
+  await expect(frames.nth(0).getByLabel('Gold medal')).toBeVisible()
+
+  await expect(frames.nth(1)).toHaveAttribute('data-testid', 'gallery-frame-2026-11-15')
+  await expect(frames.nth(1)).toHaveAttribute('data-frame-kind', 'wood')
+  await expect(frames.nth(1)).toContainText('An anchor')
+  await expect(page.getByText('A windmill')).toHaveCount(0)
+
+  // Mobile 375x812: single column with readable plaques and no horizontal overflow
+  await page.setViewportSize({ width: 375, height: 812 })
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375)
+  const firstBox = (await frames.nth(0).boundingBox())!
+  const secondBox = (await frames.nth(1).boundingBox())!
+  expect(secondBox.y).toBeGreaterThanOrEqual(firstBox.y + firstBox.height)
+})
+
+test('empty gallery shows single empty frame and Paint today prompt link to /home', async ({ page }) => {
+  const cells = samplePaintingBase64()
+  await setup(page, false, (query) => {
+    if (query.collection === 'dailyDrawings' && query.where?.userId === 'host') {
+      return [{ recordId: 'd0', data: { day: '2026-11-17', userId: 'host', displayName: 'Offline host', prompt: 'Skipped', cells, score: 0, guess: '' } }]
+    }
+    return []
+  })
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await page.goto(`${origin}/u/host`)
+  await expect(page.getByRole('heading', { name: 'Your gallery' })).toBeVisible()
+  const empty = page.getByTestId('gallery-empty')
+  await expect(empty).toBeVisible()
+  await expect(empty).toContainText('No drawings to show yet.')
+  const cta = empty.getByRole('link', { name: "Paint today's prompt" })
+  await expect(cta).toHaveAttribute('href', '/home')
+  await cta.click()
+  await expect(page).toHaveURL(`${origin}/home`)
+})
+
+test('door opens own gallery from porch canvases and mailbox menu', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await setup(page)
+  await page.goto(`${origin}/home`)
+  await page.locator('.porch-world').getByRole('link', { name: 'Your gallery' }).click()
+  await expect(page).toHaveURL(`${origin}/u/host`)
+  await expect(page.getByRole('heading', { name: 'Your gallery' })).toBeVisible()
+
+  await page.goto(`${origin}/party`)
+  await page.getByRole('button', { name: /Account menu/ }).click()
+  await page.getByRole('menuitem', { name: 'My gallery' }).click()
+  await expect(page).toHaveURL(`${origin}/u/host`)
+  await expect(page.getByRole('heading', { name: 'Your gallery' })).toBeVisible()
+})
+
+test('capture Task 8 gallery wall across viewports', async ({ page }) => {
+  test.skip(process.env.SCREENSHOTS !== '1')
+  const cells = samplePaintingBase64()
+  const dir = resolve(import.meta.dirname, '../../docs/superpowers/screenshots/2026-11-18-porch')
+  await mkdir(dir, { recursive: true })
+
+  // Owner gallery with 3 paintings (Gold, Silver, and plain wood frame)
+  await setup(page, false, (query) => {
+    if (query.collection === 'dailyDrawings' && query.where?.userId === 'host') {
+      return [
+        { recordId: 'd1', data: { day: '2026-11-17', userId: 'host', displayName: 'Offline host', prompt: 'A lighthouse', cells, score: 912, guess: 'lighthouse' } },
+        { recordId: 'd2', data: { day: '2026-11-16', userId: 'host', displayName: 'Offline host', prompt: 'Sunset sailboat', cells, score: 825, guess: 'sailboat' } },
+        { recordId: 'd3', data: { day: '2026-11-15', userId: 'host', displayName: 'Offline host', prompt: 'Harbor lantern', cells, score: 610, guess: 'lantern' } },
+      ]
+    }
+    if (query.collection === 'dailyScores' && query.where?.userId === 'host') {
+      return [
+        { recordId: 's1', data: { day: '2026-11-17', userId: 'host', displayName: 'Offline host', medal: 1 } },
+        { recordId: 's2', data: { day: '2026-11-16', userId: 'host', displayName: 'Offline host', medal: 2 } },
+        { recordId: 's3', data: { day: '2026-11-15', userId: 'host', displayName: 'Offline host', medal: 0 } },
+      ]
+    }
+    return []
+  })
+  for (const vp of [{ width: 1440, height: 900 }, { width: 1280, height: 720 }, { width: 375, height: 812 }]) {
+    await page.setViewportSize(vp)
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await page.goto(`${origin}/u/host`)
+    await expect(page.getByTestId('gallery-frame-2026-11-17')).toBeVisible()
+    await page.evaluate(() => document.fonts.ready)
+    await page.waitForTimeout(120)
+    await page.screenshot({ path: resolve(dir, `gallery-owner-${vp.width}x${vp.height}.png`), fullPage: true })
+  }
+
+  // Empty gallery state
+  await setup(page)
+  for (const vp of [{ width: 1280, height: 720 }, { width: 375, height: 812 }]) {
+    await page.setViewportSize(vp)
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await page.goto(`${origin}/u/host`)
+    await expect(page.getByTestId('gallery-empty')).toBeVisible()
+    await page.evaluate(() => document.fonts.ready)
+    await page.waitForTimeout(120)
+    await page.screenshot({ path: resolve(dir, `gallery-empty-${vp.width}x${vp.height}.png`), fullPage: true })
+  }
+})

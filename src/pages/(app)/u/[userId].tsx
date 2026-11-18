@@ -1,40 +1,133 @@
 import { Link, useParams } from 'react-router-dom'
-import { useQuery } from 'deepspace'
+import { useAuthProfileReady, useQuery } from 'deepspace'
 import { PixelThumb } from '../../../components/daily/PixelThumb'
+import { GalleryBackdrop } from '../../../components/gallery/GalleryBackdrop'
+import '../../../components/gallery/gallery.css'
 
 interface Drawing {
   day: string
   userId: string
-  displayName: string
-  prompt: string
+  displayName?: string
+  prompt?: string
   cells: string
   score: number
-  guess: string
+  guess?: string
 }
 
-interface Score { day: string; userId: string; displayName: string; medal: number }
+interface Score {
+  day: string
+  userId: string
+  displayName?: string
+  medal?: number
+}
 
 export default function ProfilePage() {
   const { userId = '' } = useParams()
-  const { records: drawings, status } = useQuery<Drawing>('dailyDrawings', { where: { userId }, orderBy: 'day', orderDir: 'desc', limit: 1000 })
+  const { user } = useAuthProfileReady({ requireUser: false })
+  const { records: drawings, status } = useQuery<Drawing>('dailyDrawings', {
+    where: { userId },
+    orderBy: 'day',
+    orderDir: 'desc',
+    limit: 1000,
+  })
   const { records: scores } = useQuery<Score>('dailyScores', { where: { userId }, limit: 1000 })
-  const name = drawings[0]?.data.displayName || scores[0]?.data.displayName || 'Player'
+
+  const isOwner = Boolean(user?.id && user.id === userId)
+  const displayName =
+    drawings.find((record) => record.data?.displayName)?.data.displayName ||
+    scores.find((record) => record.data?.displayName)?.data.displayName ||
+    'Player'
+  const heading = isOwner ? 'Your gallery' : `${displayName}'s gallery`
+
+  const byDay = new Map<string, Drawing>()
+  for (const record of drawings) {
+    const item = record.data
+    if (!item || typeof item.day !== 'string' || typeof item.cells !== 'string' || !item.cells.length) continue
+    if (item.userId && item.userId !== userId) continue
+    const guess = (item.guess ?? '').trim()
+    if (item.score <= 0 && !guess.length) continue
+    const existing = byDay.get(item.day)
+    if (!existing || item.score > existing.score) {
+      byDay.set(item.day, item)
+    }
+  }
+  const galleryItems = Array.from(byDay.values()).sort((a, b) => b.day.localeCompare(a.day))
+
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 p-5 sm:p-8">
-      <div className="flex flex-wrap items-center justify-between gap-3"><h1 className="pp-logo text-4xl">{name}&apos;s Gallery</h1><Link to="/home" className="pp-chip px-3 py-1 text-lg">Daily challenge →</Link></div>
-      {status === 'loading' ? <p className="text-muted-foreground">Loading drawings…</p> : drawings.length === 0 ? <p className="text-muted-foreground">No drawings to show yet.</p> : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {drawings.map(({ data: drawing }) => {
-            const medal = scores.find(({ data }) => data.day === drawing.day)?.data.medal ?? 0
-            return <article key={drawing.day} className="pp-panel flex flex-col gap-3 bg-card p-4">
-              <div className="pp-frame mx-auto"><PixelThumb cells={drawing.cells} size={160} /></div>
-              <div className="flex items-center justify-between gap-2"><h2 className="text-2xl text-[var(--sunset-1)]">{drawing.prompt}</h2>{medal > 0 && medal <= 3 && <span aria-label={`${['Gold', 'Silver', 'Bronze'][medal - 1]} medal`}>{['🥇', '🥈', '🥉'][medal - 1]}</span>}</div>
-              <p className="text-base text-muted-foreground">{drawing.day} · {drawing.score} / 1000</p>
-              <p className="text-lg">Haiku guessed: {drawing.guess || 'No guess'}</p>
+    <div className="gallery-page" data-testid="gallery-page">
+      <GalleryBackdrop />
+      <div className="gallery-stage">
+        <header className="gallery-header">
+          <h1 className="gallery-title">{heading}</h1>
+          <Link to="/home" className="pp-chip px-3 py-1.5 text-lg">
+            Daily challenge →
+          </Link>
+        </header>
+
+        {status === 'loading' ? (
+          <div className="pp-wood-panel p-6 text-lg">Hanging paintings…</div>
+        ) : galleryItems.length === 0 ? (
+          <div className="gallery-empty-wrap">
+            <article className="gallery-card" data-testid="gallery-empty">
+              <div className="gallery-hanger" aria-hidden="true" />
+              <div className="gallery-frame gallery-frame--wood">
+                <div className="gallery-empty-canvas">
+                  <span>Empty wall frame</span>
+                </div>
+              </div>
+              <div className="gallery-plaque">
+                <p className="gallery-plaque__prompt">No drawings to show yet.</p>
+                <Link
+                  to="/home"
+                  className="pp-btn mt-1 inline-flex min-h-[44px] items-center justify-center px-4 py-1 text-lg"
+                >
+                  Paint today&apos;s prompt
+                </Link>
+              </div>
             </article>
-          })}
-        </div>
-      )}
+          </div>
+        ) : (
+          <div className="gallery-wall" data-testid="gallery-wall">
+            {galleryItems.map((drawing) => {
+              const medal = scores.find(({ data }) => data?.day === drawing.day)?.data.medal ?? 0
+              const hasMedal = medal > 0 && medal <= 3
+              const frameKind = hasMedal ? 'gilt' : 'wood'
+              return (
+                <article
+                  key={drawing.day}
+                  className="gallery-card"
+                  data-testid={`gallery-frame-${drawing.day}`}
+                  data-frame-kind={frameKind}
+                >
+                  <div className="gallery-hanger" aria-hidden="true" />
+                  <div className={`gallery-frame gallery-frame--${frameKind}`}>
+                    <PixelThumb cells={drawing.cells} size={160} className="gallery-frame__thumb" />
+                  </div>
+                  <div className="gallery-plaque">
+                    <div className="gallery-plaque__top">
+                      <h2 className="gallery-plaque__prompt">{drawing.prompt || 'Daily painting'}</h2>
+                      {hasMedal && (
+                        <span
+                          className="gallery-plaque__medal"
+                          aria-label={`${['Gold', 'Silver', 'Bronze'][medal - 1]} medal`}
+                        >
+                          {['🥇', '🥈', '🥉'][medal - 1]}
+                        </span>
+                      )}
+                    </div>
+                    <p className="gallery-plaque__meta">
+                      {drawing.day} · {drawing.score} / 1000
+                    </p>
+                    <p className="gallery-plaque__guess">
+                      Haiku guessed: {drawing.guess?.trim() || 'No guess'}
+                    </p>
+                  </div>
+                </article>
+              )
+            })}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
