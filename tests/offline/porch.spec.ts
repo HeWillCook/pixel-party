@@ -44,6 +44,20 @@ test('porch objects are present and labelled', async ({ page }) => {
   await expect(scene.getByText('See all scores')).toBeVisible()
 })
 
+for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720 }]) {
+  test(`floating scores remain inside the ${viewport.width}px viewport`, async ({ page }) => {
+    await page.setViewportSize(viewport)
+    await setup(page)
+    await page.goto(`${origin}/home`)
+    const board = page.getByRole('link', { name: "Today's scores" })
+    await expect(board).toBeVisible()
+    const bounds = await board.boundingBox()
+    expect(bounds).not.toBeNull()
+    expect(bounds!.x).toBeGreaterThanOrEqual(0)
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(viewport.width)
+  })
+}
+
 test('daily cover and account name remain legible', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   await setup(page)

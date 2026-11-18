@@ -280,7 +280,7 @@ for (const entry of ['direct', 'home-join'] as const) {
     await page.addInitScript(() => {
       const state = window as unknown as { roomContentInsertions: string[] }
       state.roomContentInsertions = []
-      const selector = 'canvas:not(.porch-sprite), [role="grid"], .grid-cols-10, [data-testid*="canvas"], [data-testid*="board"], [data-testid="round-players"], [data-testid="room-lobby"]'
+      const selector = 'canvas:not(.porch-sprite):not(.pixel-scene__canvas), [role="grid"], .grid-cols-10, [data-testid*="canvas"], [data-testid*="board"], [data-testid="round-players"], [data-testid="room-lobby"]'
       new MutationObserver(records => {
         for (const record of records) {
           for (const node of record.addedNodes) {

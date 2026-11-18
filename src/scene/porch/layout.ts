@@ -3,7 +3,7 @@ import type { Composition, Rect } from '../camera'
 export type PorchObject = 'easel' | 'chalkboard' | 'hatch' | 'lighthouse' | 'mailbox' | 'gallery' | 'radio' | 'note' | 'lantern' | 'cat' | 'plant' | 'more'
 export const porchLayout: Record<Composition, Record<PorchObject, Rect>> = {
   landscape: {
-    easel: { x: 138, y: 35, w: 68, h: 116 }, chalkboard: { x: 258, y: 77, w: 46, h: 70 },
+    easel: { x: 138, y: 35, w: 68, h: 116 }, chalkboard: { x: 241, y: 77, w: 46, h: 70 },
     hatch: { x: 85, y: 150, w: 35, h: 15 }, lighthouse: { x: 75, y: 72, w: 14, h: 29 },
     mailbox: { x: 17, y: 75, w: 28, h: 18 }, gallery: { x: 18, y: 119, w: 25, h: 30 },
     radio: { x: 72, y: 123, w: 18, h: 20 }, note: { x: 53, y: 38, w: 15, h: 22 },

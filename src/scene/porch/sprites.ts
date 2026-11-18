@@ -8,7 +8,7 @@ export const sprites = {
     '......aaa', '.....abbaa', '....aayyaa', '....aaqyqa', '....aaqyqa', '...aaaaaaaa', '...aqqqqqqa', '....abbbba', '....abbbba', '....aqqqqa', '....aqqqqa', '...aaqqqqaa', '...abbbbbb a'.replace(' ', ''), '...abbbbbba', '...aqqqqqqa', '...aqqqqqqa', '..aaqqqqqqaa', '..abbbbbbbba', '..abbbbbbbba', '..aqqqqqqqqa', '..aqqqqqqqqa', '.aaaaaaaaaaaa',
   ].map(row => row.padEnd(14, '.')), colours),
   mailbox: defineSprite([
-    '.........rrr..', '.........r....', '...ddddddrdd..', '..dwwwwwrwwdd.', '.dwwwwwwrwwdwd', '.dwwwwwwrwwdwd', '.dwwhhhwrwwdhd', '.dwwwwwwwwwdwd', '..dddddddddddd', '......dd......', '......dd......', '......dd......', '......dd......', '......dd......', '......dd......', '.....dddd.....',
+    '..........rrr.', '..........r...', '.dddddddddrdd.', 'dhhhhhhhhhddwd', 'dwwwwwwwwwwdwd', 'dwwddddddwwdrd', 'dwwwwwwwwwwdwd', 'dwwwwwwwwwwdwd', '.dddddddddddd.', '..............', '..............', '..............', '..............', '..............', '..............', '..............',
   ], colours),
   radio: defineSprite([
     '....d....d......', '.....d..d.......', '..dddddddddddd..', '.dwwwwwwwwwwwwd.', '.dmmmdhhhdmmmd..', '.dmhmdhphdmhmd..', '.dmmmdhhhdmmmd..', '.dwwwwwwwwwwwwd.', '..dddddddddddd..',
