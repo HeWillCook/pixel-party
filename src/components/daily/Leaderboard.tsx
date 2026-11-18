@@ -27,6 +27,14 @@ interface Drawing {
   guess?: string
 }
 
+const MAX_HISTORY_DAYS = 90
+
+function truncateLabel(value: string, maxLength = 24): string {
+  const trimmed = value.trim()
+  if (trimmed.length <= maxLength) return trimmed
+  return `${trimmed.slice(0, maxLength - 1).trimEnd()}…`
+}
+
 export function Leaderboard({ day, ended }: { day: string; ended: boolean }) {
   const [offset, setOffset] = useState(0)
   const [drawings, setDrawings] = useState<{ day: string; items: Drawing[] }>({ day: '', items: [] })
@@ -96,49 +104,56 @@ export function Leaderboard({ day, ended }: { day: string; ended: boolean }) {
     return row.score > 0 || guess.length > 0
   })
 
+  const gradedByUser = new Map(gradedScores.map((row) => [row.userId, row]))
   const ranks = rankScores(gradedScores)
   const sorted = ranks.map(({ userId, rank }) => ({
-    score: gradedScores.find((row) => row.userId === userId)!,
+    score: gradedByUser.get(userId)!,
     rank,
   }))
 
   const topEntry = sorted[0]
-  const topName = topEntry?.score.displayName || 'Player'
+  const topName = topEntry?.score.displayName?.trim() || 'Player'
+  const shortTopName = truncateLabel(topName, 24)
   const topGuess = topEntry
-    ? (typeof topEntry.score.guess === 'string'
-        ? topEntry.score.guess
-        : (drawingByUser.get(topEntry.score.userId)?.guess ?? '')
-      ).trim()
+    ? truncateLabel(
+        typeof topEntry.score.guess === 'string'
+          ? topEntry.score.guess
+          : (drawingByUser.get(topEntry.score.userId)?.guess ?? ''),
+        28,
+      )
     : ''
 
   const haikuComment = !topEntry
     ? 'No graded paintings yet — grab a brush on the porch!'
     : showDrawings && topGuess
       ? offset === 0
-        ? `Haiku's favourite today: "${topGuess}" by ${topName} (${topEntry.score.score})`
-        : `Haiku's favourite (${selectedDay}): "${topGuess}" by ${topName}`
+        ? `Haiku's favourite today: "${topGuess}" by ${shortTopName} (${topEntry.score.score})`
+        : `Haiku's favourite (${selectedDay}): "${topGuess}" by ${shortTopName}`
       : offset === 0
-        ? `Haiku's favourite today: ${topName} leads at ${topEntry.score.score}!`
-        : `Haiku's favourite (${selectedDay}): ${topName} (${topEntry.score.score})`
+        ? `Haiku's favourite today: ${shortTopName} leads at ${topEntry.score.score}!`
+        : `Haiku's favourite (${selectedDay}): ${shortTopName} (${topEntry.score.score})`
 
   return (
     <div className="scores-board-wrap" data-testid="daily-leaderboard">
       <section className="scores-chalkboard" data-testid="scores-chalkboard" aria-labelledby="scores-heading">
         <div className="scores-board-header">
           <h1 id="scores-heading" className="scores-board-title">
-            <PixelTrophy scale={2} />
+            <PixelTrophy scale="scene" />
             <span>Scores</span>
           </h1>
           <div className="scores-pager">
             <button
               type="button"
               className="scores-arrow"
-              onClick={() => setOffset((value) => value + 1)}
+              onClick={() => setOffset((value) => Math.min(MAX_HISTORY_DAYS, value + 1))}
+              disabled={offset >= MAX_HISTORY_DAYS}
               aria-label="Previous day"
             >
               ←
             </button>
-            <span className="scores-day-label">{offset === 0 ? 'Today' : selectedDay}</span>
+            <span className="scores-day-label" aria-live="polite">
+              {offset === 0 ? 'Today' : selectedDay}
+            </span>
             <button
               type="button"
               className="scores-arrow"
@@ -160,7 +175,9 @@ export function Leaderboard({ day, ended }: { day: string; ended: boolean }) {
         </p>
 
         {status === 'loading' ? (
-          <p className="scores-status">Loading scores…</p>
+          <p className="scores-status" role="status">Loading scores…</p>
+        ) : status === 'error' ? (
+          <p className="scores-status" role="alert">Couldn&apos;t load scores. Try again soon.</p>
         ) : sorted.length === 0 ? (
           <p className="scores-status">No graded scores yet.</p>
         ) : (
@@ -169,38 +186,41 @@ export function Leaderboard({ day, ended }: { day: string; ended: boolean }) {
               const drawing = showDrawings ? drawingByUser.get(score.userId) : undefined
               const hasCells = typeof drawing?.cells === 'string' && drawing.cells.length > 0
               const medal = offset === 0 ? (rank <= 3 ? rank : 0) : (score.medal ?? 0)
+              const playerName = score.displayName?.trim() || 'Player'
               return (
                 <li
                   key={score.userId}
                   className={`scores-row ${rank <= 3 ? 'scores-row--top' : ''}`.trim()}
                 >
-                  <span className="scores-rank">{rank}</span>
-                  {hasCells && drawing?.cells ? (
-                    <PixelThumb cells={drawing.cells} size={32} className="scores-thumb" />
-                  ) : null}
-                  <Avatar className="scores-avatar">
-                    <AvatarImage src={score.avatarUrl || undefined} />
-                    <AvatarFallback className="bg-[#34516a] text-[#fff0cc]">
-                      {score.displayName?.slice(0, 1) || '?'}
-                    </AvatarFallback>
-                  </Avatar>
                   <Link
                     className="scores-row-link"
                     to={`/u/${encodeURIComponent(score.userId)}`}
+                    title={playerName}
                   >
-                    {score.displayName || 'Player'}
+                    <span className="scores-rank">{rank}</span>
+                    {hasCells && drawing?.cells ? (
+                      <PixelThumb cells={drawing.cells} scale="scene" multiplier={1} className="scores-thumb" />
+                    ) : null}
+                    <Avatar className="scores-avatar">
+                      <AvatarImage src={score.avatarUrl || undefined} />
+                      <AvatarFallback className="bg-[#263451] text-[#fff0cc]">
+                        {playerName.slice(0, 1)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <span className="scores-row-name">{playerName}</span>
+                    {medal > 0 && medal <= 3 && (
+                      <PixelMedal
+                        medal={medal as 1 | 2 | 3}
+                        scale="scene"
+                        label={`${['Gold', 'Silver', 'Bronze'][medal - 1]} medal${offset === 0 && !ended ? ' so far' : ''}`}
+                        className="scores-medal"
+                      />
+                    )}
+                    <span className="scores-points">
+                      {score.score}
+                      <span className="scores-points-max"> / 1000</span>
+                    </span>
                   </Link>
-                  {medal > 0 && medal <= 3 && (
-                    <PixelMedal
-                      medal={medal as 1 | 2 | 3}
-                      label={`${['Gold', 'Silver', 'Bronze'][medal - 1]} medal${offset === 0 && !ended ? ' so far' : ''}`}
-                      className="scores-medal"
-                    />
-                  )}
-                  <span className="scores-points">
-                    {score.score}
-                    <span className="scores-points-max"> / 1000</span>
-                  </span>
                 </li>
               )
             })}
@@ -211,7 +231,7 @@ export function Leaderboard({ day, ended }: { day: string; ended: boolean }) {
       <div className="scores-ledge" data-testid="scores-ledge">
         <Haiku
           state={topEntry ? 'guess' : 'idle'}
-          scale={2}
+          scale="scene"
           bubble={haikuComment}
           className="scores-ledge__haiku"
           data-testid="scores-haiku"
@@ -224,9 +244,9 @@ export function Leaderboard({ day, ended }: { day: string; ended: boolean }) {
       </div>
 
       <div className="scores-boosters" data-testid="scores-boosters" aria-hidden="true">
-        <BoosterSprite scale={3} phaseOffset={0} />
-        <BoosterSprite scale={3} phaseOffset={2} />
-        <BoosterSprite scale={3} phaseOffset={4} />
+        <BoosterSprite scale="scene" phaseOffset={0} />
+        <BoosterSprite scale="scene" phaseOffset={2} />
+        <BoosterSprite scale="scene" phaseOffset={4} />
       </div>
     </div>
   )

@@ -14,7 +14,7 @@ export type HaikuState =
 export interface HaikuProps {
   state: HaikuState
   bubble?: ReactNode | boolean
-  scale?: number
+  scale?: number | 'scene'
   beret?: boolean
   paused?: boolean
   stackBubble?: boolean
@@ -288,7 +288,11 @@ export function Haiku({
         width={HAIKU_WIDTH}
         height={HAIKU_HEIGHT}
         className="haiku__canvas"
-        style={{ width: HAIKU_WIDTH * scale, height: HAIKU_HEIGHT * scale }}
+        style={
+          scale === 'scene'
+            ? { width: `calc(var(--px, 3px) * ${HAIKU_WIDTH})`, height: `calc(var(--px, 3px) * ${HAIKU_HEIGHT})` }
+            : { width: HAIKU_WIDTH * scale, height: HAIKU_HEIGHT * scale }
+        }
         aria-hidden="true"
       />
       {effectiveBubble !== undefined &&

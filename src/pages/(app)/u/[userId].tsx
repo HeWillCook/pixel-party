@@ -34,11 +34,14 @@ export default function ProfilePage() {
   const { records: scores } = useQuery<Score>('dailyScores', { where: { userId }, limit: 1000 })
 
   const isOwner = Boolean(user?.id && user.id === userId)
-  const displayName =
+  const resolvedName =
     drawings.find((record) => record.data?.displayName)?.data.displayName ||
-    scores.find((record) => record.data?.displayName)?.data.displayName ||
-    'Player'
-  const heading = isOwner ? 'Your gallery' : `${displayName}'s gallery`
+    scores.find((record) => record.data?.displayName)?.data.displayName
+  const heading = isOwner
+    ? 'Your gallery'
+    : resolvedName
+      ? `${resolvedName}'s gallery`
+      : 'Gallery'
 
   const byDay = new Map<string, Drawing>()
   for (const record of drawings) {
@@ -56,7 +59,11 @@ export default function ProfilePage() {
 
   const medalByDay = new Map<string, number>()
   for (const { data } of scores) {
-    if (data?.day && data.medal) medalByDay.set(data.day, data.medal)
+    if (!data?.day || !data.medal || data.medal < 1 || data.medal > 3) continue
+    const existing = medalByDay.get(data.day)
+    if (existing == null || data.medal < existing) {
+      medalByDay.set(data.day, data.medal)
+    }
   }
 
   return (
@@ -71,7 +78,9 @@ export default function ProfilePage() {
         </header>
 
         {status === 'loading' ? (
-          <div className="pp-wood-panel p-6 text-lg">Hanging paintings…</div>
+          <div className="pp-wood-panel p-6 text-lg" role="status">Hanging paintings…</div>
+        ) : status === 'error' ? (
+          <div className="pp-wood-panel p-6 text-lg" role="alert">Couldn&apos;t load gallery. Try again soon.</div>
         ) : galleryItems.length === 0 ? (
           <div className="gallery-empty-wrap">
             <article className="gallery-card" data-testid="gallery-empty">
@@ -98,6 +107,7 @@ export default function ProfilePage() {
               const medal = medalByDay.get(drawing.day) ?? 0
               const hasMedal = medal > 0 && medal <= 3
               const frameKind = hasMedal ? 'gilt' : 'wood'
+              const medalName = hasMedal ? (['Gold', 'Silver', 'Bronze'][medal - 1] ?? '') : ''
               return (
                 <article
                   key={drawing.day}
@@ -107,17 +117,26 @@ export default function ProfilePage() {
                 >
                   <div className="gallery-hanger" aria-hidden="true" />
                   <div className={`gallery-frame gallery-frame--${frameKind}`}>
-                    <PixelThumb cells={drawing.cells} size={160} className="gallery-frame__thumb" />
+                    <PixelThumb
+                      cells={drawing.cells}
+                      scale="scene"
+                      multiplier={2}
+                      className="gallery-frame__thumb"
+                    />
                   </div>
                   <div className="gallery-plaque">
                     <div className="gallery-plaque__top">
                       <h2 className="gallery-plaque__prompt">{drawing.prompt || 'Daily painting'}</h2>
                       {hasMedal && (
-                        <PixelMedal
-                          medal={medal as 1 | 2 | 3}
-                          label={`${['Gold', 'Silver', 'Bronze'][medal - 1]} medal`}
-                          className="gallery-plaque__medal"
-                        />
+                        <span className="gallery-plaque__medal-wrap">
+                          <PixelMedal
+                            medal={medal as 1 | 2 | 3}
+                            scale="scene"
+                            label={`${medalName} medal`}
+                            className="gallery-plaque__medal"
+                          />
+                          <span className="gallery-plaque__rank">#{medal} {medalName}</span>
+                        </span>
                       )}
                     </div>
                     <p className="gallery-plaque__meta">
