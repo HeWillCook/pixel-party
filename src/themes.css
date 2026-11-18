@@ -81,6 +81,7 @@
 .porch-nav__roof canvas { display: block; image-rendering: pixelated; }
 .porch-shell:has(.porch-home), .porch-shell:has(.studio-world), .porch-shell--landing { position: relative; }
 .porch-shell:has(.porch-home) > .porch-nav, .porch-shell:has(.studio-world) > .porch-nav, .porch-shell--landing > .porch-nav { position: absolute; z-index: 15; top: 0; left: 0; right: 0; pointer-events: none; }
+.porch-shell:has(.porch-home) > .porch-nav .porch-nav__row > :is(a, button), .porch-shell:has(.porch-home) > .porch-nav .porch-nav__links, .porch-shell:has(.porch-home) > .porch-nav .porch-nav__mobile,
 .porch-shell:has(.studio-world) > .porch-nav .porch-nav__row > :is(a, button), .porch-shell:has(.studio-world) > .porch-nav .porch-nav__links, .porch-shell:has(.studio-world) > .porch-nav .porch-nav__mobile,
 .porch-shell--landing > .porch-nav .porch-nav__row > :is(a, button), .porch-shell--landing > .porch-nav .porch-nav__links, .porch-shell--landing > .porch-nav .porch-nav__mobile { pointer-events: auto; }
 .porch-shell:has(.porch-home) .porch-nav__roof, .porch-shell--landing .porch-nav__roof { display: none; }
