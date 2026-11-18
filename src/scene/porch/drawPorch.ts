@@ -26,7 +26,7 @@ export function drawPorch(ctx: CanvasRenderingContext2D, frame: number, opts: Po
   const width = ctx.canvas.width
   const height = ctx.canvas.height
   const horizon = portrait ? 140 : 100
-  const floor = portrait ? 267 : 149
+  const floor = portrait ? 267 : 154
   const sunX = portrait ? 131 : 232
   const rect = (x: number, y: number, w: number, h: number, color: string) => { ctx.fillStyle = color; ctx.fillRect(x, y, w, h) }
   ctx.imageSmoothingEnabled = false
@@ -63,6 +63,14 @@ export function drawPorch(ctx: CanvasRenderingContext2D, frame: number, opts: Po
     const grassY = portrait ? floor - 8 : shore + 4
     rect(x, grassY, 1, 7, P.foliage[2]); rect(x - 2, grassY + 2, 1, 5, P.foliage[3]); rect(x + 2, grassY + 3, 1, 4, P.foliage[2])
   }
+  if (!portrait) {
+    rect(0, floor - 25, width, 25, P.wood[4])
+    rect(0, floor - 25, width, 2, P.wood[3])
+    for (let x = 22; x < width; x += 29) {
+      const y = floor - 18 + (x % 5)
+      rect(x, y, 3, 1, P.wood[3]); rect(x + 2, y + 1, 2, 1, P.wood[3])
+    }
+  }
   const islandX = layout.lighthouse.x - 15
   for (let x = 0; x < 55; x++) {
     const rise = Math.round(Math.sin(x / 55 * Math.PI) * 6)
@@ -90,11 +98,6 @@ export function drawPorch(ctx: CanvasRenderingContext2D, frame: number, opts: Po
     for (let x = (y * 7) % 45; x < width; x += 53) { rect(x, y + 3, 17, 1, P.wood[1]); rect(x + 20, y + 5, 8, 1, P.wood[3]) }
   }
   if (!portrait) {
-    for (let row = 0; row < 9; row++) {
-      const inset = Math.abs(4 - row) * 2
-      rect(146 + inset, floor + 12 + row, 67 - inset * 2, 1, row === 0 || row === 8 ? P.wood[0] : P.paper[2])
-      if (row > 0 && row < 8) for (let x = 150 + inset + row % 2; x < 208 - inset; x += 4) rect(x, floor + 12 + row, 2, 1, P.wood[3])
-    }
     for (const [center, radius] of [[172, 19], [264, 17]]) for (let row = 0; row < 4; row++) {
       const span = radius - Math.abs(row * 2 - 3) * 2
       for (let x = center - span + row % 2; x <= center + span; x += 2) rect(x, floor + 1 + row, 1, 1, P.wood[0])
@@ -136,7 +139,6 @@ export function drawPorch(ctx: CanvasRenderingContext2D, frame: number, opts: Po
   const scaledSprite = (key: 'mailbox' | 'radio' | 'plant' | 'lantern', x: number, y: number) => {
     const sprite = sprites[key]
     sprite.rows.forEach((row, rowIndex) => Array.from(row).forEach((pixel, column) => {
-      if (key === 'mailbox' && rowIndex > 8) return
       if (pixel !== '.' && !(key === 'mailbox' && pixel === 'r' && opts.signedIn)) rect(x + column * 2, y + rowIndex * 2, 2, 2, sprite.palette[pixel])
     }))
   }
