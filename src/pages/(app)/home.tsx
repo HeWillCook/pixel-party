@@ -391,6 +391,7 @@ export default function DailyHomePage() {
           </div>} left={
               <ToolBar
                 tools={DAILY_TOOLS}
+                compactPick
                 active={tool}
                 onSelect={setTool}
                 onUndo={handleUndo}

@@ -11,6 +11,7 @@ export interface ToolBarProps {
   canUndo?: boolean
   canRedo?: boolean
   disabled?: boolean
+  compactPick?: boolean
 }
 
 function PixelIcon({ children }: { children: ReactNode }) {
@@ -67,7 +68,7 @@ const TOOL_META: Record<Tool, { label: string; icon: ReactNode }> = {
     ),
   },
   pick: {
-    label: 'Pick',
+    label: 'Pick colour',
     icon: (
       <PixelIcon>
         <rect x="10" y="2" width="4" height="4" />
@@ -109,6 +110,7 @@ export function ToolBar({
   canUndo = false,
   canRedo = false,
   disabled = false,
+  compactPick = false,
 }: ToolBarProps) {
   return (
     <div
@@ -138,7 +140,7 @@ export function ToolBar({
             )}
           >
             {meta.icon}
-            <span>{meta.label}</span>
+            <span>{tool === 'pick' && compactPick ? 'Pick' : meta.label}</span>
           </button>
         )
       })}
