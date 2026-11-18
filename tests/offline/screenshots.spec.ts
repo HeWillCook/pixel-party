@@ -450,22 +450,28 @@ for (const view of ['signed-out', 'not_started', 'playing', 'ended', 'profile'] 
       await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width)
       if (view === 'playing' || view === 'ended') {
         const canvas = page.getByTestId('pixel-canvas')
-        await expect.poll(async () => (await canvas.boundingBox())!.width).toBeLessThanOrEqual(viewport.width - 40)
+        if (view === 'playing' && viewport.width === 375) {
+          await expect.poll(async () => (await canvas.boundingBox())!.width).toBeGreaterThanOrEqual(340)
+          await expect.poll(async () => (await canvas.boundingBox())!.width).toBeLessThanOrEqual(viewport.width - 8)
+          expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBeLessThanOrEqual(812)
+        } else {
+          await expect.poll(async () => (await canvas.boundingBox())!.width).toBeLessThanOrEqual(viewport.width - 40)
+        }
         if (viewport.width === 1440) await expect.poll(async () => (await canvas.boundingBox())!.width).toBeGreaterThanOrEqual(576)
       }
       await page.screenshot({ path: resolve(screenshotsDir, `daily-${view}-${viewport.width}x${viewport.height}.png`) })
       if (view === 'playing' && viewport.width === 375) {
-        await page.getByTestId('swatch-15').scrollIntoViewIfNeeded()
-        await page.locator('main').evaluate(element => { element.scrollTop += 180 })
         const lastSwatch = page.getByTestId('swatch-15')
         const swatchBounds = (await lastSwatch.boundingBox())!
         const actionBounds = (await page.getByTestId('daily-done-button').boundingBox())!
         expect(swatchBounds.y + swatchBounds.height).toBeLessThanOrEqual(actionBounds.y)
         await lastSwatch.click()
         await page.screenshot({ path: resolve(screenshotsDir, 'daily-playing-tray-375x812.png') })
-        await page.getByText('Scores & grading').click()
-        await page.getByTestId('daily-score-breakdown').scrollIntoViewIfNeeded()
+        await page.getByTestId('daily-mobile-score-trigger').click()
+        await expect(page.getByTestId('daily-score-breakdown')).toBeVisible()
+        await page.waitForTimeout(250)
         await page.screenshot({ path: resolve(screenshotsDir, 'daily-playing-drawer-375x812.png') })
+        await page.getByRole('button', { name: 'Close score breakdown' }).click()
       }
     }
     expect(errors).toEqual([])
@@ -487,8 +493,10 @@ test('capture graded daily play at three sizes', async ({ page }) => {
     await page.setViewportSize(viewport)
     await page.waitForTimeout(180)
     if (viewport.width === 375) {
-      await page.getByText('Scores & grading').click()
-      await page.getByTestId('daily-score-breakdown').scrollIntoViewIfNeeded()
+      expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBeLessThanOrEqual(812)
+      await page.getByTestId('daily-mobile-score-trigger').click()
+      await expect(page.getByTestId('daily-score-breakdown')).toBeVisible()
+      await page.waitForTimeout(250)
     } else {
       const gradeButton = (await page.getByTestId('daily-ask-button').boundingBox())!
       expect(gradeButton.y + gradeButton.height).toBeLessThanOrEqual(viewport.height)
@@ -497,7 +505,6 @@ test('capture graded daily play at three sizes', async ({ page }) => {
     }
     await page.screenshot({ path: resolve(screenshotsDir, `daily-graded-${viewport.width}x${viewport.height}.png`) })
     if (viewport.width === 1280) {
-      await page.getByTestId('grade-total').scrollIntoViewIfNeeded()
       const total = (await page.getByTestId('grade-total').boundingBox())!
       const score = (await page.locator('.play-layout__right > div').first().boundingBox())!
       expect(total.y + total.height).toBeLessThanOrEqual(score.y + score.height)

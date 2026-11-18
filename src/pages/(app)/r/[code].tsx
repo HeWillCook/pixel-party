@@ -872,7 +872,7 @@ export default function RoomPage() {
   const canvasSlot = (
     <div ref={centerColRef} className="flex w-full min-w-0 justify-center">
       <div ref={canvasSlotRef} className="flex items-center justify-center">
-        <HoverEasel>
+        <HoverEasel boosterScale={2}>
           <PixelCanvas
             width={state.width}
             height={state.height}

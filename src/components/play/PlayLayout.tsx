@@ -1,7 +1,20 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import './play.css'
 
-export function PlayLayout({ top, prompt, timeline, exit, canvas, score, actions, bottom, rightSummary = 'Scores & grading' }: {
+export function PlayLayout({
+  top,
+  prompt,
+  timeline,
+  exit,
+  canvas,
+  score,
+  actions,
+  bottom,
+  rightSummary = 'Scores & grading',
+  variant = 'room',
+  mobileTop,
+  mobileFooter,
+}: {
   top?: ReactNode
   prompt: ReactNode
   timeline: ReactNode
@@ -11,6 +24,9 @@ export function PlayLayout({ top, prompt, timeline, exit, canvas, score, actions
   actions: ReactNode
   bottom: ReactNode
   rightSummary?: string
+  variant?: 'daily' | 'room'
+  mobileTop?: ReactNode
+  mobileFooter?: ReactNode
 }) {
   const [wide, setWide] = useState(() => typeof window === 'undefined' || window.innerWidth >= 768)
   const [scoreOpen, setScoreOpen] = useState(false)
@@ -21,12 +37,63 @@ export function PlayLayout({ top, prompt, timeline, exit, canvas, score, actions
     media.addEventListener('change', update)
     return () => media.removeEventListener('change', update)
   }, [])
-  return <div className={top ? 'play-layout play-layout--with-top' : 'play-layout'}>
-    {top && <div className="play-layout__top">{top}</div>}
-    <div className="play-layout__left">{prompt}{wide && timeline}{exit}</div>
-    <div className="play-layout__canvas">{canvas}</div>
-    {!wide && <div className="play-layout__mobile-actions">{actions}</div>}
-    {wide ? <div className="play-layout__right">{score}{actions}</div> : <details className="play-layout__right" open={scoreOpen} onToggle={event => setScoreOpen(event.currentTarget.open)}><summary>{rightSummary}</summary>{score}{timeline}</details>}
-    <div className="play-layout__bottom">{bottom}</div>
-  </div>
+
+  const dailyMobile = variant === 'daily' && !wide
+  const rootClass = dailyMobile
+    ? 'play-layout play-layout--daily-mobile'
+    : top
+      ? 'play-layout play-layout--with-top'
+      : 'play-layout'
+
+  return (
+    <div className={rootClass}>
+      {top && <div className="play-layout__top">{top}</div>}
+      {dailyMobile ? (
+        mobileTop && <div className="play-layout__mobile-top">{mobileTop}</div>
+      ) : (
+        <div className="play-layout__left">
+          {variant === 'daily' ? (
+            <>
+              <div className="daily-post-clipboard">
+                <div className="daily-post-clipboard__nail" aria-hidden="true" />
+                <div className="daily-post-clipboard__clip" aria-hidden="true" />
+                <div className="daily-post-clipboard__sheet">
+                  {prompt}
+                  {timeline}
+                </div>
+              </div>
+              {exit}
+            </>
+          ) : (
+            <>
+              {prompt}
+              {wide && timeline}
+              {exit}
+            </>
+          )}
+        </div>
+      )}
+      <div className="play-layout__canvas">{canvas}</div>
+      {!wide && variant !== 'daily' && <div className="play-layout__mobile-actions">{actions}</div>}
+      {!dailyMobile &&
+        (wide ? (
+          <div className="play-layout__right">
+            {score}
+            {actions}
+          </div>
+        ) : (
+          <details
+            className="play-layout__right"
+            open={scoreOpen}
+            onToggle={event => setScoreOpen(event.currentTarget.open)}
+          >
+            <summary>{rightSummary}</summary>
+            {score}
+            {timeline}
+          </details>
+        ))}
+      <div className="play-layout__bottom">{bottom}</div>
+      {dailyMobile && mobileFooter && <div className="play-layout__mobile-footer">{mobileFooter}</div>}
+    </div>
+  )
 }

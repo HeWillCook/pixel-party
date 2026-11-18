@@ -74,24 +74,30 @@ test('stacked tray aligns chip and uses legible tool targets', async ({ page }) 
   await expect(page.getByText('Colour', { exact: true })).toBeVisible()
 })
 
-test('mobile tools form a clean three by two grid', async ({ page }) => {
+test('mobile tools form a single row of six 36px icon buttons with no scroll', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 })
   await playFixture(page, true)
   await page.goto(`${origin}/home`)
+  const canvasBox = (await page.getByTestId('pixel-canvas').boundingBox())!
+  expect(canvasBox.width).toBeGreaterThanOrEqual(340)
+  expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBeLessThanOrEqual(812)
   const boxes = await Promise.all(['paint', 'erase', 'fill', 'pick', 'undo', 'redo'].map(async name => (await page.getByTestId(`tool-${name}`).boundingBox())!))
-  expect(boxes[0].x).toBe(boxes[3].x)
-  expect(boxes[1].x).toBe(boxes[4].x)
-  expect(boxes[2].x).toBe(boxes[5].x)
-  expect(boxes[0].y).toBe(boxes[2].y)
-  expect(boxes[3].y).toBe(boxes[5].y)
+  for (let i = 0; i < boxes.length; i++) {
+    expect(boxes[i].width).toBe(36)
+    expect(boxes[i].height).toBe(36)
+    expect(boxes[i].y).toBe(boxes[0].y)
+    if (i > 0) expect(boxes[i].x).toBeGreaterThan(boxes[i - 1].x)
+  }
 })
 
-test('canvas restores its desktop size after scrolling on mobile', async ({ page }) => {
+test('canvas restores its desktop size after opening mobile score sheet', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 })
   await playFixture(page, true)
   await page.goto(`${origin}/home`)
-  await page.getByText('Scores & grading').click()
-  await page.getByTestId('daily-auto-timeline').scrollIntoViewIfNeeded()
+  expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBeLessThanOrEqual(812)
+  await page.getByTestId('daily-mobile-score-trigger').click()
+  await expect(page.getByTestId('daily-auto-timeline')).toBeVisible()
+  await page.getByRole('button', { name: 'Close score breakdown' }).click()
   await page.setViewportSize({ width: 1440, height: 900 })
   await expect.poll(async () => (await page.getByTestId('pixel-canvas').boundingBox())!.width).toBeGreaterThanOrEqual(576)
 })
@@ -133,21 +139,29 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720
   })
 }
 
-test('mobile painter tray and grading actions stay accessible', async ({ page }) => {
+test('mobile painter tray and grading actions fit without scrolling', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 })
   await playFixture(page, true)
   await page.goto(`${origin}/home`)
   await expect(page.getByTestId('painter-tray').getByTestId('toolbar')).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBeLessThanOrEqual(812)
+  await expect.poll(async () => (await page.getByTestId('pixel-canvas').boundingBox())!.width).toBeGreaterThanOrEqual(340)
   const lastSwatch = page.getByTestId('swatch-15')
-  await lastSwatch.scrollIntoViewIfNeeded()
+  const swatchBox = (await lastSwatch.boundingBox())!
+  expect(swatchBox.width).toBeGreaterThanOrEqual(32)
+  expect(swatchBox.height).toBeGreaterThanOrEqual(32)
+  expect(swatchBox.y + swatchBox.height).toBeLessThanOrEqual(812)
   await lastSwatch.click()
   await expect(lastSwatch).toHaveAttribute('aria-pressed', 'true')
-  for (const id of ['daily-ask-button', 'daily-done-button']) {
-    const bounds = (await page.getByTestId(id).boundingBox())!
+  const askBounds = (await page.getByTestId('daily-ask-button').boundingBox())!
+  const doneBounds = (await page.getByTestId('daily-done-button').boundingBox())!
+  expect(askBounds.y).toBe(doneBounds.y)
+  for (const bounds of [askBounds, doneBounds]) {
     expect(bounds.x).toBeGreaterThanOrEqual(0)
     expect(bounds.x + bounds.width).toBeLessThanOrEqual(375)
+    expect(bounds.y + bounds.height).toBeLessThanOrEqual(812)
   }
-  await page.getByText('Scores & grading').click()
+  await page.getByTestId('daily-mobile-score-trigger').click()
   await expect(page.getByTestId('daily-auto-timeline')).toBeVisible()
   await expect(page.getByTestId('daily-score-breakdown')).toBeVisible()
 })

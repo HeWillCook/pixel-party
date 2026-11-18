@@ -1,4 +1,4 @@
-import { AlertCircle, Award, Bot, Sparkles } from 'lucide-react'
+import { AlertCircle, Award, Cat, Sparkles } from 'lucide-react'
 import type { GradeView } from '../../server/daily-service'
 import { cn } from '../../lib/utils'
 
@@ -22,20 +22,18 @@ export function GradePanel({
       data-testid="grade-panel"
       aria-live="polite"
       className={cn(
-'pp-panel flex flex-col gap-3  p-3.5 sm:p-4 transition-colors',
-        lastError
-          ?'border-border bg-secondary'
-          : 'border-border bg-card',
+        'pp-panel flex flex-col gap-3 p-3.5 sm:p-4 transition-colors',
+        lastError ? 'border-border bg-secondary' : 'border-border bg-card',
       )}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <Sparkles
-            className={cn('h-4 w-4 text-[var(--sunset-1)]', grading &&'animate-spin')}
+            className={cn('h-4 w-4 text-[var(--sunset-1)]', grading && 'animate-spin')}
             aria-hidden
           />
           <span className="text-base uppercase tracking-wider text-[var(--sunset-1)]">
-            {grading ?'Judging canvas…' : ended ?'Final Verdict' : 'Judge Verdict'}
+            {grading ? 'Haiku is looking…' : ended ? 'Final Verdict' : "Haiku's Verdict"}
           </span>
         </div>
 
@@ -103,7 +101,7 @@ export function GradePanel({
         </div>
       ) : (
         <div className="flex items-center gap-2 py-1 text-base text-muted-foreground sm:text-lg">
-          <Bot className="h-4 w-4 shrink-0 text-[var(--sunset-1)]" aria-hidden />
+          <Cat className="h-4 w-4 shrink-0 text-[var(--sunset-1)]" aria-hidden />
           <span>
             {ended
               ? `Final best score: ${best} / 1000.`
