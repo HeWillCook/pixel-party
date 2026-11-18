@@ -5,6 +5,360 @@ import { resolve } from 'node:path'
 const origin = 'http://pixel.test'
 const clientDir = resolve(import.meta.dirname, '../../dist/client')
 
+async function playFixture(page: Page, initiallyPlaying = false) {
+  await offlineClient(page, true)
+  const now = Date.now()
+  const playing = { day: '2026-11-17', status: 'playing', prompt: 'A tree', startedAt: now, endsAt: now + 600_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: now + 120_000, serverNow: now }
+  await page.route('**/api/daily/**', route => route.fulfill({ json: new URL(route.request().url()).pathname.endsWith('/me') && !initiallyPlaying ? { ...playing, status: 'not_started' } : playing }))
+}
+
+test('resume reconnects measurement and permits drawing after exit', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await playFixture(page)
+  await page.goto(`${origin}/home`)
+  await page.getByTestId('daily-start-button').click()
+  await page.getByTestId('daily-exit').click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Exit', exact: true }).click()
+  await page.getByRole('button', { name: 'Resume painting' }).click()
+  const canvas = page.getByTestId('pixel-canvas')
+  await expect(canvas).toBeVisible()
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await expect.poll(async () => (await canvas.boundingBox())!.width).toBeGreaterThanOrEqual(576)
+  await page.getByTestId('swatch-7').click()
+  await canvas.click({ position: { x: 10, y: 10 } })
+  await expect(page.getByTestId('tool-undo')).toBeEnabled()
+})
+
+test('selecting a colour while erasing switches to paint', async ({ page }) => {
+  await playFixture(page, true)
+  await page.goto(`${origin}/home`)
+  await page.getByTestId('tool-erase').click()
+  await page.getByTestId('swatch-7').click()
+  await expect(page.getByTestId('tool-paint')).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByTestId('swatch-7')).toHaveAttribute('aria-pressed', 'true')
+})
+
+test('pick switches to paint with the picked colour', async ({ page }) => {
+  await playFixture(page, true)
+  await page.goto(`${origin}/home`)
+  await page.getByTestId('swatch-7').click()
+  const canvas = page.getByTestId('pixel-canvas')
+  await canvas.click({ position: { x: 10, y: 10 } })
+  await page.getByTestId('swatch-4').click()
+  await page.getByTestId('tool-pick').click()
+  await canvas.click({ position: { x: 10, y: 10 } })
+  await expect(page.getByTestId('tool-paint')).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByTestId('swatch-7')).toHaveAttribute('aria-pressed', 'true')
+})
+
+test('current colour chip shows eraser when erasing', async ({ page }) => {
+  await playFixture(page, true)
+  await page.goto(`${origin}/home`)
+  await page.getByTestId('tool-erase').click()
+  await expect(page.getByTestId('current-colour')).toHaveAttribute('aria-label', 'Current action: erase')
+  await expect(page.getByTestId('current-colour').getByTestId('current-eraser')).toBeVisible()
+})
+
+test('stacked tray aligns chip and uses legible tool targets', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await playFixture(page, true)
+  await page.goto(`${origin}/home`)
+  const chip = (await page.getByTestId('current-colour').boundingBox())!
+  const tool = page.getByTestId('tool-paint')
+  const bounds = (await tool.boundingBox())!
+  expect(bounds.width).toBeGreaterThanOrEqual(48)
+  expect(bounds.height).toBeGreaterThanOrEqual(48)
+  expect(Math.abs((chip.y + chip.height / 2) - (bounds.y + bounds.height / 2))).toBeLessThanOrEqual(2)
+  await expect(tool.locator('svg')).toHaveCSS('width', '32px')
+  await expect(page.getByText('Colour', { exact: true })).toBeVisible()
+})
+
+test('mobile tools form a single row of six 36px icon buttons with no scroll', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 })
+  await playFixture(page, true)
+  await page.goto(`${origin}/home`)
+  const canvasBox = (await page.getByTestId('pixel-canvas').boundingBox())!
+  expect(canvasBox.width).toBeGreaterThanOrEqual(340)
+  expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBeLessThanOrEqual(812)
+  const boxes = await Promise.all(['paint', 'erase', 'fill', 'pick', 'undo', 'redo'].map(async name => (await page.getByTestId(`tool-${name}`).boundingBox())!))
+  for (let i = 0; i < boxes.length; i++) {
+    expect(boxes[i].width).toBe(36)
+    expect(boxes[i].height).toBe(36)
+    expect(boxes[i].y).toBe(boxes[0].y)
+    if (i > 0) expect(boxes[i].x).toBeGreaterThan(boxes[i - 1].x)
+  }
+})
+
+test('canvas restores its desktop size after opening mobile score sheet', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 })
+  await playFixture(page, true)
+  await page.goto(`${origin}/home`)
+  expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBeLessThanOrEqual(812)
+  await page.getByTestId('daily-mobile-score-trigger').click()
+  await expect(page.getByTestId('daily-auto-timeline')).toBeVisible()
+  await page.getByRole('button', { name: 'Close score breakdown' }).click()
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await expect.poll(async () => (await page.getByTestId('pixel-canvas').boundingBox())!.width).toBeGreaterThanOrEqual(576)
+})
+
+test('palette starts with black and white and raises the selected swatch', async ({ page }) => {
+  await playFixture(page, true)
+  await page.goto(`${origin}/home`)
+  const swatches = page.getByTestId('palette').getByRole('button')
+  await expect(swatches.nth(0)).toHaveAttribute('aria-label', 'Select Black')
+  await expect(swatches.nth(1)).toHaveAttribute('aria-label', 'Select White')
+  await swatches.nth(0).click()
+  await expect(swatches.nth(0)).toHaveAttribute('aria-pressed', 'true')
+  await expect(swatches.nth(0)).not.toHaveCSS('translate', 'none')
+})
+
+for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720 }]) {
+  test(`play easel fits ${viewport.width}`, async ({ page }) => {
+    await page.setViewportSize(viewport)
+    await playFixture(page, true)
+    await page.goto(`${origin}/home`)
+    const easel = page.getByTestId('hover-easel')
+    await expect(easel).toBeVisible()
+    const easelBox = (await easel.boundingBox())!
+    const frame = (await page.getByTestId('hover-easel-frame').boundingBox())!
+    const canvas = (await page.getByTestId('pixel-canvas').boundingBox())!
+    expect(frame.x).toBeLessThanOrEqual(canvas.x)
+    expect(frame.y).toBeLessThanOrEqual(canvas.y)
+    expect(frame.x + frame.width).toBeGreaterThanOrEqual(canvas.x + canvas.width)
+    expect(frame.y + frame.height).toBeGreaterThanOrEqual(canvas.y + canvas.height)
+    if (viewport.width === 1440) {
+      expect(easelBox.x).toBeGreaterThanOrEqual(0)
+      expect(easelBox.y).toBeGreaterThanOrEqual(0)
+      expect(easelBox.x + easelBox.width).toBeLessThanOrEqual(viewport.width)
+      expect(easelBox.y + easelBox.height).toBeLessThanOrEqual(viewport.height)
+      const booster = (await easel.locator('.hover-easel__booster').first().boundingBox())!
+      const palette = (await page.getByTestId('palette').boundingBox())!
+      expect(booster.y + booster.height + 9).toBeLessThanOrEqual(palette.y)
+    }
+  })
+}
+
+test('mobile painter tray and grading actions fit without scrolling', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 })
+  await playFixture(page, true)
+  await page.goto(`${origin}/home`)
+  await expect(page.getByTestId('painter-tray').getByTestId('toolbar')).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBeLessThanOrEqual(812)
+  await expect.poll(async () => (await page.getByTestId('pixel-canvas').boundingBox())!.width).toBeGreaterThanOrEqual(340)
+  const lastSwatch = page.getByTestId('swatch-15')
+  const swatchBox = (await lastSwatch.boundingBox())!
+  expect(swatchBox.width).toBeGreaterThanOrEqual(32)
+  expect(swatchBox.height).toBeGreaterThanOrEqual(32)
+  expect(swatchBox.y + swatchBox.height).toBeLessThanOrEqual(812)
+  await lastSwatch.click()
+  await expect(lastSwatch).toHaveAttribute('aria-pressed', 'true')
+  const askBounds = (await page.getByTestId('daily-ask-button').boundingBox())!
+  const doneBounds = (await page.getByTestId('daily-done-button').boundingBox())!
+  expect(askBounds.y).toBe(doneBounds.y)
+  for (const bounds of [askBounds, doneBounds]) {
+    expect(bounds.x).toBeGreaterThanOrEqual(0)
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(375)
+    expect(bounds.y + bounds.height).toBeLessThanOrEqual(812)
+  }
+  await page.getByTestId('daily-mobile-score-trigger').click()
+  await expect(page.getByTestId('daily-auto-timeline')).toBeVisible()
+  await expect(page.getByTestId('daily-score-breakdown')).toBeVisible()
+})
+
+for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720 }]) {
+  test(`painter tray and controls fit ${viewport.width}`, async ({ page }) => {
+    await page.setViewportSize(viewport)
+    await playFixture(page, true)
+    await page.goto(`${origin}/home`)
+    const tray = page.getByTestId('painter-tray')
+    await expect(tray.getByTestId('toolbar')).toBeVisible()
+    await expect(tray.getByTestId('palette')).toBeVisible()
+    for (const target of [page.getByTestId('pixel-canvas'), tray, page.getByTestId('daily-ask-button')]) {
+      const bounds = (await target.boundingBox())!
+      expect(bounds.y + bounds.height).toBeLessThanOrEqual(viewport.height)
+    }
+    if (viewport.width === 1440) await expect.poll(async () => (await page.getByTestId('pixel-canvas').boundingBox())!.width).toBeGreaterThanOrEqual(576)
+  })
+}
+
+for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720 }]) {
+  test(`desktop Haiku, chalkboard plaques above boosters, and speech bubble fit ${viewport.width}`, async ({ page }) => {
+    await page.setViewportSize(viewport)
+    await offlineClient(page, true)
+    const now = Date.now()
+    let releaseGrade!: () => void
+    const gradeGate = new Promise<void>(resolve => { releaseGrade = resolve })
+    const playing = { day: new Date(now).toISOString().slice(0, 10), status: 'playing', prompt: 'A lighthouse', startedAt: now - 30_000, endsAt: now + 570_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: now + 90_000, serverNow: now }
+    await page.route('**/api/daily/**', async route => {
+      const path = new URL(route.request().url()).pathname
+      if (path.endsWith('/me')) return route.fulfill({ json: playing })
+      if (path.endsWith('/grade')) {
+        await gradeGate
+        return route.fulfill({ json: { ok: true, grade: { guess: 'lighthouse', reason: 'A bright beacon above the waves.', fit: 450, recognition: 310, speed: 80, total: 840, elapsedMs: 30_000 }, state: { ...playing, asksUsed: 1, asksLeft: 2, best: 840 } } })
+      }
+      return route.fulfill({ json: {} })
+    })
+    await page.goto(`${origin}/home`)
+    const haiku = page.getByTestId('haiku')
+    const haikuBox = (await haiku.locator('canvas').boundingBox())!
+    expect(haikuBox.height).toBeGreaterThanOrEqual(viewport.width === 1440 ? 72 : 64)
+    expect(haikuBox.height).toBeLessThanOrEqual(96)
+    await expect(page.getByTestId('daily-chalkboard-hint')).toBeVisible()
+    await expect(page.locator('.daily-plaques__note')).toHaveCount(0)
+
+    const askBox = (await page.getByTestId('daily-ask-button').boundingBox())!
+    const doneBox = (await page.getByTestId('daily-done-button').boundingBox())!
+    const boosterBox = (await page.getByTestId('daily-chalkboard-boosters').boundingBox())!
+    expect(askBox.y + askBox.height).toBeLessThan(doneBox.y)
+    expect(doneBox.y + doneBox.height).toBeLessThanOrEqual(boosterBox.y + 4)
+    expect(boosterBox.y + boosterBox.height).toBeLessThanOrEqual(viewport.height)
+
+    await page.getByTestId('daily-ask-button').click()
+    await expect(haiku).toHaveAttribute('data-haiku-state', 'thinking')
+    await expect(page.getByTestId('haiku-bubble')).toHaveText('Hmm…')
+
+    releaseGrade()
+    await expect(haiku).toHaveAttribute('data-haiku-state', 'correct')
+    await expect(page.getByTestId('haiku-bubble')).toContainText('Looks like a lighthouse! · 840')
+    await expect(page.getByTestId('haiku-bubble')).toContainText('A bright beacon above the waves.')
+  })
+}
+
+test('mobile strip places Haiku on the left and opens bubble popover without scrolling', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 })
+  await offlineClient(page, true)
+  const now = Date.now()
+  let releaseGrade!: () => void
+  const gradeGate = new Promise<void>(resolve => { releaseGrade = resolve })
+  const playing = { day: new Date(now).toISOString().slice(0, 10), status: 'playing', prompt: 'A lighthouse', startedAt: now - 30_000, endsAt: now + 570_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: now + 90_000, serverNow: now }
+  await page.route('**/api/daily/**', async route => {
+    const path = new URL(route.request().url()).pathname
+    if (path.endsWith('/me')) return route.fulfill({ json: playing })
+    if (path.endsWith('/grade')) {
+      await gradeGate
+      return route.fulfill({ json: { ok: true, grade: { guess: 'lighthouse', reason: 'A bright beacon above the waves.', fit: 450, recognition: 310, speed: 80, total: 840, elapsedMs: 30_000 }, state: { ...playing, asksUsed: 1, asksLeft: 2, best: 840 } } })
+    }
+    return route.fulfill({ json: {} })
+  })
+  await page.goto(`${origin}/home`)
+  const haikuButton = page.getByTestId('daily-mobile-haiku')
+  const scoreButton = page.getByTestId('daily-mobile-score-trigger')
+  const haikuBox = (await haikuButton.boundingBox())!
+  const scoreBox = (await scoreButton.boundingBox())!
+  expect(haikuBox.height).toBeGreaterThanOrEqual(40)
+  expect(haikuBox.height).toBeLessThanOrEqual(48)
+  expect(haikuBox.x + haikuBox.width).toBeLessThanOrEqual(scoreBox.x)
+  expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBeLessThanOrEqual(812)
+
+  await page.getByTestId('daily-ask-button').click()
+  await expect(haikuButton).toHaveAttribute('data-haiku-state', 'thinking')
+  await haikuButton.click()
+  await expect(page.getByTestId('daily-mobile-haiku-popover')).toHaveText(/Hmm…/)
+  expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBeLessThanOrEqual(812)
+
+  releaseGrade()
+  await expect(haikuButton).toHaveAttribute('data-haiku-state', 'correct')
+  await expect(page.getByTestId('daily-mobile-haiku-popover')).toContainText('Looks like a lighthouse! · 840')
+  await expect(page.getByTestId('daily-mobile-haiku-popover')).toContainText('A bright beacon above the waves.')
+  await page.getByRole('button', { name: 'Close Haiku message' }).click()
+  await expect(page.getByTestId('daily-mobile-haiku-popover')).toHaveCount(0)
+})
+
+test('start zooms into the easel', async ({ page }) => {
+  await playFixture(page)
+  await page.goto(`${origin}/home`)
+  await page.getByTestId('daily-start-button').click()
+  await expect(page.getByTestId('daily-playing')).toBeVisible()
+  await expect(page.locator('[data-camera="easel"]')).toBeAttached()
+})
+
+test('easel camera crossfades on entry and reverses on exit', async ({ page }) => {
+  await playFixture(page)
+  await page.goto(`${origin}/home`)
+  await page.getByTestId('daily-start-button').click()
+  const backdrop = page.locator('[data-camera="easel"]')
+  await expect(backdrop).toHaveAttribute('data-phase', 'entering')
+  await expect(backdrop.locator('.pixel-scene__camera')).toHaveCSS('transition-duration', '0.6s')
+  const camera = backdrop.locator('.pixel-scene__camera')
+  const entryStart = await camera.evaluate(element => getComputedStyle(element).transform)
+  await page.waitForTimeout(150)
+  const entryMiddle = await camera.evaluate(element => getComputedStyle(element).transform)
+  if (process.env.PLAY_TRANSITION_SCREENSHOTS) await page.screenshot({ path: '/tmp/play-entry-midpoint.png' })
+  expect(entryMiddle).not.toBe(entryStart)
+  await expect(backdrop).toHaveAttribute('data-phase', 'active')
+  await expect(backdrop.locator('.play-scenery-layer')).toHaveCSS('opacity', '1')
+  await expect(backdrop.locator('.play-scenery-layer')).toHaveCSS('transition-duration', '0.15s')
+  await page.getByTestId('daily-exit').click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Exit', exact: true }).click()
+  await expect(backdrop).toHaveAttribute('data-phase', 'leaving')
+  await page.waitForTimeout(200)
+  const exitStart = await camera.evaluate(element => getComputedStyle(element).transform)
+  await page.waitForTimeout(150)
+  const exitMiddle = await camera.evaluate(element => getComputedStyle(element).transform)
+  if (process.env.PLAY_TRANSITION_SCREENSHOTS) await page.screenshot({ path: '/tmp/play-exit-midpoint.png' })
+  expect(exitMiddle).not.toBe(exitStart)
+  await expect(page.getByTestId('daily-playing')).toHaveCount(0)
+  await expect(page.locator('.porch-world .pixel-hotspot').first()).toBeVisible()
+})
+
+test('reload mid-attempt never shows porch hotspots', async ({ page }) => {
+  await playFixture(page, true)
+  await page.addInitScript(() => {
+    const observer = new MutationObserver(() => { if (document.querySelector('.porch-world .pixel-hotspot')) document.documentElement.dataset.sawPorch = 'yes' })
+    observer.observe(document, { childList: true, subtree: true })
+  })
+  await page.goto(`${origin}/home`)
+  await expect(page.getByTestId('daily-playing')).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.dataset.sawPorch)).toBeUndefined()
+  await expect(page.locator('[data-camera="easel"]')).toBeAttached()
+})
+
+test('reduced motion zoom is immediate', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await playFixture(page)
+  await page.goto(`${origin}/home`)
+  await page.getByTestId('daily-start-button').click()
+  await expect(page.getByTestId('daily-playing')).toBeVisible({ timeout: 100 })
+})
+
+test('drawable easel remains still', async ({ page }) => {
+  await playFixture(page, true)
+  await page.goto(`${origin}/home`)
+  const easel = page.getByTestId('hover-easel')
+  await expect(easel).toBeVisible()
+  const before = await easel.boundingBox()
+  await page.waitForTimeout(1000)
+  expect(await easel.boundingBox()).toEqual(before)
+})
+
+test('camera centers the porch board on the measured drawing canvas', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await playFixture(page)
+  await page.goto(`${origin}/home`)
+  await page.getByTestId('daily-start-button').click()
+  await expect(page.getByTestId('pixel-canvas')).toBeVisible()
+  await expect.poll(async () => page.evaluate(() => {
+    const scene = document.querySelector('[data-camera="easel"] canvas')!.getBoundingClientRect()
+    const target = document.querySelector('[data-testid="pixel-canvas"]')!.getBoundingClientRect()
+    const sceneCenterX = scene.left + (138 + 15 + 39 / 2) / 320 * scene.width
+    const sceneCenterY = scene.top + (40 + 23 + 51 / 2) / 180 * scene.height
+    return Math.max(Math.abs(sceneCenterX - target.left - target.width / 2), Math.abs(sceneCenterY - target.top - target.height / 2))
+  })).toBeLessThan(3)
+})
+
+test('reduced motion exit returns to the porch and resumes the attempt', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await playFixture(page, true)
+  await page.goto(`${origin}/home`)
+  await page.getByTestId('daily-exit').click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Exit', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Resume painting' })).toBeVisible({ timeout: 100 })
+  await expect(page).toHaveURL(`${origin}/home`)
+  await page.getByRole('button', { name: 'Resume painting' }).click()
+  await expect(page.getByTestId('pixel-canvas')).toBeVisible({ timeout: 100 })
+})
+
 for (const askFirst of [false, true]) test(askFirst ? 'auto-grade fires at 2:00 after an ask at 1:30' : 'auto-grade fires at 2:00 without asks', async ({ page }) => {
   await page.clock.install({ time: new Date('2026-11-17T12:00:00Z') })
   await offlineClient(page, true)
@@ -61,7 +415,20 @@ test('ended user never sees start', async ({ page }) => {
   }
   release()
   await expect(page.getByTestId('daily-ended')).toBeVisible()
+  await page.getByRole('button', { name: 'View result' }).click()
   await expect(page.getByText('Manual grades: 0 of 3 used')).toBeVisible()
+})
+
+test('reduced motion starts directly in the play view', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await offlineClient(page, true)
+  const now = Date.now()
+  const playing = { day: new Date(now).toISOString().slice(0, 10), status: 'playing', prompt: 'A tree', startedAt: now, endsAt: now + 600_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: now + 120_000, serverNow: now }
+  await page.route('**/api/daily/**', route => route.fulfill({ json: new URL(route.request().url()).pathname.endsWith('/me') ? { ...playing, status: 'not_started' } : playing }))
+  await page.goto(`${origin}/home`)
+  await page.getByTestId('daily-start-button').click()
+  await expect(page.getByTestId('daily-playing')).toBeVisible()
+  await expect(page.locator('.porch-world')).toHaveCount(0)
 })
 
 test('me failure stays loading then recovers', async ({ page }) => {
@@ -99,8 +466,9 @@ test('no local canvas, no auto', async ({ page }) => {
   await expect(page.getByTestId('daily-playing')).toBeVisible()
   await page.clock.fastForward(10_000)
   expect(grades).toBe(0)
-  await page.getByRole('link', { name: 'Party mode', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Live Public Rooms' })).toBeVisible()
+  await page.getByRole('button', { name: /Account menu:/ }).click()
+  await page.getByRole('menuitem', { name: 'Party', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Room tickets' })).toBeVisible()
   await page.clock.fastForward(470_000)
   expect(grades).toBe(0)
   expect(ends).toBe(0)
@@ -148,7 +516,7 @@ test('timeout on party uses the latest stored canvas', async ({ page }) => {
     return route.fulfill({ json: playing })
   })
   await page.goto(`${origin}/party`)
-  await expect(page.getByRole('heading', { name: 'Live Public Rooms' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Room tickets' })).toBeVisible()
   const latest = await page.evaluate(() => {
     const cells = new Uint8Array(1024).fill(7)
     const encoded = btoa(String.fromCharCode(...cells))
@@ -191,8 +559,9 @@ test('auto-grade fires on another route', async ({ page }) => {
   await page.goto(`${origin}/home`)
   await page.getByTestId('daily-start-button').click()
   await page.getByTestId('pixel-canvas').click({ position: { x: 5, y: 5 } })
-  await page.getByRole('link', { name: 'Party mode', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Live Public Rooms' })).toBeVisible()
+  await page.getByRole('button', { name: /Account menu:/ }).click()
+  await page.getByRole('menuitem', { name: 'Party', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Room tickets' })).toBeVisible()
   const latestCells = await page.evaluate(() => {
     const cells = new Uint8Array(1024)
     cells[50] = 7
@@ -239,7 +608,7 @@ test('a delayed state refresh cannot overwrite a later grade', async ({ page }) 
   await expect(page.getByTestId('daily-best-score')).toContainText('590')
 })
 
-for (const action of ['exit confirm leaves to party', 'grade now and submit are separate'] as const) test(action, async ({ page }) => {
+for (const action of ['exit confirm returns to porch', 'grade now and submit are separate'] as const) test(action, async ({ page }) => {
   await offlineClient(page, true)
   const now = Date.now()
   const windows = [120_000, 240_000, 360_000, 480_000].map((offset, index) => ({ index, dueAt: now + offset, status: 'pending', score: null, late: false }))
@@ -254,7 +623,7 @@ for (const action of ['exit confirm leaves to party', 'grade now and submit are 
   })
   await page.goto(`${origin}/home`)
   await expect(page.getByTestId('daily-playing')).toBeVisible()
-  if (action === 'exit confirm leaves to party') {
+  if (action === 'exit confirm returns to porch') {
     await page.getByTestId('daily-exit').click()
     const dialog = page.getByRole('dialog')
     await expect(dialog.getByText('Leave the easel?')).toBeVisible()
@@ -262,7 +631,8 @@ for (const action of ['exit confirm leaves to party', 'grade now and submit are 
     await expect(page.getByTestId('daily-playing')).toBeVisible()
     await page.getByTestId('daily-exit').click()
     await page.getByRole('dialog').getByRole('button', { name: 'Exit', exact: true }).click()
-    await expect(page).toHaveURL(`${origin}/party`)
+    await expect(page).toHaveURL(`${origin}/home`)
+    await expect(page.getByRole('button', { name: 'Resume painting' })).toBeVisible()
     expect(ends).toBe(0)
   } else {
     await expect(page.getByTestId('daily-ask-button')).toHaveText(/Grade now \(3 left\)/)
@@ -333,7 +703,7 @@ test('signed-out profile renders its heading and empty state without errors', as
 test('party route still renders the lobby', async ({ page }) => {
   const errors = await offlineClient(page)
   await page.goto(`${origin}/party`)
-  await expect(page.getByRole('heading', { name: 'Live Public Rooms' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Room tickets' })).toBeVisible()
   await expect(page.getByTestId('lobby-play-now')).toBeVisible()
   expect(errors).toEqual([])
 })
@@ -645,5 +1015,115 @@ test('lostpointercapture ends active stroke, ignores other pointers, and stops s
 
   await page.getByTestId('tool-undo').click()
   await expect.poll(() => pixelColor(2, 2)).toEqual([243, 234, 216, 255])
+  expect(errors).toEqual([])
+})
+
+test('hung grade request times out, exits thinking state, and re-enables actions', async ({ page }) => {
+  await page.clock.install({ time: new Date('2026-11-17T12:00:00Z') })
+  const errors = await offlineClient(page, true)
+  const now = Date.parse('2026-11-17T12:00:00Z')
+  let releaseHang!: () => void
+  const hangGate = new Promise<void>(resolve => { releaseHang = resolve })
+  const playing = {
+    day: '2026-11-17',
+    status: 'playing',
+    prompt: 'A lighthouse',
+    startedAt: now - 30_000,
+    endsAt: now + 570_000,
+    autoUsed: 0,
+    asksUsed: 0,
+    asksLeft: 3,
+    finalUsed: false,
+    best: 0,
+    windows: [],
+    nextAutoAt: now + 90_000,
+    serverNow: now,
+  }
+  await page.route('**/api/daily/**', async route => {
+    const path = new URL(route.request().url()).pathname
+    if (path.endsWith('/me')) return route.fulfill({ json: playing })
+    if (path.endsWith('/grade')) {
+      await hangGate
+      try {
+        await route.abort()
+      } catch {
+        // Ignore if page closed cleanly after client abort
+      }
+      return
+    }
+    return route.fulfill({ json: {} })
+  })
+  await page.goto(`${origin}/home`)
+  await expect(page.getByTestId('daily-playing')).toBeVisible()
+
+  const askBtn = page.getByTestId('daily-ask-button')
+  const doneBtn = page.getByTestId('daily-done-button')
+  const haiku = page.getByTestId('haiku')
+
+  await askBtn.click()
+  await expect(haiku).toHaveAttribute('data-haiku-state', 'thinking')
+  await expect(page.getByTestId('haiku-bubble')).toHaveText('Hmm…')
+  await expect(askBtn).toBeDisabled()
+  await expect(doneBtn).toBeDisabled()
+
+  await page.clock.fastForward(25_500)
+
+  await expect(haiku).toHaveAttribute('data-haiku-state', 'idle')
+  await expect(page.getByTestId('daily-grade-error')).toContainText('Haiku took too long to answer — try again.')
+  await expect(page.getByTestId('haiku-bubble')).toContainText('Haiku took too long to answer — try again.')
+  await expect(askBtn).toBeEnabled()
+  await expect(doneBtn).toBeEnabled()
+  releaseHang()
+  expect(errors).toEqual([])
+})
+
+test('mobile Haiku popover exposes dialog/status semantics and restores focus on Escape', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 })
+  const errors = await offlineClient(page, true)
+  const now = Date.now()
+  const playing = {
+    day: new Date(now).toISOString().slice(0, 10),
+    status: 'playing',
+    prompt: 'A lighthouse',
+    startedAt: now - 30_000,
+    endsAt: now + 570_000,
+    autoUsed: 0,
+    asksUsed: 0,
+    asksLeft: 3,
+    finalUsed: false,
+    best: 0,
+    windows: [],
+    nextAutoAt: now + 90_000,
+    serverNow: now,
+  }
+  await page.route('**/api/daily/**', async route => {
+    const path = new URL(route.request().url()).pathname
+    if (path.endsWith('/me')) return route.fulfill({ json: playing })
+    return route.fulfill({ json: {} })
+  })
+  await page.goto(`${origin}/home`)
+
+  const trigger = page.getByTestId('daily-mobile-haiku')
+  await expect(trigger).toHaveAttribute('aria-haspopup', 'dialog')
+  await expect(trigger).toHaveAttribute('aria-expanded', 'false')
+  await expect(trigger).not.toHaveAttribute('aria-controls', /.+/)
+
+  await trigger.click()
+  await expect(trigger).toHaveAttribute('aria-expanded', 'true')
+  await expect(trigger).toHaveAttribute('aria-controls', 'daily-mobile-haiku-popover')
+
+  const popover = page.getByTestId('daily-mobile-haiku-popover')
+  await expect(popover).toHaveAttribute('id', 'daily-mobile-haiku-popover')
+  await expect(popover).toHaveAttribute('role', 'dialog')
+  await expect(popover).toHaveAttribute('aria-modal', 'false')
+  await expect(popover).toHaveAttribute('aria-label', "Haiku's message")
+  const liveRegion = popover.locator('.daily-mobile-haiku-popover__content')
+  await expect(liveRegion).toHaveAttribute('role', 'status')
+  await expect(liveRegion).toHaveAttribute('aria-live', 'polite')
+  await expect(liveRegion).toHaveAttribute('aria-atomic', 'true')
+
+  await page.keyboard.press('Escape')
+  await expect(popover).toHaveCount(0)
+  await expect(trigger).toBeFocused()
   expect(errors).toEqual([])
 })

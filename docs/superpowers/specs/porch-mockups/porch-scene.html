@@ -1,0 +1,133 @@
+<h2>The porch: a pixel-art sketch of the daily screen</h2>
+<p class="subtitle">Rough mockup (drawn in code, so the real art would be richer). Everything is part of the scene: signs on the beam are the tabs, the easel is the canvas, tools sit on the tray, paint blobs on the palette are the colours, the chalkboard is the score, the bell is "grade now", the door is Exit.</p>
+
+<link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+<style>
+  .scene { position:relative; width:100%; max-width:1100px; aspect-ratio:320/180; container-type:inline-size; margin:0 auto; }
+  .scene canvas { width:100%; height:100%; image-rendering:pixelated; display:block; border-radius:4px }
+  .t { position:absolute; font-family:'VT323', monospace; line-height:1; white-space:nowrap; transform:translate(-50%,-50%); }
+  .sign { color:#3b2214; font-size:2.6cqw } .sign.on { color:#fff3c4; text-shadow:0 0 .6cqw #ffcf5a }
+  .chalk { color:#f2efe6; font-size:2.1cqw; transform:none } .chalk.dim{opacity:.7} .chalk.big{font-size:3.2cqw; color:#ffd36b}
+  .lbl { color:#fff3d6; font-size:1.8cqw; text-shadow:1px 1px 0 #2a1630 }
+</style>
+
+<div class="scene">
+  <canvas id="porch" width="320" height="180"></canvas>
+  <!-- nav signs -->
+  <div class="t sign on" style="left:9.4%;top:9.4%">DAILY</div>
+  <div class="t sign" style="left:18.8%;top:9.4%">PARTY</div>
+  <div class="t sign" style="left:28.1%;top:9.4%">SCORES</div>
+  <div class="t sign" style="left:37.5%;top:9.4%">ME</div>
+  <div class="t sign" style="left:94.5%;top:30%">EXIT</div>
+  <!-- chalkboard -->
+  <div class="t chalk" style="left:6.6%;top:37%">TODAY: SUNSET</div>
+  <div class="t chalk dim" style="left:6.6%;top:43.5%">FIT</div>
+  <div class="t chalk dim" style="left:6.6%;top:50.5%">LOOKS LIKE IT</div>
+  <div class="t chalk dim" style="left:6.6%;top:57.5%">SPEED</div>
+  <div class="t chalk big" style="left:6.6%;top:63.5%">742<span style="font-size:2cqw;color:#f2efe6">/1000</span></div>
+  <div class="t chalk dim" style="left:6.6%;top:71.5%">NEXT GRADE 0:42</div>
+  <!-- labels -->
+  <div class="t lbl" style="left:84%;top:76%">RING TO GRADE</div>
+  <div class="t lbl" style="left:47%;top:80%">pencil · eraser · fill · dropper</div>
+</div>
+
+<script>
+(function(){
+  const c = document.getElementById('porch'), g = c.getContext('2d');
+  const W=320,H=180;
+  const px=(x,y,col)=>{g.fillStyle=col; g.fillRect(x,y,1,1)};
+  const rect=(x,y,w,h,col)=>{g.fillStyle=col; g.fillRect(x,y,w,h)};
+  let seed=7; const rnd=()=>{seed=(seed*16807)%2147483647; return seed/2147483647};
+
+  // --- sky bands with dithered seams
+  const bands=['#2b1d4a','#45235e','#6b2f6b','#9a3a6e','#c4456b','#e65f60','#f2805a','#ffa35c','#ffc070','#ffd98a'];
+  const horizon=100, bh=horizon/bands.length;
+  for(let y=0;y<horizon;y++){ const i=Math.min(bands.length-1,Math.floor(y/bh)); const f=(y%bh)/bh;
+    for(let x=0;x<W;x++){ let col=bands[i]; if(f>0.66 && i<bands.length-1 && (x+y)%2===0) col=bands[i+1]; px(x,y,col);} }
+  // stars
+  for(let i=0;i<30;i++){ px(Math.floor(rnd()*W),Math.floor(rnd()*22),rnd()>.5?'#fff6d8':'#c9b2e6'); }
+  // sun
+  const sx=232, sy=horizon+2;
+  for(let y=sy-26;y<horizon;y++) for(let x=sx-26;x<=sx+26;x++){ const d=Math.hypot(x-sx,y-sy);
+    if(d<24) px(x,y, d<17?'#fff4c2':(d<21?'#ffe08a':'#ffc46b')); else if(d<25 && (x+y)%2===0) px(x,y,'#ffc46b'); }
+  // clouds: long streaks across the sun
+  [[150,70,90,'#f59a8a'],[190,78,70,'#ffb39a'],[40,60,80,'#c25478'],[250,55,60,'#d5607a'],[120,86,60,'#ffb08a']].forEach(([x,y,w,col])=>{
+    rect(x,y,w,2,col); rect(x+6,y-1,w-16,1,col); rect(x+10,y+2,w-24,1,'rgba(0,0,0,0)'); });
+  // distant island
+  for(let x=20;x<92;x++){ const h=Math.round(5*Math.sin((x-20)/72*Math.PI)+ (x>40&&x<55?3:0)); rect(x,horizon-h,1,h,'#3a1f45'); }
+
+  // --- sea
+  for(let y=horizon;y<H;y++){ const t=(y-horizon)/40; const base= t<.25?'#3d5f93':(t<.6?'#2f4c7c':'#253d66');
+    rect(0,y,W,1,base); }
+  for(let i=0;i<220;i++){ const y=horizon+1+Math.floor(rnd()*40); const x=Math.floor(rnd()*W); rect(x,y,2+Math.floor(rnd()*5),1, rnd()>.5?'#5677a8':'#4a6aa0'); }
+  // sun reflection
+  for(let y=horizon+1;y<horizon+40;y++){ const spread=6+(y-horizon)*1.2; for(let k=0;k<3;k++){ const x=sx+Math.round((rnd()*2-1)*spread); rect(x,y,2+Math.floor(rnd()*6),1, rnd()>.4?'#ffd36b':'#ff9f5a'); } }
+
+  // --- porch structure
+  const wood='#7a4a2e', woodD='#5a3420', woodL='#9a6640', woodLL='#b47d4f';
+  rect(0,0,W,7,woodD); rect(0,6,W,2,woodL); rect(0,0,W,1,'#3a2014');
+  rect(0,0,9,152,woodD); rect(1,0,2,152,woodL); rect(311,0,9,152,woodD); rect(312,0,2,152,woodL);
+  // railing
+  rect(0,116,W,4,wood); rect(0,116,W,1,woodLL); rect(0,120,W,1,woodD);
+  for(let x=12;x<310;x+=9){ rect(x,121,4,29,wood); rect(x,121,1,29,woodL); rect(x+3,121,1,29,woodD); }
+  rect(0,146,W,3,wood); rect(0,146,W,1,woodL);
+  // floor planks
+  for(let y=150;y<H;y++){ rect(0,y,W,1, ((y-150)%6===0)?woodD:(y<160?'#8c5836':'#7c4c2e')); }
+  for(let i=0;i<14;i++){ const y=151+6*Math.floor(rnd()*5); rect(Math.floor(rnd()*300),y,1,5,woodD); }
+  // warm light wash on floor
+  for(let y=150;y<H;y++) for(let x=60;x<260;x++) if((x+y)%3===0 && rnd()>.75) px(x,y,'#a8703f');
+
+  // --- hanging signs (nav)
+  const signs=[30,60,90,120]; signs.forEach((cx,i)=>{ const on=i===0; rect(cx-10,8,1,6,'#2a1a10'); rect(cx+9,8,1,6,'#2a1a10');
+    rect(cx-14,13,28,10, on?'#c0782f':'#c99a63'); rect(cx-14,13,28,1, on?'#e6a24a':'#e0b882'); rect(cx-14,22,28,1,'#6b4426'); rect(cx-14,13,1,10,'#6b4426'); rect(cx+13,13,1,10,'#6b4426'); });
+  // lantern near active sign
+  rect(14,8,1,4,'#2a1a10'); rect(12,12,5,7,'#3a2a20'); rect(13,13,3,5,'#ffd36b'); px(14,15,'#fff4c2');
+
+  // --- door (exit) at right
+  rect(290,24,20,126,'#4a2c1c'); rect(292,28,16,118,'#6b4a32'); for(let y=34;y<140;y+=12) rect(293,y,14,1,'#5a3a26');
+  rect(304,86,2,3,'#ffd36b'); rect(291,40,20,9,'#c99a63'); rect(291,40,20,1,'#e0b882'); rect(291,48,20,1,'#6b4426');
+
+  // --- chalkboard on A-frame (left)
+  rect(14,60,3,90,woodD); rect(84,60,3,90,woodD);
+  rect(12,56,76,82,'#6b4426'); rect(15,59,70,76,'#2e3b33'); for(let i=0;i<80;i++) px(15+Math.floor(rnd()*70),59+Math.floor(rnd()*76),'#36463c');
+  // chalk bars
+  const bar=(y,frac)=>{ rect(18,y,62,3,'#3e4f45'); rect(18,y,Math.round(62*frac),3,'#e9e4d6'); };
+  bar(82,.82); bar(95,.65); bar(108,.72);
+  rect(16,136,20,2,'#c9c3b4'); rect(40,136,6,2,'#f2efe6');
+
+  // --- easel + canvas (center)
+  rect(150,20,4,8,woodD);
+  g.strokeStyle=woodD; g.lineWidth=3; g.beginPath(); g.moveTo(152,24); g.lineTo(122,168); g.moveTo(152,24); g.lineTo(182,168); g.moveTo(152,24); g.lineTo(152,160); g.stroke();
+  // canvas board
+  rect(104,26,96,96,'#e8dcc4'); rect(104,26,96,1,'#fff6e2'); rect(104,121,96,1,'#b9a98d');
+  const art=[
+    "................","................","..........oo....",".........oooo...",".........oooo...","..........oo....",
+    "................","~~~~~~~~~~~~~~~~","~~~~~~~~~--~~~~~","~~~~~~~~~~-~~~~~","~~~~~~~~~-~~~~~~","~~~~~~~~~~~~~~~~",
+    "................","................","................","................"];
+  const pal={'.':'#ffffff','o':'#ff8a3d','~':'#2f7f9a','-':'#ffd36b'};
+  for(let r=0;r<16;r++) for(let k=0;k<16;k++){ rect(112+k*5,34+r*5,5,5,pal[art[r][k]]); }
+  for(let i=0;i<=16;i++){ rect(112+i*5,34,1,80,'rgba(0,0,0,0.06)'); rect(112,34+i*5,80,1,'rgba(0,0,0,0.06)'); }
+  // tray
+  rect(100,124,104,4,woodL); rect(100,124,104,1,woodLL); rect(100,127,104,1,woodD);
+  // tools on tray: pencil, eraser, fill bucket, dropper
+  rect(112,121,14,2,'#ffcf3a'); rect(126,121,2,2,'#f2c7a5'); px(128,122,'#333');            // pencil
+  rect(136,119,8,4,'#f28aa5'); rect(136,119,8,1,'#ffb3c6');                                     // eraser
+  rect(152,116,8,8,'#9aa6b2'); rect(152,116,8,1,'#c8d0d8'); rect(151,116,10,1,'#6b7682'); rect(154,114,4,2,'#3a6fd8'); // bucket
+  rect(170,118,2,5,'#d8e4f0'); rect(169,116,4,3,'#e65f60');                                     // dropper
+  rect(110,128,20,1,'#ffd36b'); // selected tool highlight under pencil
+
+  // --- side table with palette + bell
+  rect(222,128,62,4,woodL); rect(222,128,62,1,woodLL); rect(226,132,3,18,woodD); rect(277,132,3,18,woodD);
+  // palette board
+  for(let y=0;y<12;y++) for(let x=0;x<34;x++){ const dx=(x-17)/17, dy=(y-6)/6; if(dx*dx+dy*dy<1) px(228+x,116+y,'#d1a46c'); }
+  rect(238,121,4,3,'#a87a45');
+  const blobs=['#000000','#ffffff','#e63946','#ff8a3d','#ffd166','#06d6a0','#2f7f9a','#3a5bd9','#9b5de5','#f4a3c0','#8d5a3b','#7a7a7a'];
+  blobs.forEach((col,i)=>{ const x=231+(i%6)*5, y=118+Math.floor(i/6)*5; rect(x,y,3,3,col); px(x,y,'rgba(255,255,255,.5)'); });
+  // bell
+  rect(266,125,10,2,'#6b4426'); rect(268,118,6,7,'#e0b24a'); rect(269,117,4,1,'#e0b24a'); rect(270,115,2,2,'#3a2a20'); px(269,119,'#fff1b8');
+  // cat sleeping on floor for fun
+  rect(196,160,14,5,'#2a1f2a'); rect(208,158,5,4,'#2a1f2a'); px(209,157,'#2a1f2a'); px(212,157,'#2a1f2a'); rect(194,163,4,2,'#2a1f2a');
+  // plant pot by post
+  rect(296,154,12,10,'#b5532f'); rect(295,153,14,2,'#cf6a3c'); rect(299,142,2,11,'#3c7a3a'); rect(302,145,2,8,'#4c944a'); rect(296,146,3,2,'#4c944a'); rect(303,141,4,2,'#3c7a3a');
+})();
+</script>

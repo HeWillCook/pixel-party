@@ -1,165 +1,274 @@
-/**
- * Top nav — minimal placeholder bar wired to the app's mechanisms:
- * nav.ts-driven links (with role/dev filtering), sign-in via <AuthOverlay>,
- * and sign-out. Restyle or rebuild it freely; keep the data-testid hooks
- * (`app-navigation`, `nav-sign-in-button`, `nav-user-name`, `nav-user-email`)
- * — the shipped tests rely on them. `nav-user-email` is the one that carries
- * an identity the test can check exactly: a display name is optional, the
- * email is the credential the session was opened with.
- */
-
-import { useState, useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { AuthOverlay, useAuthProfileReady, signOut } from 'deepspace'
-import { ChevronDown, LogOut, Menu, X } from 'lucide-react'
-import { APP_NAME } from '../constants'
+import { Menu, X } from 'lucide-react'
 import type { Role } from '../constants'
 import { nav } from '../nav'
-import { cn } from '../lib/utils'
-import {
-  Avatar,
-  AvatarFallback,
-  AvatarImage,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from './ui'
+import { P } from '../scene/palette'
+import { drawPorchRoof } from '../scene/porch/drawPorch'
+import { defineSprite, drawSprite, type Sprite } from '../scene/sprite'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from './ui'
+
+const woodPalette = { a: P.wood[0], b: P.wood[1], c: P.wood[2], d: P.wood[3], e: P.wood[4], f: P.sun[4], g: P.flame[1], h: P.paper[3], i: P.sea[1], j: P.sun[2] }
+function plank(width: number, active = false): Sprite {
+  return defineSprite(Array.from({ length: 16 }, (_, y) => Array.from({ length: width }, (_, x) => {
+    if (y < 4) return x === 7 || x === 8 || x === width - 9 || x === width - 8 ? (y % 2 ? 'b' : 'h') : '.'
+    if ((y === 4 || y === 15) && (x < 2 || x >= width - 2)) return '.'
+    if (y === 4 || y === 15 || x === 0 || x === width - 1) return 'a'
+    if (y === 5 || x === width - 2) return 'f'
+    if ((x === 3 || x === width - 4) && (y === 7 || y === 13)) return 'b'
+    if (y === 7 && x > 4 && x < 8) return active ? 'd' : 'c'
+    return active ? 'h' : 'e'
+  }).join('')), woodPalette)
+}
+const sign = plank(36)
+const activeSign = plank(36, true)
+const logoPalette = { ...woodPalette, k: P.flame[2], l: P.sun[3], m: P.sea[2], n: P.sky[3], o: P.sun[4] }
+const logoSign = (() => {
+  const width = 70, height = 34
+  const pixels = Array.from({ length: height }, () => Array<string>(width).fill('.'))
+  const put = (x: number, y: number, color: string) => { if (x >= 0 && x < width && y >= 0 && y < height) pixels[y][x] = color }
+  for (let y = 0; y < 8; y++) for (const x of [9, 10, 58, 59]) put(x, y, y % 2 ? 'h' : 'a')
+  for (let y = 4; y < height; y++) for (let x = 1; x < width - 1; x++) {
+    const inset = y < 10 ? Math.max(0, 8 - y + Math.floor(Math.abs(x - width / 2) / 13)) : y > 30 ? y - 30 : 0
+    if (x < inset + 1 || x >= width - inset - 1) continue
+    put(x, y, y === 4 || y === 33 || x === inset + 1 || x === width - inset - 2 ? 'a' : y === 5 ? 'f' : 'c')
+  }
+  const glyphs: Record<string, string[]> = {
+    P: ['11110', '10001', '11110', '10000', '10000'], I: ['11111', '00100', '00100', '00100', '11111'],
+    X: ['11011', '11011', '01110', '11011', '11011'], E: ['11111', '10000', '11110', '10000', '11111'],
+    L: ['10000', '10000', '10000', '10000', '11111'], A: ['01110', '10001', '11111', '10001', '10001'],
+    R: ['11110', '10001', '11110', '10010', '10001'], T: ['11111', '00100', '00100', '00100', '00100'],
+    Y: ['11011', '11011', '01110', '00100', '00100'],
+  }
+  const lettering: { marks: [number, number][], color: string }[] = []
+  ;['PIXEL', 'PARTY'].forEach((word, row) => Array.from(word).forEach((letter, index) => {
+    const x = 4 + index * 12, y = 7 + row * 12
+    const marks: [number, number][] = []
+    glyphs[letter].forEach((line, lineIndex) => Array.from(line).forEach((pixel, column) => {
+      if (pixel === '1') for (let dx = 0; dx < 2; dx++) for (let dy = 0; dy < 2; dy++) marks.push([x + column * 2 + dx, y + lineIndex * 2 + dy])
+    }))
+    lettering.push({ marks, color: row === 0 ? 'k' : 'l' })
+  }))
+  lettering.forEach(({ marks }) => marks.forEach(([px, py]) => put(px + 1, py + 1, 'b')))
+  lettering.forEach(({ marks }) => marks.forEach(([px, py]) => { put(px - 1, py, 'a'); put(px + 1, py, 'a'); put(px, py - 1, 'a'); put(px, py + 1, 'a') }))
+  lettering.forEach(({ marks, color }) => {
+    marks.forEach(([px, py]) => put(px, py, color))
+    if (marks[0]) put(marks[0][0], marks[0][1], 'o')
+  })
+  put(62, 27, 'm'); put(62, 28, 'm'); put(63, 29, 'm'); put(63, 30, 'm')
+  for (let offset = 0; offset < 6; offset++) put(3 + offset, 31 - Math.floor(offset / 2), offset < 2 ? 'k' : 'h')
+  return defineSprite(pixels.map(row => row.join('')), logoPalette)
+})()
+const compactLogoSign = (() => {
+  const width = 43, height = 20
+  const pixels = Array.from({ length: height }, () => Array<string>(width).fill('.'))
+  const put = (x: number, y: number, color: string) => { if (x >= 0 && x < width && y >= 0 && y < height) pixels[y][x] = color }
+  for (let y = 0; y < 3; y++) for (const x of [6, 7, 35, 36]) put(x, y, y % 2 ? 'h' : 'a')
+  for (let y = 2; y < height; y++) for (let x = 1; x < width - 1; x++) {
+    const inset = y < 4 ? 4 - y : y > 17 ? y - 17 : 0
+    if (x < inset + 1 || x >= width - inset - 1) continue
+    put(x, y, y === 2 || y === height - 1 || x === inset + 1 || x === width - inset - 2 ? 'a' : y === 3 ? 'f' : 'c')
+  }
+  const glyphs: Record<string, string[]> = {
+    P: ['11110', '10001', '11110', '10000', '10000'], I: ['11111', '00100', '00100', '00100', '11111'],
+    X: ['11011', '11011', '01110', '11011', '11011'], E: ['11111', '10000', '11110', '10000', '11111'],
+    L: ['10000', '10000', '10000', '10000', '11111'], A: ['01110', '10001', '11111', '10001', '10001'],
+    R: ['11110', '10001', '11110', '10010', '10001'], T: ['11111', '00100', '00100', '00100', '00100'],
+    Y: ['11011', '11011', '01110', '00100', '00100'],
+  }
+  const lettering: { marks: [number, number][], color: string }[] = []
+  ;['PIXEL', 'PARTY'].forEach((word, row) => Array.from(word).forEach((letter, index) => {
+    const x = 4 + index * 7, y = 5 + row * 7
+    const marks: [number, number][] = []
+    glyphs[letter].forEach((line, lineIndex) => Array.from(line).forEach((pixel, column) => {
+      if (pixel === '1') marks.push([x + column, y + lineIndex])
+    }))
+    lettering.push({ marks, color: row === 0 ? 'k' : 'l' })
+  }))
+  lettering.forEach(({ marks }) => marks.forEach(([px, py]) => put(px + 1, py + 1, 'b')))
+  lettering.forEach(({ marks }) => marks.forEach(([px, py]) => { put(px - 1, py, 'a'); put(px + 1, py, 'a'); put(px, py - 1, 'a'); put(px, py + 1, 'a') }))
+  lettering.forEach(({ marks, color }) => {
+    marks.forEach(([px, py]) => put(px, py, color))
+    if (marks[0]) put(marks[0][0], marks[0][1], 'o')
+  })
+  put(39, 15, 'm'); put(39, 16, 'm')
+  put(3, 17, 'k'); put(4, 17, 'h')
+  return defineSprite(pixels.map(row => row.join('')), logoPalette)
+})()
+function PorchNavRoof({ pathname }: { pathname: string }) {
+  const ref = useRef<HTMLCanvasElement>(null)
+  useEffect(() => {
+    const canvas = ref.current
+    const container = canvas?.parentElement
+    const nav = container?.parentElement
+    if (!canvas || !container || !nav) return
+    const draw = () => {
+      const bounds = container.getBoundingClientRect()
+      if (!bounds.width || !bounds.height) return
+      const rawPx = parseFloat(getComputedStyle(nav).getPropertyValue('--px'))
+      const px = Number.isFinite(rawPx) && rawPx >= 2 ? Math.round(rawPx) : 3
+      const w = Math.max(1, Math.ceil(bounds.width / px))
+      const h = Math.max(18, Math.ceil(bounds.height / px))
+      canvas.width = w
+      canvas.height = h
+      canvas.style.width = `${w * px}px`
+      canvas.style.height = `${h * px}px`
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return
+      ctx.imageSmoothingEnabled = false
+      ctx.clearRect(0, 0, w, h)
+      drawPorchRoof(ctx, 0)
+    }
+    const observer = new ResizeObserver(draw)
+    observer.observe(container)
+    const shell = nav.closest('.porch-shell')
+    const styleObserver = shell ? new MutationObserver(draw) : null
+    if (shell && styleObserver) styleObserver.observe(shell, { attributes: true, attributeFilter: ['style'] })
+    draw()
+    return () => {
+      observer.disconnect()
+      styleObserver?.disconnect()
+    }
+  }, [pathname])
+  return <div className="porch-nav__roof" aria-hidden="true"><canvas ref={ref} className="porch-sprite" /></div>
+}
+function CompactRoof() {
+  const ref = useRef<HTMLCanvasElement>(null)
+  useEffect(() => {
+    const canvas = ref.current
+    const container = canvas?.parentElement
+    if (!canvas || !container) return
+    const draw = () => {
+      const bounds = container.getBoundingClientRect()
+      if (!bounds.width || !bounds.height) return
+      canvas.width = Math.ceil(bounds.width / 2)
+      canvas.height = Math.ceil(bounds.height / 2)
+      canvas.style.width = `${canvas.width * 2}px`
+      canvas.style.height = `${canvas.height * 2}px`
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return
+      ctx.imageSmoothingEnabled = false
+      ctx.fillStyle = P.wood[1]
+      ctx.fillRect(0, 0, canvas.width, canvas.height)
+      drawPorchRoof(ctx, Math.max(0, canvas.height - 18))
+    }
+    const observer = new ResizeObserver(draw)
+    observer.observe(container)
+    draw()
+    return () => observer.disconnect()
+  }, [])
+  return <div className="porch-nav__compact-roof" aria-hidden="true"><canvas ref={ref} className="porch-sprite" /></div>
+}
+const lantern = defineSprite([
+  '.......a.......', '......aba......', '.....ababa.....', '...j.abeba.j...', '..j.jafffa.jj..',
+  '.j.j.abffba.j..', '..j..abgfba..j.', '.j.j.abffba.j..', '..j.jabffbaj...', '...j.abbba.j...',
+  '.....aaaaa.....', '......aaa......',
+], woodPalette)
+const mailbox = defineSprite([
+  '.....aaaaaaaaa.......', '...aabbbbbbbbbaa.....', '..abcccccccccccba....', '.abcccccccccccccba...',
+  '.abcccccccccccccba...', 'abcccccccccccccccba..', 'abcccceeeccccccccba..', 'abcccccccccccccccba..',
+  'abcccccccccccccccba..', 'abcccccccccccccccba..', 'abcccccccccccccccba..', 'abcccccccccccccccba..',
+  'abbbbbbbbbbbbbbbbba..', '.aaaaaaaaaaaaaaaaa...', '......abbbba.........', '......abbbba.........',
+  '......abbbba.........', '......abbbba.........', '......abbbba.........', '......abbbba.........',
+  '.....aabbbbaa........', '....aaaaaaaaaa.......', '.....................',
+], woodPalette)
+const flagUp = defineSprite(['ggggg', 'gffgg', 'ggggg', 'g....', 'g....', 'g....', 'g....'], woodPalette)
+const flagDown = defineSprite(['.......', '.......', '.......', '.......', '.......', 'ggggggg', 'gggffgg'], woodPalette)
+
+function SpriteImage({ sprite, className = '' }: { sprite: Sprite; className?: string }) {
+  const ref = useRef<HTMLCanvasElement>(null)
+  useEffect(() => {
+    const ctx = ref.current?.getContext('2d')
+    if (ctx) {
+      ctx.clearRect(0, 0, sprite.w, sprite.h)
+      drawSprite(ctx, sprite, 0, 0)
+    }
+  }, [sprite])
+  return <canvas ref={ref} className={`porch-sprite ${className}`} width={sprite.w} height={sprite.h} style={{ width: `calc(var(--px) * ${sprite.w})`, height: `calc(var(--px) * ${sprite.h})` }} aria-hidden="true" />
+}
+
+const staticNavItems = nav.filter((item) => !item.devOnly && !item.roles)
+
+export function StaticPorchNav() {
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const navLink = (item: (typeof nav)[number]) => {
+    const to = item.label === 'Gallery' ? '/home' : item.path
+    return (
+      <Link key={item.label} to={to} className="porch-nav__sign">
+        <SpriteImage sprite={sign} />
+        <span>{item.label}</span>
+      </Link>
+    )
+  }
+  return (
+    <nav data-testid="app-navigation" className="porch-nav">
+      <PorchNavRoof pathname="/" />
+      <div className="porch-nav__row">
+        <Link to="/" aria-label="Pixel Party, home" className="porch-nav__logo"><SpriteImage sprite={logoSign} className="porch-nav__logo-full" /><SpriteImage sprite={compactLogoSign} className="porch-nav__logo-compact" /></Link>
+        <div className="porch-nav__links">{staticNavItems.map(navLink)}</div>
+        <div className="porch-nav__spacer" />
+        <Link to="/home" data-testid="nav-sign-in-button" className="porch-nav__mail">
+          <span className="porch-nav__mail-art"><SpriteImage sprite={mailbox} /><SpriteImage sprite={flagUp} className="porch-nav__flag" /></span>
+          <span className="porch-nav__username">Sign in</span>
+        </Link>
+        <button type="button" className="porch-nav__toggle" onClick={() => setMobileMenuOpen((previous) => !previous)} aria-label="Toggle menu" aria-expanded={mobileMenuOpen}>
+          {mobileMenuOpen ? <X aria-hidden /> : <Menu aria-hidden />}
+        </button>
+      </div>
+      {mobileMenuOpen && <div className="porch-nav__mobile">{staticNavItems.map(navLink)}</div>}
+    </nav>
+  )
+}
 
 export default function Navigation() {
   const { isLoaded, isSignedIn, user, userLoading } = useAuthProfileReady({ requireUser: true })
   const location = useLocation()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [showAuthModal, setShowAuthModal] = useState(false)
-
   const profileReady = !isSignedIn || (!userLoading && !!user)
   const userRole = (user?.role ?? 'anonymous') as Role | 'anonymous'
-
-  // Close the mobile menu when navigating
-  useEffect(() => {
-    setMobileMenuOpen(false)
-  }, [location.pathname])
-
   const visibleNav = nav.filter((item) => {
     if (item.devOnly && !import.meta.env.DEV) return false
-    if (!item.roles) return true
-    if (!profileReady) return false
-    if (userRole === 'admin') return true
-    return item.roles.includes(userRole as Role)
+    return !item.roles || (profileReady && (userRole === 'admin' || item.roles.includes(userRole as Role)))
   })
+  useEffect(() => { setMobileMenuOpen(false) }, [location.pathname])
 
   const navLink = (item: (typeof nav)[number]) => {
-    const active = location.pathname.startsWith(item.path)
-    return (
-      <Link
-        key={item.path}
-        to={item.path}
-        aria-current={active ? 'page' : undefined}
-        className={cn(
-          'px-3 py-1 text-lg uppercase tracking-wider transition-colors',
-          active ? 'text-[var(--sunset-1)]' : 'text-muted-foreground hover:text-foreground',
-        )}
-      >
-        {item.label}
-      </Link>
-    )
+    const gallery = item.label === 'Gallery'
+    const path = gallery && user ? `/u/${encodeURIComponent(user.id)}` : item.path
+    const active = location.pathname === item.path || (gallery && location.pathname.startsWith('/u/'))
+    return <Link key={item.label} to={path} onClick={(event) => {
+      if (gallery && !isSignedIn) { event.preventDefault(); setMobileMenuOpen(false); setShowAuthModal(true); return }
+      if (item.label === 'Party' && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey && event.button === 0 && !window.dispatchEvent(new Event('porch-party-transition', { cancelable: true }))) event.preventDefault()
+    }} aria-current={active ? 'page' : undefined} className="porch-nav__sign">
+      <SpriteImage sprite={active ? activeSign : sign} /><span>{item.label}</span>{active && <SpriteImage sprite={lantern} className="porch-nav__lantern" />}
+    </Link>
   }
-
-  return (
-    <>
-      <nav data-testid="app-navigation" className="border-b border-border bg-background">
-        <div className="mx-auto flex h-12 max-w-7xl items-center gap-4 px-4">
-          <Link to="/home" className="pp-logo text-2xl leading-none">
-            {APP_NAME}
-          </Link>
-
-          <div className="hidden items-center md:flex">{visibleNav.map(navLink)}</div>
-
-          <div className="flex-1" />
-
-          {!isLoaded ? null : isSignedIn && !profileReady ? (
-            /* Signed in, profile still loading — skeleton pill, never the
-               Sign in button (that would offer sign-in to a signed-in user). */
-            <div className="pp-chip flex items-center gap-2 py-1 pl-1 pr-2.5">
-              <div className="h-6 w-6 animate-pulse bg-muted" />
-              <div className="hidden h-4 w-20 animate-pulse bg-muted sm:block" />
-            </div>
-          ) : isSignedIn && user ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={
-                  <button
-                    aria-label="Account menu"
-                    className="pp-chip group flex items-center gap-2 py-1 pl-1.5 pr-2.5 text-base transition-colors hover:bg-secondary"
-                  >
-                    <Avatar className="h-6 w-6 ring-1 ring-inset ring-border">
-                      <AvatarImage src={user.imageUrl ?? undefined} referrerPolicy="no-referrer" />
-                      <AvatarFallback className="text-xs">
-                        {(user.name?.[0] ?? user.email?.[0] ?? '?').toUpperCase()}
-                      </AvatarFallback>
-                    </Avatar>
-                    <span
-                      data-testid="nav-user-name"
-                      className="hidden max-w-[140px] truncate text-foreground sm:inline"
-                    >
-                      {user.name || user.email}
-                    </span>
-                    <ChevronDown
-                      className="h-3.5 w-3.5 text-muted-foreground transition-transform duration-150 group-data-[popup-open]:rotate-180"
-                      aria-hidden
-                    />
-                  </button>
-                }
-              />
-              <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuLabel>
-                  <div className="truncate text-base text-foreground">
-                    {user.name || 'Signed in'}
-                  </div>
-                  <div
-                    data-testid="nav-user-email"
-                    className="truncate text-sm text-muted-foreground"
-                  >
-                    {user.email}
-                  </div>
-                </DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => signOut()}>
-                  <LogOut aria-hidden />
-                  Sign out
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          ) : (
-            <button
-              data-testid="nav-sign-in-button"
-              onClick={() => setShowAuthModal(true)}
-              className="pp-btn px-3 py-1 text-base uppercase tracking-wider"
-            >
-              Sign in
-            </button>
-          )}
-
-          <button
-            className="inline-flex h-8 w-8 items-center justify-center text-muted-foreground hover:text-foreground md:hidden"
-            onClick={() => setMobileMenuOpen((prev) => !prev)}
-            aria-label="Toggle menu"
-            aria-expanded={mobileMenuOpen}
-          >
-            {mobileMenuOpen ? <X className="h-4 w-4" aria-hidden /> : <Menu className="h-4 w-4" aria-hidden />}
-          </button>
-        </div>
-
-        {mobileMenuOpen && (
-          <div className="flex flex-col border-t border-border px-2 py-2 md:hidden">
-            {visibleNav.map(navLink)}
-          </div>
-        )}
-      </nav>
-
-      {showAuthModal && <AuthOverlay onClose={() => setShowAuthModal(false)} />}
-    </>
-  )
+  return <>
+    <nav data-testid="app-navigation" className="porch-nav">
+      <PorchNavRoof pathname={location.pathname} />
+      <CompactRoof />
+      <div className="porch-nav__row">
+        <Link to="/home" aria-label="Pixel Party, home" className="porch-nav__logo"><SpriteImage sprite={logoSign} className="porch-nav__logo-full" /><SpriteImage sprite={compactLogoSign} className="porch-nav__logo-compact" /></Link>
+        <div className="porch-nav__links">{visibleNav.map(navLink)}</div>
+        <div className="porch-nav__spacer" />
+        {!isLoaded || !profileReady ? null : isSignedIn && user ? <DropdownMenu>
+          <DropdownMenuTrigger render={<button aria-label={`Account menu: ${user.name || user.email}`} title={user.name || user.email} className="porch-nav__mail"><span className="porch-nav__mail-art"><SpriteImage sprite={mailbox} /><SpriteImage sprite={flagDown} className="porch-nav__flag" /></span><span data-testid="nav-user-name" className="porch-nav__username">{user.name || user.email}</span></button>} />
+          <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuLabel><div>{user.name || 'Signed in'}</div><div data-testid="nav-user-email" className="text-sm text-muted-foreground">{user.email}</div></DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            {visibleNav.map(item => <DropdownMenuItem key={item.label} render={<Link to={item.label === 'Gallery' ? `/u/${encodeURIComponent(user.id)}` : item.path} />}>{item.label}</DropdownMenuItem>)}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem render={<Link to={`/u/${encodeURIComponent(user.id)}`} />}>My gallery</DropdownMenuItem>
+            <DropdownMenuItem render={<Link to="/settings" />}>Settings</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => signOut()}>Sign out</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu> : <button data-testid="nav-sign-in-button" onClick={() => setShowAuthModal(true)} className="porch-nav__mail"><span className="porch-nav__mail-art"><SpriteImage sprite={mailbox} /><SpriteImage sprite={flagUp} className="porch-nav__flag" /></span><span className="porch-nav__username">Sign in</span></button>}
+        <button className="porch-nav__toggle" onClick={() => setMobileMenuOpen((previous) => !previous)} aria-label="Toggle menu" aria-expanded={mobileMenuOpen}>{mobileMenuOpen ? <X aria-hidden /> : <Menu aria-hidden />}</button>
+      </div>
+      {mobileMenuOpen && <div className="porch-nav__mobile">{visibleNav.map(navLink)}</div>}
+    </nav>
+    {showAuthModal && <AuthOverlay onClose={() => setShowAuthModal(false)} />}
+  </>
 }

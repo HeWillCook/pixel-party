@@ -1,0 +1,416 @@
+/* Room play screen in-world integration (S4 & S5):
+   - Left column: studio pillar, pinned cream sheet (prompt + players), nailed wooden exit plaque
+   - Right column: Haiku perched on studio stool, wooden-framed chalk slate, brass bell shelf */
+
+@media (min-width: 768px) {
+  .room-play .play-layout__left {
+    position: relative;
+    gap: 0;
+    padding-top: 10px;
+  }
+
+  .room-play .play-layout__left::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 4px;
+    left: 50%;
+    width: 68px;
+    transform: translateX(-50%);
+    background: linear-gradient(
+      90deg,
+      #392a45 0 3px,
+      #70434e 3px 16px,
+      #985c5a 16px 46px,
+      #c57d63 46px 52px,
+      #70434e 52px 65px,
+      #392a45 65px 68px
+    );
+    box-shadow: inset 0 4px 0 #614052;
+    z-index: 0;
+    pointer-events: none;
+  }
+
+  .room-play .play-layout__left > * {
+    position: relative;
+    z-index: 1;
+  }
+
+  .room-play .play-layout__left [data-testid="round-bar"] {
+    border-bottom: 0;
+  }
+
+  .room-play .play-layout__left [data-testid="players-panel"] {
+    border-top: 2px dashed #c57d63;
+  }
+
+  .room-play .play-layout__left .room-exit {
+    margin-top: 10px;
+  }
+}
+
+.room-play [data-testid="round-bar"] {
+  position: relative;
+  background: #fff0cc;
+  color: #392a45;
+  border: 3px solid #614052;
+  box-shadow: inset 0 2px 0 #ffffff, 3px 3px 0 rgba(57, 42, 69, 0.35);
+  padding: 14px 12px 10px;
+}
+
+/* Brass clip + nail pinning the cream paper sheet to the pillar */
+.room-play [data-testid="round-bar"]::before {
+  content: '';
+  position: absolute;
+  top: -10px;
+  left: 50%;
+  width: 34px;
+  height: 12px;
+  transform: translateX(-50%);
+  background: #ecae7d;
+  border: 2px solid #392a45;
+  box-shadow: inset 0 2px 0 #ffe29a;
+}
+
+.room-play [data-testid="round-bar"]::after {
+  content: '';
+  position: absolute;
+  top: -6px;
+  left: 50%;
+  width: 6px;
+  height: 6px;
+  transform: translateX(-50%);
+  background: #392a45;
+}
+
+.room-play [data-testid="round-bar"] .play-prompt__heading {
+  color: #614052;
+}
+
+.room-play [data-testid="round-bar"] [data-testid="round-word"] {
+  color: #392a45;
+  text-shadow: none;
+}
+
+.room-play [data-testid="round-bar"] > div:last-child {
+  color: #614052;
+  border-top-color: #c57d63;
+}
+
+.room-play [data-testid="round-bar"] [data-testid="round-timer"] {
+  color: #985c5a;
+  font-weight: 700;
+}
+
+.room-play [data-testid="players-panel"] {
+  background: #fff0cc;
+  color: #392a45;
+  border: 3px solid #614052;
+  box-shadow: inset 0 -2px 0 #ecd4b0, 3px 3px 0 rgba(57, 42, 69, 0.35);
+  padding: 10px 12px;
+}
+
+.room-play [data-testid="players-panel"] h4 {
+  color: #985c5a;
+}
+
+.room-play [data-testid="players-panel"] [data-testid="round-players"] {
+  color: #392a45;
+}
+
+.room-play [data-testid="players-panel"] p {
+  color: #392a45;
+}
+
+.room-play [data-testid="players-panel"] [data-testid="round-watching"] {
+  color: #614052;
+  opacity: 0.9;
+}
+
+.room-play .room-exit {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 42px;
+  padding: 6px 14px;
+  background: #c57d63;
+  color: #fff0cc;
+  border: 3px solid #392a45;
+  box-shadow:
+    inset 0 2px 0 #ecae7d,
+    inset 0 -2px 0 #985c5a,
+    0 3px 0 #392a45;
+  font-size: 18px;
+  line-height: 1.05;
+  text-align: center;
+  text-decoration: none;
+}
+
+.room-play .room-exit::before,
+.room-play .room-exit::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: 4px;
+  height: 4px;
+  transform: translateY(-50%);
+  background: #ffe29a;
+  box-shadow: 1px 1px 0 #392a45;
+}
+
+.room-play .room-exit::before {
+  left: 5px;
+}
+
+.room-play .room-exit::after {
+  right: 5px;
+}
+
+.room-play .room-exit:hover {
+  background: #d86a58;
+  color: #fff0cc;
+}
+
+/* Right column: larger Haiku perched on studio stool + chalk slate + brass bell shelf */
+@media (min-width: 1024px) {
+  .room-play .play-layout {
+    grid-template-columns: 220px minmax(0, 1fr) 312px;
+  }
+}
+
+.room-play .play-layout__right > div:first-of-type {
+  gap: 0;
+}
+
+.room-play .critic-bubble {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.critic-bubble__stage {
+  padding: 2px 2px 0;
+}
+
+.critic-bubble__perch {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  min-height: 146px;
+  padding-bottom: 24px;
+}
+
+.critic-bubble__stool {
+  position: absolute;
+  left: 10px;
+  bottom: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.critic-bubble__haiku {
+  position: relative;
+  z-index: 1;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  max-width: 100%;
+}
+
+.critic-bubble__haiku .haiku__bubble {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 162px;
+  padding: 8px 10px;
+  font-size: 21px;
+  font-weight: 700;
+  line-height: 1.08;
+  word-break: break-word;
+}
+
+.critic-bubble__caption {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 18px;
+  padding: 6px 10px;
+  background: #ecd4b0;
+  border: 2px solid #8e5960;
+  box-shadow: inset 0 1px #fff0cc, 2px 2px #392a45;
+  line-height: 1.08;
+}
+
+.critic-bubble__caption .critic-bubble__role {
+  font-size: 19px;
+  font-weight: 700;
+  color: #392a45;
+  text-transform: uppercase;
+}
+
+.critic-bubble__caption .critic-bubble__hint {
+  font-size: 15px;
+  color: #614052;
+}
+
+/* Chalk slate (guesses + score note) framed in warm studio wood */
+.room-play .critic-bubble__speech [data-testid="guess-feed"] {
+  background: #2f233b;
+  color: #fff0cc;
+  border: 4px solid #c57d63;
+  border-bottom: 0;
+  box-shadow: inset 0 0 0 2px #614052;
+  padding: 8px 10px;
+}
+
+.room-play .critic-bubble__speech [data-testid="guess-feed"] h4 {
+  color: #ffe29a;
+}
+
+.room-play .critic-bubble__speech [data-testid="guess-confidence"] {
+  background: #392a45;
+  color: #ffe29a;
+  border-color: #ecae7d;
+}
+
+.room-play .critic-bubble__speech [data-testid="guess-feed"] .text-muted-foreground {
+  color: #ecd4b0;
+}
+
+.room-play .critic-bubble__speech [data-testid="guess-list"] {
+  max-height: 92px;
+}
+
+.room-play .critic-bubble__speech [data-testid="guess-list"] p {
+  color: #fff0cc;
+}
+
+.room-play .critic-bubble__speech [data-testid="guess-list"] p > span:first-child {
+  color: #ecae7d;
+}
+
+.room-play .critic-bubble__speech [data-testid="ai-resting-banner"] {
+  color: #ffe29a;
+}
+
+.room-play [data-testid="party-score-note"] {
+  background: #2f233b;
+  color: #ecd4b0;
+  border: 4px solid #c57d63;
+  border-top: 2px dashed rgba(255, 240, 204, 0.28);
+  box-shadow: inset 0 0 0 2px #614052, 0 3px 0 #392a45;
+  padding: 7px 10px;
+  font-size: 15px;
+  line-height: 1.15;
+}
+
+/* Ask Haiku gleaming brass counter bell on wooden shelf */
+.room-play .room-bell-shelf {
+  margin-top: 6px;
+  padding: 6px;
+  background: #985c5a;
+  border: 3px solid #392a45;
+  box-shadow:
+    inset 0 2px 0 #ecae7d,
+    inset 0 -2px 0 #614052,
+    0 3px 0 #392a45;
+}
+
+.room-play .room-bell-btn {
+  background: linear-gradient(180deg, #ffe29a 0%, #f0955f 100%);
+  color: #392a45;
+  border: 3px solid #392a45;
+  box-shadow:
+    inset 0 2px 0 #fff0cc,
+    inset 0 -2px 0 #c57d63,
+    0 2px 0 #392a45;
+  font-size: 20px;
+  text-shadow: none;
+}
+
+.room-play .room-bell-btn:hover:not(:disabled) {
+  background: #ffe29a;
+  color: #392a45;
+}
+
+.room-play .room-bell-btn:disabled {
+  opacity: 1;
+  background: #d1b5a3;
+  color: #392a45;
+  border-color: #614052;
+  box-shadow: inset 0 1px 0 #ecd4b0;
+}
+
+@media (max-width: 767px) {
+  .room-play .play-layout__left {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .room-play [data-testid="round-bar"] {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px 8px;
+    padding: 6px 10px;
+  }
+
+  .room-play [data-testid="round-bar"]::before,
+  .room-play [data-testid="round-bar"]::after {
+    display: none;
+  }
+
+  .room-play [data-testid="round-bar"] > div:first-child {
+    width: auto;
+  }
+
+  .room-play [data-testid="round-bar"] [data-testid="round-word"] {
+    font-size: 20px;
+  }
+
+  .room-play [data-testid="round-bar"] > div:last-child {
+    width: 100%;
+    padding-top: 4px;
+    font-size: 15px;
+  }
+
+  .room-play .room-exit--full {
+    width: auto;
+    max-width: 148px;
+    min-height: 44px;
+    padding: 6px 10px;
+    font-size: 14px;
+  }
+
+  .room-play .room-exit::before,
+  .room-play .room-exit::after {
+    display: none;
+  }
+
+  .critic-bubble__perch {
+    min-height: 118px;
+    padding-bottom: 18px;
+  }
+
+  .critic-bubble__stool {
+    left: 8px;
+  }
+
+  .critic-bubble__haiku .haiku__bubble {
+    max-width: none;
+    font-size: 20px;
+  }
+
+  .room-play .play-layout__mobile-actions .room-bell-shelf {
+    margin-top: 0;
+  }
+
+  .room-play .play-layout__mobile-actions .room-bell-btn {
+    min-height: 44px;
+    font-size: 17px;
+  }
+}

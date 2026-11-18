@@ -2,11 +2,13 @@ import { useEffect, useRef, useState } from 'react'
 import type { ClientState } from '@/game/client-state'
 import { createCountdownGate, soundEventsFor } from '@/game/sound-events'
 import { createSfx } from '@/lib/sfx'
+import { useMute } from '@/hooks/useMute'
 
 export function useGameSounds(state: ClientState): { muted: boolean; toggleMute: () => void } {
   const [sfx] = useState(createSfx)
   const [shouldTick] = useState(createCountdownGate)
-  const [muted, setMuted] = useState(() => sfx.isMuted())
+  const { muted, toggle } = useMute()
+  useEffect(() => { sfx.setMuted(muted) }, [sfx, muted])
   const previous = useRef(state)
   const current = useRef(state)
   current.current = state
@@ -42,5 +44,5 @@ export function useGameSounds(state: ClientState): { muted: boolean; toggleMute:
     return () => window.clearInterval(interval)
   }, [sfx, shouldTick])
 
-  return { muted, toggleMute: () => { const next = !sfx.isMuted(); sfx.setMuted(next); setMuted(next) } }
+  return { muted, toggleMute: toggle }
 }

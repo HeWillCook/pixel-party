@@ -29,19 +29,19 @@ export default function ApiStatusPage() {
       </div>
 
       {catalog.error && catalog.data && (
-        <div className="pp-panel px-4 py-3">
+        <div className="pp-wood-panel px-4 py-3">
           <p className="text-lg uppercase text-[var(--sunset-1)]">Showing the last loaded catalog</p>
           <p className="mt-1 text-base text-muted-foreground">{catalog.error}</p>
         </div>
       )}
 
       {catalog.status === 'loading' ? (
-        <div className="pp-panel flex items-center justify-center gap-3 p-8 text-base text-muted-foreground">
+        <div className="pp-wood-panel flex items-center justify-center gap-3 p-8 text-base text-muted-foreground">
           <span className="h-4 w-4 animate-spin border-2 border-current border-t-transparent" aria-hidden />
           Loading integration catalog...
         </div>
       ) : catalog.status === 'error' ? (
-        <div className="pp-panel px-4 py-3">
+        <div className="pp-wood-panel px-4 py-3">
           <p className="text-lg uppercase text-destructive">Could not load API data</p>
           <div className="mt-1 flex flex-col gap-3 text-base text-muted-foreground">
             <span>{catalog.error}</span>
@@ -58,14 +58,14 @@ export default function ApiStatusPage() {
           </div>
         </div>
       ) : integrationCount === 0 ? (
-        <div className="pp-panel flex flex-col items-center justify-center px-4 py-16 text-center">
+        <div className="pp-wood-panel flex flex-col items-center justify-center px-4 py-16 text-center">
           <h3 className="text-2xl uppercase text-[var(--sunset-2)]">No integrations available</h3>
           <p className="mt-2 max-w-sm text-base text-muted-foreground">
             The catalog loaded, but it did not return any integration definitions.
           </p>
         </div>
       ) : (
-        <section className="pp-panel p-5">
+        <section className="pp-wood-panel p-5">
           <div className="flex items-start justify-between gap-4">
             <div>
               <h2 className="text-2xl uppercase text-[var(--sunset-2)]">Integration catalog ready</h2>

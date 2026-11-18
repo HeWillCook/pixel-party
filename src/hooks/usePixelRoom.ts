@@ -23,11 +23,16 @@ export interface UsePixelRoomResult {
   chooseTeam: (t: 'red' | 'blue') => void
 }
 
+export interface UsePixelRoomOptions {
+  spectator?: boolean
+}
+
 const REJECT_DISPLAY_MS = 4000
 
-export function usePixelRoom(joinCode: string): UsePixelRoomResult {
+export function usePixelRoom(joinCode: string, options?: UsePixelRoomOptions): UsePixelRoomResult {
+  const spectator = Boolean(options?.spectator)
   const { isSignedIn, userId, sessionId } = useAuthStatus()
-  const connectionKey = JSON.stringify([joinCode, isSignedIn, userId, sessionId])
+  const connectionKey = JSON.stringify([joinCode, isSignedIn, userId, sessionId, spectator])
   const [stateKey, setStateKey] = useState(connectionKey)
   const [state, setState] = useState<ClientState>(() => initialClientState())
   const [sessionExpired, setSessionExpired] = useState(false)
@@ -77,7 +82,8 @@ export function usePixelRoom(joinCode: string): UsePixelRoomResult {
     let alive = true
     let backoffMs = 500
     let terminalError = false
-    let spectateWithoutToken = false
+    let spectateWithoutToken = spectator
+    let triedAuthForPrivate = false
     const probeAbort = new AbortController()
 
     const scheduleReconnect = () => {
@@ -95,6 +101,11 @@ export function usePixelRoom(joinCode: string): UsePixelRoomResult {
         if (expired && alive) {
           spectateWithoutToken = true
           setSessionExpired(true)
+          return false
+        }
+        if (err === 'unauthorized' && spectator && isSignedIn && !triedAuthForPrivate && alive) {
+          triedAuthForPrivate = true
+          spectateWithoutToken = false
           return false
         }
         if (err && alive) {
@@ -123,13 +134,14 @@ export function usePixelRoom(joinCode: string): UsePixelRoomResult {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
       const baseUrl = `${protocol}//${window.location.host}`
       const url = new URL(`/api/pixel/${encodeURIComponent(joinCode)}/ws`, baseUrl)
+      if (spectator) {
+        url.searchParams.set('spectate', '1')
+      }
       if (token) {
         url.searchParams.set('token', token)
       }
 
-      const httpProbeUrl = `${window.location.origin}/api/pixel/${encodeURIComponent(joinCode)}/ws${
-        token ? `?token=${encodeURIComponent(token)}` : ''
-      }`
+      const httpProbeUrl = `${window.location.origin}/api/pixel/${encodeURIComponent(joinCode)}/ws${url.search}`
 
       let receivedSnapshot = false
       const socket = new WebSocket(url.toString())
@@ -230,6 +242,7 @@ export function usePixelRoom(joinCode: string): UsePixelRoomResult {
   }, [joinCode, isSignedIn, userId, sessionId, connectionKey])
 
   const sendMsg = useCallback((msg: ClientMsg): boolean => {
+    if (spectator) return false
     const ws = wsRef.current
     if (!ws || ws.readyState !== WebSocket.OPEN) return false
     try {
@@ -238,10 +251,11 @@ export function usePixelRoom(joinCode: string): UsePixelRoomResult {
     } catch {
       return false
     }
-  }, [])
+  }, [spectator])
 
   const place = useCallback(
     (x: number, y: number, c: number) => {
+      if (spectator) return
       const current = stateRef.current
       if (!Number.isInteger(x) || !Number.isInteger(y)) return
       if (x < 0 || x >= current.width || y < 0 || y >= current.height) return

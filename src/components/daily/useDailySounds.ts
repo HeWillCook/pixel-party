@@ -2,11 +2,13 @@ import { useEffect, useRef, useState } from 'react'
 import type { DailyClientState } from '../../game/daily/client-schedule'
 import { createDailySoundGate } from '../../game/daily/sound-events'
 import { createSfx } from '../../lib/sfx'
+import { useMute } from '../../hooks/useMute'
 
 export function useDailySounds(state: DailyClientState) {
   const [sfx] = useState(createSfx)
   const [gate] = useState(createDailySoundGate)
-  const [muted, setMuted] = useState(() => sfx.isMuted())
+  const { muted, toggle } = useMute()
+  useEffect(() => { sfx.setMuted(muted) }, [sfx, muted])
   const current = useRef(state)
   current.current = state
 
@@ -38,10 +40,6 @@ export function useDailySounds(state: DailyClientState) {
 
   return {
     muted,
-    toggleMute: () => {
-      const next = !sfx.isMuted()
-      sfx.setMuted(next)
-      setMuted(next)
-    },
+    toggleMute: toggle,
   }
 }

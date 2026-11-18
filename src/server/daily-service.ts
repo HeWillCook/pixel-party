@@ -36,6 +36,7 @@ export interface DailyStateView {
   nextAutoAt: number | null
   serverNow: number
   lastCells?: string
+  bestCells?: string
 }
 
 function stateView(day: string, row: AttemptRow | null, now: number): DailyStateView {
@@ -57,6 +58,7 @@ function stateView(day: string, row: AttemptRow | null, now: number): DailyState
     nextAutoAt: ended ? null : windows.find(window => window.status === 'pending')?.dueAt ?? null,
     serverNow: now,
     ...(row.lastCells !== null ? { lastCells: row.lastCells } : {}),
+    ...(ended && row.bestGrade?.cells ? { bestCells: row.bestGrade.cells } : {}),
   }
 }
 

@@ -31,7 +31,7 @@ function SignedOutPanel() {
 
   return (
     <div className="flex min-h-[60vh] items-center justify-center px-6 py-20">
-      <div className="pp-panel w-full max-w-sm p-8 text-center">
+      <div className="pp-wood-panel w-full max-w-sm p-8 text-center">
         <h1 className="text-2xl uppercase text-[var(--sunset-2)]">Sign in to continue</h1>
         <p className="mt-2 text-base text-muted-foreground">
           This page is only available to signed-in users.

@@ -10,6 +10,20 @@ export function coopScore(p: {
   return Math.max(0, Math.min(1000, Math.round(raw)))
 }
 
+export function coopScoreParts(p: {
+  pixelsUsed: number
+  totalCells: number
+  durationMs: number
+  capMs: number
+}): { pixels: number; time: number; total: number } {
+  const total = coopScore(p)
+  const pixelRatio = p.totalCells > 0 ? p.pixelsUsed / p.totalCells : 1
+  const pixelsRaw = Math.max(0, Math.min(500, 500 * (1 - pixelRatio)))
+  const pixels = Math.max(Math.max(0, total - 500), Math.min(total, Math.round(pixelsRaw)))
+  const time = total - pixels
+  return { pixels, time, total }
+}
+
 export function teamWinner(
   red: { matched: boolean; confidence: number },
   blue: { matched: boolean; confidence: number },

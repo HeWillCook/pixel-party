@@ -78,6 +78,7 @@ export class PixelRoom extends BaseRoom<Env> {
   private restingDay: string | null = null
   private hostUserId = ''
   private statusWrite: Promise<void> = Promise.resolve()
+  private connectingSpectator = false
 
   constructor(state: DurableObjectState, env: Env) {
     super(state, env)
@@ -118,7 +119,15 @@ export class PixelRoom extends BaseRoom<Env> {
       await this.onRoomStatus({ roomId: this.game.roomId, status: 'closed', playerCount: 0, lastActiveAt: Date.now(), currentRoundId: this.game.round.id })
       return new Response(null, { status: 204 })
     }
-    if (request.headers.get('Upgrade') === 'websocket' && this.game?.status === 'closed') return new Response('Room closed', { status: 410 })
+    if (request.headers.get('Upgrade') === 'websocket') {
+      if (this.game?.status === 'closed') return new Response('Room closed', { status: 410 })
+      this.connectingSpectator = request.headers.get('X-Room-Spectate') === 'true'
+      try {
+        return await super.fetch(request)
+      } finally {
+        this.connectingSpectator = false
+      }
+    }
     return super.fetch(request)
   }
 
@@ -127,16 +136,24 @@ export class PixelRoom extends BaseRoom<Env> {
     await super.webSocketMessage(ws, message)
   }
 
-  protected override async onConnect(ws: WebSocket, user: UserAttachment): Promise<void> {
+  protected override async onConnect(ws: WebSocket, user: UserAttachment): Promise<UserAttachment | void> {
+    const spectate = Boolean(user.spectate) || this.connectingSpectator
+    this.connectingSpectator = false
+    const attachment: UserAttachment = spectate ? { ...user, spectate: true } : user
     try {
       if (this.game?.status === 'closed') {
         this.sendGame(ws, { t: 'closed' })
         ws.close(4001, 'Room closed by host')
-        return
+        return attachment
       }
-      ws.serializeAttachment(user)
-      await this.transition(this.withRoomStatus(advance(this.game!, Date.now(), this.playerCount(), Math.random), this.playerCount()), undefined, ws)
-      this.broadcastGame({ t: 'players', count: this.playerCount(), roster: this.playerRoster(), watching: this.watcherCount() })
+      ws.serializeAttachment(attachment)
+      const players = this.playerCount()
+      const next = advance(this.game!, Date.now(), players, Math.random)
+      await this.transition(spectate ? next : this.withRoomStatus(next, players), undefined, ws)
+      if (!spectate) {
+        this.broadcastGame({ t: 'players', count: this.playerCount(), roster: this.playerRoster(), watching: this.watcherCount() })
+      }
+      return attachment
     } finally {
       await this.armAlarm().catch(logAlarmError)
     }
@@ -146,6 +163,10 @@ export class PixelRoom extends BaseRoom<Env> {
     try {
       const command = parseClientMsg(JSON.stringify(message))
       if (!command || !this.game || this.game.status === 'closed') return
+      if (this.isSpectatePreview(ws) || user.spectate) {
+        this.sendGame(ws, { t: 'reject', reason: 'not_signed_in' })
+        return
+      }
       const userId = signedInId(user.userId)
       await this.transition(advance(this.game, Date.now(), this.playerCount(), Math.random))
       if (command.t !== 'place' && !userId) {
@@ -165,9 +186,10 @@ export class PixelRoom extends BaseRoom<Env> {
   }
 
   protected override async onDisconnect(ws: WebSocket): Promise<void> {
+    const spectate = this.isSpectatePreview(ws)
     try {
       try { ws.close(1000, 'Disconnected') } catch {}
-      if (!this.game || this.game.status === 'closed') return
+      if (!this.game || this.game.status === 'closed' || spectate) return
       await this.transition(this.withRoomStatus(advance(this.game, Date.now(), this.playerCount(ws), Math.random), this.playerCount(ws)))
       this.broadcastGame({ t: 'players', count: this.playerCount(ws), roster: this.playerRoster(ws), watching: this.watcherCount(ws) })
     } finally {
@@ -221,20 +243,29 @@ export class PixelRoom extends BaseRoom<Env> {
     return this.getWebSockets().filter(ws => ws !== exclude && ws.readyState === WebSocket.OPEN)
   }
 
+  private isSpectatePreview(ws: WebSocket): boolean {
+    return Boolean(this.getAttachment(ws)?.spectate)
+  }
+
+  private socketUserId(ws: WebSocket): string | null {
+    const user = this.getAttachment(ws)
+    if (user?.spectate) return null
+    return signedInId(user?.userId)
+  }
+
   private playerCount(exclude?: WebSocket): number {
-    return countPlayers(this.liveSockets(exclude).map(ws => ({ userId: signedInId(this.getAttachment(ws)?.userId) })))
+    return countPlayers(this.liveSockets(exclude).map(ws => ({ userId: this.socketUserId(ws) })))
   }
 
   private watcherCount(exclude?: WebSocket): number {
-    return this.liveSockets(exclude).filter(ws => signedInId(this.getAttachment(ws)?.userId) === null).length
+    return this.liveSockets(exclude).filter(ws => !this.isSpectatePreview(ws) && signedInId(this.getAttachment(ws)?.userId) === null).length
   }
 
   private playerRoster(exclude?: WebSocket): { userId: string; name: string }[] {
     const players = new Map<string, { userId: string; name: string }>()
     for (const ws of this.liveSockets(exclude)) {
-      const user = this.getAttachment(ws)
-      const userId = signedInId(user?.userId)
-      if (userId) players.set(userId, { userId, name: user?.userName || 'Painter' })
+      const userId = this.socketUserId(ws)
+      if (userId) players.set(userId, { userId, name: this.getAttachment(ws)?.userName || 'Painter' })
     }
     return [...players.values()]
   }
@@ -251,7 +282,7 @@ export class PixelRoom extends BaseRoom<Env> {
 
   private snapshot(ws: WebSocket): void {
     const state = this.game!
-    const userId = signedInId(this.getAttachment(ws)?.userId)
+    const userId = this.socketUserId(ws)
     const placedAt = userId === null ? undefined : state.lastPlacedAt[userId]
     const players = this.playerCount()
     this.sendGame(ws, {

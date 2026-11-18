@@ -105,9 +105,9 @@ export function ErrorScreen({ error, onReset }: ErrorScreenProps) {
   return (
     <div
       data-testid="ds-error-boundary"
-      className="flex h-full min-h-[60vh] flex-col items-center justify-center bg-background px-4 py-10 text-foreground"
+      className="flex h-full min-h-[60vh] flex-col items-center justify-center px-4 py-10 text-foreground"
     >
-      <div className="pp-panel w-full max-w-lg p-6 text-center">
+      <div className="pp-wood-panel w-full max-w-lg p-6 text-center">
         <div className="mb-4 flex justify-center">
           <span className="pp-chip inline-flex h-12 w-12 items-center justify-center text-destructive">
             <AlertTriangle className="h-6 w-6" aria-hidden />

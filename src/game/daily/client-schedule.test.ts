@@ -128,7 +128,7 @@ describe('client-schedule', () => {
       reason: 'judge_resting',
       state: { ...baseState, best: 620 },
     })
-    expect(resting.lastError).toBe('Judge is resting, keep drawing')
+    expect(resting.lastError).toBe("Haiku's napping — keep drawing")
     expect(resting.best).toBe(620)
     expect(resting.grading).toBe(false)
 

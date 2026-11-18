@@ -34,7 +34,7 @@ export function Palette({
   disabled = false,
   cooldownRemainingMs = 0,
 }: PaletteProps) {
-  const colorIndices = [16, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+  const colorIndices = [1, 16, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
   const isCoolingDown = cooldownRemainingMs > 0
 
   return (
@@ -58,14 +58,17 @@ export function Palette({
               title={COLOR_NAMES[colorIdx]}
               className={cn(
                 'relative h-6 w-6 cursor-pointer border-2 border-background transition-transform sm:h-7 sm:w-7',
+                isSelected && '-translate-y-1 outline-2 outline-offset-2 outline-[var(--sunset-1)]',
                 disabled && 'cursor-not-allowed opacity-60',
               )}
               style={{
                 backgroundColor: hex,
+                '--swatch': hex,
                 boxShadow: isSelected ? 'inset 0 0 0 3px var(--sunset-1)' : undefined,
                 zIndex: isSelected ? 10 : undefined,
-              }}
+              } as React.CSSProperties}
             >
+              <span aria-hidden="true" className="hidden" />
               {isSelected && <span className="sr-only">Selected</span>}
             </button>
           )
