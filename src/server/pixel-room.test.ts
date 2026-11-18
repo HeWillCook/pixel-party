@@ -743,9 +743,22 @@ describe('durable room boundaries', () => {
     await harness.room.disconnect(preview.connection)
     expect(messages(owner)).toEqual([])
 
-    const fetchSpy = vi.spyOn(BaseRoom.prototype, 'fetch').mockResolvedValueOnce(new Response('ok'))
+    const fetchSpy = vi.spyOn(BaseRoom.prototype, 'fetch').mockImplementationOnce(async () => {
+      const upgraded = {
+        send: vi.fn(),
+        close: vi.fn(),
+        serializeAttachment: vi.fn(),
+        deserializeAttachment: () => ({ id: 'signed-in-viewer', name: 'signed-in-viewer' }),
+      } as unknown as WebSocket
+      const attachment = await (harness.room as unknown as {
+        onConnect(ws: WebSocket, user: { userId: string; userName: string; userEmail: string | null }): Promise<Record<string, unknown>>
+      }).onConnect(upgraded, { userId: 'signed-in-viewer', userName: 'Viewer', userEmail: null })
+      expect(attachment).toMatchObject({ userId: 'signed-in-viewer', spectate: true })
+      return new Response('ok')
+    })
     await harness.room.fetch(new Request('https://room/ws', { headers: { Upgrade: 'websocket', 'X-Room-Spectate': 'true' } }))
     expect(fetchSpy).toHaveBeenCalledOnce()
+    expect(harness.saved().status).toBe('playing')
     harness.database.close()
   })
 
