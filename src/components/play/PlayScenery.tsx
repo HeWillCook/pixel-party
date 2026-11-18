@@ -5,9 +5,10 @@ export function PlayScenery() {
   const ref = useRef<HTMLCanvasElement>(null)
   useEffect(() => {
     const canvas = ref.current
-    if (!canvas) return
+    const container = canvas?.parentElement
+    if (!canvas || !container) return
     const draw = () => {
-      const bounds = canvas.getBoundingClientRect()
+      const bounds = container.getBoundingClientRect()
       const pixel = Math.max(1, Math.round(parseFloat(getComputedStyle(canvas).getPropertyValue('--px')) || 2))
       canvas.width = Math.ceil(bounds.width / pixel)
       canvas.height = Math.ceil(bounds.height / pixel)
@@ -48,7 +49,7 @@ export function PlayScenery() {
       for (let y = floor + 9; y < height; y += 14) fill(P.wood[1], 0, y, width, 1)
     }
     const observer = new ResizeObserver(draw)
-    observer.observe(canvas)
+    observer.observe(container)
     draw()
     return () => observer.disconnect()
   }, [])

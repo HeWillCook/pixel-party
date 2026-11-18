@@ -405,7 +405,7 @@ export default function DailyHomePage() {
                 width={32}
                 height={32}
                 availWidth={Math.max(32, boardBox.width - 56)}
-                availHeight={Math.min(564, Math.max(32, boardBox.height - 64))}
+                availHeight={Math.min(596, Math.max(32, boardBox.height - 50))}
                 cells={cells}
                 activeColor={activeColor}
                 tool={tool}

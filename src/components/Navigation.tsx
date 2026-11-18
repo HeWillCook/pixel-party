@@ -133,6 +133,8 @@ export default function Navigation() {
           <DropdownMenuContent align="end" className="w-56">
             <DropdownMenuLabel><div>{user.name || 'Signed in'}</div><div data-testid="nav-user-email" className="text-sm text-muted-foreground">{user.email}</div></DropdownMenuLabel>
             <DropdownMenuSeparator />
+            {visibleNav.map(item => <DropdownMenuItem key={item.label} render={<Link to={item.label === 'Gallery' ? `/u/${encodeURIComponent(user.id)}` : item.path} />}>{item.label}</DropdownMenuItem>)}
+            <DropdownMenuSeparator />
             <DropdownMenuItem render={<Link to={`/u/${encodeURIComponent(user.id)}`} />}>My gallery</DropdownMenuItem>
             <DropdownMenuItem render={<Link to="/settings" />}>Settings</DropdownMenuItem>
             <DropdownMenuItem onClick={() => signOut()}>Sign out</DropdownMenuItem>
