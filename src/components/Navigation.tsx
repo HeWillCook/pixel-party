@@ -149,8 +149,8 @@ export default function Navigation() {
   }
   return <>
     <nav data-testid="app-navigation" className="porch-nav">
-      <PixelScene draw={drawRoofStrip} className="porch-nav__roof" />
-      <CompactRoof />
+      {location.pathname !== '/home' && <PixelScene draw={drawRoofStrip} className="porch-nav__roof" />}
+      {location.pathname === '/home' && <CompactRoof />}
       <div className="porch-nav__row">
         <Link to="/home" aria-label="Pixel Party, home" className="porch-nav__logo"><SpriteImage sprite={logoSign} /></Link>
         <div className="porch-nav__links">{visibleNav.map(navLink)}</div>
