@@ -10,6 +10,7 @@ export interface PorchOptions {
   soundOn?: boolean
   signedIn?: boolean
   roofTop?: number
+  hideEasel?: boolean
 }
 
 export function drawPorchRoof(ctx: CanvasRenderingContext2D, roofTop: number): void {
@@ -166,6 +167,7 @@ export function drawPorch(ctx: CanvasRenderingContext2D, frame: number, opts: Po
   rect(note.x, note.y, 13, 18, P.wood[0]); rect(note.x + 1, note.y + 1, 11, 15, P.paper[3]); rect(note.x + 6, note.y, 2, 2, P.flame[1])
   for (let y = 4; y < 13; y += 3) rect(note.x + 3, note.y + y, 7, 1, P.paper[0])
 
+  if (!opts.hideEasel) {
   const easel = layout.easel
   const bob = opts.bob ? [0, 0, 1, 1, 0, 0, -1, -1][Math.floor(frame / 5) % 8] : 0
   const ex = easel.x, ey = easel.y + bob
@@ -182,6 +184,7 @@ export function drawPorch(ctx: CanvasRenderingContext2D, frame: number, opts: Po
   for (const offset of [13, 32, 51]) {
     rect(ex + offset, ey + 103, 7, 7, P.stone[0]); rect(ex + offset + 1, ey + 104, 5, 4, P.stone[2])
     rect(ex + offset + 2, ey + 110, 3, 5 + (Math.floor(frame / 3 + offset) % 3), P.flame[1]); rect(ex + offset + 3, ey + 110, 1, 4, P.flame[4])
+  }
   }
   const hatch = layout.hatch
   for (let row = 0; row < 9; row++) {

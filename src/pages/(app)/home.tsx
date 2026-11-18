@@ -25,6 +25,7 @@ import { ToolBar } from '../../components/game/ToolBar'
 import { PlayLayout } from '../../components/play/PlayLayout'
 import { HoverEasel } from '../../components/play/HoverEasel'
 import { ScoreCard } from '../../components/play/ScoreCard'
+import { PlayBackdrop, type PlayTransition } from '../../components/play/PlayBackdrop'
 import { Badge, Button } from '../../components/ui'
 import { MAX_COLOR } from '../../game/config'
 import { canAskDaily, canPaintDaily } from '../../game/daily/client-schedule'
@@ -122,6 +123,8 @@ export default function DailyHomePage() {
   const [history, setHistory] = useState<History>(() => emptyHistory())
   const [strokeActive, setStrokeActive] = useState(false)
   const [starting, setStarting] = useState(false)
+  const [showPorch, setShowPorch] = useState(false)
+  const [playTransition, setPlayTransition] = useState<PlayTransition>('active')
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [showAccount, setShowAccount] = useState(false)
   const [resultDay, setResultDay] = useState('')
@@ -306,6 +309,8 @@ export default function DailyHomePage() {
   }, [bestScoreDoc, bestDrawingDoc, state.latest, state.best, endedBestScore])
 
   const handleStart = async () => {
+    setPlayTransition('entering')
+    if (showPorch && state.status === 'playing') { setShowPorch(false); return }
     setStarting(true)
     try {
       await start()
@@ -314,11 +319,16 @@ export default function DailyHomePage() {
     }
   }
 
+  const finishPlayTransition = useCallback(() => {
+    if (playTransition === 'leaving') setShowPorch(true)
+    setPlayTransition('active')
+  }, [playTransition])
+
   if (!isLoaded || (isSignedIn && !state.loaded)) {
     return <div data-testid="daily-page" className="porch-home"><NeutralPorchLoading /></div>
   }
 
-  if (!isSignedIn || state.status === 'not_started' || (state.status === 'ended' && resultDay !== state.day)) {
+  if (!isSignedIn || state.status === 'not_started' || (state.status === 'playing' && showPorch) || (state.status === 'ended' && resultDay !== state.day)) {
     const scores = todayScores.map(record => record.data)
     const topThree = rankScores(scores).slice(0, 5).map(({ userId: scoreUserId }) => {
       const score = scores.find(item => item.userId === scoreUserId)!
@@ -330,7 +340,7 @@ export default function DailyHomePage() {
       <section className="porch-home__scene" data-testid={signedOut ? 'daily-signed-out' : ended ? 'daily-ended' : 'daily-not-started'}>
         <PorchScene easelState={signedOut ? 'signin' : ended ? 'finished' : 'cover'} easelLabel={signedOut ? 'Sign in to paint' : ended ? 'View result' : 'Start Daily Challenge'}
           easelTestId={signedOut ? 'daily-sign-in-button' : ended ? undefined : 'daily-start-button'} easelDisabled={starting}
-          easelText={signedOut ? <span className="porch-easel-action">Sign in to paint</span> : ended ? <span className="porch-easel-action">View your painting</span> : <><strong>Today’s prompt</strong><span>10 minutes · your best grade counts</span><span className="porch-easel-action">Start painting</span></>}
+          easelText={signedOut ? <span className="porch-easel-action">Sign in to paint</span> : ended ? <span className="porch-easel-action">View your painting</span> : <><strong>Today’s prompt</strong><span>10 minutes · your best grade counts</span><span className="porch-easel-action">{showPorch ? 'Resume painting' : 'Start painting'}</span></>}
           signedIn={!!isSignedIn} galleryHref={`/u/${encodeURIComponent(userId)}`} topThree={topThree} muted={muted}
           onEasel={() => { if (signedOut) setShowAuthModal(true); else if (ended) setResultDay(state.day); else void handleStart() }}
           onAccount={() => { if (signedOut) setShowAuthModal(true); else setShowAccount(true) }} onToggleMute={toggleMute}>
@@ -359,6 +369,8 @@ export default function DailyHomePage() {
       {/* Signed in: Playing */}
       {isSignedIn && state.loaded && state.status === 'playing' && (
         <div data-testid="daily-playing" className="daily-play">
+          <PlayBackdrop phase={playTransition} onTransitionEnd={finishPlayTransition} />
+          <div className={playTransition === 'active' ? 'play-controls' : 'play-controls play-controls--transition'}>
           <PlayLayout top={<div className="pp-panel flex flex-wrap items-center justify-between gap-3 bg-card px-4 py-3">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-base uppercase tracking-wider text-muted-foreground">
@@ -374,7 +386,7 @@ export default function DailyHomePage() {
 
             <div className="flex flex-wrap items-center gap-2.5">
               <DailyTimer startedAt={state.startedAt} endsAt={state.endsAt} clockOffsetMs={state.clockOffsetMs} />
-              <ExitDailyButton />
+              <ExitDailyButton onExit={() => setPlayTransition('leaving')} />
             </div>
           </div>} left={
               <ToolBar
@@ -453,6 +465,7 @@ export default function DailyHomePage() {
                 </p>
               </div>
             </div>} bottom={<div ref={paletteRef} className="pp-panel p-3"><Palette activeColor={activeColor} onSelectColor={setActiveColor} disabled={!canDraw} /></div>} />
+          </div>
         </div>
       )}
 

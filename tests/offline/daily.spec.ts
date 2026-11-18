@@ -331,7 +331,7 @@ test('a delayed state refresh cannot overwrite a later grade', async ({ page }) 
   await expect(page.getByTestId('daily-best-score')).toContainText('590')
 })
 
-for (const action of ['exit confirm leaves to party', 'grade now and submit are separate'] as const) test(action, async ({ page }) => {
+for (const action of ['exit confirm returns to porch', 'grade now and submit are separate'] as const) test(action, async ({ page }) => {
   await offlineClient(page, true)
   const now = Date.now()
   const windows = [120_000, 240_000, 360_000, 480_000].map((offset, index) => ({ index, dueAt: now + offset, status: 'pending', score: null, late: false }))
@@ -346,7 +346,7 @@ for (const action of ['exit confirm leaves to party', 'grade now and submit are 
   })
   await page.goto(`${origin}/home`)
   await expect(page.getByTestId('daily-playing')).toBeVisible()
-  if (action === 'exit confirm leaves to party') {
+  if (action === 'exit confirm returns to porch') {
     await page.getByTestId('daily-exit').click()
     const dialog = page.getByRole('dialog')
     await expect(dialog.getByText('Leave the easel?')).toBeVisible()
@@ -354,7 +354,8 @@ for (const action of ['exit confirm leaves to party', 'grade now and submit are 
     await expect(page.getByTestId('daily-playing')).toBeVisible()
     await page.getByTestId('daily-exit').click()
     await page.getByRole('dialog').getByRole('button', { name: 'Exit', exact: true }).click()
-    await expect(page).toHaveURL(`${origin}/party`)
+    await expect(page).toHaveURL(`${origin}/home`)
+    await expect(page.getByRole('button', { name: 'Start Daily Challenge' })).toBeVisible()
     expect(ends).toBe(0)
   } else {
     await expect(page.getByTestId('daily-ask-button')).toHaveText(/Grade now \(3 left\)/)
