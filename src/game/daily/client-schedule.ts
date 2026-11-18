@@ -116,7 +116,7 @@ function rejectErrorMessage(reason: DailyRejectReason): string | null {
     case 'too_soon':
       return null
     case 'judge_resting':
-      return 'Judge is resting, keep drawing'
+      return "Haiku's napping — keep drawing"
     case 'busy':
       return 'Grading already in progress'
     case 'no_asks_left':

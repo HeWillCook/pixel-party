@@ -58,13 +58,13 @@ export function GuessFeed({ guesses, guessLog, aiResting, children }: GuessFeedP
           data-testid="ai-resting-banner"
           className="text-base text-[var(--sunset-1)]"
         >
-          The AI is resting — back tomorrow
+          Haiku&apos;s napping — back tomorrow
         </p>
       ) : guessLog.length === 0 ? (
         <div className="flex items-center gap-2 py-1 text-base text-muted-foreground">
           <HelpCircle className="h-4 w-4 shrink-0 text-[var(--sunset-3)]" aria-hidden />
           <span>
-            Place some pixels! Claude Haiku checks the canvas every {JUDGE.tickMs / 1000}s or when you press Ask.
+            Place some pixels! Haiku the cat checks the canvas every {JUDGE.tickMs / 1000}s or when you press Ask.
           </span>
         </div>
       ) : (

@@ -1,4 +1,4 @@
-import { Bot, Moon, Sparkles } from 'lucide-react'
+import { Cat, Moon, Sparkles } from 'lucide-react'
 import { Button } from '../ui'
 
 export interface AskAiButtonProps {
@@ -22,15 +22,15 @@ export function AskAiButton({
   const waitSec = Math.ceil(waitMs / 1000)
   const isDisabled = isSpectator || aiResting || !roundPlaying || waitMs > 0
 
-  let label = 'Ask the AI'
+  let label = 'Ask Haiku'
   if (aiResting) {
-    label = 'The AI is resting — back tomorrow'
+    label = "Haiku's napping — back tomorrow"
   } else if (isSpectator) {
-    label = 'Sign in to Ask the AI'
+    label = 'Sign in to ask Haiku'
   } else if (!roundPlaying) {
     label = 'Waiting for active round…'
   } else if (waitMs > 0) {
-    label = `Ask the AI (${waitSec}s)`
+    label = `Ask Haiku (${waitSec}s)`
   }
 
   return (
@@ -44,7 +44,7 @@ export function AskAiButton({
       {aiResting ? (
         <Moon className="h-4 w-4 shrink-0" aria-hidden />
       ) : (
-        <Bot className="h-4 w-4 shrink-0" aria-hidden />
+        <Cat className="h-4 w-4 shrink-0" aria-hidden />
       )}
       <span>{label}</span>
       {!isDisabled && <Sparkles className="h-3.5 w-3.5 shrink-0 text-[var(--sunset-1)]" aria-hidden />}

@@ -14,7 +14,7 @@ export default function Landing() {
         signedIn={false} topThree={[]} muted={muted} onEasel={() => navigate('/home')} onAccount={() => navigate('/home')} onToggleMute={toggle} />
       <section className="porch-landing-copy pp-panel">
         <h1>Draw together at Pixel Party</h1>
-        <p>Paint a daily prompt in ten minutes, or join friends on a shared pixel canvas. An AI guesses your art and scores your best drawing.</p>
+        <p>Paint a daily prompt in ten minutes, or join friends on a shared pixel canvas. Haiku the cat guesses your art and scores your best drawing.</p>
       </section>
     </main>
   </>

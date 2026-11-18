@@ -94,7 +94,7 @@ function rejectMessage(reject: RejectMsg | null, now: number): string | null {
   if (!reject) return null
   switch (reject.reason) {
     case 'not_signed_in':
-      return 'Sign in to place pixels or ask the AI.'
+      return 'Sign in to place pixels or ask Haiku.'
     case 'rate_limited':
       return 'Painting too quickly — try again in a moment.'
     case 'cooldown': {
@@ -103,7 +103,7 @@ function rejectMessage(reject: RejectMsg | null, now: number): string | null {
     }
     case 'ask_too_soon': {
       const wait = reject.retryAt ? Math.max(1, Math.ceil((reject.retryAt - now) / 1000)) : 5
-      return `Hold on! You can ask the AI again in ${wait}s.`
+      return `Hold on! You can ask Haiku again in ${wait}s.`
     }
     case 'canvas_unchanged':
       return 'Draw something new first!'
@@ -770,7 +770,7 @@ export default function RoomPage() {
           <div className="flex items-center gap-2 text-base">
             <LogIn className="h-4 w-4 shrink-0 text-[var(--sunset-1)]" aria-hidden />
             <span className="text-foreground">
-              You are watching in <span className="text-[var(--sunset-1)]">Spectator Mode</span>. Sign in to place pixels and ask the AI!
+              You are watching in <span className="text-[var(--sunset-1)]">Spectator Mode</span>. Sign in to place pixels and ask Haiku!
             </span>
           </div>
           <Button
@@ -918,7 +918,7 @@ export default function RoomPage() {
                           id="overlay-heading"
                           className="pp-chip px-2.5 py-0.5 text-sm uppercase tracking-widest"
                         >
-                          AI Guessed It!
+                          Haiku Guessed It!
                         </span>
                       </>
                     ) : (
