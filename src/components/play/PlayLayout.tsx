@@ -23,7 +23,7 @@ export function PlayLayout({ prompt, timeline, exit, canvas, score, actions, bot
     <div className="play-layout__left">{prompt}{wide && timeline}{exit}</div>
     <div className="play-layout__canvas">{canvas}</div>
     {!wide && <div className="play-layout__mobile-actions">{actions}</div>}
-    <details className="play-layout__right" open={wide || scoreOpen} onToggle={event => { if (!wide) setScoreOpen(event.currentTarget.open) }}><summary>Scores &amp; grading</summary>{score}{!wide && timeline}{wide && actions}</details>
+    {wide ? <div className="play-layout__right">{score}{actions}</div> : <details className="play-layout__right" open={scoreOpen} onToggle={event => setScoreOpen(event.currentTarget.open)}><summary>Scores &amp; grading</summary>{score}{timeline}</details>}
     <div className="play-layout__bottom">{bottom}</div>
   </div>
 }
