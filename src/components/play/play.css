@@ -3,7 +3,6 @@
 .porch-shell:has(.daily-play) .porch-nav__links { display: none; }
 .porch-shell:has(.daily-play) .porch-nav__roof { display: none; }
 .porch-shell:has(.daily-play) .porch-nav__compact-roof { display: block; position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
-.porch-nav__compact-roof canvas { display: block; image-rendering: pixelated; }
 .play-backdrop { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
 .play-backdrop .pixel-scene { width: 100%; height: 100%; }
 .play-scenery-layer { position: absolute; inset: 0; overflow: hidden; opacity: 0; transition: opacity 150ms linear; }
