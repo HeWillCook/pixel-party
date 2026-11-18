@@ -8,9 +8,11 @@ export function PlayScenery() {
     if (!canvas) return
     const draw = () => {
       const bounds = canvas.getBoundingClientRect()
-      const pixel = 2
+      const pixel = Math.max(1, Math.round(parseFloat(getComputedStyle(canvas).getPropertyValue('--px')) || 2))
       canvas.width = Math.ceil(bounds.width / pixel)
       canvas.height = Math.ceil(bounds.height / pixel)
+      canvas.style.width = `${canvas.width * pixel}px`
+      canvas.style.height = `${canvas.height * pixel}px`
       const ctx = canvas.getContext('2d')
       if (!ctx) return
       ctx.imageSmoothingEnabled = false

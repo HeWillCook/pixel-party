@@ -1,11 +1,12 @@
 import { useState } from 'react'
+import { DoorOpen } from 'lucide-react'
 import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from '../ui'
 
 export function ExitDailyButton({ onExit }: { onExit: () => void }) {
   const [open, setOpen] = useState(false)
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <Button data-testid="daily-exit" size="sm" variant="secondary" onClick={() => setOpen(true)}>Exit</Button>
+      <Button data-testid="daily-exit" size="sm" variant="secondary" onClick={() => setOpen(true)}><DoorOpen aria-hidden="true" /> Exit to porch</Button>
       <DialogContent>
         <DialogTitle>Leave the easel?</DialogTitle>
         <DialogDescription>Your 10 minutes keep running. Auto-grades still happen while this site is open, and you can come back any time before time runs out.</DialogDescription>

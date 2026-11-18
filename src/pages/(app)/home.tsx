@@ -426,10 +426,10 @@ export default function DailyHomePage() {
                 grading={state.grading}
                 lastError={state.lastError}
               />
-              <AutoGradeTimeline windows={state.windows} now={now + state.clockOffsetMs} />
+              <AutoGradeTimeline windows={state.windows} now={now + state.clockOffsetMs} startedAt={state.startedAt} />
 
               <div className="pp-panel flex flex-col gap-3 bg-card p-4">
-                <div className="flex flex-wrap items-center gap-2.5">
+                <div className="play-actions">
                   <Button
                     type="button"
                     data-testid="daily-ask-button"

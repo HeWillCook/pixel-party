@@ -63,10 +63,12 @@ export function Palette({
               )}
               style={{
                 backgroundColor: hex,
+                '--swatch': hex,
                 boxShadow: isSelected ? 'inset 0 0 0 3px var(--sunset-1)' : undefined,
                 zIndex: isSelected ? 10 : undefined,
-              }}
+              } as React.CSSProperties}
             >
+              <span aria-hidden="true" className="hidden" />
               {isSelected && <span className="sr-only">Selected</span>}
             </button>
           )

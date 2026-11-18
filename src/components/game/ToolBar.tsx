@@ -67,7 +67,7 @@ const TOOL_META: Record<Tool, { label: string; icon: ReactNode }> = {
     ),
   },
   pick: {
-    label: 'Pick colour',
+    label: 'Pick',
     icon: (
       <PixelIcon>
         <rect x="10" y="2" width="4" height="4" />
@@ -125,6 +125,7 @@ export function ToolBar({
             key={tool}
             type="button"
             data-testid={`tool-${tool}`}
+            aria-label={tool === 'pick' ? 'Pick colour' : undefined}
             aria-pressed={isSelected}
             disabled={disabled}
             onClick={() => onSelect(tool)}
