@@ -306,16 +306,16 @@ html:has(.studio-world) .porch-nav__username {
 
 .studio-hat-stage {
   position: absolute;
-  left: calc(var(--px) * 3);
+  left: calc(var(--px) * 1);
   top: calc(var(--px) * 1);
-  width: calc(var(--px) * 26);
+  width: calc(var(--px) * 28);
   height: calc(var(--px) * 24);
   pointer-events: none;
 }
 
 .studio-hat-ticket {
   position: absolute;
-  left: calc(var(--px) * 9.5);
+  left: calc(var(--px) * 10.5);
   top: 0;
   width: calc(var(--px) * 7);
   height: calc(var(--px) * 4);
@@ -339,9 +339,9 @@ html:has(.studio-world) .porch-nav__username {
   animation: studio-spark-burst 650ms steps(4) infinite;
 }
 
-.studio-hat-spark--1 { left: calc(var(--px) * 5); top: calc(var(--px) * 10); }
-.studio-hat-spark--2 { left: calc(var(--px) * 12); top: calc(var(--px) * 7); animation-delay: 110ms; }
-.studio-hat-spark--3 { left: calc(var(--px) * 18); top: calc(var(--px) * 11); animation-delay: 220ms; }
+.studio-hat-spark--1 { left: calc(var(--px) * 6); top: calc(var(--px) * 15); }
+.studio-hat-spark--2 { left: calc(var(--px) * 13); top: calc(var(--px) * 12); animation-delay: 110ms; }
+.studio-hat-spark--3 { left: calc(var(--px) * 20); top: calc(var(--px) * 16); animation-delay: 220ms; }
 
 .studio-hat-smoke {
   position: absolute;
@@ -357,15 +357,15 @@ html:has(.studio-world) .porch-nav__username {
 }
 
 .studio-smoke-puff--1 {
-  left: calc(var(--px) * 6);
-  bottom: calc(var(--px) * 2);
+  left: calc(var(--px) * 7);
+  bottom: calc(var(--px) * 5);
   width: calc(var(--px) * 6);
   height: calc(var(--px) * 5);
 }
 
 .studio-smoke-puff--2 {
-  left: calc(var(--px) * 12);
-  bottom: calc(var(--px) * 4);
+  left: calc(var(--px) * 14);
+  bottom: calc(var(--px) * 7);
   width: calc(var(--px) * 5);
   height: calc(var(--px) * 4);
   animation-delay: 120ms;
@@ -373,8 +373,8 @@ html:has(.studio-world) .porch-nav__username {
 
 @keyframes studio-ticket-drop {
   0% { transform: translateY(0) scale(1); opacity: 1; }
-  82% { transform: translateY(calc(var(--px) * 19)) scale(0.82); opacity: 1; }
-  100% { transform: translateY(calc(var(--px) * 22)) scale(0.45); opacity: 0; }
+  82% { transform: translateY(calc(var(--px) * 17)) scale(0.82); opacity: 1; }
+  100% { transform: translateY(calc(var(--px) * 20)) scale(0.45); opacity: 0; }
 }
 
 @keyframes studio-spark-burst {

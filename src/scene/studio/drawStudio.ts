@@ -266,6 +266,6 @@ export function drawStudio(ctx: CanvasRenderingContext2D, frame: number): void {
 
     // Right-side brush jar & prominent Magician's Top Hat standing cleanly on left tabletop
     drawSprite(ctx, studioSprites.brushJar, bench.x + bench.w - 13, topY - 10)
-    drawSprite(ctx, studioSprites.topHat, bench.x + 3, topY - 18)
+    drawSprite(ctx, studioSprites.topHat, bench.x + 1, topY - 27)
   }
 }
