@@ -12,6 +12,17 @@ async function playFixture(page: Page, initiallyPlaying = false) {
   await page.route('**/api/daily/**', route => route.fulfill({ json: new URL(route.request().url()).pathname.endsWith('/me') && !initiallyPlaying ? { ...playing, status: 'not_started' } : playing }))
 }
 
+test('palette starts with black and white and raises the selected swatch', async ({ page }) => {
+  await playFixture(page, true)
+  await page.goto(`${origin}/home`)
+  const swatches = page.getByTestId('palette').getByRole('button')
+  await expect(swatches.nth(0)).toHaveAttribute('aria-label', 'Select Black')
+  await expect(swatches.nth(1)).toHaveAttribute('aria-label', 'Select White')
+  await swatches.nth(0).click()
+  await expect(swatches.nth(0)).toHaveAttribute('aria-pressed', 'true')
+  await expect(swatches.nth(0)).not.toHaveCSS('translate', 'none')
+})
+
 for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720 }]) {
   test(`play easel fits ${viewport.width}`, async ({ page }) => {
     await page.setViewportSize(viewport)
