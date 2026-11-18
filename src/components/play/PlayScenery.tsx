@@ -6,7 +6,7 @@ import { drawSea, drawSun, drawSunsetSky, mulberry32 } from '../../scene/procedu
 import { drawSprite } from '../../scene/sprite'
 import { useSceneClock } from '../../scene/useSceneClock'
 
-export function PlayScenery() {
+export function PlayScenery({ showRoof = true }: { showRoof?: boolean } = {}) {
   const ref = useRef<HTMLCanvasElement>(null)
   const frame = useSceneClock(6)
   const [size, setSize] = useState({ width: 0, height: 0, pixel: 3 })
@@ -191,8 +191,8 @@ export function PlayScenery() {
     }
 
     // Roof fascia beam across the top
-    drawPorchRoof(ctx, 0)
-  }, [size, frame])
+    if (showRoof) drawPorchRoof(ctx, 0)
+  }, [size, frame, showRoof])
 
   return <canvas className="play-scenery" ref={ref} aria-hidden="true" />
 }

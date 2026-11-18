@@ -11,7 +11,6 @@ import { useDailySounds } from '../../components/daily/useDailySounds'
 import { NeutralPorchLoading, PorchScene } from '../../components/porch/PorchScene'
 import { rankScores } from '../../game/daily/rank'
 import { DailyTimer } from '../../components/daily/DailyTimer'
-import { Leaderboard } from '../../components/daily/Leaderboard'
 import { GradePanel } from '../../components/daily/GradePanel'
 import { AutoGradeTimeline } from '../../components/daily/AutoGradeTimeline'
 import { ExitDailyButton } from '../../components/daily/ExitDailyButton'
@@ -384,7 +383,7 @@ export default function DailyHomePage() {
   }
 
   if (!isSignedIn || state.status === 'not_started' || (state.status === 'playing' && showPorch) || (state.status === 'ended' && resultDay !== state.day)) {
-    const scores = todayScores.map(record => record.data)
+    const scores = todayScores.map(record => record.data).filter(row => row.score > 0)
     const topThree = rankScores(scores).slice(0, 5).map(({ userId: scoreUserId }) => {
       const score = scores.find(item => item.userId === scoreUserId)!
       return { name: score.displayName || 'Player', score: score.score }
@@ -403,7 +402,6 @@ export default function DailyHomePage() {
           {state.lastError && <p className="porch-error pp-panel" role="status">{state.lastError}</p>}
         </PorchScene>
       </section>
-      {signedOut && <Leaderboard day={state.day} ended={false} />}
       <Modal open={showAccount} onClose={() => setShowAccount(false)} aria-label="Account menu"><Link to={`/u/${encodeURIComponent(userId)}`}>My gallery</Link><Link to="/settings">Settings</Link><button type="button" onClick={() => signOut()}>Sign out</button><button type="button" onClick={() => setShowAccount(false)}>Close</button></Modal>
       {showAuthModal && <AuthOverlay onClose={() => setShowAuthModal(false)} />}
     </div>
@@ -809,8 +807,6 @@ export default function DailyHomePage() {
               />
             </div>
           </div>
-
-          <Leaderboard day={state.day} ended={state.status === 'ended'} />
         </div>
       )}
 
