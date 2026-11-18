@@ -1,22 +1,104 @@
+import { useEffect, useRef, useState } from 'react'
 import { studioSprites } from '../../scene/studio/sprites'
 import { GuessFeed, type GuessFeedProps } from '../game/GuessFeed'
+import { Haiku, type HaikuState } from '../haiku/Haiku'
 import { StudioSprite } from './StudioSprite'
 
-export function CriticBubble(props: GuessFeedProps) {
+export interface CriticBubbleProps extends GuessFeedProps {
+  roundState?: 'lobby' | 'playing' | 'intermission' | 'paused'
+  outcome?: 'won' | 'timeout' | 'teamWin'
+  asking?: boolean
+  paused?: boolean
+}
+
+export function CriticBubble({
+  roundState,
+  outcome,
+  asking = false,
+  paused = false,
+  ...guessProps
+}: CriticBubbleProps) {
+  const { guessLog, aiResting, roundId } = guessProps
+  const latestEntry = guessLog[0]
+  const latestGuessId = latestEntry?.id ?? null
+  const [guessPoseActive, setGuessPoseActive] = useState(false)
+  const lastSeenGuessIdRef = useRef<number | null>(null)
+  const guessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    lastSeenGuessIdRef.current = null
+    setGuessPoseActive(false)
+    if (guessTimerRef.current) {
+      clearTimeout(guessTimerRef.current)
+      guessTimerRef.current = null
+    }
+  }, [roundId])
+
+  useEffect(() => {
+    if (latestGuessId === null || latestGuessId === lastSeenGuessIdRef.current) return
+    lastSeenGuessIdRef.current = latestGuessId
+    setGuessPoseActive(true)
+    if (guessTimerRef.current) clearTimeout(guessTimerRef.current)
+    guessTimerRef.current = setTimeout(() => {
+      setGuessPoseActive(false)
+      guessTimerRef.current = null
+    }, 4000)
+  }, [latestGuessId])
+
+  useEffect(() => {
+    return () => {
+      if (guessTimerRef.current) clearTimeout(guessTimerRef.current)
+    }
+  }, [])
+
+  const latestWord = latestEntry?.guesses[0]
+  let haikuState: HaikuState = 'idle'
+  let haikuBubble: string | false | undefined = false
+
+  if (aiResting) {
+    haikuState = 'resting'
+    haikuBubble = false
+  } else if (roundState === 'intermission' && outcome === 'won') {
+    haikuState = 'correct'
+    haikuBubble = latestWord ? `${latestWord}!` : 'Got it!'
+  } else if (asking) {
+    haikuState = 'thinking'
+    haikuBubble = '…'
+  } else if (guessPoseActive && latestWord) {
+    haikuState = 'guess'
+    haikuBubble = `"${latestWord}"`
+  } else {
+    haikuState = 'idle'
+    haikuBubble = false
+  }
+
   return (
     <div data-testid="critic-bubble" className="critic-bubble">
-      <div className="critic-bubble__critic">
-        <div className="critic-bubble__sprite-frame">
-          <StudioSprite sprite={studioSprites.criticCat} scale={2} />
+      <div className="critic-bubble__stage">
+        <div className="critic-bubble__perch">
+          <div className="critic-bubble__stool" aria-hidden="true">
+            <StudioSprite sprite={studioSprites.criticStool} scale={2} />
+          </div>
+          <Haiku
+            state={haikuState}
+            bubble={haikuBubble}
+            scale={2}
+            beret
+            paused={paused}
+            className="critic-bubble__haiku"
+          />
+          {!haikuBubble && (
+            <div className="critic-bubble__caption">
+              <span className="critic-bubble__role">Haiku</span>
+              <span className="critic-bubble__hint">
+                {aiResting ? 'Napping till tomorrow' : 'Watches the canvas'}
+              </span>
+            </div>
+          )}
         </div>
-        <div className="critic-bubble__caption">
-          <span className="critic-bubble__role">Studio Critic</span>
-          <span className="critic-bubble__hint">Watches the canvas live</span>
-        </div>
-        <span className="critic-bubble__tail" aria-hidden="true" />
       </div>
       <div className="critic-bubble__speech">
-        <GuessFeed {...props} />
+        <GuessFeed {...guessProps} />
       </div>
     </div>
   )

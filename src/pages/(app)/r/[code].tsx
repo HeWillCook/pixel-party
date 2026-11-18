@@ -36,6 +36,7 @@ import { CriticBubble } from '../../../components/play/CriticBubble'
 import { HoverEasel } from '../../../components/play/HoverEasel'
 import { PartyScoreNote } from '../../../components/play/PartyScoreNote'
 import { PlayLayout } from '../../../components/play/PlayLayout'
+import '../../../components/play/room-play.css'
 import { StudioBackdrop } from '../../../components/play/StudioBackdrop'
 import { StudioSprite } from '../../../components/play/StudioSprite'
 import { NeutralPorchLoading } from '../../../components/porch/PorchScene'
@@ -94,7 +95,7 @@ function rejectMessage(reject: RejectMsg | null, now: number): string | null {
   if (!reject) return null
   switch (reject.reason) {
     case 'not_signed_in':
-      return 'Sign in to place pixels or ask the AI.'
+      return 'Sign in to place pixels or ask Haiku.'
     case 'rate_limited':
       return 'Painting too quickly — try again in a moment.'
     case 'cooldown': {
@@ -103,7 +104,7 @@ function rejectMessage(reject: RejectMsg | null, now: number): string | null {
     }
     case 'ask_too_soon': {
       const wait = reject.retryAt ? Math.max(1, Math.ceil((reject.retryAt - now) / 1000)) : 5
-      return `Hold on! You can ask the AI again in ${wait}s.`
+      return `Hold on! You can ask Haiku again in ${wait}s.`
     }
     case 'canvas_unchanged':
       return 'Draw something new first!'
@@ -186,6 +187,9 @@ export default function RoomPage() {
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [dismissedOverlayRoundId, setDismissedOverlayRoundId] = useState<string | null>(null)
+  const [asking, setAsking] = useState(false)
+  const askingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastGuessCountRef = useRef<number>(state.guessLog.length)
   const lastPresenceSentRef = useRef<number>(0)
   const trailingCursorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const overlayDialogRef = useRef<HTMLDivElement | null>(null)
@@ -213,8 +217,45 @@ export default function RoomPage() {
       if (trailingCursorTimerRef.current) {
         clearTimeout(trailingCursorTimerRef.current)
       }
+      if (askingTimerRef.current) {
+        clearTimeout(askingTimerRef.current)
+      }
     }
   }, [])
+
+  useEffect(() => {
+    if (state.guessLog.length !== lastGuessCountRef.current) {
+      lastGuessCountRef.current = state.guessLog.length
+      if (asking) {
+        setAsking(false)
+        if (askingTimerRef.current) {
+          clearTimeout(askingTimerRef.current)
+          askingTimerRef.current = null
+        }
+      }
+    }
+  }, [asking, state.guessLog.length])
+
+  useEffect(() => {
+    if (!asking) return
+    if (state.aiResting || state.round?.state !== 'playing' || state.lastReject) {
+      setAsking(false)
+      if (askingTimerRef.current) {
+        clearTimeout(askingTimerRef.current)
+        askingTimerRef.current = null
+      }
+    }
+  }, [asking, state.aiResting, state.lastReject, state.round?.state])
+
+  const handleAsk = useCallback(() => {
+    setAsking(true)
+    if (askingTimerRef.current) clearTimeout(askingTimerRef.current)
+    askingTimerRef.current = setTimeout(() => {
+      setAsking(false)
+      askingTimerRef.current = null
+    }, 5000)
+    ask()
+  }, [ask])
 
   const isSpectator = state.snapshotLoaded ? !state.you.userId : !isSignedIn
   const roundPlaying = state.round?.state === 'playing'
@@ -770,7 +811,7 @@ export default function RoomPage() {
           <div className="flex items-center gap-2 text-base">
             <LogIn className="h-4 w-4 shrink-0 text-[var(--sunset-1)]" aria-hidden />
             <span className="text-foreground">
-              You are watching in <span className="text-[var(--sunset-1)]">Spectator Mode</span>. Sign in to place pixels and ask the AI!
+              You are watching in <span className="text-[var(--sunset-1)]">Spectator Mode</span>. Sign in to place pixels and ask Haiku!
             </span>
           </div>
           <Button
@@ -862,7 +903,7 @@ export default function RoomPage() {
     <Link
       to="/party"
       data-testid="room-exit"
-      className="pp-chip room-exit room-exit--full hover:bg-secondary"
+      className="room-exit room-exit--full"
     >
       <ArrowLeft className="h-4 w-4 shrink-0" aria-hidden />
       <span>Back downstairs to the studio</span>
@@ -918,7 +959,7 @@ export default function RoomPage() {
                           id="overlay-heading"
                           className="pp-chip px-2.5 py-0.5 text-sm uppercase tracking-widest"
                         >
-                          AI Guessed It!
+                          Haiku Guessed It!
                         </span>
                       </>
                     ) : (
@@ -1037,19 +1078,22 @@ export default function RoomPage() {
   )
 
   const scoreSlot = (
-    <div className="flex min-w-0 flex-col gap-2">
+    <div className="flex min-w-0 flex-col">
       <CriticBubble
         guesses={state.guesses}
         guessLog={state.guessLog}
         aiResting={state.aiResting}
         roundId={state.round?.id}
+        roundState={state.round?.state}
+        outcome={outcome}
+        asking={asking}
       />
       <PartyScoreNote />
     </div>
   )
 
   const actionsSlot = (
-    <div className="pp-panel flex flex-col gap-2 bg-card p-2.5">
+    <div className="room-bell-shelf">
       <div className="play-actions">
         <AskAiButton
           askAvailableAt={state.round?.askAvailableAt ?? 0}
@@ -1057,7 +1101,7 @@ export default function RoomPage() {
           isSpectator={isSpectator}
           aiResting={state.aiResting}
           roundPlaying={Boolean(roundPlaying)}
-          onAsk={ask}
+          onAsk={handleAsk}
         />
       </div>
     </div>
@@ -1109,7 +1153,7 @@ export default function RoomPage() {
           score={scoreSlot}
           actions={actionsSlot}
           bottom={bottomSlot}
-          rightSummary="Critic &amp; painters"
+          rightSummary="Haiku &amp; painters"
         />
       </div>
 

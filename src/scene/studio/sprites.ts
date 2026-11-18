@@ -114,6 +114,18 @@ export const studioSprites = {
     '..dd......dd..',
     '.dddddddddddd.',
   ], colours),
+  criticStool: defineSprite([
+    '.dddddddddddddddddddd.',
+    'ddhhhhhhhhhhhhhhhhhhdd',
+    'ddlllllllllllllllllldd',
+    '.dddddddddddddddddddd.',
+    '...dl...ss..ss...dl...',
+    '...dlddddddddddddld...',
+    '...dlhllllllllllhdl...',
+    '...dddddddddddddddd...',
+    '...dl............dl...',
+    '..dddd..........dddd..',
+  ], colours),
   lobbyEasel: defineSprite([
     '...........dddd...........',
     '..........ddhhdd..........',
