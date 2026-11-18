@@ -60,6 +60,42 @@ const logoSign = (() => {
   for (let offset = 0; offset < 6; offset++) put(3 + offset, 31 - Math.floor(offset / 2), offset < 2 ? 'k' : 'h')
   return defineSprite(pixels.map(row => row.join('')), logoPalette)
 })()
+const compactLogoSign = (() => {
+  const width = 43, height = 20
+  const pixels = Array.from({ length: height }, () => Array<string>(width).fill('.'))
+  const put = (x: number, y: number, color: string) => { if (x >= 0 && x < width && y >= 0 && y < height) pixels[y][x] = color }
+  for (let y = 0; y < 3; y++) for (const x of [6, 7, 35, 36]) put(x, y, y % 2 ? 'h' : 'a')
+  for (let y = 2; y < height; y++) for (let x = 1; x < width - 1; x++) {
+    const inset = y < 4 ? 4 - y : y > 17 ? y - 17 : 0
+    if (x < inset + 1 || x >= width - inset - 1) continue
+    put(x, y, y === 2 || y === height - 1 || x === inset + 1 || x === width - inset - 2 ? 'a' : y === 3 ? 'f' : 'c')
+  }
+  const glyphs: Record<string, string[]> = {
+    P: ['11110', '10001', '11110', '10000', '10000'], I: ['11111', '00100', '00100', '00100', '11111'],
+    X: ['11011', '11011', '01110', '11011', '11011'], E: ['11111', '10000', '11110', '10000', '11111'],
+    L: ['10000', '10000', '10000', '10000', '11111'], A: ['01110', '10001', '11111', '10001', '10001'],
+    R: ['11110', '10001', '11110', '10010', '10001'], T: ['11111', '00100', '00100', '00100', '00100'],
+    Y: ['11011', '11011', '01110', '00100', '00100'],
+  }
+  const lettering: { marks: [number, number][], color: string }[] = []
+  ;['PIXEL', 'PARTY'].forEach((word, row) => Array.from(word).forEach((letter, index) => {
+    const x = 4 + index * 7, y = 5 + row * 7
+    const marks: [number, number][] = []
+    glyphs[letter].forEach((line, lineIndex) => Array.from(line).forEach((pixel, column) => {
+      if (pixel === '1') marks.push([x + column, y + lineIndex])
+    }))
+    lettering.push({ marks, color: row === 0 ? 'k' : 'l' })
+  }))
+  lettering.forEach(({ marks }) => marks.forEach(([px, py]) => put(px + 1, py + 1, 'b')))
+  lettering.forEach(({ marks }) => marks.forEach(([px, py]) => { put(px - 1, py, 'a'); put(px + 1, py, 'a'); put(px, py - 1, 'a'); put(px, py + 1, 'a') }))
+  lettering.forEach(({ marks, color }) => {
+    marks.forEach(([px, py]) => put(px, py, color))
+    if (marks[0]) put(marks[0][0], marks[0][1], 'o')
+  })
+  put(39, 15, 'm'); put(39, 16, 'm')
+  put(3, 17, 'k'); put(4, 17, 'h')
+  return defineSprite(pixels.map(row => row.join('')), logoPalette)
+})()
 function PorchNavRoof({ pathname }: { pathname: string }) {
   const ref = useRef<HTMLCanvasElement>(null)
   useEffect(() => {
@@ -157,13 +193,11 @@ const staticNavItems = nav.filter((item) => !item.devOnly && !item.roles)
 export function StaticPorchNav() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const navLink = (item: (typeof nav)[number]) => {
-    const active = item.label === 'Daily'
     const to = item.label === 'Gallery' ? '/home' : item.path
     return (
-      <Link key={item.label} to={to} aria-current={active ? 'page' : undefined} className="porch-nav__sign">
-        <SpriteImage sprite={active ? activeSign : sign} />
+      <Link key={item.label} to={to} className="porch-nav__sign">
+        <SpriteImage sprite={sign} />
         <span>{item.label}</span>
-        {active && <SpriteImage sprite={lantern} className="porch-nav__lantern" />}
       </Link>
     )
   }
@@ -171,7 +205,7 @@ export function StaticPorchNav() {
     <nav data-testid="app-navigation" className="porch-nav">
       <PorchNavRoof pathname="/" />
       <div className="porch-nav__row">
-        <Link to="/" aria-label="Pixel Party, home" className="porch-nav__logo"><SpriteImage sprite={logoSign} /></Link>
+        <Link to="/" aria-label="Pixel Party, home" className="porch-nav__logo"><SpriteImage sprite={logoSign} className="porch-nav__logo-full" /><SpriteImage sprite={compactLogoSign} className="porch-nav__logo-compact" /></Link>
         <div className="porch-nav__links">{staticNavItems.map(navLink)}</div>
         <div className="porch-nav__spacer" />
         <Link to="/home" data-testid="nav-sign-in-button" className="porch-nav__mail">
@@ -216,7 +250,7 @@ export default function Navigation() {
       <PorchNavRoof pathname={location.pathname} />
       <CompactRoof />
       <div className="porch-nav__row">
-        <Link to="/home" aria-label="Pixel Party, home" className="porch-nav__logo"><SpriteImage sprite={logoSign} /></Link>
+        <Link to="/home" aria-label="Pixel Party, home" className="porch-nav__logo"><SpriteImage sprite={logoSign} className="porch-nav__logo-full" /><SpriteImage sprite={compactLogoSign} className="porch-nav__logo-compact" /></Link>
         <div className="porch-nav__links">{visibleNav.map(navLink)}</div>
         <div className="porch-nav__spacer" />
         {!isLoaded || !profileReady ? null : isSignedIn && user ? <DropdownMenu>

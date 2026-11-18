@@ -744,3 +744,90 @@ test('capture Task 6 remaining screens across viewports', async ({ page }) => {
   await page.screenshot({ path: resolve(dir, 'api-status-1280x720.png') })
 })
 
+test('StaticPorchNav renders landing signs without false aria-current and fits tablet 768px nav without overflow', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await setup(page, true)
+  await page.goto(`${origin}/`)
+  const landingNav = page.getByTestId('app-navigation')
+  await expect(landingNav.locator('.porch-nav__sign[aria-current="page"]')).toHaveCount(0)
+  for (const label of ['Daily', 'Party', 'Scores', 'Gallery']) {
+    await expect(landingNav.getByRole('link', { name: label, exact: true })).toBeVisible()
+  }
+
+  for (const path of ['/party', '/settings']) {
+    await page.setViewportSize({ width: 768, height: 1024 })
+    await setup(page)
+    await page.goto(`${origin}${path}`)
+    const nav = page.getByTestId('app-navigation')
+    await expect(nav.getByRole('link', { name: 'Gallery', exact: true })).toBeVisible()
+    const tag = page.getByTestId('nav-user-name')
+    await expect(tag).toBeVisible()
+    const metrics = await tag.evaluate((el) => ({
+      navScrollWidth: document.documentElement.scrollWidth,
+      tagRight: el.getBoundingClientRect().right,
+      innerWidth: window.innerWidth,
+    }))
+    expect(metrics.navScrollWidth).toBeLessThanOrEqual(768)
+    expect(metrics.tagRight).toBeLessThanOrEqual(metrics.innerWidth)
+  }
+})
+
+test('play pages show CompactRoof with integer-scaled compact logo and clean 375x667 mobile tray', async ({ page }) => {
+  await setup(page)
+  await page.route('**/api/daily/me', (route) =>
+    route.fulfill({
+      json: {
+        day: '2026-11-17',
+        status: 'playing',
+        prompt: 'A lighthouse',
+        startedAt: Date.now() - 30_000,
+        endsAt: Date.now() + 570_000,
+        autoUsed: 0,
+        asksUsed: 0,
+        asksLeft: 3,
+        finalUsed: false,
+        best: 0,
+        windows: [],
+        nextAutoAt: null,
+        serverNow: Date.now(),
+      },
+    }),
+  )
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await page.goto(`${origin}/home`)
+  await expect(page.locator('.daily-play')).toBeVisible()
+  await expect(page.locator('.porch-nav__compact-roof')).toBeVisible()
+  await expect(page.locator('.porch-nav__roof')).toBeHidden()
+  const compactLogo = page.locator('.porch-nav__logo-compact')
+  await expect(compactLogo).toBeVisible()
+  const logoBox = (await compactLogo.boundingBox())!
+  expect(Math.round(logoBox.width)).toBe(86)
+  expect(Math.round(logoBox.height)).toBe(40)
+
+  const cells = Buffer.from(new Uint8Array(32 * 32)).toString('base64')
+  const now = Date.now()
+  await page.routeWebSocket('**/api/pixel/**', (socket) => {
+    socket.send(JSON.stringify({
+      t: 'snapshot',
+      mode: 'coop',
+      width: 32,
+      height: 32,
+      cells,
+      round: { id: 'r1', word: 'LIGHTHOUSE', state: 'playing', startedAt: now - 45_000, endsAt: now + 255_000, askAvailableAt: now - 1000 },
+      you: { userId: 'host', cooldownUntil: 0 },
+      players: 2,
+      watching: 0,
+      roster: [{ userId: 'host', name: 'Will' }],
+      aiResting: false,
+    }))
+  })
+  await page.setViewportSize({ width: 375, height: 667 })
+  await page.goto(`${origin}/r/QX3J`)
+  await expect(page.locator('.room-play')).toBeVisible()
+  await expect(page.locator('.porch-nav__compact-roof')).toBeVisible()
+  await expect(page.locator('.porch-nav__roof')).toBeHidden()
+  await expect(page.locator('.porch-nav__logo-compact')).toBeVisible()
+  await expect(page.locator('.play-layout__mobile-actions')).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375)
+})
+

@@ -73,6 +73,9 @@
 .porch-nav__compact-roof { display: none; }
 .porch-shell:is(:has(.daily-play), :has(.room-play)) .porch-nav__compact-roof { display: block; position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
 .porch-shell:is(:has(.daily-play), :has(.room-play)) .porch-nav__roof { display: none; }
+.porch-shell:is(:has(.daily-play), :has(.room-play)) .porch-nav__logo { display: flex; align-items: center; margin-top: 0; }
+.porch-shell:is(:has(.daily-play), :has(.room-play)) .porch-nav__logo-full { display: none; }
+.porch-shell:is(:has(.daily-play), :has(.room-play)) .porch-nav__logo-compact { display: block; }
 .porch-nav__compact-roof canvas { display: block; image-rendering: pixelated; }
 .porch-nav .porch-nav__roof { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
 .porch-nav__roof canvas { display: block; image-rendering: pixelated; }
@@ -86,6 +89,7 @@
 .porch-sprite { display: block; flex: none; }
 .porch-nav__row { position: relative; display: flex; align-items: flex-start; gap: var(--px); min-height: calc(var(--px) * 24); max-width: 1280px; margin: auto; padding: 0 calc(var(--px) * 2); }
 .porch-nav__logo { position: relative; z-index: 2; display: block; flex: none; min-height: 44px; margin-top: calc(var(--px) * 2); margin-right: var(--px); transform-origin: 50% 0; transition: transform 180ms steps(3); }
+.porch-nav__logo-compact { display: none; }
 .porch-nav__logo:hover, .porch-nav__logo:focus-visible { transform: rotate(-2deg); }
 .porch-nav__logo::after { content: '✦'; position: absolute; top: 25%; left: 10%; color: #fff0bb; font-size: calc(var(--px) * 4); opacity: 0; animation: logo-glint 7s steps(1) infinite; pointer-events: none; }
 @keyframes logo-glint { 0%, 88%, 100% { opacity: 0; } 90% { opacity: .9; left: 20%; } 92% { opacity: .9; left: 70%; } }
@@ -103,6 +107,11 @@
 .porch-nav__toggle { display: none; align-self: center; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; color: #fff0cc; }
 .porch-shell:not(:has(.porch-home), :has(.studio-world), :has(.room-play), :has(.daily-play), .porch-shell--landing) .porch-nav__toggle { color: #392a45; background: #fff0cc; border: var(--px) solid #8e5960; }
 .porch-nav__mobile { display: none; }
+@media (min-width: 768px) and (max-width: 959px) {
+  .porch-nav { --px: 2px; }
+  .porch-nav__sign { font-size: 16px; }
+  .porch-nav__username { font-size: 16px; max-width: 108px; }
+}
 @media (max-width: 767px) {
   .porch-nav__links { display: none; }
   .porch-nav__toggle { display: flex; }
