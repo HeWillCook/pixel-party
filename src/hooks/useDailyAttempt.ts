@@ -80,7 +80,7 @@ export function useDailyAttempt(): {
   cells: Uint8Array
   paint(x: number, y: number, color: number): void
   replaceCells(next: Uint8Array): void
-  start(): Promise<void>
+  start(): Promise<boolean>
   askNow(): Promise<void>
   done(): Promise<void>
   tick(): void
@@ -483,7 +483,7 @@ export function useDailyAttempt(): {
     }
   }, [])
 
-  const start = useCallback(async (): Promise<void> => {
+  const start = useCallback(async (): Promise<boolean> => {
     mutationEpochRef.current++
     try {
       const headers = await authHeaders()
@@ -493,7 +493,7 @@ export function useDailyAttempt(): {
       })
       if (!res.ok) {
         dispatch({ type: 'error', message: 'Could not start daily attempt.' })
-        return
+        return false
       }
       const serverState = (await res.json()) as DailyStateView
       finalizingRef.current = false
@@ -506,8 +506,10 @@ export function useDailyAttempt(): {
           writeLocalCells(serverState.day, userIdRef.current, cellsRef.current)
         }
       }
+      return serverState.status === 'playing'
     } catch {
       dispatch({ type: 'error', message: 'Network error while starting attempt.' })
+      return false
     } finally {
       mutationEpochRef.current++
     }

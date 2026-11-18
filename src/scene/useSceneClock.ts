@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-export function useSceneClock(fps = 12): number {
+export function useSceneClock(fps = 12, paused = false): number {
   const [frame, setFrame] = useState(0)
 
   useEffect(() => {
@@ -20,7 +20,7 @@ export function useSceneClock(fps = 12): number {
       window.cancelAnimationFrame(request)
       previous = null
       if (motion.matches) setFrame(0)
-      else if (!document.hidden) request = window.requestAnimationFrame(tick)
+      else if (!paused && !document.hidden) request = window.requestAnimationFrame(tick)
     }
     motion.addEventListener('change', sync)
     document.addEventListener('visibilitychange', sync)
@@ -30,7 +30,7 @@ export function useSceneClock(fps = 12): number {
       motion.removeEventListener('change', sync)
       document.removeEventListener('visibilitychange', sync)
     }
-  }, [fps])
+  }, [fps, paused])
 
   return frame
 }

@@ -8,9 +8,9 @@ const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffec
 
 type Draw = (ctx: CanvasRenderingContext2D, frame: number, composition: Composition) => void
 
-function SceneCanvas({ draw, composition }: { draw: Draw; composition: Composition }) {
+function SceneCanvas({ draw, composition, paused }: { draw: Draw; composition: Composition; paused: boolean }) {
   const ref = useRef<HTMLCanvasElement>(null)
-  const frame = useSceneClock()
+  const frame = useSceneClock(12, paused)
   const size = sceneSize(composition)
 
   useEffect(() => {
@@ -24,13 +24,14 @@ function SceneCanvas({ draw, composition }: { draw: Draw; composition: Compositi
   return <canvas ref={ref} width={size.w} height={size.h} className="pixel-scene__canvas" aria-hidden="true" />
 }
 
-export function PixelScene({ draw, camera = { x: 0, y: 0, zoom: 1 }, zoomMs = 600, children, className, syncScale = false, 'data-testid': testId }: {
+export function PixelScene({ draw, camera = { x: 0, y: 0, zoom: 1 }, zoomMs = 600, children, className, syncScale = false, paused = false, 'data-testid': testId }: {
   draw: Draw
   camera?: Camera
   zoomMs?: number
   children?: ReactNode
   className?: string
   syncScale?: boolean
+  paused?: boolean
   'data-testid'?: string
 }) {
   const root = useRef<HTMLDivElement>(null)
@@ -68,7 +69,7 @@ export function PixelScene({ draw, camera = { x: 0, y: 0, zoom: 1 }, zoomMs = 60
     <div ref={root} className={['pixel-scene', className].filter(Boolean).join(' ')} style={style} data-testid={testId}>
       <div className="pixel-scene__center" style={{ width: size.w * scale, height: size.h * scale }}>
         <div className="pixel-scene__camera" style={{ transform: cameraTransform(camera) }}>
-          <SceneCanvas draw={draw} composition={composition} />
+          <SceneCanvas draw={draw} composition={composition} paused={paused} />
           <SceneComposition.Provider value={composition}>{children}</SceneComposition.Provider>
         </div>
       </div>

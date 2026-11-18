@@ -12,6 +12,24 @@ async function playFixture(page: Page, initiallyPlaying = false) {
   await page.route('**/api/daily/**', route => route.fulfill({ json: new URL(route.request().url()).pathname.endsWith('/me') && !initiallyPlaying ? { ...playing, status: 'not_started' } : playing }))
 }
 
+test('resume reconnects measurement and permits drawing after exit', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await playFixture(page)
+  await page.goto(`${origin}/home`)
+  await page.getByTestId('daily-start-button').click()
+  await page.getByTestId('daily-exit').click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Exit', exact: true }).click()
+  await page.getByRole('button', { name: 'Resume painting' }).click()
+  const canvas = page.getByTestId('pixel-canvas')
+  await expect(canvas).toBeVisible()
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await expect.poll(async () => (await canvas.boundingBox())!.width).toBeGreaterThanOrEqual(576)
+  await page.getByTestId('swatch-7').click()
+  await canvas.click({ position: { x: 10, y: 10 } })
+  await expect(page.getByTestId('tool-undo')).toBeEnabled()
+})
+
 test('selecting a colour while erasing switches to paint', async ({ page }) => {
   await playFixture(page, true)
   await page.goto(`${origin}/home`)
@@ -238,9 +256,9 @@ test('reduced motion exit returns to the porch and resumes the attempt', async (
   await page.goto(`${origin}/home`)
   await page.getByTestId('daily-exit').click()
   await page.getByRole('dialog').getByRole('button', { name: 'Exit', exact: true }).click()
-  await expect(page.getByRole('button', { name: 'Start Daily Challenge' })).toBeVisible({ timeout: 100 })
+  await expect(page.getByRole('button', { name: 'Resume painting' })).toBeVisible({ timeout: 100 })
   await expect(page).toHaveURL(`${origin}/home`)
-  await page.getByRole('button', { name: 'Start Daily Challenge' }).click()
+  await page.getByRole('button', { name: 'Resume painting' }).click()
   await expect(page.getByTestId('pixel-canvas')).toBeVisible({ timeout: 100 })
 })
 
@@ -517,7 +535,7 @@ for (const action of ['exit confirm returns to porch', 'grade now and submit are
     await page.getByTestId('daily-exit').click()
     await page.getByRole('dialog').getByRole('button', { name: 'Exit', exact: true }).click()
     await expect(page).toHaveURL(`${origin}/home`)
-    await expect(page.getByRole('button', { name: 'Start Daily Challenge' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Resume painting' })).toBeVisible()
     expect(ends).toBe(0)
   } else {
     await expect(page.getByTestId('daily-ask-button')).toHaveText(/Grade now \(3 left\)/)

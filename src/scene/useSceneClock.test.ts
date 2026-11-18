@@ -39,3 +39,13 @@ it('freezes for reduced motion and pauses while hidden', () => {
   expect(request).toHaveBeenCalledTimes(2)
   cleanup()
 })
+
+it('does not schedule frames while paused', () => {
+  const request = vi.fn()
+  const motion = { matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }
+  vi.stubGlobal('window', { matchMedia: () => motion, requestAnimationFrame: request, cancelAnimationFrame: vi.fn() })
+  vi.stubGlobal('document', { hidden: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })
+  useSceneClock(12, true)
+  hook.effect!()()
+  expect(request).not.toHaveBeenCalled()
+})

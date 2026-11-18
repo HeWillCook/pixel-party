@@ -1,4 +1,6 @@
 import { useCallback, useContext, useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { Modal } from '../ui'
 import { PixelScene, SceneComposition } from '../../scene/PixelScene'
 import { Hotspot } from '../../scene/Hotspot'
 import { drawPorch, type PorchOptions } from '../../scene/porch/drawPorch'
@@ -43,28 +45,31 @@ function Objects({ moreOpen, setMoreOpen, onParty, ...props }: PorchSceneProps &
       <Hotspot rect={rect.note} label="Scoring rules" onClick={() => setRulesOpen(true)} />
     </> : <>
       <button type="button" className="porch-more-ticket" style={rectToPercent(rect.more, composition)} aria-expanded={moreOpen} onClick={() => setMoreOpen(!moreOpen)}>More</button>
-      {moreOpen && <div className="porch-more-menu pp-panel" role="group" aria-label="More porch actions">
+    </>}
+    <Modal open={moreOpen} onClose={() => setMoreOpen(false)} aria-label="More porch actions">
+      <div role="group" aria-label="More porch actions" className="porch-more-actions">
         <a href="/r/play">Public board</a>
         <button type="button" onClick={props.onToggleMute}>{props.muted ? 'Unmute sounds' : 'Mute sounds'}</button>
         <button type="button" onClick={() => { setMoreOpen(false); setRulesOpen(true) }}>Scoring rules</button>
         <button type="button" onClick={() => setMoreOpen(false)}>Close</button>
-      </div>}
-    </>}
+      </div>
+    </Modal>
     {rulesOpen && <RulesNote onClose={() => setRulesOpen(false)} />}
   </>
 }
 
 export function PorchScene(props: PorchSceneProps) {
+  const navigate = useNavigate()
   const [moreOpen, setMoreOpen] = useState(false)
   const [panning, setPanning] = useState(false)
   const root = useRef<HTMLDivElement>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const goParty = useCallback(() => {
     if (timer.current) return
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { window.location.assign('/party'); return }
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { navigate('/party'); return }
     setPanning(true)
-    timer.current = setTimeout(() => window.location.assign('/party'), 500)
-  }, [])
+    timer.current = setTimeout(() => navigate('/party'), 500)
+  }, [navigate])
   useEffect(() => {
     const onNavigation = (event: Event) => { event.preventDefault(); goParty() }
     window.addEventListener('porch-party-transition', onNavigation)
@@ -86,10 +91,10 @@ export function PorchScene(props: PorchSceneProps) {
     <PixelScene draw={draw} className="porch-world__scene" camera={{ x: 0, y: panning ? -(root.current?.clientHeight ?? 0) : 0, zoom: 1 }} zoomMs={500} syncScale><Objects {...props} moreOpen={moreOpen} setMoreOpen={setMoreOpen} onParty={onParty} /></PixelScene>
     <nav className="porch-dock" aria-label="Porch shortcuts">
       <a href="/scores"><span aria-hidden="true">★</span>Scores</a>
-      {props.signedIn && props.galleryHref ? <a href={props.galleryHref}><span aria-hidden="true">▣</span>Gallery</a> : <button onClick={props.onAccount}><span aria-hidden="true">▣</span>Gallery</button>}
+      {props.signedIn && props.galleryHref ? <a href={props.galleryHref}><span aria-hidden="true">▣</span>Gallery</a> : <button type="button" onClick={props.onAccount}><span aria-hidden="true">▣</span>Gallery</button>}
       <a href="/party" onClick={onParty}><span aria-hidden="true">♫</span>Party</a>
-      <button onClick={props.onAccount}><span aria-hidden="true">✉</span>Account</button>
-      <button aria-expanded={moreOpen} onClick={() => setMoreOpen(!moreOpen)}><span aria-hidden="true">⋯</span>More</button>
+      <button type="button" onClick={props.onAccount}><span aria-hidden="true">✉</span>Account</button>
+      <button type="button" aria-expanded={moreOpen} onClick={() => setMoreOpen(!moreOpen)}><span aria-hidden="true">⋯</span>More</button>
     </nav>
     {props.children}
   </div>

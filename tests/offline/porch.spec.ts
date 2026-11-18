@@ -44,6 +44,54 @@ test('porch objects are present and labelled', async ({ page }) => {
   await expect(scene.getByText('See all scores')).toBeVisible()
 })
 
+for (const viewport of [{ width: 375, height: 812 }, { width: 640, height: 360 }]) {
+  test(`porch dialogs close and restore focus at ${viewport.width}x${viewport.height}`, async ({ page }) => {
+    await page.setViewportSize(viewport)
+    await setup(page)
+    await page.goto(`${origin}/home`)
+    const more = page.getByRole('navigation', { name: 'Porch shortcuts' }).getByRole('button', { name: 'More' })
+    await more.click()
+    const menu = page.getByRole('dialog', { name: 'More porch actions' })
+    await expect(menu).toBeVisible()
+    await expect(menu.locator(':focus')).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(menu).toBeHidden()
+    await expect(more).toBeFocused()
+    await more.click()
+    await page.mouse.click(4, 4)
+    await expect(menu).toBeHidden()
+    await expect(more).toBeFocused()
+    const account = page.getByRole('navigation', { name: 'Porch shortcuts' }).getByRole('button', { name: 'Account' })
+    await account.click()
+    const dialog = page.getByRole('dialog', { name: 'Account menu' })
+    await expect(dialog.locator(':focus')).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(dialog).toBeHidden()
+    await expect(account).toBeFocused()
+    await account.click()
+    await page.mouse.click(4, 4)
+    await expect(dialog).toBeHidden()
+    await expect(account).toBeFocused()
+  })
+}
+
+test('rules close with Escape and return focus', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await setup(page)
+  await page.goto(`${origin}/home`)
+  const trigger = page.getByRole('button', { name: 'Scoring rules' })
+  await trigger.click()
+  const dialog = page.getByRole('dialog', { name: 'Daily scoring rules' })
+  await expect(dialog.locator(':focus')).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(dialog).toBeHidden()
+  await expect(trigger).toBeFocused()
+  await trigger.click()
+  await page.mouse.click(4, 4)
+  await expect(dialog).toBeHidden()
+  await expect(trigger).toBeFocused()
+})
+
 for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720 }]) {
   test(`floating scores remain inside the ${viewport.width}px viewport`, async ({ page }) => {
     await page.setViewportSize(viewport)
@@ -184,7 +232,9 @@ test('portrait porch keeps every object in view and tappable', async ({ page }) 
     expect(bounds.y + bounds.height).toBeLessThanOrEqual(812)
   }
   await menu.getByRole('button', { name: 'Scoring rules' }).click()
-  await expect(page.getByRole('dialog')).toBeVisible()
+  await expect(page.getByRole('dialog', { name: 'Daily scoring rules' })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(more).toBeFocused()
 })
 
 test('porch and navigation share the scene pixel scale', async ({ page }) => {

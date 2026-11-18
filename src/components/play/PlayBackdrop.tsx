@@ -43,5 +43,5 @@ export function PlayBackdrop({ phase, onTransitionEnd }: { phase: PlayTransition
     return () => { observer.disconnect(); clearTimeout(delay); cancelAnimationFrame(request); clearTimeout(timer) }
   }, [phase, onTransitionEnd])
 
-  return <div ref={root} className="play-backdrop" data-camera="easel" data-phase={phase}><PixelScene draw={draw} camera={camera} zoomMs={duration} /><div className={`play-scenery-layer${phase === 'active' ? ' play-scenery-layer--visible' : ''}`}><PlayScenery /></div></div>
+  return <div ref={root} className="play-backdrop" data-camera="easel" data-phase={phase}><PixelScene draw={draw} camera={camera} zoomMs={duration} paused={phase === 'active'} /><div className={`play-scenery-layer${phase === 'active' ? ' play-scenery-layer--visible' : ''}`}><PlayScenery /></div></div>
 }

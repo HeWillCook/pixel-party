@@ -27,7 +27,7 @@ import { HoverEasel } from '../../components/play/HoverEasel'
 import { ScoreCard } from '../../components/play/ScoreCard'
 import { PainterTray } from '../../components/game/PainterTray'
 import { PlayBackdrop, type PlayTransition } from '../../components/play/PlayBackdrop'
-import { Badge, Button } from '../../components/ui'
+import { Badge, Button, Modal } from '../../components/ui'
 import { MAX_COLOR } from '../../game/config'
 import { canAskDaily, canPaintDaily } from '../../game/daily/client-schedule'
 import { decodeCells } from '../../game/grid'
@@ -82,6 +82,7 @@ export default function DailyHomePage() {
   const paletteRef = useRef<HTMLDivElement>(null)
   const [boardBox, setBoardBox] = useState({ width: 320, height: 600 })
   const [resultDay, setResultDay] = useState('')
+  const [showPorch, setShowPorch] = useState(false)
 
   useEffect(() => {
     const board = boardRef.current
@@ -102,7 +103,7 @@ export default function DailyHomePage() {
     if (paletteRef.current) observer.observe(paletteRef.current)
     window.addEventListener('resize', measure)
     return () => { observer.disconnect(); window.removeEventListener('resize', measure) }
-  }, [state.status, isSignedIn, resultDay])
+  }, [state.status, state.loaded, isSignedIn, resultDay, showPorch])
 
   const userId = user?.id ?? ''
   const queryDay = state.day || '__none__'
@@ -128,7 +129,6 @@ export default function DailyHomePage() {
   const [history, setHistory] = useState<History>(() => emptyHistory())
   const [strokeActive, setStrokeActive] = useState(false)
   const [starting, setStarting] = useState(false)
-  const [showPorch, setShowPorch] = useState(false)
   const [playTransition, setPlayTransition] = useState<PlayTransition>('active')
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [showAccount, setShowAccount] = useState(false)
@@ -317,7 +317,9 @@ export default function DailyHomePage() {
     if (showPorch && state.status === 'playing') { setShowPorch(false); return }
     setStarting(true)
     try {
-      await start()
+      if (!await start()) setPlayTransition('active')
+    } catch {
+      setPlayTransition('active')
     } finally {
       setStarting(false)
     }
@@ -342,7 +344,7 @@ export default function DailyHomePage() {
     const signedOut = !isSignedIn
     return <div data-testid="daily-page" className="porch-home">
       <section className="porch-home__scene" data-testid={signedOut ? 'daily-signed-out' : ended ? 'daily-ended' : 'daily-not-started'}>
-        <PorchScene easelState={signedOut ? 'signin' : ended ? 'finished' : 'cover'} easelLabel={signedOut ? 'Sign in to paint' : ended ? 'View result' : 'Start Daily Challenge'}
+        <PorchScene easelState={signedOut ? 'signin' : ended ? 'finished' : 'cover'} easelLabel={signedOut ? 'Sign in to paint' : ended ? 'View result' : showPorch ? 'Resume painting' : 'Start Daily Challenge'}
           easelTestId={signedOut ? 'daily-sign-in-button' : ended ? undefined : 'daily-start-button'} easelDisabled={starting}
           easelText={signedOut ? <span className="porch-easel-action">Sign in to paint</span> : ended ? <span className="porch-easel-action">View your painting</span> : <><strong>Today’s prompt</strong><span>10 minutes · your best grade counts</span><span className="porch-easel-action">{showPorch ? 'Resume painting' : 'Start painting'}</span></>}
           signedIn={!!isSignedIn} galleryHref={`/u/${encodeURIComponent(userId)}`} topThree={topThree} muted={muted}
@@ -352,7 +354,7 @@ export default function DailyHomePage() {
         </PorchScene>
       </section>
       {signedOut && <Leaderboard day={state.day} ended={false} />}
-      {showAccount && <div role="dialog" aria-label="Account menu" className="porch-account pp-panel"><Link to={`/u/${encodeURIComponent(userId)}`}>My gallery</Link><Link to="/settings">Settings</Link><button onClick={() => signOut()}>Sign out</button><button onClick={() => setShowAccount(false)}>Close</button></div>}
+      <Modal open={showAccount} onClose={() => setShowAccount(false)} aria-label="Account menu"><Link to={`/u/${encodeURIComponent(userId)}`}>My gallery</Link><Link to="/settings">Settings</Link><button type="button" onClick={() => signOut()}>Sign out</button><button type="button" onClick={() => setShowAccount(false)}>Close</button></Modal>
       {showAuthModal && <AuthOverlay onClose={() => setShowAuthModal(false)} />}
     </div>
   }
@@ -369,7 +371,6 @@ export default function DailyHomePage() {
           {muted ? 'Sound off' : 'Sound on'}
         </Button>
       </div>}
-      {isSignedIn && !state.loaded && <div data-testid="daily-loading" className="pp-panel p-6" aria-live="polite">Setting up your easel…</div>}
       {/* Signed in: Playing */}
       {isSignedIn && state.loaded && state.status === 'playing' && (
         <div data-testid="daily-playing" className="daily-play">
