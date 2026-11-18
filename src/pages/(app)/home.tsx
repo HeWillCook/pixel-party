@@ -317,7 +317,7 @@ export default function DailyHomePage() {
 
   if (!isSignedIn || state.status === 'not_started' || (state.status === 'ended' && resultDay !== state.day)) {
     const scores = todayScores.map(record => record.data)
-    const topThree = rankScores(scores).slice(0, 3).map(({ userId: scoreUserId }) => {
+    const topThree = rankScores(scores).slice(0, 5).map(({ userId: scoreUserId }) => {
       const score = scores.find(item => item.userId === scoreUserId)!
       return { name: score.displayName || 'Player', score: score.score }
     })

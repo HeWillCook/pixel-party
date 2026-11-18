@@ -37,8 +37,8 @@ test('porch objects are present and labelled', async ({ page }) => {
   await setup(page)
   await page.goto(`${origin}/home`)
   const scene = page.locator('.porch-world')
-  for (const name of ['Start Daily Challenge', "Today's scores", 'Party beach', 'Public board', 'Account menu', 'Your gallery', 'Mute sounds', 'Scoring rules']) {
-    await expect(scene.getByRole(name === "Today's scores" || name === 'Party beach' || name === 'Public board' || name === 'Your gallery' ? 'link' : 'button', { name, exact: true })).toBeVisible()
+  for (const name of ['Start Daily Challenge', "Today's scores", 'Party studio', 'Public board', 'Account menu', 'Your gallery', 'Mute sounds', 'Scoring rules']) {
+    await expect(scene.getByRole(name === "Today's scores" || name === 'Party studio' || name === 'Public board' || name === 'Your gallery' ? 'link' : 'button', { name, exact: true })).toBeVisible()
   }
 })
 
@@ -60,7 +60,7 @@ test('porch keyboard tour reaches objects with labels and focus rings', async ({
   await setup(page)
   await page.goto(`${origin}/home`)
   const scene = page.locator('.porch-world')
-  const names = ['Start Daily Challenge', "Today's scores", 'Party beach', 'Public board', 'Account menu', 'Your gallery', 'Mute sounds', 'Scoring rules']
+  const names = ['Start Daily Challenge', "Today's scores", 'Party studio', 'Public board', 'Account menu', 'Your gallery', 'Mute sounds', 'Scoring rules']
   await scene.getByRole('button', { name: names[0] }).focus()
   for (const [index, name] of names.entries()) {
     const focused = scene.locator(':focus')
@@ -69,7 +69,7 @@ test('porch keyboard tour reaches objects with labels and focus rings', async ({
     expect(await focused.evaluate(element => getComputedStyle(element).outlineStyle)).not.toBe('none')
     if (index < names.length - 1) await page.keyboard.press('Tab')
   }
-  await scene.getByRole('link', { name: 'Party beach' }).focus()
+  await scene.getByRole('link', { name: 'Party studio' }).focus()
   await page.keyboard.press('Enter')
   await expect(page).toHaveURL(`${origin}/party`)
 })
@@ -80,6 +80,25 @@ test('signed-out porch offers sign-in on easel and mailbox', async ({ page }) =>
   const scene = page.locator('.porch-world')
   await expect(scene.getByRole('button', { name: 'Sign in to paint' })).toBeVisible()
   await expect(scene.getByRole('button', { name: 'Sign in', exact: true })).toBeVisible()
+})
+
+test('party hatch pans down before navigating', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await setup(page)
+  await page.goto(`${origin}/home`)
+  await page.getByRole('link', { name: 'Party studio' }).click()
+  await expect(page.locator('.pixel-scene__camera')).not.toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, 0)')
+  await expect(page).toHaveURL(`${origin}/party`)
+})
+
+test('reduced motion enters party without waiting for the pan', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await setup(page)
+  await page.goto(`${origin}/home`)
+  const start = Date.now()
+  await page.getByRole('link', { name: 'Party studio' }).click()
+  await expect(page).toHaveURL(`${origin}/party`)
+  expect(Date.now() - start).toBeLessThan(500)
 })
 
 test('daily loading shows only the neutral view', async ({ page }) => {
@@ -120,17 +139,7 @@ test('portrait porch keeps every object in view and tappable', async ({ page }) 
   const hotspots = page.locator('.porch-world .pixel-hotspot')
   await expect(hotspots).toHaveCount(5)
   for (const hotspot of await hotspots.all()) {
-    const easel = await hotspot.getAttribute('data-testid') === 'daily-start-button'
-    if (easel) {
-      await expect(hotspot.locator('.pixel-hotspot__label')).toBeHidden()
-    } else {
-      await expect(hotspot.locator('.pixel-hotspot__label')).toBeVisible()
-      const labelBox = (await hotspot.locator('.pixel-hotspot__label').boundingBox())!
-      expect(labelBox.x).toBeGreaterThanOrEqual(0)
-      expect(labelBox.x + labelBox.width).toBeLessThanOrEqual(375)
-      const objectBox = (await hotspot.boundingBox())!
-      expect(labelBox.x + labelBox.width <= objectBox.x || objectBox.x + objectBox.width <= labelBox.x || labelBox.y + labelBox.height <= objectBox.y || objectBox.y + objectBox.height <= labelBox.y).toBe(true)
-    }
+    await expect(hotspot.locator('.pixel-hotspot__label')).toBeHidden()
     const box = await hotspot.boundingBox()
     expect(box!.width).toBeGreaterThanOrEqual(44)
     expect(box!.height).toBeGreaterThanOrEqual(44)
@@ -142,14 +151,8 @@ test('portrait porch keeps every object in view and tappable', async ({ page }) 
     })
     expect(hit, await hotspot.getAttribute('aria-label') ?? '').toBe(true)
   }
-  const labels = await hotspots.locator('.pixel-hotspot__label:visible').all()
-  for (let index = 0; index < labels.length; index++) {
-    const first = (await labels[index].boundingBox())!
-    for (const other of labels.slice(index + 1)) {
-      const second = (await other.boundingBox())!
-      expect(first.x + first.width <= second.x || second.x + second.width <= first.x || first.y + first.height <= second.y || second.y + second.height <= first.y).toBe(true)
-    }
-  }
+  const dock = page.getByRole('navigation', { name: 'Porch shortcuts' })
+  for (const name of ['Scores', 'Gallery', 'Party', 'Account', 'More']) await expect(dock.getByRole(name === 'Account' || name === 'More' ? 'button' : 'link', { name, exact: true })).toBeVisible()
   const more = page.getByRole('button', { name: 'More', exact: true })
   const moreBox = (await more.boundingBox())!
   expect(moreBox.y + moreBox.height).toBeGreaterThan(760)
@@ -173,7 +176,7 @@ test('porch and navigation share the scene pixel scale', async ({ page }) => {
   await page.goto(`${origin}/home`)
   await expect(page.getByTestId('daily-start-button')).toBeVisible()
   await expect.poll(() => page.evaluate(() => [getComputedStyle(document.documentElement).getPropertyValue('--px'), getComputedStyle(document.querySelector('.pixel-scene')!).getPropertyValue('--px')])).toEqual(['5px', '5px'])
-  await page.locator('.porch-world').getByRole('link', { name: 'Party beach' }).click()
+  await page.locator('.porch-world').getByRole('link', { name: 'Party studio' }).click()
   await expect.poll(() => page.evaluate(() => document.documentElement.style.getPropertyValue('--px'))).toBe('')
 })
 
