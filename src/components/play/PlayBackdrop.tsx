@@ -3,6 +3,7 @@ import { PixelScene } from '../../scene/PixelScene'
 import { cameraFor, compositionFor, type Camera } from '../../scene/camera'
 import { drawPorch } from '../../scene/porch/drawPorch'
 import { porchLayout } from '../../scene/porch/layout'
+import { PlayScenery } from './PlayScenery'
 
 export type PlayTransition = 'entering' | 'active' | 'leaving'
 
@@ -11,8 +12,8 @@ export function PlayBackdrop({ phase, onTransitionEnd }: { phase: PlayTransition
   const [camera, setCamera] = useState<Camera>({ x: 0, y: 0, zoom: 1 })
   const [duration, setDuration] = useState(0)
   const draw = useCallback((ctx: CanvasRenderingContext2D, frame: number) => {
-    drawPorch(ctx, frame, { easelState: 'cover', bob: false, hideEasel: phase === 'active', backgroundOnly: phase === 'active' })
-  }, [phase])
+    drawPorch(ctx, frame, { easelState: 'cover', bob: false })
+  }, [])
 
   useLayoutEffect(() => {
     const scene = root.current
@@ -34,10 +35,13 @@ export function PlayBackdrop({ phase, onTransitionEnd }: { phase: PlayTransition
     observer.observe(canvas)
     if (phase === 'active') { setDuration(0); setCamera(measure()); return () => observer.disconnect() }
     setDuration(600)
-    const request = requestAnimationFrame(() => { started = true; setCamera(phase === 'entering' ? measure() : { x: 0, y: 0, zoom: 1 }) })
-    const timer = window.setTimeout(onTransitionEnd, 600)
-    return () => { observer.disconnect(); cancelAnimationFrame(request); clearTimeout(timer) }
+    let request = 0
+    const delay = window.setTimeout(() => {
+      request = requestAnimationFrame(() => { started = true; setCamera(phase === 'entering' ? measure() : { x: 0, y: 0, zoom: 1 }) })
+    }, phase === 'leaving' ? 150 : 0)
+    const timer = window.setTimeout(onTransitionEnd, phase === 'leaving' ? 750 : 600)
+    return () => { observer.disconnect(); clearTimeout(delay); cancelAnimationFrame(request); clearTimeout(timer) }
   }, [phase, onTransitionEnd])
 
-  return <div ref={root} className="play-backdrop" data-camera="easel"><PixelScene draw={draw} camera={camera} zoomMs={duration} /></div>
+  return <div ref={root} className="play-backdrop" data-camera="easel"><PixelScene draw={draw} camera={camera} zoomMs={duration} /><div className={`play-scenery-layer${phase === 'active' ? ' play-scenery-layer--visible' : ''}`}><PlayScenery /></div></div>
 }
