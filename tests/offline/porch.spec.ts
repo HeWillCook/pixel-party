@@ -877,6 +877,11 @@ test('scores page lists today', async ({ page }) => {
   await expect(board.getByLabel(/Silver medal/)).toBeVisible()
   await expect(board.getByLabel(/Bronze medal/)).toBeVisible()
   await expect(board.getByRole('img', { name: 'Pixel drawing' })).toHaveCount(2)
+  const scoreThumbMetrics = await board.locator('.scores-thumb').first().evaluate((el) => ({
+    clientWidth: el.clientWidth,
+    clientHeight: el.clientHeight,
+  }))
+  expect(scoreThumbMetrics).toEqual({ clientWidth: 32, clientHeight: 32 })
   await expect(page.getByTestId('haiku-bubble')).toContainText("Haiku's favourite today:")
   await expect(page.getByTestId('haiku-bubble')).toContainText('lighthouse')
 
@@ -1042,6 +1047,11 @@ test('gallery shows framed dailies newest first', async ({ page }) => {
   await expect(frames.nth(0)).toContainText('912 / 1000')
   await expect(frames.nth(0)).toContainText('Haiku guessed: lighthouse')
   await expect(frames.nth(0).getByLabel('Gold medal')).toBeVisible()
+  const galleryThumbMetrics = await frames.nth(0).locator('.gallery-frame__thumb').evaluate((el) => ({
+    clientWidth: el.clientWidth,
+    clientHeight: el.clientHeight,
+  }))
+  expect(galleryThumbMetrics).toEqual({ clientWidth: 160, clientHeight: 160 })
 
   await expect(frames.nth(1)).toHaveAttribute('data-testid', 'gallery-frame-2026-11-15')
   await expect(frames.nth(1)).toHaveAttribute('data-frame-kind', 'wood')

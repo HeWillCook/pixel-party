@@ -1,5 +1,6 @@
 import { Link, useParams } from 'react-router-dom'
 import { useAuthProfileReady, useQuery } from 'deepspace'
+import { PixelMedal } from '../../../components/daily/PixelMedals'
 import { PixelThumb } from '../../../components/daily/PixelThumb'
 import { GalleryBackdrop } from '../../../components/gallery/GalleryBackdrop'
 import '../../../components/gallery/gallery.css'
@@ -53,13 +54,18 @@ export default function ProfilePage() {
   }
   const galleryItems = Array.from(byDay.values()).sort((a, b) => b.day.localeCompare(a.day))
 
+  const medalByDay = new Map<string, number>()
+  for (const { data } of scores) {
+    if (data?.day && data.medal) medalByDay.set(data.day, data.medal)
+  }
+
   return (
     <div className="gallery-page" data-testid="gallery-page">
       <GalleryBackdrop />
       <div className="gallery-stage">
         <header className="gallery-header">
           <h1 className="gallery-title">{heading}</h1>
-          <Link to="/home" className="pp-chip px-3 py-1.5 text-lg">
+          <Link to="/home" className="pp-chip inline-flex min-h-[44px] items-center px-3 py-1.5 text-lg">
             Daily challenge →
           </Link>
         </header>
@@ -89,7 +95,7 @@ export default function ProfilePage() {
         ) : (
           <div className="gallery-wall" data-testid="gallery-wall">
             {galleryItems.map((drawing) => {
-              const medal = scores.find(({ data }) => data?.day === drawing.day)?.data.medal ?? 0
+              const medal = medalByDay.get(drawing.day) ?? 0
               const hasMedal = medal > 0 && medal <= 3
               const frameKind = hasMedal ? 'gilt' : 'wood'
               return (
@@ -107,12 +113,11 @@ export default function ProfilePage() {
                     <div className="gallery-plaque__top">
                       <h2 className="gallery-plaque__prompt">{drawing.prompt || 'Daily painting'}</h2>
                       {hasMedal && (
-                        <span
+                        <PixelMedal
+                          medal={medal as 1 | 2 | 3}
+                          label={`${['Gold', 'Silver', 'Bronze'][medal - 1]} medal`}
                           className="gallery-plaque__medal"
-                          aria-label={`${['Gold', 'Silver', 'Bronze'][medal - 1]} medal`}
-                        >
-                          {['🥇', '🥈', '🥉'][medal - 1]}
-                        </span>
+                        />
                       )}
                     </div>
                     <p className="gallery-plaque__meta">

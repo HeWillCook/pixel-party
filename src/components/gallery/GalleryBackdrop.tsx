@@ -56,15 +56,15 @@ export function GalleryBackdrop() {
 
     // Sunset window overlooking the ocean
     const win = portrait
-      ? { x: width - 58, y: ceilingY + 28, w: 42, h: 34 }
+      ? { x: width - 70, y: ceilingY + 24, w: 36, h: 28 }
       : { x: width - 76, y: ceilingY + 14, w: 58, h: 48 }
 
     // Dithered warm sunset light cast diagonally from the window onto the wall
     const beamTop = win.y + 4
-    const beamBottom = Math.min(floorY - 4, win.y + win.h + (portrait ? 56 : 72))
+    const beamBottom = Math.min(floorY - 4, win.y + win.h + (portrait ? 48 : 72))
     for (let y = beamTop; y < beamBottom; y++) {
       const progress = (y - beamTop) / Math.max(1, beamBottom - beamTop)
-      const shift = Math.round(progress * (portrait ? 64 : 96))
+      const shift = Math.round(progress * (portrait ? 48 : 96))
       const leftEdge = Math.max(0, win.x - shift)
       const rightEdge = Math.min(width - 1, win.x + win.w - shift)
       for (let x = leftEdge; x <= rightEdge; x++) {

@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { getAuthToken, useQuery } from 'deepspace'
-import { Trophy } from 'lucide-react'
 import { rankScores } from '../../game/daily/rank'
 import { Haiku } from '../haiku/Haiku'
 import { BoosterSprite } from '../play/BoosterSprite'
 import { Avatar, AvatarFallback, AvatarImage } from '../ui'
+import { PixelMedal, PixelTrophy } from './PixelMedals'
 import { PixelThumb } from './PixelThumb'
 import '../scores/scores.css'
 
@@ -123,12 +123,10 @@ export function Leaderboard({ day, ended }: { day: string; ended: boolean }) {
 
   return (
     <div className="scores-board-wrap" data-testid="daily-leaderboard">
-      <div className="scores-crest" aria-hidden="true" />
-
       <section className="scores-chalkboard" data-testid="scores-chalkboard" aria-labelledby="scores-heading">
         <div className="scores-board-header">
           <h1 id="scores-heading" className="scores-board-title">
-            <Trophy className="h-6 w-6 text-[#ffcf84]" aria-hidden="true" />
+            <PixelTrophy scale={2} />
             <span>Scores</span>
           </h1>
           <div className="scores-pager">
@@ -178,7 +176,7 @@ export function Leaderboard({ day, ended }: { day: string; ended: boolean }) {
                 >
                   <span className="scores-rank">{rank}</span>
                   {hasCells && drawing?.cells ? (
-                    <PixelThumb cells={drawing.cells} size={40} className="scores-thumb" />
+                    <PixelThumb cells={drawing.cells} size={32} className="scores-thumb" />
                   ) : null}
                   <Avatar className="scores-avatar">
                     <AvatarImage src={score.avatarUrl || undefined} />
@@ -193,12 +191,11 @@ export function Leaderboard({ day, ended }: { day: string; ended: boolean }) {
                     {score.displayName || 'Player'}
                   </Link>
                   {medal > 0 && medal <= 3 && (
-                    <span
+                    <PixelMedal
+                      medal={medal as 1 | 2 | 3}
+                      label={`${['Gold', 'Silver', 'Bronze'][medal - 1]} medal${offset === 0 && !ended ? ' so far' : ''}`}
                       className="scores-medal"
-                      aria-label={`${['Gold', 'Silver', 'Bronze'][medal - 1]} medal${offset === 0 && !ended ? ' so far' : ''}`}
-                    >
-                      {['🥇', '🥈', '🥉'][medal - 1]}
-                    </span>
+                    />
                   )}
                   <span className="scores-points">
                     {score.score}
