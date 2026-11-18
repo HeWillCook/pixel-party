@@ -5,6 +5,7 @@ import { Menu, X } from 'lucide-react'
 import type { Role } from '../constants'
 import { nav } from '../nav'
 import { P } from '../scene/palette'
+import { PixelScene } from '../scene/PixelScene'
 import { defineSprite, drawSprite, type Sprite } from '../scene/sprite'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from './ui'
 
@@ -33,25 +34,25 @@ const sign = plank(40)
 const activeSign = plank(40, true)
 const logoPalette = { ...woodPalette, k: P.flame[2], l: P.sun[3], m: P.sea[2], n: P.sky[3], o: P.sun[4] }
 const logoSign = (() => {
-  const width = 52, height = 34
+  const width = 70, height = 34
   const pixels = Array.from({ length: height }, () => Array<string>(width).fill('.'))
   const put = (x: number, y: number, color: string) => { if (x >= 0 && x < width && y >= 0 && y < height) pixels[y][x] = color }
-  for (let y = 0; y < 8; y++) for (const x of [8, 9, 42, 43]) put(x, y, y % 2 ? 'h' : 'a')
+  for (let y = 0; y < 8; y++) for (const x of [9, 10, 58, 59]) put(x, y, y % 2 ? 'h' : 'a')
   for (let y = 4; y < height; y++) for (let x = 1; x < width - 1; x++) {
     const inset = y < 10 ? Math.max(0, 8 - y + Math.floor(Math.abs(x - width / 2) / 13)) : y > 30 ? y - 30 : 0
     if (x < inset + 1 || x >= width - inset - 1) continue
     put(x, y, y === 4 || y === 33 || x === inset + 1 || x === width - inset - 2 ? 'a' : y === 5 ? 'f' : 'c')
   }
   const glyphs: Record<string, string[]> = {
-    P: ['110', '101', '110', '100', '100'], I: ['111', '010', '010', '010', '111'],
-    X: ['101', '101', '010', '101', '101'], E: ['111', '100', '110', '100', '111'],
-    L: ['100', '100', '100', '100', '111'], A: ['010', '101', '111', '101', '101'],
-    R: ['110', '101', '110', '101', '101'], T: ['111', '010', '010', '010', '010'],
-    Y: ['101', '101', '010', '010', '010'],
+    P: ['11110', '10001', '11110', '10000', '10000'], I: ['11111', '00100', '00100', '00100', '11111'],
+    X: ['11011', '11011', '01110', '11011', '11011'], E: ['11111', '10000', '11110', '10000', '11111'],
+    L: ['10000', '10000', '10000', '10000', '11111'], A: ['01110', '10001', '11111', '10001', '10001'],
+    R: ['11110', '10001', '11110', '10010', '10001'], T: ['11111', '00100', '00100', '00100', '00100'],
+    Y: ['11011', '11011', '01110', '00100', '00100'],
   }
   const lettering: { marks: [number, number][], color: string }[] = []
   ;['PIXEL', 'PARTY'].forEach((word, row) => Array.from(word).forEach((letter, index) => {
-    const x = 6 + index * 8, y = 7 + row * 12
+    const x = 4 + index * 12, y = 7 + row * 12
     const marks: [number, number][] = []
     glyphs[letter].forEach((line, lineIndex) => Array.from(line).forEach((pixel, column) => {
       if (pixel === '1') for (let dx = 0; dx < 2; dx++) for (let dy = 0; dy < 2; dy++) marks.push([x + column * 2 + dx, y + lineIndex * 2 + dy])
@@ -64,10 +65,18 @@ const logoSign = (() => {
     marks.forEach(([px, py]) => put(px, py, color))
     if (marks[0]) put(marks[0][0], marks[0][1], 'o')
   })
-  put(45, 27, 'm'); put(45, 28, 'm'); put(46, 29, 'm'); put(46, 30, 'm')
+  put(62, 27, 'm'); put(62, 28, 'm'); put(63, 29, 'm'); put(63, 30, 'm')
   for (let offset = 0; offset < 6; offset++) put(3 + offset, 31 - Math.floor(offset / 2), offset < 2 ? 'k' : 'h')
   return defineSprite(pixels.map(row => row.join('')), logoPalette)
 })()
+function drawRoofStrip(ctx: CanvasRenderingContext2D) {
+  const { width, height } = ctx.canvas
+  ctx.fillStyle = P.wood[0]; ctx.fillRect(0, 0, width, height)
+  for (let x = 0; x < width; x += 16) {
+    ctx.fillStyle = P.wood[1]; ctx.fillRect(x, 0, 12, height)
+    ctx.fillStyle = P.wood[2]; ctx.fillRect(x + 1, 0, 1, height)
+  }
+}
 const lantern = defineSprite([
   '.......a.......', '......aba......', '.....ababa.....', '...j.abeba.j...', '..j.jafffa.jj..',
   '.j.j.abffba.j..', '..j..abgfba..j.', '.j.j.abffba.j..', '..j.jabffbaj...', '...j.abbba.j...',
@@ -122,6 +131,7 @@ export default function Navigation() {
   }
   return <>
     <nav data-testid="app-navigation" className="porch-nav">
+      {location.pathname !== '/home' && <PixelScene draw={drawRoofStrip} className="porch-nav__roof" />}
       <div className="porch-nav__beam" aria-hidden="true">{Array.from({ length: 40 }, (_, index) => <SpriteImage key={index} sprite={beam} />)}</div>
       <div className="porch-nav__row">
         <Link to="/home" aria-label="Pixel Party, home" className="porch-nav__logo"><SpriteImage sprite={logoSign} /></Link>

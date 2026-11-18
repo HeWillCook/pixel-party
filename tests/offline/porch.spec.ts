@@ -40,6 +40,8 @@ test('porch objects are present and labelled', async ({ page }) => {
   for (const name of ['Start Daily Challenge', "Today's scores", 'Party studio', 'Public board', 'Account menu', 'Your gallery', 'Mute sounds', 'Scoring rules']) {
     await expect(scene.getByRole(name === "Today's scores" || name === 'Party studio' || name === 'Public board' || name === 'Your gallery' ? 'link' : 'button', { name, exact: true })).toBeVisible()
   }
+  await expect(scene.getByText("Today's top five")).toBeVisible()
+  await expect(scene.getByText('See all scores')).toBeVisible()
 })
 
 test('daily cover and account name remain legible', async ({ page }) => {
@@ -152,6 +154,7 @@ test('portrait porch keeps every object in view and tappable', async ({ page }) 
     expect(hit, await hotspot.getAttribute('aria-label') ?? '').toBe(true)
   }
   const dock = page.getByRole('navigation', { name: 'Porch shortcuts' })
+  await expect(page.getByText("Today's top three")).toBeVisible()
   for (const name of ['Scores', 'Gallery', 'Party', 'Account', 'More']) await expect(dock.getByRole(name === 'Account' || name === 'More' ? 'button' : 'link', { name, exact: true })).toBeVisible()
   const more = page.getByRole('button', { name: 'More', exact: true })
   const moreBox = (await more.boundingBox())!
@@ -292,6 +295,19 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 375, height: 812 
     await page.getByTestId('app-navigation').screenshot({ path: resolve(dir, `porch-beam-${viewport.width}x${viewport.height}.png`) })
   })
 }
+
+test('capture porch roof close-up 1440', async ({ page }) => {
+  test.skip(process.env.SCREENSHOTS !== '1')
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await setup(page)
+  await page.goto(`${origin}/home`)
+  await expect(page.getByTestId('daily-start-button')).toBeVisible()
+  await page.evaluate(() => document.fonts.ready)
+  const dir = resolve(import.meta.dirname, '../../docs/superpowers/screenshots/2026-11-18-porch')
+  await mkdir(dir, { recursive: true })
+  await page.screenshot({ path: resolve(dir, 'porch-roof-1440x200.png'), clip: { x: 0, y: 0, width: 1440, height: 200 } })
+})
 
 test('capture home 1280', async ({ page }) => {
   test.skip(process.env.SCREENSHOTS !== '1')

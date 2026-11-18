@@ -9,6 +9,7 @@ export interface PorchOptions {
   bob: boolean
   soundOn?: boolean
   signedIn?: boolean
+  roofTop?: number
 }
 
 export function drawPorch(ctx: CanvasRenderingContext2D, frame: number, opts: PorchOptions): void {
@@ -33,13 +34,24 @@ export function drawPorch(ctx: CanvasRenderingContext2D, frame: number, opts: Po
     rect(x + 7, y, w - 14, 1, P.sky[4]); rect(x, y + 1, w, 2, P.sky[4]); rect(x + 12, y + 3, w - 28, 1, P.sky[3])
   }
   drawSea(ctx, width, horizon, height - horizon, sunX, frame, mulberry32(394))
-  for (let y = horizon + 2; y < floor; y += 3) {
+  const shore = floor - (portrait ? 37 : 21)
+  for (let y = horizon + 2; y < shore; y += 3) {
     const spread = Math.max(2, Math.floor((y - horizon) * 0.65))
     const phase = Math.floor(frame / 6)
     for (let index = 0; index < 3; index++) {
       const x = sunX - spread + ((y * (index + 3) + index * 17 + phase) % (spread * 2))
       rect(x, y, 3 + (index + y) % 4, 1, index === 1 ? P.sun[3] : P.sun[2])
     }
+  }
+  rect(0, shore, width, floor - shore, P.sun[2])
+  rect(0, shore + 7, width, floor - shore - 7, P.sun[3])
+  for (let row = 3; row < 7; row++) for (let x = row % 2; x < width; x += 2) rect(x, shore + row, 1, 1, P.sun[3])
+  for (let x = 0; x < width; x += 9) {
+    const offset = (x + Math.floor(frame / 8) * 2) % width
+    rect(offset, shore + (x % 3 === 0 ? 0 : 1), 5, 1, P.paper[4])
+  }
+  for (const x of [18, 47, width - 50, width - 22]) {
+    rect(x, floor - 8, 1, 7, P.foliage[2]); rect(x - 2, floor - 6, 1, 5, P.foliage[3]); rect(x + 2, floor - 5, 1, 4, P.foliage[2])
   }
   const islandX = layout.lighthouse.x - 15
   for (let x = 0; x < 55; x++) {
@@ -54,7 +66,6 @@ export function drawPorch(ctx: CanvasRenderingContext2D, frame: number, opts: Po
   }
   drawSprite(ctx, sprites.lighthouse, layout.lighthouse.x, towerY)
 
-  rect(0, 0, width, 8, P.wood[0]); rect(0, 5, width, 2, P.wood[2]); rect(0, 7, width, 1, P.wood[4])
   for (const x of [0, width - 9]) {
     rect(x, 8, 9, floor - 8, P.wood[0]); rect(x + 2, 8, 4, floor - 8, P.wood[2]); rect(x + 6, 8, 1, floor - 8, P.wood[4])
     for (let y = 19; y < floor; y += 27) rect(x + 3, y, 1, 10, P.wood[1])
@@ -73,6 +84,10 @@ export function drawPorch(ctx: CanvasRenderingContext2D, frame: number, opts: Po
   rect(0, 8, wallWidth, floor - 8, P.wood[2])
   for (let y = 12; y < floor; y += 7) { rect(0, y, wallWidth, 1, P.wood[1]); rect(0, y + 1, wallWidth, 1, P.wood[3]) }
   rect(wallWidth - 5, 8, 5, floor - 8, P.wood[0]); rect(wallWidth - 3, 8, 2, floor - 8, P.wood[4])
+  const roofTop = opts.roofTop ?? 0
+  rect(0, roofTop, width, 16, P.wood[1])
+  for (let x = 0; x < width; x += 18) { rect(x, roofTop + 7, 3, 9, P.wood[0]); rect(x + 3, roofTop + 7, 1, 9, P.wood[2]) }
+  rect(0, roofTop, width, 7, P.wood[0]); rect(0, roofTop + 1, width, 4, P.wood[2]); rect(0, roofTop + 6, width, 1, P.wood[4])
   if (!portrait) {
     rect(19, 38, 25, 32, P.wood[0]); rect(21, 40, 21, 28, P.wood[3]); rect(23, 42, 17, 24, P.sun[3])
     rect(30, 42, 2, 24, P.wood[1]); rect(23, 53, 17, 2, P.wood[1])

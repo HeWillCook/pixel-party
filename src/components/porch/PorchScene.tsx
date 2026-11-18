@@ -33,7 +33,7 @@ function Objects({ moreOpen, setMoreOpen, onParty, ...props }: PorchSceneProps &
   return <>
     <Hotspot rect={rect.easel} label={props.easelLabel} href={props.landing ? '/home' : undefined} onClick={props.landing ? undefined : props.onEasel} testId={props.easelTestId} disabled={props.easelDisabled}><span className="porch-easel-copy">{props.easelText}</span></Hotspot>
     <Hotspot rect={rect.chalkboard} label="Today's scores" href="/scores" />
-    <div className="porch-scores" style={rectToPercent(rect.chalkboard, composition)}><strong>Today's top {composition === 'portrait' ? 'three' : 'five'}</strong>{props.topThree.length ? props.topThree.slice(0, composition === 'portrait' ? 3 : 5).map((score, index) => <div className="porch-score-row" key={index}>{index + 1}. {score.name} … {score.score}</div>) : <div>No scores yet</div>}{composition === 'landscape' && <div className="porch-score-more">See all scores</div>}</div>
+    <div className="porch-scores" style={rectToPercent(rect.chalkboard, composition)}><strong>Today's top {composition === 'portrait' ? 'three' : 'five'}</strong>{props.topThree.length ? props.topThree.slice(0, composition === 'portrait' ? 3 : 5).map((score, index) => <div className="porch-score-row" key={index}><span>{index + 1}. {score.name}</span><span>{score.score}</span></div>) : <div>No scores yet</div>}{composition === 'landscape' && <div className="porch-score-more">See all scores</div>}</div>
     <Hotspot rect={rect.hatch} label="Party studio" href="/party" onClick={onParty} testId={props.landing ? 'landing-browse-lobby' : undefined} />
     {composition === 'landscape' && <Hotspot rect={rect.lighthouse} label="Public board" href="/r/play" />}
     <Hotspot rect={rect.mailbox} label={props.signedIn ? 'Account menu' : 'Sign in'} onClick={props.onAccount} />
@@ -75,7 +75,13 @@ export function PorchScene(props: PorchSceneProps) {
     event.preventDefault()
     goParty()
   }
-  const draw = useCallback((ctx: CanvasRenderingContext2D, frame: number) => drawPorch(ctx, frame, { easelState: props.easelState, bob: true, soundOn: !props.muted, signedIn: props.signedIn }), [props.easelState, props.muted, props.signedIn])
+  const draw = useCallback((ctx: CanvasRenderingContext2D, frame: number) => {
+    const height = root.current?.clientHeight ?? window.innerHeight
+    const width = root.current?.clientWidth ?? window.innerWidth
+    const scale = Math.max(2, Math.ceil(Math.max(width / ctx.canvas.width, height / ctx.canvas.height)))
+    const roofTop = Math.max(0, Math.floor((ctx.canvas.height - height / scale) / 2))
+    drawPorch(ctx, frame, { easelState: props.easelState, bob: true, soundOn: !props.muted, signedIn: props.signedIn, roofTop })
+  }, [props.easelState, props.muted, props.signedIn])
   return <div ref={root} className={props.landing ? 'porch-world porch-world--landing' : 'porch-world'}>
     <PixelScene draw={draw} className="porch-world__scene" camera={{ x: 0, y: panning ? -(root.current?.clientHeight ?? 0) : 0, zoom: 1 }} zoomMs={500} syncScale><Objects {...props} moreOpen={moreOpen} setMoreOpen={setMoreOpen} onParty={onParty} /></PixelScene>
     <nav className="porch-dock" aria-label="Porch shortcuts">

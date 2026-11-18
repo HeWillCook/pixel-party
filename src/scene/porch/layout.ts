@@ -12,8 +12,8 @@ export const porchLayout: Record<Composition, Record<PorchObject, Rect>> = {
   },
   portrait: {
     easel: { x: 56, y: 65, w: 68, h: 116 }, chalkboard: { x: 104, y: 184, w: 44, h: 48 },
-    hatch: { x: 47, y: 246, w: 32, h: 18 }, lighthouse: { x: 44, y: 111, w: 14, h: 29 },
-    mailbox: { x: 29, y: 83, w: 28, h: 18 }, gallery: { x: 29, y: 211, w: 23, h: 30 },
+    hatch: { x: 47, y: 265, w: 32, h: 14 }, lighthouse: { x: 44, y: 111, w: 14, h: 29 },
+    mailbox: { x: 29, y: 83, w: 28, h: 18 }, gallery: { x: 29, y: 238, w: 23, h: 30 },
     radio: { x: 30, y: 242, w: 16, h: 18 }, note: { x: 35, y: 54, w: 15, h: 22 },
     lantern: { x: 49, y: 68, w: 20, h: 22 }, cat: { x: 36, y: 250, w: 29, h: 15 },
     plant: { x: 30, y: 245, w: 13, h: 18 }, more: { x: 66, y: 260, w: 27, h: 16 },
