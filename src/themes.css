@@ -69,7 +69,7 @@
 .porch-nav__beam { position: absolute; top: 0; left: 0; right: 0; display: flex; overflow: hidden; pointer-events: none; }
 .porch-sprite { display: block; flex: none; }
 .porch-nav__row { position: relative; display: flex; align-items: flex-start; gap: calc(var(--px) * 2); min-height: calc(var(--px) * 24); max-width: 1280px; margin: auto; padding: 0 calc(var(--px) * 3); }
-.porch-nav__logo { position: relative; z-index: 2; display: block; flex: none; min-height: 44px; margin-right: calc(var(--px) * 4); transform-origin: 50% 0; transition: transform 180ms steps(3); }
+.porch-nav__logo { position: relative; z-index: 2; display: block; flex: none; min-height: 44px; margin-top: calc(var(--px) * 2); margin-right: calc(var(--px) * 6); transform-origin: 50% 0; transition: transform 180ms steps(3); }
 .porch-nav__logo:hover, .porch-nav__logo:focus-visible { transform: rotate(-2deg); }
 .porch-nav__logo::after { content: '✦'; position: absolute; top: 25%; left: 10%; color: #fff0bb; font-size: calc(var(--px) * 4); opacity: 0; animation: logo-glint 7s steps(1) infinite; pointer-events: none; }
 @keyframes logo-glint { 0%, 88%, 100% { opacity: 0; } 90% { opacity: .9; left: 20%; } 92% { opacity: .9; left: 70%; } }

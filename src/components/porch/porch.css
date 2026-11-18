@@ -32,7 +32,10 @@ html:has(.porch-home) .porch-nav__sign { font-size: calc(var(--px) * 7); }
 html:has(.porch-home) .porch-nav__username { font-size: calc(var(--px) * 5); max-width: calc(var(--px) * 34); }
 @media (min-width: 768px) { html:has(.porch-home) .porch-nav__mail-art { display: none; } }
 @media (max-width: 640px) {
+  html:has(.porch-home) .porch-nav__mail { display: none; }
+  .porch-world .pixel-hotspot:has(.porch-easel-copy) .pixel-hotspot__label { display: none; }
   .porch-world--landing { height: 100dvh; }
+  .porch-world--landing .porch-more-ticket { transform: translateY(calc(var(--px) * 17)); }
   .porch-scores { font-size: calc(var(--px) * 4); }
   .pixel-hotspot[aria-label="Scoring rules"] .pixel-hotspot__label,
   .pixel-hotspot[aria-label="Public board"] .pixel-hotspot__label { left: 0; transform: none; }
@@ -40,6 +43,6 @@ html:has(.porch-home) .porch-nav__username { font-size: calc(var(--px) * 5); max
   .pixel-hotspot[aria-label="Mute sounds"] .pixel-hotspot__label,
   .pixel-hotspot[aria-label="Unmute sounds"] .pixel-hotspot__label { left: auto; right: 100%; top: 40%; transform: none; }
   .pixel-hotspot[aria-label="Account menu"] .pixel-hotspot__label,
-  .pixel-hotspot[aria-label="Sign in"] .pixel-hotspot__label { top: calc(100% - var(--px) * 6); }
+  .pixel-hotspot[aria-label="Sign in"] .pixel-hotspot__label { top: auto; bottom: 100%; }
   .pixel-hotspot[aria-label="Party beach"] .pixel-hotspot__label { top: auto; bottom: 100%; left: auto; right: 0; transform: none; }
 }

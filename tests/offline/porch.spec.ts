@@ -108,6 +108,9 @@ for (const path of ['/', '/home']) test(`no horizontal scroll at 375px on ${path
   await page.goto(`${origin}${path}`)
   await expect(page.locator('.porch-world')).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375)
+  const more = (await page.getByRole('button', { name: 'More', exact: true }).boundingBox())!
+  expect(more.y + more.height).toBeGreaterThan(760)
+  expect(more.y + more.height).toBeLessThanOrEqual(812)
 })
 
 test('portrait porch keeps every object in view and tappable', async ({ page }) => {
@@ -117,10 +120,17 @@ test('portrait porch keeps every object in view and tappable', async ({ page }) 
   const hotspots = page.locator('.porch-world .pixel-hotspot')
   await expect(hotspots).toHaveCount(5)
   for (const hotspot of await hotspots.all()) {
-    await expect(hotspot.locator('.pixel-hotspot__label')).toBeVisible()
-    const labelBox = await hotspot.locator('.pixel-hotspot__label').boundingBox()
-    expect(labelBox!.x).toBeGreaterThanOrEqual(0)
-    expect(labelBox!.x + labelBox!.width).toBeLessThanOrEqual(375)
+    const easel = await hotspot.getAttribute('data-testid') === 'daily-start-button'
+    if (easel) {
+      await expect(hotspot.locator('.pixel-hotspot__label')).toBeHidden()
+    } else {
+      await expect(hotspot.locator('.pixel-hotspot__label')).toBeVisible()
+      const labelBox = (await hotspot.locator('.pixel-hotspot__label').boundingBox())!
+      expect(labelBox.x).toBeGreaterThanOrEqual(0)
+      expect(labelBox.x + labelBox.width).toBeLessThanOrEqual(375)
+      const objectBox = (await hotspot.boundingBox())!
+      expect(labelBox.x + labelBox.width <= objectBox.x || objectBox.x + objectBox.width <= labelBox.x || labelBox.y + labelBox.height <= objectBox.y || objectBox.y + objectBox.height <= labelBox.y).toBe(true)
+    }
     const box = await hotspot.boundingBox()
     expect(box!.width).toBeGreaterThanOrEqual(44)
     expect(box!.height).toBeGreaterThanOrEqual(44)
@@ -132,7 +142,7 @@ test('portrait porch keeps every object in view and tappable', async ({ page }) 
     })
     expect(hit, await hotspot.getAttribute('aria-label') ?? '').toBe(true)
   }
-  const labels = await hotspots.locator('.pixel-hotspot__label').all()
+  const labels = await hotspots.locator('.pixel-hotspot__label:visible').all()
   for (let index = 0; index < labels.length; index++) {
     const first = (await labels[index].boundingBox())!
     for (const other of labels.slice(index + 1)) {
@@ -140,9 +150,21 @@ test('portrait porch keeps every object in view and tappable', async ({ page }) 
       expect(first.x + first.width <= second.x || second.x + second.width <= first.x || first.y + first.height <= second.y || second.y + second.height <= first.y).toBe(true)
     }
   }
-  await page.getByRole('button', { name: 'More', exact: true }).click()
+  const more = page.getByRole('button', { name: 'More', exact: true })
+  const moreBox = (await more.boundingBox())!
+  expect(moreBox.y + moreBox.height).toBeGreaterThan(760)
+  await expect(page.locator('.porch-nav__mail-art')).toBeHidden()
+  await more.click()
   const menu = page.getByRole('group', { name: 'More porch actions' })
-  for (const name of ['Public board', 'Mute sounds', 'Scoring rules']) await expect(menu.getByText(name, { exact: true })).toBeVisible()
+  for (const name of ['Public board', 'Mute sounds', 'Scoring rules']) {
+    const item = menu.getByText(name, { exact: true })
+    await expect(item).toBeVisible()
+    const bounds = (await item.boundingBox())!
+    expect(bounds.y).toBeGreaterThanOrEqual(0)
+    expect(bounds.y + bounds.height).toBeLessThanOrEqual(812)
+  }
+  await menu.getByRole('button', { name: 'Scoring rules' }).click()
+  await expect(page.getByRole('dialog')).toBeVisible()
 })
 
 test('porch and navigation share the scene pixel scale', async ({ page }) => {
