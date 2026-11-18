@@ -680,13 +680,14 @@ async function offlineClient(page: Page, signedIn = false) {
   return errors
 }
 
-test('signed-out home shows leaderboard and sign-in without revealing a prompt', async ({ page }) => {
+test('signed-out home shows chalkboard hotspot and sign-in without revealing a prompt', async ({ page }) => {
   const errors = await offlineClient(page)
   let meRequests = 0
   await page.route('**/api/daily/me', async route => { meRequests++; await route.fulfill({ json: {} }) })
   await page.goto(`${origin}/home`)
   await expect(page.getByTestId('daily-sign-in-button')).toBeVisible()
-  await expect(page.getByTestId('daily-leaderboard').getByRole('heading', { name: 'Leaderboard' })).toBeVisible()
+  await expect(page.getByRole('link', { name: "Today's scores" })).toBeVisible()
+  await expect(page.getByText("Today's top five")).toBeVisible()
   await expect(page.getByTestId('daily-prompt')).toHaveCount(0)
   expect(meRequests).toBe(0)
   expect(errors).toEqual([])
@@ -695,7 +696,7 @@ test('signed-out home shows leaderboard and sign-in without revealing a prompt',
 test('signed-out profile renders its heading and empty state without errors', async ({ page }) => {
   const errors = await offlineClient(page)
   await page.goto(`${origin}/u/offline-player`)
-  await expect(page.getByRole('heading', { name: "Player's Gallery" })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Gallery' })).toBeVisible()
   await expect(page.getByText('No drawings to show yet.')).toBeVisible()
   expect(errors).toEqual([])
 })

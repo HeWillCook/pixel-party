@@ -7,7 +7,10 @@ const clientDir = resolve(import.meta.dirname, '../../dist/client')
 const user = { id: 'host', name: 'Offline host', email: 'host@example.test' }
 const token = `fixture.${Buffer.from(JSON.stringify({ sub: user.id, name: user.name, exp: 4_000_000_000 })).toString('base64url')}.unsigned`
 
-async function setup(page: Page, signedOut = false, records: unknown[] = []) {
+type SubscribeQuery = { collection: string; where?: Record<string, unknown> }
+type RecordSource = unknown[] | ((query: SubscribeQuery) => unknown[])
+
+async function setup(page: Page, signedOut = false, records: RecordSource = []) {
   await page.route('**/*', async (route) => {
     const url = new URL(route.request().url())
     if (url.origin !== origin) return route.abort()
@@ -27,7 +30,10 @@ async function setup(page: Page, signedOut = false, records: unknown[] = []) {
       if (raw === 'ping') return socket.send('pong')
       const message = JSON.parse(String(raw))
       if (message.type === 'user.list') socket.send(JSON.stringify({ type: 'user.list', payload: { users: [] } }))
-      if (message.type === 'core.subscribe') socket.send(JSON.stringify({ type: 'core.query_result', payload: { subscriptionId: message.payload.subscriptionId, records } }))
+      if (message.type === 'core.subscribe') {
+        const result = typeof records === 'function' ? records(message.payload.query as SubscribeQuery) : records
+        socket.send(JSON.stringify({ type: 'core.query_result', payload: { subscriptionId: message.payload.subscriptionId, records: result } }))
+      }
     })
   })
 }
@@ -831,3 +837,426 @@ test('play pages show CompactRoof with integer-scaled compact logo and clean 375
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375)
 })
 
+test('scores page lists today', async ({ page }) => {
+  const cells = samplePaintingBase64()
+  const todayScores = [
+    { recordId: 's1', data: { day: '2026-11-17', userId: 'u1', displayName: 'Alice', avatarUrl: '', score: 912, fit: 460, recognition: 350, speed: 102, bestElapsedMs: 28000, ended: 1, medal: 1 } },
+    { recordId: 's2', data: { day: '2026-11-17', userId: 'u2', displayName: 'Bob', avatarUrl: '', score: 740, fit: 380, recognition: 280, speed: 80, bestElapsedMs: 41000, ended: 1, medal: 2 } },
+    { recordId: 's3', data: { day: '2026-11-17', userId: 'u3', displayName: 'Cara', avatarUrl: '', score: 580, fit: 300, recognition: 220, speed: 60, bestElapsedMs: 55000, ended: 1, medal: 3 } },
+  ]
+  await setup(page, false, (query) => {
+    if (query.collection === 'dailyScores' && query.where?.day === '2026-11-17') return todayScores
+    return []
+  })
+  await page.route('**/api/daily/me', route => route.fulfill({
+    json: { day: '2026-11-17', status: 'ended', autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: true, best: 740, windows: [], nextAutoAt: null, serverNow: Date.now(), lastCells: cells },
+  }))
+  await page.route('**/api/daily/today/drawings', route => route.fulfill({
+    json: {
+      drawings: [
+        { data: { userId: 'u1', cells, guess: 'lighthouse' } },
+        { data: { userId: 'u2', cells, guess: 'sailboat' } },
+      ],
+    },
+  }))
+
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await page.goto(`${origin}/scores`)
+  await expect(page.getByTestId('scores-page')).toBeVisible()
+  await expect(page.getByTestId('scores-chalkboard')).toBeVisible()
+  await expect(page.getByTestId('scores-ledge')).toBeVisible()
+  await expect(page.getByTestId('scores-haiku')).toBeVisible()
+  await expect(page.getByTestId('scores-boosters').locator('canvas')).toHaveCount(3)
+
+  const board = page.getByTestId('scores-chalkboard')
+  await expect(board.getByRole('link', { name: 'Alice' })).toHaveAttribute('href', '/u/u1')
+  await expect(board).toContainText('912')
+  await expect(board).toContainText('740')
+  await expect(board).toContainText('580')
+  await expect(board.getByLabel(/Gold medal/)).toBeVisible()
+  await expect(board.getByLabel(/Silver medal/)).toBeVisible()
+  await expect(board.getByLabel(/Bronze medal/)).toBeVisible()
+  await expect(board.getByRole('img', { name: 'Pixel drawing' })).toHaveCount(2)
+  const scoreScaleMetrics = await board.evaluate((el) => {
+    const px = parseFloat(getComputedStyle(el).getPropertyValue('--px')) || 3
+    const thumb = el.querySelector('.scores-thumb') as HTMLCanvasElement
+    const trophy = el.querySelector('.scores-board-title canvas') as HTMLCanvasElement
+    const medal = el.querySelector('.scores-medal') as HTMLCanvasElement
+    const booster = el.parentElement?.querySelector('.scores-boosters canvas') as HTMLCanvasElement
+    const haiku = el.parentElement?.querySelector('.haiku__canvas') as HTMLCanvasElement
+    const rowLink = el.querySelector('.scores-row-link') as HTMLElement
+    return {
+      px,
+      thumbRatio: thumb.clientWidth / thumb.width,
+      trophyRatio: trophy.clientWidth / trophy.width,
+      medalRatio: medal.clientWidth / medal.width,
+      boosterRatio: booster.clientWidth / booster.width,
+      haikuRatio: haiku.clientWidth / haiku.width,
+      rowLinkHeight: rowLink.getBoundingClientRect().height,
+    }
+  })
+  expect(scoreScaleMetrics.px).toBe(3)
+  expect(scoreScaleMetrics.thumbRatio).toBe(3)
+  expect(scoreScaleMetrics.trophyRatio).toBe(3)
+  expect(scoreScaleMetrics.medalRatio).toBe(3)
+  expect(scoreScaleMetrics.boosterRatio).toBe(3)
+  expect(scoreScaleMetrics.haikuRatio).toBe(3)
+  expect(scoreScaleMetrics.rowLinkHeight).toBeGreaterThanOrEqual(44)
+  await expect(page.getByTestId('haiku-bubble')).toContainText("Haiku's favourite today:")
+  await expect(page.getByTestId('haiku-bubble')).toContainText('lighthouse')
+
+  // Chalkboard remains still (no bob animation)
+  await expect(board).toHaveCSS('animation-name', 'none')
+
+  // Mobile 375x812: chalkboard fills width cleanly without horizontal overflow in <main> or document
+  await page.setViewportSize({ width: 375, height: 812 })
+  const mobileMetrics = await page.evaluate(() => {
+    const main = document.querySelector('main')!
+    const thumb = document.querySelector('.scores-thumb') as HTMLCanvasElement
+    const px = parseFloat(getComputedStyle(thumb).getPropertyValue('--px')) || 2
+    return {
+      docScrollW: document.documentElement.scrollWidth,
+      mainScrollW: main.scrollWidth,
+      mainClientW: main.clientWidth,
+      px,
+      thumbRatio: thumb.clientWidth / thumb.width,
+    }
+  })
+  expect(mobileMetrics.docScrollW).toBeLessThanOrEqual(375)
+  expect(mobileMetrics.mainScrollW).toBeLessThanOrEqual(mobileMetrics.mainClientW)
+  expect(mobileMetrics.px).toBe(2)
+  expect(mobileMetrics.thumbRatio).toBe(2)
+  const bounds = (await board.boundingBox())!
+  expect(bounds.x).toBeGreaterThanOrEqual(0)
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(375)
+
+  // Clicking anywhere on a row (even on the rank badge) navigates via stretched row link
+  await board.locator('ol > li').first().locator('.scores-rank').click()
+  await expect(page).toHaveURL(`${origin}/u/u1`)
+})
+
+test('day paging works on scores chalkboard', async ({ page }) => {
+  const cells = samplePaintingBase64()
+  await setup(page, false, (query) => {
+    if (query.collection === 'dailyScores' && query.where?.day === '2026-11-17') {
+      return [{ recordId: 't1', data: { day: '2026-11-17', userId: 'u-today', displayName: 'Alice', avatarUrl: '', score: 888, bestElapsedMs: 25000, medal: 1 } }]
+    }
+    if (query.collection === 'dailyScores' && query.where?.day === '2026-11-16') {
+      return [{ recordId: 'y1', data: { day: '2026-11-16', userId: 'u-prev', displayName: 'Bob', avatarUrl: '', score: 950, bestElapsedMs: 20000, medal: 1 } }]
+    }
+    if (query.collection === 'dailyDrawings' && query.where?.day === '2026-11-16') {
+      return [{ recordId: 'd1', data: { day: '2026-11-16', userId: 'u-prev', cells, guess: 'windmill', score: 950 } }]
+    }
+    return []
+  })
+  await page.setViewportSize({ width: 375, height: 812 })
+  await page.goto(`${origin}/scores`)
+  const board = page.getByTestId('scores-chalkboard')
+  await expect(board).toContainText('Today')
+  await expect(board).toContainText('Alice')
+  await expect(board).toContainText('888')
+  await expect(board.getByRole('button', { name: 'Next day' })).toBeDisabled()
+
+  await board.getByRole('button', { name: 'Previous day' }).click()
+  await expect(board).toContainText('2026-11-16')
+  await expect(board).toContainText('Bob')
+  await expect(board).toContainText('950')
+  await expect(board.getByLabel('Gold medal')).toBeVisible()
+  await expect(board.getByRole('img', { name: 'Pixel drawing' })).toHaveCount(1)
+
+  await board.getByRole('button', { name: 'Next day' }).click()
+  await expect(board).toContainText('Today')
+  await expect(board).toContainText('Alice')
+})
+
+test('never-graded attempts are hidden on scores chalkboard', async ({ page }) => {
+  const cells = samplePaintingBase64()
+  await setup(page, false, (query) => {
+    if (query.collection === 'dailyScores') {
+      return [
+        { recordId: 's0', data: { day: '2026-11-17', userId: 'u-empty', displayName: 'Unpainted', avatarUrl: '', score: 0, bestElapsedMs: null, medal: 0 } },
+        { recordId: 's1', data: { day: '2026-11-17', userId: 'u-zero-guess', displayName: 'GuessedZero', avatarUrl: '', score: 0, bestElapsedMs: 12000, medal: 0 } },
+        { recordId: 's2', data: { day: '2026-11-17', userId: 'u-top', displayName: 'TopPainter', avatarUrl: '', score: 850, bestElapsedMs: 30000, medal: 1 } },
+      ]
+    }
+    if (query.collection === 'dailyDrawings') {
+      return [
+        { recordId: 'd0', data: { day: '2026-11-17', userId: 'u-empty', cells, guess: '' } },
+        { recordId: 'd1', data: { day: '2026-11-17', userId: 'u-zero-guess', cells, guess: 'apple', score: 0 } },
+        { recordId: 'd2', data: { day: '2026-11-17', userId: 'u-top', cells, guess: 'lighthouse', score: 850 } },
+      ]
+    }
+    return []
+  })
+  await page.route('**/api/daily/me', route => route.fulfill({
+    json: { day: '2026-11-17', status: 'ended', autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: true, best: 850, windows: [], nextAutoAt: null, serverNow: Date.now(), lastCells: cells },
+  }))
+  await page.route('**/api/daily/today/drawings', route => route.fulfill({
+    json: {
+      drawings: [
+        { data: { userId: 'u-empty', cells, guess: '' } },
+        { data: { userId: 'u-zero-guess', cells, guess: 'apple' } },
+        { data: { userId: 'u-top', cells, guess: 'lighthouse' } },
+      ],
+    },
+  }))
+
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await page.goto(`${origin}/scores`)
+  const board = page.getByTestId('scores-chalkboard')
+  await expect(board.getByRole('link', { name: 'TopPainter' })).toBeVisible()
+  await expect(board.getByRole('link', { name: 'GuessedZero' })).toBeVisible()
+  await expect(board.getByText('Unpainted')).toHaveCount(0)
+  await expect(board.locator('ol > li')).toHaveCount(2)
+})
+
+test('scores handles long unbreakable names, HTML names, ties, and corrupt cells on mobile without overflow', async ({ page }) => {
+  const longName = 'SupercalifragilisticexpialidociousUnbreakableNameSixtyChars1234'
+  const cells = samplePaintingBase64()
+  await setup(page, false, (query) => {
+    if (query.collection === 'dailyScores') {
+      return [
+        { recordId: 's1', data: { day: '2026-11-17', userId: 'u-long', displayName: longName, avatarUrl: '', score: 900, bestElapsedMs: 22000, medal: 1 } },
+        { recordId: 's2', data: { day: '2026-11-17', userId: 'u-tie', displayName: '<img src=x onerror=alert(1)>', avatarUrl: '', score: 900, bestElapsedMs: 22000, medal: 2 } },
+      ]
+    }
+    return []
+  })
+  await page.route('**/api/daily/me', route => route.fulfill({
+    json: { day: '2026-11-17', status: 'ended', autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: true, best: 900, windows: [], nextAutoAt: null, serverNow: Date.now(), lastCells: cells },
+  }))
+  await page.route('**/api/daily/today/drawings', route => route.fulfill({
+    json: {
+      drawings: [
+        { data: { userId: 'u-long', cells: 'not-valid-base64!!!', guess: 'lighthouse' } },
+        { data: { userId: 'u-tie', cells, guess: 'sailboat' } },
+      ],
+    },
+  }))
+
+  for (const vp of [{ width: 375, height: 812 }, { width: 375, height: 667 }]) {
+    await page.setViewportSize(vp)
+    await page.goto(`${origin}/scores`)
+    await expect(page.getByRole('img', { name: 'Drawing unavailable' })).toBeVisible()
+    await expect(page.getByText('<img src=x onerror=alert(1)>')).toBeVisible()
+    const overflow = await page.evaluate(() => {
+      const main = document.querySelector('main')!
+      return {
+        docScrollW: document.documentElement.scrollWidth,
+        mainScrollW: main.scrollWidth,
+        mainClientW: main.clientWidth,
+      }
+    })
+    expect(overflow.docScrollW).toBeLessThanOrEqual(375)
+    expect(overflow.mainScrollW).toBeLessThanOrEqual(overflow.mainClientW)
+  }
+})
+
+test('capture Task 7 scores chalkboard across viewports', async ({ page }) => {
+  test.skip(process.env.SCREENSHOTS !== '1')
+  const cells = samplePaintingBase64()
+  const todayScores = [
+    { recordId: 's1', data: { day: '2026-11-17', userId: 'u1', displayName: 'Alice', avatarUrl: '', score: 912, bestElapsedMs: 28000, medal: 1 } },
+    { recordId: 's2', data: { day: '2026-11-17', userId: 'u2', displayName: 'Will', avatarUrl: '', score: 840, bestElapsedMs: 36000, medal: 2 } },
+    { recordId: 's3', data: { day: '2026-11-17', userId: 'u3', displayName: 'Sam', avatarUrl: '', score: 695, bestElapsedMs: 52000, medal: 3 } },
+    { recordId: 's4', data: { day: '2026-11-17', userId: 'u4', displayName: 'Alex', avatarUrl: '', score: 510, bestElapsedMs: 65000, medal: 0 } },
+  ]
+  await setup(page, false, (query) => (query.collection === 'dailyScores' ? todayScores : []))
+  await page.route('**/api/daily/me', route => route.fulfill({
+    json: { day: '2026-11-17', status: 'ended', autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: true, best: 840, windows: [], nextAutoAt: null, serverNow: Date.now(), lastCells: cells },
+  }))
+  await page.route('**/api/daily/today/drawings', route => route.fulfill({
+    json: {
+      drawings: [
+        { data: { userId: 'u1', cells, guess: 'lighthouse' } },
+        { data: { userId: 'u2', cells, guess: 'sailboat' } },
+        { data: { userId: 'u3', cells, guess: 'sunset cove' } },
+        { data: { userId: 'u4', cells, guess: 'campfire' } },
+      ],
+    },
+  }))
+
+  const dir = resolve(import.meta.dirname, '../../docs/superpowers/screenshots/2026-11-18-porch')
+  await mkdir(dir, { recursive: true })
+  for (const vp of [{ width: 1440, height: 900 }, { width: 1280, height: 720 }, { width: 375, height: 812 }]) {
+    await page.setViewportSize(vp)
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await page.goto(`${origin}/scores`)
+    await expect(page.getByTestId('scores-chalkboard')).toBeVisible()
+    await expect(page.getByTestId('haiku-bubble')).toBeVisible()
+    await page.evaluate(() => document.fonts.ready)
+    await page.waitForTimeout(120)
+    await page.screenshot({ path: resolve(dir, `scores-${vp.width}x${vp.height}.png`), fullPage: true })
+  }
+})
+
+test('gallery shows framed dailies newest first with scene-scaled art and multi-viewport clearance', async ({ page }) => {
+  const cells = samplePaintingBase64()
+  await setup(page, false, (query) => {
+    if (query.collection === 'dailyDrawings' && query.where?.userId === 'alice') {
+      return [
+        { recordId: 'd1', data: { day: '2026-11-15', userId: 'alice', displayName: 'Alice', prompt: 'An anchor', cells, score: 610, guess: 'anchor' } },
+        { recordId: 'd2', data: { day: '2026-11-17', userId: 'alice', displayName: 'Alice', prompt: 'A lighthouse', cells, score: 912, guess: 'lighthouse' } },
+        { recordId: 'd3', data: { day: '2026-11-16', userId: 'alice', displayName: 'Alice', prompt: 'A windmill', cells, score: 0, guess: '' } },
+        { recordId: 'd4', data: { day: '2026-11-14', userId: 'alice', displayName: 'Alice', prompt: 'A harbor', cells, score: 750, guess: 'harbor' } },
+        { recordId: 'd5', data: { day: '2026-11-13', userId: 'alice', displayName: 'Alice', prompt: 'A lantern', cells, score: 640, guess: 'lantern' } },
+      ]
+    }
+    if (query.collection === 'dailyScores' && query.where?.userId === 'alice') {
+      return [
+        { recordId: 's1', data: { day: '2026-11-15', userId: 'alice', displayName: 'Alice', medal: 0 } },
+        { recordId: 's2a', data: { day: '2026-11-17', userId: 'alice', displayName: 'Alice', medal: 3 } },
+        { recordId: 's2b', data: { day: '2026-11-17', userId: 'alice', displayName: 'Alice', medal: 1 } },
+      ]
+    }
+    return []
+  })
+
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await page.goto(`${origin}/u/alice`)
+  await expect(page.getByTestId('gallery-page')).toBeVisible()
+  await expect(page.getByTestId('gallery-wall')).toBeVisible()
+  await expect(page.getByRole('heading', { name: "Alice's gallery" })).toBeVisible()
+
+  const frames = page.locator('[data-testid^="gallery-frame-"]')
+  await expect(frames).toHaveCount(4)
+  await expect(frames.nth(0)).toHaveAttribute('data-testid', 'gallery-frame-2026-11-17')
+  await expect(frames.nth(0)).toHaveAttribute('data-frame-kind', 'gilt')
+  await expect(frames.nth(0)).toContainText('A lighthouse')
+  await expect(frames.nth(0)).toContainText('2026-11-17')
+  await expect(frames.nth(0)).toContainText('912 / 1000')
+  await expect(frames.nth(0)).toContainText('Haiku guessed: lighthouse')
+  await expect(frames.nth(0)).toContainText('#1 Gold')
+  await expect(frames.nth(0).getByLabel('Gold medal')).toBeVisible()
+  const galleryMetrics = await frames.nth(0).evaluate((el) => {
+    const thumb = el.querySelector('.gallery-frame__thumb') as HTMLCanvasElement
+    const medal = el.querySelector('.gallery-plaque__medal') as HTMLCanvasElement
+    const px = parseFloat(getComputedStyle(thumb).getPropertyValue('--px')) || 3
+    return {
+      px,
+      thumbRatio: thumb.clientWidth / thumb.width,
+      medalRatio: medal.clientWidth / medal.width,
+    }
+  })
+  expect(galleryMetrics).toEqual({ px: 3, thumbRatio: 6, medalRatio: 3 })
+
+  await expect(frames.nth(1)).toHaveAttribute('data-testid', 'gallery-frame-2026-11-15')
+  await expect(frames.nth(1)).toHaveAttribute('data-frame-kind', 'wood')
+  await expect(frames.nth(1)).toContainText('An anchor')
+  await expect(page.getByText('A windmill')).toHaveCount(0)
+
+  for (const vp of [
+    { width: 1366, height: 768 },
+    { width: 1024, height: 768 },
+    { width: 768, height: 1024 },
+    { width: 375, height: 812 },
+    { width: 375, height: 667 },
+  ]) {
+    await page.setViewportSize(vp)
+    await expect.poll(async () => {
+      const layout = await page.evaluate(() => {
+        const main = document.querySelector('main')!
+        const pageEl = document.querySelector('.gallery-page') as HTMLElement
+        const backdropCanvas = document.querySelector('.gallery-backdrop__canvas') as HTMLElement
+        return {
+          docScrollW: document.documentElement.scrollWidth,
+          mainScrollW: main.scrollWidth,
+          mainClientW: main.clientWidth,
+          pageH: pageEl.getBoundingClientRect().height,
+          canvasH: backdropCanvas.getBoundingClientRect().height,
+        }
+      })
+      return layout.docScrollW <= vp.width
+        && layout.mainScrollW <= layout.mainClientW
+        && layout.canvasH >= Math.floor(layout.pageH)
+    }).toBe(true)
+  }
+
+  // Mobile 375x812: single column stacking check
+  await page.setViewportSize({ width: 375, height: 812 })
+  const firstBox = (await frames.nth(0).boundingBox())!
+  const secondBox = (await frames.nth(1).boundingBox())!
+  expect(secondBox.y).toBeGreaterThanOrEqual(firstBox.y + firstBox.height)
+})
+
+test('empty gallery shows single empty frame and Paint today prompt link to /home', async ({ page }) => {
+  const cells = samplePaintingBase64()
+  await setup(page, false, (query) => {
+    if (query.collection === 'dailyDrawings' && query.where?.userId === 'host') {
+      return [{ recordId: 'd0', data: { day: '2026-11-17', userId: 'host', displayName: 'Offline host', prompt: 'Skipped', cells, score: 0, guess: '' } }]
+    }
+    return []
+  })
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await page.goto(`${origin}/u/host`)
+  await expect(page.getByRole('heading', { name: 'Your gallery' })).toBeVisible()
+  const empty = page.getByTestId('gallery-empty')
+  await expect(empty).toBeVisible()
+  await expect(empty).toContainText('No drawings to show yet.')
+  const cta = empty.getByRole('link', { name: "Paint today's prompt" })
+  await expect(cta).toHaveAttribute('href', '/home')
+  await cta.click()
+  await expect(page).toHaveURL(`${origin}/home`)
+})
+
+test('door opens own gallery from porch canvases and mailbox menu', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await setup(page)
+  await page.goto(`${origin}/home`)
+  await page.locator('.porch-world').getByRole('link', { name: 'Your gallery' }).click()
+  await expect(page).toHaveURL(`${origin}/u/host`)
+  await expect(page.getByRole('heading', { name: 'Your gallery' })).toBeVisible()
+
+  await page.goto(`${origin}/party`)
+  await page.getByRole('button', { name: /Account menu/ }).click()
+  await page.getByRole('menuitem', { name: 'My gallery' }).click()
+  await expect(page).toHaveURL(`${origin}/u/host`)
+  await expect(page.getByRole('heading', { name: 'Your gallery' })).toBeVisible()
+})
+
+test('capture Task 8 gallery wall across viewports', async ({ page }) => {
+  test.skip(process.env.SCREENSHOTS !== '1')
+  const cells = samplePaintingBase64()
+  const dir = resolve(import.meta.dirname, '../../docs/superpowers/screenshots/2026-11-18-porch')
+  await mkdir(dir, { recursive: true })
+
+  // Owner gallery with 3 paintings (Gold, Silver, and plain wood frame)
+  await setup(page, false, (query) => {
+    if (query.collection === 'dailyDrawings' && query.where?.userId === 'host') {
+      return [
+        { recordId: 'd1', data: { day: '2026-11-17', userId: 'host', displayName: 'Offline host', prompt: 'A lighthouse', cells, score: 912, guess: 'lighthouse' } },
+        { recordId: 'd2', data: { day: '2026-11-16', userId: 'host', displayName: 'Offline host', prompt: 'Sunset sailboat', cells, score: 825, guess: 'sailboat' } },
+        { recordId: 'd3', data: { day: '2026-11-15', userId: 'host', displayName: 'Offline host', prompt: 'Harbor lantern', cells, score: 610, guess: 'lantern' } },
+      ]
+    }
+    if (query.collection === 'dailyScores' && query.where?.userId === 'host') {
+      return [
+        { recordId: 's1', data: { day: '2026-11-17', userId: 'host', displayName: 'Offline host', medal: 1 } },
+        { recordId: 's2', data: { day: '2026-11-16', userId: 'host', displayName: 'Offline host', medal: 2 } },
+        { recordId: 's3', data: { day: '2026-11-15', userId: 'host', displayName: 'Offline host', medal: 0 } },
+      ]
+    }
+    return []
+  })
+  for (const vp of [{ width: 1440, height: 900 }, { width: 1280, height: 720 }, { width: 375, height: 812 }]) {
+    await page.setViewportSize(vp)
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await page.goto(`${origin}/u/host`)
+    await expect(page.getByTestId('gallery-frame-2026-11-17')).toBeVisible()
+    await page.evaluate(() => document.fonts.ready)
+    await page.waitForTimeout(120)
+    await page.screenshot({ path: resolve(dir, `gallery-owner-${vp.width}x${vp.height}.png`), fullPage: true })
+  }
+
+  // Empty gallery state
+  await setup(page)
+  for (const vp of [{ width: 1280, height: 720 }, { width: 375, height: 812 }]) {
+    await page.setViewportSize(vp)
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await page.goto(`${origin}/u/host`)
+    await expect(page.getByTestId('gallery-empty')).toBeVisible()
+    await page.evaluate(() => document.fonts.ready)
+    await page.waitForTimeout(120)
+    await page.screenshot({ path: resolve(dir, `gallery-empty-${vp.width}x${vp.height}.png`), fullPage: true })
+  }
+})
