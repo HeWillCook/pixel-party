@@ -457,3 +457,10 @@ The fake judge is selected by default in dev and tests so those runs make no pai
   Conflict resolutions, test output tails, visual inspection and unchanged dev-local timeout/dependency caveats:
   .superpowers/sdd/2026-11-17-daily-mode/merge-redesign-report.md. No push, deploy, DAILY_JUDGE override or real AI call.
 - Provider: Codex implementation, screenshots, self-review and verification; no nested agents.
+
+### 2026-11-17 — Daily fixes PR 1
+
+- Added durable fixed auto-grade windows, server-side blank/unchanged skips and missed/late outcomes, an app-wide scheduler, and a loading state that avoids a not-started flash.
+- Added the timeline, clearer scoring and manual-grade controls, and Exit without submission. Final review hardened concurrent submissions, lease expiry, window identity, local timeout snapshots, and clock alignment.
+- Verification: `npm run verify` PASS (40 files, 411 unit tests; lint, type-check and build); `npm run build && npx playwright test tests/offline` PASS (44 passed, 6 screenshot tests skipped); `git diff --check` PASS.
+- Provider: Codex implemented; reviews by Codex Sol and Gemini Hydrogen; planned by Claude Opus.

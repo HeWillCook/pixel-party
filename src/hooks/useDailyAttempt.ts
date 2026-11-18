@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { getAuthToken, useAuthProfileReady } from 'deepspace'
-import { PALETTE } from '../game/config'
-import { cellsHash, type GradeKind } from '../game/daily/attempt'
+import { DAILY, PALETTE } from '../game/config'
+import type { GradeKind } from '../game/daily/attempt'
 import {
   canAskDaily,
   canPaintDaily,
@@ -24,6 +24,7 @@ const GRID_HEIGHT = 32
 type GradeResponse =
   | { ok: true; grade: GradeView; state: DailyStateView }
   | { ok: false; reason: DailyRejectReason; state: DailyStateView }
+  | { skipped: 'skipped_blank' | 'skipped_unchanged'; window: number; state: DailyStateView }
 
 function storageKey(day: string, userId: string): string {
   return `daily:${day}:${userId}`
@@ -81,6 +82,7 @@ export function useDailyAttempt(): {
   start(): Promise<void>
   askNow(): Promise<void>
   done(): Promise<void>
+  tick(): void
 } {
   const { isSignedIn, user } = useAuthProfileReady({ requireUser: false })
   const userId = user?.id ?? ''
@@ -89,6 +91,8 @@ export function useDailyAttempt(): {
     initialDailyClientState(new Date().toISOString().slice(0, 10)),
   )
   const [cells, setCells] = useState<Uint8Array>(() => new Uint8Array(GRID_CELLS))
+  const [loadedUserId, setLoadedUserId] = useState('')
+  const loadedUserIdRef = useRef('')
 
   const stateRef = useRef<DailyClientState>(state)
   const cellsRef = useRef<Uint8Array>(cells)
@@ -98,6 +102,10 @@ export function useDailyAttempt(): {
   const finishPromiseRef = useRef<Promise<void> | null>(null)
   const frozenFinalCellsRef = useRef<string | null>(null)
   const restoredKeyRef = useRef<string>('')
+  const loadMeRef = useRef<(() => void) | null>(null)
+  const missedRefreshAtRef = useRef(0)
+  const mutationEpochRef = useRef(0)
+  const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const dispatch = useCallback((action: DailyAction) => {
     stateRef.current = dailyReducer(stateRef.current, action)
@@ -115,6 +123,10 @@ export function useDailyAttempt(): {
   useEffect(() => {
     userIdRef.current = userId
   }, [userId])
+
+  useEffect(() => () => {
+    if (noticeTimerRef.current !== null) clearTimeout(noticeTimerRef.current)
+  }, [])
 
   const restoreCanvas = useCallback(
     (serverState: DailyStateView, uid: string) => {
@@ -138,6 +150,8 @@ export function useDailyAttempt(): {
   // Load GET /api/daily/me on mount (when signed in)
   useEffect(() => {
     if (!isSignedIn) {
+      loadedUserIdRef.current = ''
+      setLoadedUserId('')
       restoredKeyRef.current = ''
       finalizingRef.current = false
       finishPromiseRef.current = null
@@ -152,6 +166,10 @@ export function useDailyAttempt(): {
           asksUsed: 0,
           finalUsed: false,
           best: 0,
+          windows: [],
+          asksLeft: DAILY.maxAsks,
+          nextAutoAt: null,
+          serverNow: Date.now(),
         },
       })
       return
@@ -159,29 +177,40 @@ export function useDailyAttempt(): {
 
     let cancelled = false
     let loading = false
+    let retryTimer: ReturnType<typeof setTimeout> | null = null
+    let retryDelay = 1_000
     const loadMe = async () => {
       if (loading) return
       loading = true
+      const epoch = mutationEpochRef.current
       try {
         const headers = await authHeaders()
         const res = await fetch('/api/daily/me', { method: 'GET', headers })
-        if (!res.ok || cancelled) return
-        const serverState = (await res.json()) as DailyStateView
+        if (!res.ok) throw new Error('Daily state unavailable')
         if (cancelled) return
+        const serverState = (await res.json()) as DailyStateView
+        if (cancelled || epoch !== mutationEpochRef.current) return
         if (serverState.status === 'ended' || stateRef.current.stale || serverState.day !== stateRef.current.day) {
           finalizingRef.current = false
           frozenFinalCellsRef.current = null
         }
         dispatch({ type: 'state_loaded', state: serverState })
+        loadedUserIdRef.current = userId
+        setLoadedUserId(userId)
+        retryDelay = 1_000
         if (userId) {
           restoreCanvas(serverState, userId)
         }
       } catch {
-        // Ignore transient network errors on initial load
+        if (!cancelled && (!stateRef.current.loaded || loadedUserIdRef.current !== userId)) {
+          retryTimer = setTimeout(() => { retryTimer = null; void loadMe() }, retryDelay)
+          retryDelay = Math.min(retryDelay * 2, 30_000)
+        }
       } finally {
         loading = false
       }
     }
+    loadMeRef.current = () => { void loadMe() }
     void loadMe()
     const rollover = setInterval(() => {
       if (needsDailyDayRefresh(stateRef.current, Date.now())) void loadMe()
@@ -189,9 +218,11 @@ export function useDailyAttempt(): {
 
     return () => {
       cancelled = true
+      loadMeRef.current = null
+      if (retryTimer !== null) clearTimeout(retryTimer)
       clearInterval(rollover)
     }
-  }, [isSignedIn, userId, restoreCanvas, dispatch, state.stale])
+  }, [isSignedIn, userId, restoreCanvas, dispatch])
 
   // Restore from localStorage if userId resolved after state_loaded
   useEffect(() => {
@@ -201,7 +232,7 @@ export function useDailyAttempt(): {
   }, [userId, state, restoreCanvas])
 
   const sendGrade = useCallback(
-    (kind: GradeKind, encodedOverride?: string): Promise<void> => {
+    (kind: GradeKind, encodedOverride?: string, window?: number): Promise<void> => {
       if (stateRef.current.stale) return Promise.resolve()
       if (inFlightGradeRef.current) return inFlightGradeRef.current
       if (kind !== 'final' && (finalizingRef.current || stateRef.current.finalizing)) {
@@ -210,7 +241,7 @@ export function useDailyAttempt(): {
 
       const encoded = encodedOverride ?? encodeCells(cellsRef.current)
       const day = stateRef.current.day
-      const hash = cellsHash(encoded)
+      mutationEpochRef.current++
       dispatch({ type: 'grade_start', kind })
 
       const promise = (async () => {
@@ -220,7 +251,7 @@ export function useDailyAttempt(): {
           const res = await fetch('/api/daily/grade', {
             method: 'POST',
             headers,
-            body: JSON.stringify({ day, kind, cells: encoded }),
+            body: JSON.stringify({ day, kind, cells: encoded, ...(kind === 'auto' ? { window } : {}) }),
           })
           if (stateRef.current.day !== day) return
           const now = Date.now()
@@ -235,8 +266,14 @@ export function useDailyAttempt(): {
           }
           const payload = (await res.json()) as GradeResponse
           if (stateRef.current.day !== day || stateRef.current.stale) return
-          if ((!payload.ok && payload.reason === 'invalid_day') || payload.state.day !== day) {
+          if ((!('skipped' in payload) && !payload.ok && payload.reason === 'invalid_day') || payload.state.day !== day) {
             dispatch({ type: 'grade_rejected', reason: 'invalid_day' })
+            return
+          }
+          if ('skipped' in payload) {
+            dispatch({ type: 'grade_skipped', status: payload.skipped, window: payload.window, state: payload.state })
+            if (noticeTimerRef.current !== null) clearTimeout(noticeTimerRef.current)
+            noticeTimerRef.current = setTimeout(() => { noticeTimerRef.current = null; dispatch({ type: 'clear_notice' }) }, 6_000)
             return
           }
           if (payload.ok) {
@@ -244,7 +281,6 @@ export function useDailyAttempt(): {
               type: 'grade_ok',
               grade: payload.grade,
               state: payload.state,
-              cellsHash: hash,
               now,
             })
           } else {
@@ -253,7 +289,6 @@ export function useDailyAttempt(): {
               reason: payload.reason,
               state: payload.state,
               kind,
-              cellsHash: hash,
               now,
             })
           }
@@ -266,6 +301,7 @@ export function useDailyAttempt(): {
             now: Date.now(),
           })
         } finally {
+          mutationEpochRef.current++
           inFlightGradeRef.current = null
         }
       })()
@@ -279,6 +315,7 @@ export function useDailyAttempt(): {
   const sendEnd = useCallback(
     async (day: string, encodedCells: string): Promise<boolean> => {
       if (stateRef.current.day !== day || stateRef.current.stale) return false
+      mutationEpochRef.current++
       try {
         const headers = await authHeaders()
         if (stateRef.current.day !== day || stateRef.current.stale) return false
@@ -297,7 +334,7 @@ export function useDailyAttempt(): {
           }
           dispatch({
             type: 'end_failed',
-            message: 'Could not finish attempt — press Done to retry.',
+            message: 'Could not finish attempt — press Retry submit to try again.',
           })
           return false
         }
@@ -319,15 +356,17 @@ export function useDailyAttempt(): {
         if (stateRef.current.day !== day || stateRef.current.stale) return false
         dispatch({
           type: 'end_failed',
-          message: 'Network error while finishing attempt — press Done to retry.',
+          message: 'Network error while finishing attempt — press Retry submit to try again.',
         })
         return false
+      } finally {
+        mutationEpochRef.current++
       }
     },
     [dispatch],
   )
 
-  const finishAttempt = useCallback(async (): Promise<void> => {
+  const finishAttempt = useCallback(async (timeoutCells?: Uint8Array): Promise<void> => {
     if (finishPromiseRef.current) return finishPromiseRef.current
     if (stateRef.current.status === 'ended') return
     if (stateRef.current.stale) return
@@ -335,7 +374,7 @@ export function useDailyAttempt(): {
 
     finalizingRef.current = true
     if (frozenFinalCellsRef.current === null) {
-      frozenFinalCellsRef.current = encodeCells(cellsRef.current)
+      frozenFinalCellsRef.current = encodeCells(timeoutCells ?? cellsRef.current)
     }
     const frozenCells = frozenFinalCellsRef.current
     dispatch({ type: 'finalize_start' })
@@ -370,12 +409,8 @@ export function useDailyAttempt(): {
     return promise
   }, [dispatch, sendGrade, sendEnd])
 
-  // 1s ticker while playing: triggers auto grades at nextAutoAt, final grade + end when time is up, and retries failed end
-  useEffect(() => {
-    if (state.status !== 'playing' || state.startedAt === undefined) return
-    const startedAt = state.startedAt
-
-    const interval = setInterval(() => {
+  const tick = useCallback(() => {
+      if (!userIdRef.current || loadedUserIdRef.current !== userIdRef.current) return
       const cur = stateRef.current
       if (cur.status !== 'playing' || cur.startedAt === undefined || cur.stale) return
       const now = Date.now()
@@ -385,23 +420,29 @@ export function useDailyAttempt(): {
         return
       }
 
-      if (shouldFinalGrade(now, startedAt)) {
+      if (shouldFinalGrade(now, cur.startedAt, cur.clockOffsetMs)) {
         if (!finishPromiseRef.current) {
-          void finishAttempt()
+          const localCells = readLocalCells(cur.day, userIdRef.current)
+          if (localCells) void finishAttempt(localCells)
         }
         return
       }
 
       if (finalizingRef.current || cur.finalizing || inFlightGradeRef.current) return
 
-      const currentHash = cellsHash(encodeCells(cellsRef.current))
-      if (shouldFireAutoGrade(cur, now, currentHash)) {
-        void sendGrade('auto')
+      if (cur.nextAutoAt != null && now + cur.clockOffsetMs - cur.nextAutoAt > DAILY.autoMissAfterMs) {
+        if (now >= missedRefreshAtRef.current) {
+          missedRefreshAtRef.current = now + 10_000
+          loadMeRef.current?.()
+        }
+        return
       }
-    }, 1000)
-
-    return () => clearInterval(interval)
-  }, [state.status, state.startedAt, finishAttempt, sendGrade])
+      const localCells = readLocalCells(cur.day, userIdRef.current)
+      if (shouldFireAutoGrade(cur, now, localCells !== null) && localCells) {
+        const window = DAILY.autoWindowsMs.findIndex(offset => cur.startedAt! + offset === cur.nextAutoAt)
+        if (window >= 0) void sendGrade('auto', encodeCells(localCells), window)
+      }
+  }, [finishAttempt, sendGrade])
 
   const paint = useCallback((x: number, y: number, color: number) => {
     const now = Date.now()
@@ -424,6 +465,7 @@ export function useDailyAttempt(): {
   }, [])
 
   const start = useCallback(async (): Promise<void> => {
+    mutationEpochRef.current++
     try {
       const headers = await authHeaders()
       const res = await fetch('/api/daily/start', {
@@ -441,9 +483,14 @@ export function useDailyAttempt(): {
       dispatch({ type: 'state_loaded', state: serverState })
       if (userIdRef.current) {
         restoreCanvas(serverState, userIdRef.current)
+        if (serverState.status === 'playing' && !readLocalCells(serverState.day, userIdRef.current)) {
+          writeLocalCells(serverState.day, userIdRef.current, cellsRef.current)
+        }
       }
     } catch {
       dispatch({ type: 'error', message: 'Network error while starting attempt.' })
+    } finally {
+      mutationEpochRef.current++
     }
   }, [restoreCanvas, dispatch])
 
@@ -464,5 +511,5 @@ export function useDailyAttempt(): {
     await finishAttempt()
   }, [finishAttempt])
 
-  return { state, cells, paint, start, askNow, done }
+  return { state: isSignedIn && (!userId || loadedUserId !== userId) ? { ...state, loaded: false } : state, cells, paint, start, askNow, done, tick }
 }

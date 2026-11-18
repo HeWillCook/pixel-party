@@ -17,9 +17,9 @@ describe('final client regressions', () => {
   })
 
   it('I3 resets results and scheduling when switching to the next day', () => {
-    const old = { ...initialDailyClientState(day), status: 'ended' as const, best: 999, latest: grade, lastGradedHash: 'old', lastGradeAt: midnight - 1, autoRetryAfter: midnight + 1000 }
+    const old = { ...initialDailyClientState(day), status: 'ended' as const, best: 999, latest: grade, lastGradeAt: midnight - 1, autoRetryAfter: midnight + 1000 }
     const next = dailyReducer(old, { type: 'state_loaded', state: initialDailyClientState(nextDay) })
-    expect(next).toMatchObject({ day: nextDay, best: 0, latest: null, lastGradedHash: null, lastGradeAt: null, autoRetryAfter: null, grading: false, finalizing: false })
+    expect(next).toMatchObject({ day: nextDay, best: 0, latest: null, lastGradeAt: null, autoRetryAfter: null, grading: false, finalizing: false })
   })
 
   it('I3 refreshes an ended or unstarted old day, without switching a live attempt', () => {

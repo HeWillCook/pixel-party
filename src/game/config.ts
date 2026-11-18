@@ -75,10 +75,9 @@ export const BUDGET = {
 export const DAILY = {
   attemptMs: 600_000,
   graceMs: 15_000,
-  firstAutoMs: 120_000,
-  autoEveryMs: 120_000,
-  autoMinGapMs: 100_000,
-  maxAuto: 4,
+  autoWindowsMs: [120_000, 240_000, 360_000, 480_000] as const,
+  autoLateMs: 5_000,
+  autoMissAfterMs: 60_000,
   maxAsks: 3,
   askMinGapMs: 20_000,
   inFlightStaleMs: 90_000,

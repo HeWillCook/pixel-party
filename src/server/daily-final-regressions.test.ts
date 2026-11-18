@@ -178,7 +178,7 @@ describe('final review regressions', () => {
     expect(stale).toMatchObject({ ok: false, reason: 'stale' })
     expect(stale).not.toHaveProperty('grade')
     expect(stale.state.best).toBe(row('dailyScores').score)
-    if (stale.ok) throw new Error('stale grade accepted')
+    if (stale.ok !== false) throw new Error('stale grade accepted')
     const client = dailyReducer(initialDailyClientState(day), { type: 'grade_rejected', reason: stale.reason, state: stale.state })
     expect(client.best).toBe(stale.state.best)
   })

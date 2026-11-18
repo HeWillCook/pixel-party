@@ -46,6 +46,15 @@ function fakeDOStore(tools = memoryTools().tools): AttemptStore {
 }
 
 describe.each([['memory', memoryAttemptStore], ['durable object', fakeDOStore]])('%s attempt store', (_name, createStore) => {
+  it('persists settled windows and skipped reservations', async () => {
+    const store = createStore()
+    const day = '2026-11-17'
+    await store.start('user', day, 1_000)
+    const skip = await store.reserve('user', day, 'auto', 'hash', 121_000, true)
+    expect(skip).toMatchObject({ ok: 'skipped', status: 'skipped_blank', window: 0 })
+    expect((await store.get('user', day, 302_000))?.windows.slice(0, 2).map(window => window.status)).toEqual(['skipped_blank', 'missed'])
+    expect((await store.get('user', day))?.windows.slice(0, 2).map(window => window.status)).toEqual(['skipped_blank', 'missed'])
+  })
   it('publishes the durable winning snapshot through an ordered current-best writer', async () => {
     const records = memoryTools()
     const store = createStore(records.tools as ServerTools)

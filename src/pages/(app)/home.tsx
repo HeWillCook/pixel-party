@@ -15,13 +15,14 @@ import { useDailySounds } from '../../components/daily/useDailySounds'
 import { DailyTimer } from '../../components/daily/DailyTimer'
 import { Leaderboard } from '../../components/daily/Leaderboard'
 import { GradePanel } from '../../components/daily/GradePanel'
+import { AutoGradeTimeline } from '../../components/daily/AutoGradeTimeline'
+import { ExitDailyButton } from '../../components/daily/ExitDailyButton'
 import { Palette } from '../../components/game/Palette'
 import { PixelCanvas } from '../../components/game/PixelCanvas'
 import { Badge, Button } from '../../components/ui'
-import { DAILY } from '../../game/config'
 import { canAskDaily, canPaintDaily } from '../../game/daily/client-schedule'
 import { decodeCells } from '../../game/grid'
-import { useDailyAttempt } from '../../hooks/useDailyAttempt'
+import { useDaily } from '../../hooks/DailyAttemptProvider'
 import type { GradeView } from '../../server/daily-service'
 
 interface DailyDrawingRecord {
@@ -63,7 +64,7 @@ function decodeSnapshotOrFallback(encoded: string | undefined, fallback: Uint8Ar
 
 export default function DailyHomePage() {
   const { isLoaded, isSignedIn, user } = useAuthProfileReady({ requireUser: false })
-  const { state, cells, paint, start, askNow, done } = useDailyAttempt()
+  const { state, cells, paint, start, askNow, done } = useDaily()
   const { muted, toggleMute } = useDailySounds(state)
   const boardRef = useRef<HTMLDivElement>(null)
   const paletteRef = useRef<HTMLDivElement>(null)
@@ -116,7 +117,7 @@ export default function DailyHomePage() {
     return () => clearInterval(interval)
   }, [state.status])
 
-  const asksLeft = Math.max(0, DAILY.maxAsks - state.asksUsed)
+  const asksLeft = state.asksLeft
   const canDraw = isSignedIn && canPaintDaily(state, now)
   const canAsk = isSignedIn && canAskDaily(state, now)
 
@@ -189,6 +190,7 @@ export default function DailyHomePage() {
           {muted ? 'Sound off' : 'Sound on'}
         </Button>
       </div>
+      {isSignedIn && !state.loaded && <div data-testid="daily-loading" className="pp-panel p-6" aria-live="polite">Setting up your easel…</div>}
       {/* Signed out view */}
       {isLoaded && !isSignedIn && (
         <div className="flex flex-col gap-6">
@@ -208,7 +210,7 @@ export default function DailyHomePage() {
                   One Prompt. 10 Minutes. Judged by Haiku.
                 </h1>
                 <p className="text-lg text-muted-foreground sm:text-xl">
-                  Everyone gets the same daily scene on a 32×32 canvas. You have 10 minutes, auto-grades every 2 minutes, and 3 Ask-nows. Your highest-scoring snapshot goes on today&apos;s leaderboard!
+                  Everyone gets the same daily scene on a 32×32 canvas. You have 10 minutes, auto-grades every 2 minutes, and 3 manual grades. Your highest-scoring snapshot goes on today&apos;s leaderboard!
                 </p>
               </div>
 
@@ -238,7 +240,7 @@ export default function DailyHomePage() {
       )}
 
       {/* Signed in: Not started */}
-      {isSignedIn && state.status === 'not_started' && (
+      {isSignedIn && state.loaded && state.status === 'not_started' && (
         <section
           data-testid="daily-not-started"
           className="pp-panel mx-auto flex w-full max-w-2xl flex-col gap-5 border-2 border-border p-6 sm:p-8"
@@ -259,22 +261,10 @@ export default function DailyHomePage() {
           </div>
 
           <ul className="space-y-2 border border-border/60 bg-background/50 p-4 text-base text-muted-foreground sm:text-lg">
-            <li>
-              <strong className="font-normal text-foreground">10 minutes:</strong>{''}
-              One solo attempt per UTC day on a 32×32 pixel grid.
-            </li>
-            <li>
-              <strong className="font-normal text-foreground">Grades every 2 minutes:</strong>{''}
-              Claude Haiku automatically checks your drawing at 2, 4, 6, and 8 minutes.
-            </li>
-            <li>
-              <strong className="font-normal text-foreground">3 Ask-nows:</strong>{''}
-              Request an immediate judge check up to 3 times whenever your drawing reads well.
-            </li>
-            <li>
-              <strong className="font-normal text-foreground">Best score kept:</strong>{''}
-              Scored out of 1,000 (500 fit + 400 blind recognition + 100 speed). Your highest grade is saved!
-            </li>
+            <li>Matches the prompt: up to 500</li>
+            <li>Easy to recognise: up to 400</li>
+            <li>Speed: up to 100</li>
+            <li>Auto-grades at 2, 4, 6 and 8 minutes · 3 manual grades · your best grade counts · Submit ends it</li>
           </ul>
 
           {state.lastError && (
@@ -306,7 +296,7 @@ export default function DailyHomePage() {
       )}
 
       {/* Signed in: Playing */}
-      {isSignedIn && state.status === 'playing' && (
+      {isSignedIn && state.loaded && state.status === 'playing' && (
         <div data-testid="daily-playing" className="flex flex-col gap-4">
           {/* Top Bar: Prompt + Timer + Best */}
           <div className="pp-panel flex flex-wrap items-center justify-between gap-3 bg-card px-4 py-3">
@@ -323,7 +313,8 @@ export default function DailyHomePage() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2.5">
-              <DailyTimer startedAt={state.startedAt} endsAt={state.endsAt} />
+              <DailyTimer startedAt={state.startedAt} endsAt={state.endsAt} clockOffsetMs={state.clockOffsetMs} />
+              <ExitDailyButton />
             </div>
           </div>
 
@@ -354,6 +345,8 @@ export default function DailyHomePage() {
 
             {/* Right: Controls + GradePanel */}
             <div className="flex min-w-0 flex-col gap-4">
+              {state.notice && <div role="status" className="pp-panel p-4">{state.notice}</div>}
+              <AutoGradeTimeline windows={state.windows} now={now + state.clockOffsetMs} />
               <GradePanel
                 latest={state.latest}
                 best={state.best}
@@ -371,7 +364,7 @@ export default function DailyHomePage() {
                     className="pp-btn flex-1 gap-2 bg-secondary px-4 py-2.5 text-base uppercase tracking-wider text-white hover:bg-secondary disabled:opacity-60 sm:text-lg"
                   >
                     <Bot className="h-4 w-4 shrink-0" aria-hidden />
-                    <span>Ask now ({asksLeft} left)</span>
+                    <span>Grade now ({asksLeft} left)</span>
                   </Button>
 
                   <Button
@@ -385,16 +378,16 @@ export default function DailyHomePage() {
                     <CheckCircle2 className="h-4 w-4 text-[var(--sunset-1)]" aria-hidden />
                     <span>
                       {state.endFailed
-                        ?'Retry Done'
+                        ?'Retry submit'
                         : state.finalizing
                           ?'Finishing…'
-                          : 'Done'}
+                          : 'Submit & finish'}
                     </span>
                   </Button>
                 </div>
 
                 <p className="text-base text-muted-foreground">
-                  Auto-grades run at 2, 4, 6, and 8 minutes ({state.autoUsed}/{DAILY.maxAuto} used). Pressing Done runs one final grade and locks in your best score.
+                  Grade now keeps you drawing. Submit locks in your best score; earlier means more speed points.
                 </p>
               </div>
             </div>
@@ -403,7 +396,7 @@ export default function DailyHomePage() {
       )}
 
       {/* Signed in: Ended */}
-      {isSignedIn && state.status === 'ended' && (
+      {isSignedIn && state.loaded && state.status === 'ended' && (
         <div data-testid="daily-ended" className="flex flex-col gap-6">
           <div className="pp-panel flex flex-wrap items-center justify-between gap-3 bg-card px-4 py-3">
             <div className="flex flex-wrap items-center gap-2">
@@ -440,6 +433,8 @@ export default function DailyHomePage() {
             </div>
 
             <div className="flex min-w-0 flex-col gap-4">
+              <AutoGradeTimeline windows={state.windows} now={now + state.clockOffsetMs} />
+              <p>Manual grades: {state.asksUsed} of 3 used</p>
               <GradePanel
                 latest={endedGrade}
                 best={endedBestScore}

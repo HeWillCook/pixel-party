@@ -23,6 +23,7 @@ import Navigation from '../../components/Navigation'
 import { useToast } from '@/components/ui'
 import { APP_NAME, SCOPE_ID } from '../../constants'
 import { schemas } from '../../schemas'
+import { DailyAttemptProvider } from '../../hooks/DailyAttemptProvider'
 
 export default function AppLayout() {
   return (
@@ -74,7 +75,7 @@ function AuthBoot({ children }: { children: ReactNode }) {
     >
       <RecordScope roomId={SCOPE_ID} schemas={schemas}>
         <AgentTools />
-        {children}
+        <DailyAttemptProvider>{children}</DailyAttemptProvider>
       </RecordScope>
     </RecordProvider>
   )

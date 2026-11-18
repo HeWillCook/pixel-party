@@ -80,51 +80,24 @@ export function GradePanel({
 
           <div
             data-testid="daily-score-breakdown"
-            className="grid grid-cols-2 gap-2 bg-background/60 p-2.5 text-center text-base"
+            className="flex flex-col gap-3 bg-background/60 p-2.5 text-base"
           >
-            <div className="flex flex-col">
-              <span className="text-sm uppercase tracking-wider text-muted-foreground">
-                Fit
-              </span>
-              <span
-                data-testid="grade-fit"
-                className="mt-0.5 text-foreground"
-              >
-                {latest.fit} / 500
-              </span>
-            </div>
-            <div className="flex flex-col">
-              <span className="text-sm uppercase tracking-wider text-muted-foreground">
-                Recognition
-              </span>
-              <span
-                data-testid="grade-recognition"
-                className="mt-0.5 text-foreground"
-              >
-                {latest.recognition} / 400
-              </span>
-            </div>
-            <div className="flex flex-col">
-              <span className="text-sm uppercase tracking-wider text-muted-foreground">
-                Speed
-              </span>
-              <span
-                data-testid="grade-speed"
-                className="mt-0.5 text-foreground"
-              >
-                {latest.speed} / 100
-              </span>
-            </div>
-            <div className="flex flex-col">
-              <span className="text-sm uppercase tracking-wider text-muted-foreground">
-                Total
-              </span>
-              <span
-                data-testid="grade-total"
-                className="mt-0.5 text-[var(--sunset-1)]"
-              >
-                {latest.total}
-              </span>
+            {[
+              { label: 'Matches the prompt', value: latest.fit, max: 500, id: 'grade-fit' },
+              { label: 'Easy to recognise', value: latest.recognition, max: 400, id: 'grade-recognition' },
+              { label: 'Speed', value: latest.speed, max: 100, id: 'grade-speed' },
+            ].map(part => (
+              <div key={part.id}>
+                <div className="flex justify-between gap-2">
+                  <span>{part.label}</span>
+                  <span data-testid={part.id}>{part.value} / {part.max}</span>
+                </div>
+                <progress aria-label={part.label} value={part.value} max={part.max} className="h-2 w-full accent-[var(--sunset-1)]" />
+              </div>
+            ))}
+            <div className="flex justify-between gap-2">
+              <span>Total</span>
+              <span data-testid="grade-total" className="text-[var(--sunset-1)]">{latest.total} / 1000</span>
             </div>
           </div>
         </div>
@@ -134,7 +107,7 @@ export function GradePanel({
           <span>
             {ended
               ? `Final best score: ${best} / 1000.`
-              : 'No grade yet — Haiku auto-grades every 2 minutes, or press Ask now whenever you want a check!'}
+              : 'No grade yet — auto-grades run every 2 minutes, or press Grade now for a check.'}
           </span>
         </div>
       )}
