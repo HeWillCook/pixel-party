@@ -1,12 +1,38 @@
 import { P } from '../palette'
 import { defineSprite, drawSprite } from '../sprite'
 
-const colours = { d: P.stone[0], m: P.stone[2], h: P.stone[4], t: P.wood[3], o: P.flame[1], f: P.flame[3], c: P.flame[4] }
-const body = ['..ddd..', '.dmhmd.', 'dmhmhmd', 'dmmmmmd', 'dtttttd', '.dmmmd.', '.ddddd.']
+export const BOOSTER_WIDTH = 9
+export const BOOSTER_HEIGHT = 15
+
+const colours = {
+  d: P.stone[0],
+  s: P.stone[1],
+  m: P.stone[2],
+  l: P.stone[3],
+  h: P.stone[4],
+  t: P.sea[2],
+  T: P.sea[3],
+  o: P.flame[1],
+  f: P.flame[3],
+  c: P.flame[4],
+}
+
+const body = [
+  '..ddddd..',
+  '..dhmsd..',
+  '..dTttd..',
+  '..dhmsd..',
+  '.ddhmsdd.',
+  'dldhmsdsd',
+  'dd.ddd.dd',
+  '..dhmmd..',
+  '..dofod..',
+]
+
 const flames = [
-  ['..ofo..', '..fcf..', '...c...', '...f...', '...o...', '.......'],
-  ['..ofo..', '..fcf..', '..fc...', '...c...', '...f...', '...o...'],
-  ['..ofo..', '..fcf..', '...cf..', '...c...', '..f....', '.......'],
+  ['...ofo...', '...fcf...', '....c....', '....f....', '....o....', '.........'],
+  ['..ofofo..', '...fcf...', '...fc....', '....c....', '...fo....', '....o....'],
+  ['..ofofo..', '...fcf...', '...cf....', '....c....', '...f.....', '....o....'],
 ]
 
 export const boosterFrames = flames.map(flame => defineSprite([...body, ...flame], colours))

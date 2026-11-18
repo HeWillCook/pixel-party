@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { drawBooster } from '../../scene/porch/booster'
+import { BOOSTER_HEIGHT, BOOSTER_WIDTH, drawBooster } from '../../scene/porch/booster'
 import { useSceneClock } from '../../scene/useSceneClock'
 
 export interface BoosterSpriteProps {
@@ -17,20 +17,20 @@ export function BoosterSprite({ scale = 3, phaseOffset = 0, className = '' }: Bo
     const ctx = canvas?.getContext('2d')
     if (!ctx) return
     ctx.imageSmoothingEnabled = false
-    ctx.clearRect(0, 0, 7, 13)
+    ctx.clearRect(0, 0, BOOSTER_WIDTH, BOOSTER_HEIGHT)
     drawBooster(ctx, 0, 0, frame + phaseOffset)
   }, [frame, phaseOffset])
 
   return (
     <canvas
       ref={ref}
-      width={7}
-      height={13}
+      width={BOOSTER_WIDTH}
+      height={BOOSTER_HEIGHT}
       aria-hidden="true"
       className={className}
       style={{
-        width: 7 * scale,
-        height: 13 * scale,
+        width: BOOSTER_WIDTH * scale,
+        height: BOOSTER_HEIGHT * scale,
         imageRendering: 'pixelated',
       }}
     />

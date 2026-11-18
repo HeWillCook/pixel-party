@@ -406,10 +406,32 @@ test('capture home 1280', async ({ page }) => {
 
 function samplePaintingBase64() {
   const cells = new Uint8Array(32 * 32)
-  for (let y = 0; y < 18; y++) for (let x = 0; x < 32; x++) cells[y * 32 + x] = 11
-  for (let y = 18; y < 32; y++) for (let x = 0; x < 32; x++) cells[y * 32 + x] = 9
-  for (let y = 6; y < 18; y++) for (let x = 13; x < 19; x++) cells[y * 32 + x] = y % 4 < 2 ? 4 : 16
-  for (let y = 4; y < 7; y++) for (let x = 14; x < 18; x++) cells[y * 32 + x] = 6
+  const set = (x: number, y: number, c: number) => {
+    if (x >= 0 && x < 32 && y >= 0 && y < 32) cells[y * 32 + x] = c
+  }
+  const fillRect = (x0: number, y0: number, w: number, h: number, c: number) => {
+    for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) set(x, y, c)
+  }
+  fillRect(0, 0, 32, 20, 11)
+  fillRect(4, 3, 2, 2, 15)
+  set(25, 5, 15)
+  set(20, 2, 15)
+  fillRect(0, 24, 32, 8, 9)
+  for (let i = 0; i < 32; i += 4) fillRect(i, 26, 2, 1, 10)
+  fillRect(0, 21, 32, 3, 14)
+  for (let r = 0; r < 14; r++) {
+    const w = 6 + Math.floor(r / 3)
+    const c = Math.floor(r / 3) % 2 ? 2 : 4
+    fillRect(16 - Math.floor(w / 2), 8 + r, w, 1, c)
+  }
+  fillRect(13, 4, 6, 4, 1)
+  fillRect(14, 5, 4, 2, 6)
+  for (let x = 18; x < 32; x++) {
+    const spread = Math.floor((x - 18) / 3) + 1
+    fillRect(x, 5 - spread, 1, spread * 2 + 1, 15)
+  }
+  fillRect(12, 3, 8, 1, 4)
+  fillRect(15, 2, 2, 1, 4)
   return Buffer.from(cells).toString('base64')
 }
 

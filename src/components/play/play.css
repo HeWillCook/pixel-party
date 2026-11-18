@@ -1,7 +1,7 @@
 .play-layout {
   position: relative;
   display: grid;
-  grid-template-columns: 224px minmax(0, 1fr) 292px;
+  grid-template-columns: 224px minmax(0, 1fr) 308px;
   grid-template-rows: minmax(0, 1fr) auto;
   grid-template-areas: 'left canvas right' 'bottom bottom bottom';
   gap: 10px 12px;
@@ -351,39 +351,88 @@
   display: none;
 }
 
-/* Daily P4: Right column (Haiku perch + Floating chalkboard + Wooden plaques) */
+/* Daily P4: Right column (Haiku crate perch + Floating chalkboard + Hanging plaques + Boosters) */
 .daily-right-stage {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 0;
 }
 .daily-haiku-perch {
   position: relative;
   display: flex;
-  align-items: flex-end;
-  padding: 0 4px 6px;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 0;
+}
+.daily-haiku-perch__cat {
+  position: relative;
+  z-index: 1;
+  padding-left: 6px;
+  margin-bottom: -5px;
 }
 .daily-haiku-perch .haiku {
   position: relative;
   z-index: 1;
-  align-items: flex-end;
-  gap: 6px;
+  align-items: center;
+  gap: 10px;
 }
 .daily-haiku-perch .haiku__bubble {
-  max-width: 210px;
-  padding: 4px 8px;
+  position: relative;
+  max-width: 212px;
+  padding: 5px 8px;
   font-size: 15px;
   line-height: 1.15;
 }
-.daily-haiku-perch__rail {
+.daily-haiku-perch .haiku__bubble::before {
+  content: '';
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  left: -6px;
+  top: 50%;
+  margin-top: -4px;
+  width: 6px;
   height: 8px;
+  background: #fff0cc;
+  border-top: 2px solid #8e5960;
+  border-left: 2px solid #8e5960;
+  border-bottom: 2px solid #8e5960;
+}
+.daily-haiku-perch .haiku__bubble::after {
+  content: '';
+  position: absolute;
+  left: -10px;
+  top: 50%;
+  margin-top: -2px;
+  width: 4px;
+  height: 4px;
+  background: #8e5960;
+}
+.daily-haiku__speech {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.daily-haiku__headline {
+  font-size: 15px;
+  line-height: 1.1;
+  color: #392a45;
+  font-weight: 700;
+}
+.daily-haiku__reason {
+  font-size: 13px;
+  line-height: 1.15;
+  color: #614052;
+}
+.daily-haiku-perch__crate {
+  width: 96px;
+  height: 10px;
+  margin-left: 4px;
   background: #985c5a;
   border: 2px solid #392a45;
-  box-shadow: inset 0 2px 0 #c57d63, 0 2px 0 #392a45;
+  border-bottom: 0;
+  box-shadow:
+    inset 0 2px 0 #ecae7d,
+    inset 4px 0 0 #614052,
+    inset -4px 0 0 #614052;
 }
 
 .daily-chalkboard {
@@ -524,9 +573,17 @@
 }
 .daily-chalkboard__reason {
   margin: 2px 0 0;
-  font-size: 16px;
+  font-size: 15px;
   line-height: 1.15;
   color: #ecd4b0;
+}
+.daily-chalkboard__hint {
+  margin: 2px 0 0;
+  padding-top: 4px;
+  border-top: 1px dashed #5b806b;
+  font-size: 13px;
+  line-height: 1.15;
+  color: #a2c1ae;
 }
 .daily-chalkboard__ledge {
   display: flex;
@@ -554,11 +611,36 @@
 .daily-chalkboard__chalk--teal {
   background: #a2c1ae;
 }
+.daily-chalkboard__hanging {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 0 4px;
+}
+.daily-chalkboard__chains {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 26px;
+  height: 7px;
+}
+.daily-chalkboard__chains span {
+  display: block;
+  width: 4px;
+  height: 100%;
+  background: repeating-linear-gradient(to bottom, #343447 0 2px, #a8a49a 2px 4px);
+  border-left: 1px solid #392a45;
+  border-right: 1px solid #392a45;
+}
+.daily-chalkboard__chains--between {
+  height: 5px;
+  padding: 0 32px;
+}
 .daily-chalkboard__boosters {
   display: flex;
   justify-content: space-around;
   align-items: flex-start;
   padding: 0 28px;
+  margin-top: -1px;
 }
 .daily-chalkboard__shadow {
   width: 65%;
@@ -568,20 +650,19 @@
   opacity: 0.55;
 }
 
-/* Action plaques below the chalkboard */
+/* Action plaques hanging below the chalkboard ledge & above the boosters */
 .daily-plaques {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding-top: 4px;
+  gap: 0;
 }
 .daily-plaque {
   position: relative;
-  min-height: 42px;
+  min-height: 40px;
   border: 3px solid #392a45 !important;
   color: #392a45 !important;
-  box-shadow: inset 0 2px 0 #fff0cc, inset 0 -2px 0 #985c5a, 0 3px 0 #392a45 !important;
+  box-shadow: inset 0 2px 0 #fff0cc, inset 0 -2px 0 #985c5a, 0 2px 0 #392a45 !important;
 }
 .daily-plaque--ask {
   background: #ecae7d !important;
@@ -591,19 +672,10 @@
 }
 .daily-plaque--submit {
   background: #a2c1ae !important;
-  box-shadow: inset 0 2px 0 #fff0cc, inset 0 -2px 0 #509ea0, 0 3px 0 #392a45 !important;
+  box-shadow: inset 0 2px 0 #fff0cc, inset 0 -2px 0 #509ea0, 0 2px 0 #392a45 !important;
 }
 .daily-plaque--submit:hover:not(:disabled) {
   background: #c6c38e !important;
-}
-.daily-plaques__note {
-  margin: 0;
-  padding: 4px 8px;
-  background: #fff0cc;
-  border: 2px solid #8e5960;
-  color: #392a45;
-  font-size: 14px;
-  line-height: 1.15;
 }
 
 /* Desktop right column sizing */
@@ -618,10 +690,88 @@
   .play-layout__right > div:first-of-type {
     flex: 0 1 auto;
     min-height: 0;
+    max-height: 100%;
     overflow-y: auto;
   }
-  .play-layout__right > div:last-of-type {
+  .play-layout__right > div:not(:first-of-type) {
     flex: none;
+  }
+}
+
+@media (min-width: 768px) and (max-height: 780px) {
+  .daily-haiku-perch .haiku__canvas {
+    width: 70px !important;
+    height: 65px !important;
+  }
+  .daily-haiku-perch__crate {
+    width: 82px;
+    height: 8px;
+  }
+  .daily-haiku-perch .haiku {
+    gap: 10px;
+  }
+  .daily-haiku-perch .haiku__bubble {
+    padding: 4px 7px;
+    max-width: 212px;
+  }
+  .daily-haiku__headline {
+    font-size: 15px;
+  }
+  .daily-haiku__reason {
+    font-size: 12px;
+  }
+  .daily-chalkboard__frame {
+    padding: 3px;
+  }
+  .daily-chalkboard__slate {
+    padding: 5px 8px;
+    gap: 4px;
+  }
+  .daily-chalkboard__head h2 {
+    font-size: 17px;
+  }
+  .daily-chalkboard__best {
+    font-size: 15px;
+  }
+  .daily-chalkboard__body {
+    gap: 4px;
+  }
+  .daily-chalkboard__total {
+    font-size: 23px;
+  }
+  .daily-chalkboard__bars {
+    gap: 3px;
+  }
+  .daily-chalkboard__row-labels {
+    font-size: 14px;
+  }
+  .daily-chalk-bar {
+    height: 7px;
+  }
+  .daily-chalkboard__guess {
+    font-size: 16px;
+  }
+  .daily-chalkboard__reason {
+    font-size: 13px;
+  }
+  .daily-chalkboard__hint {
+    font-size: 12px;
+    padding-top: 3px;
+  }
+  .daily-chalkboard__ledge {
+    height: 8px;
+  }
+  .daily-chalkboard__chains {
+    height: 5px;
+  }
+  .daily-chalkboard__chains--between {
+    height: 4px;
+  }
+  .daily-plaque {
+    min-height: 34px;
+    font-size: 15px !important;
+    padding-top: 3px !important;
+    padding-bottom: 3px !important;
   }
 }
 
@@ -708,16 +858,96 @@
 }
 
 .play-layout__mobile-footer {
+  position: relative;
   min-width: 0;
+}
+.daily-mobile-footer {
+  position: relative;
 }
 .daily-mobile-strip {
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 4px 6px;
+  gap: 4px;
+  padding: 4px 5px;
   background: #293b4a;
   border: 2px solid #392a45;
   box-shadow: inset 0 2px #3e5b5b;
+}
+.daily-mobile-strip__haiku {
+  position: relative;
+  display: inline-flex;
+  align-items: flex-end;
+  justify-content: center;
+  flex: none;
+  width: 46px;
+  height: 44px;
+  padding: 1px 0 0;
+  background: #263451;
+  border: 2px solid #5b806b;
+  cursor: pointer;
+}
+.daily-mobile-strip__haiku .haiku {
+  gap: 0;
+}
+.daily-mobile-strip__haiku .haiku__canvas {
+  width: 44px !important;
+  height: 41px !important;
+}
+.daily-mobile-strip__haiku-dot {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 6px;
+  height: 6px;
+  background: #ffcf84;
+  border: 1px solid #392a45;
+}
+.daily-mobile-haiku-popover {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 6px);
+  z-index: 30;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: min(324px, calc(100vw - 16px));
+  padding: 8px 10px;
+  background: #fff0cc;
+  color: #392a45;
+  border: 3px solid #392a45;
+  box-shadow: inset 0 0 0 2px #e3b28a, 3px 3px 0 #392a45;
+  font-size: 15px;
+  line-height: 1.15;
+}
+.daily-mobile-haiku-popover::before {
+  content: '';
+  position: absolute;
+  left: 16px;
+  bottom: -7px;
+  width: 8px;
+  height: 7px;
+  background: #fff0cc;
+  border-left: 3px solid #392a45;
+  border-right: 3px solid #392a45;
+  border-bottom: 3px solid #392a45;
+}
+.daily-mobile-haiku-popover__content {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.daily-mobile-haiku-popover__close {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #ecd4b0;
+  border: 2px solid #8e5960;
+  color: #392a45;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
 }
 .daily-mobile-strip__score {
   display: flex;
@@ -726,8 +956,8 @@
   justify-content: center;
   flex: 1 1 auto;
   min-width: 0;
-  min-height: 40px;
-  padding: 2px 6px;
+  min-height: 44px;
+  padding: 2px 5px;
   background: #263451;
   border: 2px solid #5b806b;
   color: #fff0cc;
@@ -735,22 +965,22 @@
   cursor: pointer;
 }
 .daily-mobile-strip__best {
-  font-size: 16px;
+  font-size: 15px;
   line-height: 1.05;
   color: #ffcf84;
   white-space: nowrap;
 }
 .daily-mobile-strip__auto {
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1;
   color: #ecd4b0;
   white-space: nowrap;
 }
 .daily-mobile-strip__btn {
   flex: 0 0 auto;
-  min-height: 40px;
-  padding: 4px 10px !important;
-  font-size: 15px !important;
+  min-height: 44px;
+  padding: 4px 8px !important;
+  font-size: 14px !important;
   border: 2px solid #392a45 !important;
   color: #392a45 !important;
   white-space: nowrap;

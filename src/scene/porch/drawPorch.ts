@@ -169,8 +169,8 @@ export function drawPorch(ctx: CanvasRenderingContext2D, frame: number, opts: Po
   rect(board.x + 2, boardY + 3, board.w - 4, board.h - 20, P.wood[0]); rect(board.x + 4, boardY + 5, board.w - 8, board.h - 24, P.wood[3])
   rect(board.x + 6, boardY + 7, board.w - 12, board.h - 28, P.foliage[0])
   rect(board.x + 3, boardY + board.h - 18, board.w - 6, 2, P.wood[2])
-  for (const offset of [6, Math.floor(board.w / 2) - 2, board.w - 10]) {
-    drawBooster(ctx, board.x + offset - 1, boardY + board.h - 11, frame + offset)
+  for (const offset of [6, Math.floor(board.w / 2) - 4, board.w - 13]) {
+    drawBooster(ctx, board.x + offset - 1, boardY + board.h - 14, frame + offset)
   }
 
   const scaledSprite = (key: 'mailbox' | 'radio' | 'plant' | 'lantern', x: number, y: number) => {
@@ -229,8 +229,8 @@ export function drawPorch(ctx: CanvasRenderingContext2D, frame: number, opts: Po
   rect(ex + 28, ey + 15, 12, 5, P.wood[0]); rect(ex + 30, ey + 16, 8, 2, P.wood[4])
   rect(ex + 4, ey + 78, 61, 4, P.wood[0]); rect(ex + 5, ey + 78, 60, 1, P.wood[4])
   rect(ex + 11, ey + 76, 8, 2, P.stone[2]); rect(ex + 23, ey + 76, 6, 2, P.flame[1]); rect(ex + 45, ey + 75, 9, 1, P.wood[4]); rect(ex + 53, ey + 74, 3, 2, P.stone[1])
-  for (const offset of [13, 32, 51]) {
-    drawBooster(ctx, ex + offset, ey + 103, frame + offset)
+  for (const offset of [12, 31, 50]) {
+    drawBooster(ctx, ex + offset, ey + 101, frame + offset)
   }
   }
   const hatch = layout.hatch

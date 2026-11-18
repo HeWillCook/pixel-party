@@ -82,10 +82,23 @@ export default function DailyHomePage() {
   const [resultDay, setResultDay] = useState('')
   const [showPorch, setShowPorch] = useState(false)
   const [mobileScoreOpen, setMobileScoreOpen] = useState(false)
+  const [mobileHaikuOpen, setMobileHaikuOpen] = useState(false)
 
   useEffect(() => {
-    if (state.status !== 'playing') setMobileScoreOpen(false)
+    if (state.status !== 'playing') {
+      setMobileScoreOpen(false)
+      setMobileHaikuOpen(false)
+    }
   }, [state.status])
+
+  useEffect(() => {
+    if (!mobileHaikuOpen) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMobileHaikuOpen(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [mobileHaikuOpen])
 
   useEffect(() => {
     const board = boardRef.current
@@ -303,8 +316,8 @@ export default function DailyHomePage() {
   )
 
   const endedCells = useMemo(
-    () => decodeSnapshotOrFallback(bestDrawingDoc?.cells ?? state.lastCells, cells),
-    [bestDrawingDoc?.cells, state.lastCells, cells],
+    () => decodeSnapshotOrFallback(bestDrawingDoc?.cells ?? state.bestCells ?? state.lastCells, cells),
+    [bestDrawingDoc?.cells, state.bestCells, state.lastCells, cells],
   )
 
   const endedGrade = useMemo((): GradeView | null => {
@@ -423,16 +436,30 @@ export default function DailyHomePage() {
           : 'idle'
       : 'idle'
 
-  const haikuBubble = state.grading
-    ? undefined
-    : state.latest
-      ? (
-        <span className="daily-haiku__speech">
-          <strong>&ldquo;{state.latest.guess || 'Hmm…'}&rdquo;</strong>
-          {state.latest.reason ? ` — ${state.latest.reason}` : ''}
-        </span>
-      )
-      : undefined
+  const guessWord = state.latest?.guess?.trim()
+  const guessLine = guessWord
+    ? /^(an?)\b/i.test(guessWord)
+      ? `Looks like ${guessWord}!`
+      : `Looks like a ${guessWord}!`
+    : 'Scored!'
+
+  const haikuBubble = state.grading ? (
+    'Hmm…'
+  ) : state.latest ? (
+    <span className="daily-haiku__speech">
+      <strong className="daily-haiku__headline">
+        {guessLine}&nbsp;&middot;&nbsp;{state.latest.total}
+      </strong>
+      {state.latest.reason && (
+        <span className="daily-haiku__reason">{state.latest.reason}</span>
+      )}
+    </span>
+  ) : (
+    <span className="daily-haiku__speech">
+      <strong className="daily-haiku__headline">Paint away!</strong>
+      <span className="daily-haiku__reason">Tap Grade when you want a look.</span>
+    </span>
+  )
 
   return (
     <div
@@ -518,8 +545,10 @@ export default function DailyHomePage() {
               score={
                 <div className="daily-right-stage">
                   <div className="daily-haiku-perch">
-                    <Haiku state={haikuState} bubble={haikuBubble} scale={2} />
-                    <div className="daily-haiku-perch__rail" aria-hidden="true" />
+                    <div className="daily-haiku-perch__cat">
+                      <Haiku state={haikuState} bubble={haikuBubble} scale={3} />
+                    </div>
+                    <div className="daily-haiku-perch__crate" aria-hidden="true" />
                   </div>
                   <ScoreCard
                     latest={state.latest}
@@ -527,39 +556,39 @@ export default function DailyHomePage() {
                     grading={state.grading}
                     lastError={state.lastError}
                     notice={state.notice}
+                    actions={
+                      <div className="play-actions daily-plaques">
+                        <Button
+                          type="button"
+                          data-testid="daily-ask-button"
+                          disabled={!canAsk}
+                          onClick={() => void askNow()}
+                          className="pp-btn daily-plaque daily-plaque--ask gap-2 px-3 py-1.5 text-base uppercase tracking-wider"
+                        >
+                          <Sparkles className="h-4 w-4 shrink-0" aria-hidden />
+                          <span>Grade now ({asksLeft} left)</span>
+                        </Button>
+                        <div className="daily-chalkboard__chains daily-chalkboard__chains--between" aria-hidden="true">
+                          <span />
+                          <span />
+                        </div>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          data-testid="daily-done-button"
+                          disabled={state.stale || state.grading || (state.finalizing && !state.endFailed)}
+                          onClick={() => void done()}
+                          className="pp-btn daily-plaque daily-plaque--submit gap-1.5 px-3 py-1.5 text-base uppercase tracking-wider"
+                        >
+                          <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden />
+                          <span>{state.endFailed ? 'Retry submit' : state.finalizing ? 'Finishing…' : 'Submit & finish'}</span>
+                        </Button>
+                      </div>
+                    }
                   />
                 </div>
               }
-              actions={
-                <div className="daily-plaques">
-                  <div className="play-actions">
-                    <Button
-                      type="button"
-                      data-testid="daily-ask-button"
-                      disabled={!canAsk}
-                      onClick={() => void askNow()}
-                      className="pp-btn daily-plaque daily-plaque--ask gap-2 px-3 py-2 text-base uppercase tracking-wider"
-                    >
-                      <Sparkles className="h-4 w-4 shrink-0" aria-hidden />
-                      <span>Grade now ({asksLeft} left)</span>
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      data-testid="daily-done-button"
-                      disabled={state.stale || state.grading || (state.finalizing && !state.endFailed)}
-                      onClick={() => void done()}
-                      className="pp-btn daily-plaque daily-plaque--submit gap-1.5 px-3 py-2 text-base uppercase tracking-wider"
-                    >
-                      <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden />
-                      <span>{state.endFailed ? 'Retry submit' : state.finalizing ? 'Finishing…' : 'Submit & finish'}</span>
-                    </Button>
-                  </div>
-                  <p className="daily-plaques__note">
-                    Grade now keeps you drawing. Submit locks in your best score; earlier means more speed points.
-                  </p>
-                </div>
-              }
+              actions={null}
               bottom={
                 <PainterTray
                   trayRef={paletteRef}
@@ -592,13 +621,51 @@ export default function DailyHomePage() {
               }
               mobileFooter={
                 <div ref={mobileFooterRef} className="daily-mobile-footer">
+                  {mobileHaikuOpen && (
+                    <div
+                      role="dialog"
+                      aria-label="Haiku's message"
+                      data-testid="daily-mobile-haiku-popover"
+                      className="daily-mobile-haiku-popover"
+                    >
+                      <div className="daily-mobile-haiku-popover__content">{haikuBubble}</div>
+                      <button
+                        type="button"
+                        onClick={() => setMobileHaikuOpen(false)}
+                        className="daily-mobile-haiku-popover__close"
+                        aria-label="Close Haiku message"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  )}
                   <div className="daily-mobile-strip">
+                    <button
+                      type="button"
+                      data-testid="daily-mobile-haiku"
+                      data-haiku-state={haikuState}
+                      aria-expanded={mobileHaikuOpen}
+                      aria-label={mobileHaikuOpen ? "Hide Haiku's message" : "View Haiku's message"}
+                      onClick={() => {
+                        setMobileScoreOpen(false)
+                        setMobileHaikuOpen(open => !open)
+                      }}
+                      className="daily-mobile-strip__haiku"
+                    >
+                      <Haiku state={haikuState} bubble={false} scale={1.65} data-testid="daily-mobile-haiku-sprite" />
+                      {(state.grading || state.latest) && (
+                        <span className="daily-mobile-strip__haiku-dot" aria-hidden="true" />
+                      )}
+                    </button>
                     <button
                       type="button"
                       data-testid="daily-mobile-score-trigger"
                       aria-expanded={mobileScoreOpen}
                       aria-label="Open scores and grading breakdown"
-                      onClick={() => setMobileScoreOpen(true)}
+                      onClick={() => {
+                        setMobileHaikuOpen(false)
+                        setMobileScoreOpen(true)
+                      }}
                       className="daily-mobile-strip__score"
                     >
                       <span data-testid="daily-best-score" className="daily-mobile-strip__best">

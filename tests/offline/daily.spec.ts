@@ -182,6 +182,89 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720
   })
 }
 
+for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720 }]) {
+  test(`desktop Haiku, chalkboard plaques above boosters, and speech bubble fit ${viewport.width}`, async ({ page }) => {
+    await page.setViewportSize(viewport)
+    await offlineClient(page, true)
+    const now = Date.now()
+    let releaseGrade!: () => void
+    const gradeGate = new Promise<void>(resolve => { releaseGrade = resolve })
+    const playing = { day: new Date(now).toISOString().slice(0, 10), status: 'playing', prompt: 'A lighthouse', startedAt: now - 30_000, endsAt: now + 570_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: now + 90_000, serverNow: now }
+    await page.route('**/api/daily/**', async route => {
+      const path = new URL(route.request().url()).pathname
+      if (path.endsWith('/me')) return route.fulfill({ json: playing })
+      if (path.endsWith('/grade')) {
+        await gradeGate
+        return route.fulfill({ json: { ok: true, grade: { guess: 'lighthouse', reason: 'A bright beacon above the waves.', fit: 450, recognition: 310, speed: 80, total: 840, elapsedMs: 30_000 }, state: { ...playing, asksUsed: 1, asksLeft: 2, best: 840 } } })
+      }
+      return route.fulfill({ json: {} })
+    })
+    await page.goto(`${origin}/home`)
+    const haiku = page.getByTestId('haiku')
+    const haikuBox = (await haiku.locator('canvas').boundingBox())!
+    expect(haikuBox.height).toBeGreaterThanOrEqual(viewport.width === 1440 ? 72 : 64)
+    expect(haikuBox.height).toBeLessThanOrEqual(96)
+    await expect(page.getByTestId('daily-chalkboard-hint')).toBeVisible()
+    await expect(page.locator('.daily-plaques__note')).toHaveCount(0)
+
+    const askBox = (await page.getByTestId('daily-ask-button').boundingBox())!
+    const doneBox = (await page.getByTestId('daily-done-button').boundingBox())!
+    const boosterBox = (await page.getByTestId('daily-chalkboard-boosters').boundingBox())!
+    expect(askBox.y + askBox.height).toBeLessThan(doneBox.y)
+    expect(doneBox.y + doneBox.height).toBeLessThanOrEqual(boosterBox.y + 4)
+    expect(boosterBox.y + boosterBox.height).toBeLessThanOrEqual(viewport.height)
+
+    await page.getByTestId('daily-ask-button').click()
+    await expect(haiku).toHaveAttribute('data-haiku-state', 'thinking')
+    await expect(page.getByTestId('haiku-bubble')).toHaveText('Hmm…')
+
+    releaseGrade()
+    await expect(haiku).toHaveAttribute('data-haiku-state', 'correct')
+    await expect(page.getByTestId('haiku-bubble')).toContainText('Looks like a lighthouse! · 840')
+    await expect(page.getByTestId('haiku-bubble')).toContainText('A bright beacon above the waves.')
+  })
+}
+
+test('mobile strip places Haiku on the left and opens bubble popover without scrolling', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 })
+  await offlineClient(page, true)
+  const now = Date.now()
+  let releaseGrade!: () => void
+  const gradeGate = new Promise<void>(resolve => { releaseGrade = resolve })
+  const playing = { day: new Date(now).toISOString().slice(0, 10), status: 'playing', prompt: 'A lighthouse', startedAt: now - 30_000, endsAt: now + 570_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: now + 90_000, serverNow: now }
+  await page.route('**/api/daily/**', async route => {
+    const path = new URL(route.request().url()).pathname
+    if (path.endsWith('/me')) return route.fulfill({ json: playing })
+    if (path.endsWith('/grade')) {
+      await gradeGate
+      return route.fulfill({ json: { ok: true, grade: { guess: 'lighthouse', reason: 'A bright beacon above the waves.', fit: 450, recognition: 310, speed: 80, total: 840, elapsedMs: 30_000 }, state: { ...playing, asksUsed: 1, asksLeft: 2, best: 840 } } })
+    }
+    return route.fulfill({ json: {} })
+  })
+  await page.goto(`${origin}/home`)
+  const haikuButton = page.getByTestId('daily-mobile-haiku')
+  const scoreButton = page.getByTestId('daily-mobile-score-trigger')
+  const haikuBox = (await haikuButton.boundingBox())!
+  const scoreBox = (await scoreButton.boundingBox())!
+  expect(haikuBox.height).toBeGreaterThanOrEqual(40)
+  expect(haikuBox.height).toBeLessThanOrEqual(48)
+  expect(haikuBox.x + haikuBox.width).toBeLessThanOrEqual(scoreBox.x)
+  expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBeLessThanOrEqual(812)
+
+  await page.getByTestId('daily-ask-button').click()
+  await expect(haikuButton).toHaveAttribute('data-haiku-state', 'thinking')
+  await haikuButton.click()
+  await expect(page.getByTestId('daily-mobile-haiku-popover')).toHaveText(/Hmm…/)
+  expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBeLessThanOrEqual(812)
+
+  releaseGrade()
+  await expect(haikuButton).toHaveAttribute('data-haiku-state', 'correct')
+  await expect(page.getByTestId('daily-mobile-haiku-popover')).toContainText('Looks like a lighthouse! · 840')
+  await expect(page.getByTestId('daily-mobile-haiku-popover')).toContainText('A bright beacon above the waves.')
+  await page.getByRole('button', { name: 'Close Haiku message' }).click()
+  await expect(page.getByTestId('daily-mobile-haiku-popover')).toHaveCount(0)
+})
+
 test('start zooms into the easel', async ({ page }) => {
   await playFixture(page)
   await page.goto(`${origin}/home`)

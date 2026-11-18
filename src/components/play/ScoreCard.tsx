@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { AlertCircle } from 'lucide-react'
 import type { GradeView } from '../../server/daily-service'
 import { BoosterSprite } from './BoosterSprite'
@@ -10,9 +11,10 @@ export interface ScoreCardProps {
   ended?: boolean
   notice?: string | null
   sheet?: boolean
+  actions?: ReactNode
 }
 
-export function ScoreCard({ latest, best, grading, lastError, notice, sheet = false }: ScoreCardProps) {
+export function ScoreCard({ latest, best, grading, lastError, notice, sheet = false, actions }: ScoreCardProps) {
   const parts = [
     { label: 'Matches the prompt', value: latest?.fit ?? 0, max: 500, id: 'grade-fit', color: 'sun' },
     { label: 'Easy to recognise', value: latest?.recognition ?? 0, max: 400, id: 'grade-recognition', color: 'sea' },
@@ -122,6 +124,12 @@ export function ScoreCard({ latest, best, grading, lastError, notice, sheet = fa
               </div>
             </div>
           )}
+
+          {!sheet && (
+            <p className="daily-chalkboard__hint" data-testid="daily-chalkboard-hint">
+              Grade now keeps you drawing &middot; Submit locks your best score &amp; speed
+            </p>
+          )}
         </div>
       </div>
 
@@ -132,7 +140,16 @@ export function ScoreCard({ latest, best, grading, lastError, notice, sheet = fa
             <span className="daily-chalkboard__chalk daily-chalkboard__chalk--warm" />
             <span className="daily-chalkboard__chalk daily-chalkboard__chalk--teal" />
           </div>
-          <div className="daily-chalkboard__boosters" aria-hidden="true">
+          {actions && (
+            <div className="daily-chalkboard__hanging" data-testid="daily-plaques-hanging">
+              <div className="daily-chalkboard__chains" aria-hidden="true">
+                <span />
+                <span />
+              </div>
+              {actions}
+            </div>
+          )}
+          <div className="daily-chalkboard__boosters" data-testid="daily-chalkboard-boosters" aria-hidden="true">
             <BoosterSprite scale={3} phaseOffset={1} />
             <BoosterSprite scale={3} phaseOffset={3} />
             <BoosterSprite scale={3} phaseOffset={5} />

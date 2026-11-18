@@ -156,6 +156,7 @@ function mergeServerState(prev: DailyClientState, next: DailyStateView): DailyCl
     serverNow: next.serverNow,
     nextAutoAt: next.nextAutoAt,
     lastCells: next.lastCells,
+    bestCells: next.bestCells,
     finalizing: isNowEnded || isNewStart ? false : prev.finalizing,
     endFailed: isNowEnded || isNewStart ? false : prev.endFailed,
     ...(isNewStart
