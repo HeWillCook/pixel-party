@@ -16,6 +16,6 @@
 @media (max-width: 767px) {
   .painter-tray { width: 100%; }
   .painter-tray [data-testid="palette"] > div { grid-template-columns: repeat(8, minmax(0, 44px)); }
-  .painter-tray [data-testid="toolbar"] { flex-wrap: wrap; }
+  .painter-tray [data-testid="toolbar"] { display: grid; grid-template-columns: repeat(3, 48px); }
   .painter-tray [data-testid="toolbar"] button { min-width: 44px; }
 }
