@@ -13,7 +13,7 @@ export type HaikuState =
 
 export interface HaikuProps {
   state: HaikuState
-  bubble?: ReactNode
+  bubble?: ReactNode | boolean
   scale?: number
   beret?: boolean
   paused?: boolean

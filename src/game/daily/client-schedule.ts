@@ -116,7 +116,7 @@ function rejectErrorMessage(reason: DailyRejectReason): string | null {
     case 'too_soon':
       return null
     case 'judge_resting':
-      return 'Judge is resting, keep drawing'
+      return "Haiku's napping — keep drawing"
     case 'busy':
       return 'Grading already in progress'
     case 'no_asks_left':
@@ -156,6 +156,7 @@ function mergeServerState(prev: DailyClientState, next: DailyStateView): DailyCl
     serverNow: next.serverNow,
     nextAutoAt: next.nextAutoAt,
     lastCells: next.lastCells,
+    bestCells: next.bestCells,
     finalizing: isNowEnded || isNewStart ? false : prev.finalizing,
     endFailed: isNowEnded || isNewStart ? false : prev.endFailed,
     ...(isNewStart

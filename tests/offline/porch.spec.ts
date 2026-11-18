@@ -404,6 +404,57 @@ test('capture home 1280', async ({ page }) => {
   await page.screenshot({ path: resolve(dir, 'home-1280x720.png'), fullPage: true })
 })
 
+function samplePaintingBase64() {
+  const cells = new Uint8Array(32 * 32)
+  const set = (x: number, y: number, c: number) => {
+    if (x >= 0 && x < 32 && y >= 0 && y < 32) cells[y * 32 + x] = c
+  }
+  const fillRect = (x0: number, y0: number, w: number, h: number, c: number) => {
+    for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) set(x, y, c)
+  }
+  fillRect(0, 0, 32, 20, 11)
+  fillRect(4, 3, 2, 2, 15)
+  set(25, 5, 15)
+  set(20, 2, 15)
+  fillRect(0, 24, 32, 8, 9)
+  for (let i = 0; i < 32; i += 4) fillRect(i, 26, 2, 1, 10)
+  fillRect(0, 21, 32, 3, 14)
+  for (let r = 0; r < 14; r++) {
+    const w = 6 + Math.floor(r / 3)
+    const c = Math.floor(r / 3) % 2 ? 2 : 4
+    fillRect(16 - Math.floor(w / 2), 8 + r, w, 1, c)
+  }
+  fillRect(13, 4, 6, 4, 1)
+  fillRect(14, 5, 4, 2, 6)
+  for (let x = 18; x < 32; x++) {
+    const spread = Math.floor((x - 18) / 3) + 1
+    fillRect(x, 5 - spread, 1, spread * 2 + 1, 15)
+  }
+  fillRect(12, 3, 8, 1, 4)
+  fillRect(15, 2, 2, 1, 4)
+  return Buffer.from(cells).toString('base64')
+}
+
+test('ended porch easel shows the player painting and score tag, and opens result view', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await setup(page)
+  const cells = samplePaintingBase64()
+  await page.route('**/api/daily/me', route => route.fulfill({ json: { day: '2026-11-17', status: 'ended', prompt: 'A lighthouse', startedAt: Date.now() - 600_000, endsAt: Date.now(), autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: true, best: 740, windows: [], nextAutoAt: null, serverNow: Date.now(), lastCells: cells } }))
+  await page.goto(`${origin}/home`)
+  await expect(page.getByTestId('daily-ended')).toBeVisible()
+  await expect(page.getByTestId('porch-easel-tag')).toHaveText("Today's painting · 740/1000")
+  const centerPixel = await page.locator('.pixel-scene__canvas').evaluate((el) => {
+    const ctx = (el as HTMLCanvasElement).getContext('2d')!
+    // Easel at (138, 40), painting at (138 + 18, 40 + 25) = (156, 65), lighthouse tower at (15, 10) -> (171, 75)
+    return Array.from(ctx.getImageData(138 + 18 + 15, 40 + 25 + 10, 1, 1).data)
+  })
+  // Color 4 (#ef4444 = 239,68,68) or 16 (#ffffff = 255,255,255)
+  expect([[239, 68, 68, 255], [255, 255, 255, 255]]).toContainEqual(centerPixel)
+  await page.getByRole('button', { name: 'View result' }).click()
+  await expect(page.getByTestId('pixel-canvas')).toBeVisible()
+})
+
 for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720 }, { width: 375, height: 812 }]) {
   for (const state of ['landing', 'signed-out', 'not-started', 'ended'] as const) {
     test(`capture porch ${state} ${viewport.width}`, async ({ page }) => {
@@ -411,7 +462,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720
       await page.setViewportSize(viewport)
       await page.emulateMedia({ reducedMotion: 'reduce' })
       await setup(page, state === 'signed-out')
-      if (state === 'ended') await page.route('**/api/daily/me', route => route.fulfill({ json: { day: '2026-11-17', status: 'ended', autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: true, best: 740, windows: [], nextAutoAt: null, serverNow: Date.now() } }))
+      if (state === 'ended') await page.route('**/api/daily/me', route => route.fulfill({ json: { day: '2026-11-17', status: 'ended', autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: true, best: 740, windows: [], nextAutoAt: null, serverNow: Date.now(), lastCells: samplePaintingBase64() } }))
       await page.goto(`${origin}${state === 'landing' ? '/' : '/home'}`)
       await expect(page.locator('.pixel-scene__canvas')).toBeVisible()
       if (state === 'not-started') await expect(page.getByTestId('daily-start-button')).toBeVisible()

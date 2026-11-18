@@ -1,8 +1,10 @@
+import { EMPTY_CANVAS, PALETTE } from '../../game/config'
 import { P } from '../palette'
 import { drawSea, drawSun, drawSunsetSky, mulberry32 } from '../procedural'
 import { drawSprite } from '../sprite'
 import { porchLayout } from './layout'
 import { sprites } from './sprites'
+import { drawBooster } from './booster'
 
 export interface PorchOptions {
   easelState: 'draped' | 'cover' | 'finished' | 'signin'
@@ -12,6 +14,7 @@ export interface PorchOptions {
   roofTop?: number
   hideEasel?: boolean
   backgroundOnly?: boolean
+  easelCells?: Uint8Array
 }
 
 export function drawPorchRoof(ctx: CanvasRenderingContext2D, roofTop: number): void {
@@ -20,6 +23,38 @@ export function drawPorchRoof(ctx: CanvasRenderingContext2D, roofTop: number): v
   rect(0, roofTop, width, 18, P.wood[1])
   for (let y = 1; y < 7; y += 3) { rect(0, roofTop + y, width, 1, P.wood[0]); rect(0, roofTop + y + 1, width, 1, P.wood[2]) }
   rect(0, roofTop + 7, width, 6, P.wood[0]); rect(0, roofTop + 8, width, 4, P.wood[2]); rect(0, roofTop + 12, width, 1, P.wood[4])
+}
+
+function drawPixelZ(ctx: CanvasRenderingContext2D, x: number, y: number, size: 3 | 4, color: string): void {
+  ctx.fillStyle = color
+  if (size === 3) {
+    ctx.fillRect(x, y, 3, 1)
+    ctx.fillRect(x + 1, y + 1, 1, 1)
+    ctx.fillRect(x, y + 2, 3, 1)
+  } else {
+    ctx.fillRect(x, y, 4, 1)
+    ctx.fillRect(x + 2, y + 1, 1, 1)
+    ctx.fillRect(x + 1, y + 2, 1, 1)
+    ctx.fillRect(x, y + 3, 4, 1)
+  }
+}
+
+export function drawCatSleepZs(ctx: CanvasRenderingContext2D, headX: number, headY: number, frame: number): void {
+  if (frame === 0) {
+    drawPixelZ(ctx, headX, headY - 5, 3, P.paper[4])
+    drawPixelZ(ctx, headX + 2, headY - 14, 4, P.paper[2])
+    return
+  }
+  const period = 36
+  for (let i = 0; i < 2; i++) {
+    const phase = (frame + i * 18) % period
+    const step = Math.floor(phase / 3)
+    if (step >= 10) continue
+    const x = headX + (step >= 5 ? 1 : 0) + i
+    const y = headY - 4 - step
+    const color = step < 4 ? P.paper[4] : step < 7 ? P.paper[3] : P.paper[2]
+    drawPixelZ(ctx, x, y, step < 4 ? 3 : 4, color)
+  }
 }
 
 export function drawPorch(ctx: CanvasRenderingContext2D, frame: number, opts: PorchOptions): void {
@@ -134,9 +169,8 @@ export function drawPorch(ctx: CanvasRenderingContext2D, frame: number, opts: Po
   rect(board.x + 2, boardY + 3, board.w - 4, board.h - 20, P.wood[0]); rect(board.x + 4, boardY + 5, board.w - 8, board.h - 24, P.wood[3])
   rect(board.x + 6, boardY + 7, board.w - 12, board.h - 28, P.foliage[0])
   rect(board.x + 3, boardY + board.h - 18, board.w - 6, 2, P.wood[2])
-  for (const offset of [6, Math.floor(board.w / 2) - 2, board.w - 10]) {
-    rect(board.x + offset, boardY + board.h - 9, 5, 5, P.stone[0]); rect(board.x + offset + 1, boardY + board.h - 8, 3, 2, P.stone[2])
-    rect(board.x + offset + 1, boardY + board.h - 4, 3, 3 + (Math.floor(frame / 3 + offset) % 2), P.flame[1]); rect(board.x + offset + 2, boardY + board.h - 4, 1, 3, P.flame[4])
+  for (const offset of [6, Math.floor(board.w / 2) - 4, board.w - 13]) {
+    drawBooster(ctx, board.x + offset - 1, boardY + board.h - 14, frame + offset)
   }
 
   const scaledSprite = (key: 'mailbox' | 'radio' | 'plant' | 'lantern', x: number, y: number) => {
@@ -164,6 +198,7 @@ export function drawPorch(ctx: CanvasRenderingContext2D, frame: number, opts: Po
     const catY = layout.cat.y + (Math.floor(frame / 12) % 2)
     drawSprite(ctx, sprites.cat, layout.cat.x, catY)
     rect(layout.cat.x + 4, catY + 5, 3, 1, P.fur[0]); rect(layout.cat.x + 19, catY + 8, 4, 1, P.fur[4])
+    drawCatSleepZs(ctx, layout.cat.x + 2, catY, frame)
   }
   const note = layout.note
   rect(note.x, note.y, 13, 18, P.wood[0]); rect(note.x + 1, note.y + 1, 11, 15, P.paper[3]); rect(note.x + 6, note.y, 2, 2, P.flame[1])
@@ -179,13 +214,23 @@ export function drawPorch(ctx: CanvasRenderingContext2D, frame: number, opts: Po
     rect(ex + 32 - spread, ey + y, 3, 1, P.wood[0]); rect(ex + 34 + spread, ey + y, 3, 1, P.wood[2])
   }
   rect(ex + 11, ey + 18, 47, 61, P.wood[0]); rect(ex + 13, ey + 20, 43, 57, P.wood[3]); rect(ex + 15, ey + 23, 39, 51, opts.easelState === 'draped' ? P.paper[2] : P.paper[4])
-  for (let y = ey + 25; y < ey + 73; y += 4) for (let x = ex + 17 + (y % 3); x < ex + 53; x += 7) rect(x, y, 2, 1, P.paper[3])
+  if (opts.easelState === 'finished' && opts.easelCells && opts.easelCells.length >= 1024) {
+    rect(ex + 17, ey + 24, 34, 34, P.wood[1])
+    for (let py = 0; py < 32; py++) {
+      for (let px = 0; px < 32; px++) {
+        const c = opts.easelCells[py * 32 + px] ?? 0
+        ctx.fillStyle = c === 0 ? EMPTY_CANVAS[(px + py) % 2] : (PALETTE[c] ?? EMPTY_CANVAS[(px + py) % 2])
+        ctx.fillRect(ex + 18 + px, ey + 25 + py, 1, 1)
+      }
+    }
+  } else {
+    for (let y = ey + 25; y < ey + 73; y += 4) for (let x = ex + 17 + (y % 3); x < ex + 53; x += 7) rect(x, y, 2, 1, P.paper[3])
+  }
   rect(ex + 28, ey + 15, 12, 5, P.wood[0]); rect(ex + 30, ey + 16, 8, 2, P.wood[4])
   rect(ex + 4, ey + 78, 61, 4, P.wood[0]); rect(ex + 5, ey + 78, 60, 1, P.wood[4])
   rect(ex + 11, ey + 76, 8, 2, P.stone[2]); rect(ex + 23, ey + 76, 6, 2, P.flame[1]); rect(ex + 45, ey + 75, 9, 1, P.wood[4]); rect(ex + 53, ey + 74, 3, 2, P.stone[1])
-  for (const offset of [13, 32, 51]) {
-    rect(ex + offset, ey + 103, 7, 7, P.stone[0]); rect(ex + offset + 1, ey + 104, 5, 4, P.stone[2])
-    rect(ex + offset + 2, ey + 110, 3, 5 + (Math.floor(frame / 3 + offset) % 3), P.flame[1]); rect(ex + offset + 3, ey + 110, 1, 4, P.flame[4])
+  for (const offset of [12, 31, 50]) {
+    drawBooster(ctx, ex + offset, ey + 101, frame + offset)
   }
   }
   const hatch = layout.hatch

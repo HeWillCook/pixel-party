@@ -23,6 +23,7 @@ export interface PorchSceneProps {
   onToggleMute: () => void
   easelTestId?: string
   easelDisabled?: boolean
+  easelCells?: Uint8Array
   landing?: boolean
   easelText?: ReactNode
   children?: ReactNode
@@ -33,7 +34,7 @@ function Objects({ moreOpen, setMoreOpen, onParty, ...props }: PorchSceneProps &
   const rect = porchLayout[composition]
   const [rulesOpen, setRulesOpen] = useState(false)
   return <>
-    <Hotspot rect={rect.easel} label={props.easelLabel} href={props.landing ? '/home' : undefined} onClick={props.landing ? undefined : props.onEasel} testId={props.easelTestId} disabled={props.easelDisabled}><span className="porch-easel-copy">{props.easelText}</span></Hotspot>
+    <Hotspot rect={rect.easel} label={props.easelLabel} href={props.landing ? '/home' : undefined} onClick={props.landing ? undefined : props.onEasel} testId={props.easelTestId} disabled={props.easelDisabled}><span className={props.easelState === 'finished' ? 'porch-easel-copy porch-easel-copy--tag' : 'porch-easel-copy'}>{props.easelText}</span></Hotspot>
     <Hotspot rect={rect.chalkboard} label="Today's scores" href="/scores" />
     <div className="porch-scores" style={rectToPercent(rect.chalkboard, composition)}><strong>Today's top {composition === 'portrait' ? 'three' : 'five'}</strong>{props.topThree.length ? props.topThree.slice(0, composition === 'portrait' ? 3 : 5).map((score, index) => <div className="porch-score-row" key={index}><span>{index + 1}. {score.name}</span><span>{score.score}</span></div>) : <div>No scores yet</div>}{composition === 'landscape' && <div className="porch-score-more">See all scores</div>}</div>
     <Hotspot rect={rect.hatch} label="Party studio" href="/party" onClick={onParty} testId={props.landing ? 'landing-browse-lobby' : undefined} />
@@ -86,8 +87,8 @@ export function PorchScene(props: PorchSceneProps) {
     const width = root.current?.clientWidth ?? window.innerWidth
     const scale = Math.max(2, Math.ceil(Math.max(width / ctx.canvas.width, height / ctx.canvas.height)))
     const roofTop = Math.max(0, Math.floor((ctx.canvas.height - height / scale) / 2))
-    drawPorch(ctx, frame, { easelState: props.easelState, bob: true, soundOn: !props.muted, signedIn: props.signedIn, roofTop })
-  }, [props.easelState, props.muted, props.signedIn])
+    drawPorch(ctx, frame, { easelState: props.easelState, bob: true, soundOn: !props.muted, signedIn: props.signedIn, roofTop, easelCells: props.easelCells })
+  }, [props.easelState, props.muted, props.signedIn, props.easelCells])
   return <div ref={root} className={props.landing ? 'porch-world porch-world--landing' : 'porch-world'}>
     <PixelScene draw={draw} className="porch-world__scene" camera={{ x: 0, y: panning ? -(root.current?.clientHeight ?? 0) : 0, zoom: 1 }} zoomMs={500} syncScale><Objects {...props} moreOpen={moreOpen} setMoreOpen={setMoreOpen} onParty={onParty} /></PixelScene>
     <nav className="porch-dock" aria-label="Porch shortcuts">

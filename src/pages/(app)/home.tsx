@@ -2,12 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { AuthOverlay, signOut, useAuthProfileReady, useQuery } from 'deepspace'
 import {
-  Bot,
   CheckCircle2,
-  LogIn,
-  Play,
   Sparkles,
-  Users,
   Volume2,
   VolumeX,
 } from 'lucide-react'
@@ -19,6 +15,7 @@ import { Leaderboard } from '../../components/daily/Leaderboard'
 import { GradePanel } from '../../components/daily/GradePanel'
 import { AutoGradeTimeline } from '../../components/daily/AutoGradeTimeline'
 import { ExitDailyButton } from '../../components/daily/ExitDailyButton'
+import { Haiku, type HaikuState } from '../../components/haiku/Haiku'
 import { Palette } from '../../components/game/Palette'
 import { PixelCanvas } from '../../components/game/PixelCanvas'
 import { ToolBar } from '../../components/game/ToolBar'
@@ -28,7 +25,7 @@ import { ScoreCard } from '../../components/play/ScoreCard'
 import { PainterTray } from '../../components/game/PainterTray'
 import { PlayBackdrop, type PlayTransition } from '../../components/play/PlayBackdrop'
 import { Badge, Button, Modal } from '../../components/ui'
-import { MAX_COLOR } from '../../game/config'
+import { DAILY, MAX_COLOR } from '../../game/config'
 import { canAskDaily, canPaintDaily } from '../../game/daily/client-schedule'
 import { decodeCells } from '../../game/grid'
 import { emptyHistory, record, redo, undo, type History } from '../../game/history'
@@ -80,29 +77,77 @@ export default function DailyHomePage() {
   const { muted, toggleMute } = useDailySounds(state)
   const boardRef = useRef<HTMLDivElement>(null)
   const paletteRef = useRef<HTMLDivElement>(null)
-  const [boardBox, setBoardBox] = useState({ width: 320, height: 600 })
+  const mobileFooterRef = useRef<HTMLDivElement>(null)
+  const [boardBox, setBoardBox] = useState({ width: 320, height: 600, mobile: false })
   const [resultDay, setResultDay] = useState('')
   const [showPorch, setShowPorch] = useState(false)
+  const [mobileScoreOpen, setMobileScoreOpen] = useState(false)
+  const [mobileHaikuOpen, setMobileHaikuOpen] = useState(false)
+
+  useEffect(() => {
+    if (state.status !== 'playing') {
+      setMobileScoreOpen(false)
+      setMobileHaikuOpen(false)
+    }
+  }, [state.status])
+
+  useEffect(() => {
+    if (!mobileHaikuOpen) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMobileHaikuOpen(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [mobileHaikuOpen])
 
   useEffect(() => {
     const board = boardRef.current
     if (!board) return
     const measure = () => {
-      const layout = state.status === 'playing' && window.innerWidth >= 768 ? board.closest('.play-layout') : null
-      const top = (layout ?? board).getBoundingClientRect().top + (board.closest('main')?.scrollTop ?? 0)
+      const mobile = window.innerWidth < 768
       const paletteHeight = paletteRef.current?.getBoundingClientRect().height ?? 0
+      const footerHeight = mobileFooterRef.current?.getBoundingClientRect().height ?? 0
       const width = board.clientWidth
+      if (mobile && state.status === 'playing') {
+        const boardTop = board.getBoundingClientRect().top
+        const height = Math.max(200, window.innerHeight - boardTop - paletteHeight - footerHeight - 24)
+        setBoardBox(previous =>
+          previous.width === width && previous.height === height && previous.mobile === mobile
+            ? previous
+            : { width, height, mobile },
+        )
+        return
+      }
+      const layout = state.status === 'playing' && !mobile ? board.closest('.play-layout') : null
+      const top = (layout ?? board).getBoundingClientRect().top + (board.closest('main')?.scrollTop ?? 0)
       const height = Math.max(200, window.innerHeight - top - paletteHeight - (state.status === 'playing' ? 10 : 0))
-      setBoardBox(previous => previous.width === width && previous.height === height ? previous : { width, height })
+      setBoardBox(previous =>
+        previous.width === width && previous.height === height && previous.mobile === mobile
+          ? previous
+          : { width, height, mobile },
+      )
     }
     measure()
+    let raf = 0
+    const onResize = () => {
+      cancelAnimationFrame(raf)
+      raf = requestAnimationFrame(measure)
+    }
+    const media = window.matchMedia('(min-width: 768px)')
     const observer = new ResizeObserver(measure)
     observer.observe(board)
     const layout = board.closest('.play-layout')
     if (layout) observer.observe(layout)
     if (paletteRef.current) observer.observe(paletteRef.current)
-    window.addEventListener('resize', measure)
-    return () => { observer.disconnect(); window.removeEventListener('resize', measure) }
+    if (mobileFooterRef.current) observer.observe(mobileFooterRef.current)
+    window.addEventListener('resize', onResize)
+    media.addEventListener('change', onResize)
+    return () => {
+      cancelAnimationFrame(raf)
+      observer.disconnect()
+      window.removeEventListener('resize', onResize)
+      media.removeEventListener('change', onResize)
+    }
   }, [state.status, state.loaded, isSignedIn, resultDay, showPorch])
 
   const userId = user?.id ?? ''
@@ -271,8 +316,8 @@ export default function DailyHomePage() {
   )
 
   const endedCells = useMemo(
-    () => decodeSnapshotOrFallback(bestDrawingDoc?.cells ?? state.lastCells, cells),
-    [bestDrawingDoc?.cells, state.lastCells, cells],
+    () => decodeSnapshotOrFallback(bestDrawingDoc?.cells ?? state.bestCells ?? state.lastCells, cells),
+    [bestDrawingDoc?.cells, state.bestCells, state.lastCells, cells],
   )
 
   const endedGrade = useMemo((): GradeView | null => {
@@ -346,7 +391,8 @@ export default function DailyHomePage() {
       <section className="porch-home__scene" data-testid={signedOut ? 'daily-signed-out' : ended ? 'daily-ended' : 'daily-not-started'}>
         <PorchScene easelState={signedOut ? 'signin' : ended ? 'finished' : 'cover'} easelLabel={signedOut ? 'Sign in to paint' : ended ? 'View result' : showPorch ? 'Resume painting' : 'Start Daily Challenge'}
           easelTestId={signedOut ? 'daily-sign-in-button' : ended ? undefined : 'daily-start-button'} easelDisabled={starting}
-          easelText={signedOut ? <span className="porch-easel-action">Sign in to paint</span> : ended ? <span className="porch-easel-action">View your painting</span> : <><strong>Today’s prompt</strong><span>10 minutes · your best grade counts</span><span className="porch-easel-action">{showPorch ? 'Resume painting' : 'Start painting'}</span></>}
+          easelCells={ended ? endedCells : undefined}
+          easelText={signedOut ? <span className="porch-easel-action">Sign in to paint</span> : ended ? <span className="porch-easel-tag" data-testid="porch-easel-tag">Today&apos;s painting · {endedBestScore}/1000</span> : <><strong>Today’s prompt</strong><span>10 minutes · your best grade counts</span><span className="porch-easel-action">{showPorch ? 'Resume painting' : 'Start painting'}</span></>}
           signedIn={!!isSignedIn} galleryHref={`/u/${encodeURIComponent(userId)}`} topThree={topThree} muted={muted}
           onEasel={() => { if (signedOut) setShowAuthModal(true); else if (ended) setResultDay(state.day); else void handleStart() }}
           onAccount={() => { if (signedOut) setShowAuthModal(true); else setShowAccount(true) }} onToggleMute={toggleMute}>
@@ -359,10 +405,70 @@ export default function DailyHomePage() {
     </div>
   }
 
+  const serverNow = now + state.clockOffsetMs
+  const pendingWindow = (state.windows.length
+    ? state.windows
+    : state.startedAt == null
+      ? []
+      : DAILY.autoWindowsMs.map((offset, index) => ({
+          index,
+          dueAt: state.startedAt! + offset,
+          status: 'pending' as const,
+          score: null,
+          late: false,
+        }))
+  ).find(w => w.status === 'pending')
+  const nextAutoAt = pendingWindow?.dueAt ?? state.nextAutoAt
+  const nextAutoSec = nextAutoAt != null ? Math.max(0, Math.ceil((nextAutoAt - serverNow) / 1000)) : null
+  const nextAutoLabel = state.grading
+    ? 'Looking…'
+    : nextAutoSec != null
+      ? `Next ${Math.floor(nextAutoSec / 60)}:${String(nextAutoSec % 60).padStart(2, '0')}`
+      : 'Grades done'
+
+  const haikuState: HaikuState = state.grading
+    ? 'thinking'
+    : state.latest
+      ? state.latest.total >= 700
+        ? 'correct'
+        : state.latest.total >= 350
+          ? 'guess'
+          : 'idle'
+      : 'idle'
+
+  const guessWord = state.latest?.guess?.trim()
+  const guessLine = guessWord
+    ? /^(an?)\b/i.test(guessWord)
+      ? `Looks like ${guessWord}!`
+      : `Looks like a ${guessWord}!`
+    : 'Scored!'
+
+  const haikuBubble = state.grading ? (
+    'Hmm…'
+  ) : state.latest ? (
+    <span className="daily-haiku__speech">
+      <strong className="daily-haiku__headline">
+        {guessLine}&nbsp;&middot;&nbsp;{state.latest.total}
+      </strong>
+      {state.latest.reason && (
+        <span className="daily-haiku__reason">{state.latest.reason}</span>
+      )}
+    </span>
+  ) : (
+    <span className="daily-haiku__speech">
+      <strong className="daily-haiku__headline">Paint away!</strong>
+      <span className="daily-haiku__reason">Tap Grade when you want a look.</span>
+    </span>
+  )
+
   return (
     <div
       data-testid="daily-page"
-      className="mx-auto flex w-full max-w-[1400px] flex-col gap-5 px-4 py-4 sm:px-6"
+      className={
+        state.status === 'playing'
+          ? 'daily-page daily-page--playing mx-auto flex w-full max-w-[1400px] flex-col gap-2 px-1 py-1 md:px-4 md:py-4'
+          : 'mx-auto flex w-full max-w-[1400px] flex-col gap-5 px-4 py-4 sm:px-6'
+      }
     >
       {state.status !== 'playing' && <div className="flex flex-wrap items-center justify-between gap-3">
         <span className="pp-logo text-3xl">Daily Challenge</span>
@@ -376,62 +482,256 @@ export default function DailyHomePage() {
         <div data-testid="daily-playing" className="daily-play">
           <PlayBackdrop phase={playTransition} onTransitionEnd={finishPlayTransition} />
           <div className={playTransition === 'active' ? 'play-controls' : 'play-controls play-controls--transition'}>
-          <PlayLayout prompt={<div className="pp-panel play-prompt">
-              <span className="play-prompt__heading">Today’s prompt</span>
-              <span
-                data-testid="daily-prompt"
-                className="pp-word text-2xl uppercase tracking-wide text-[var(--sunset-1)] sm:text-3xl"
-              >
-                {state.prompt}
-              </span>
-              <DailyTimer startedAt={state.startedAt} endsAt={state.endsAt} clockOffsetMs={state.clockOffsetMs} />
-          </div>} timeline={<AutoGradeTimeline windows={state.windows} now={now + state.clockOffsetMs} startedAt={state.startedAt} manualUsed={state.asksUsed} />} exit={<ExitDailyButton onExit={() => setPlayTransition('leaving')} />} canvas={<div ref={boardRef} className="flex w-full min-w-0 justify-center">
-              <HoverEasel>
-              <PixelCanvas
-                width={32}
-                height={32}
-                availWidth={Math.max(32, boardBox.width - 56)}
-                availHeight={Math.min(596, Math.max(32, boardBox.height - 50))}
-                cells={cells}
-                activeColor={activeColor}
-                tool={tool}
-                canDraw={canDraw}
-                word={state.prompt}
-                onPlace={handlePlace}
-                onFill={handleFill}
-                onPick={handlePick}
-                onStrokeStart={handleStrokeStart}
-                onStrokeEnd={handleStrokeEnd}
-              />
-              </HoverEasel>
-            </div>} score={<div className="flex min-w-0 flex-col gap-4">
-              {state.notice && <div role="status" className="pp-panel p-4">{state.notice}</div>}
-              <ScoreCard latest={state.latest} best={state.best} grading={state.grading} lastError={state.lastError} />
-            </div>} actions={
-              <div className="pp-panel flex flex-col gap-3 bg-card p-4">
-                <div className="play-actions">
-                  <Button type="button" data-testid="daily-ask-button" disabled={!canAsk} onClick={() => void askNow()} className="pp-btn gap-2 px-4 py-2.5 text-base uppercase tracking-wider">
-                    <Bot className="h-4 w-4 shrink-0" aria-hidden /><span>Grade now ({asksLeft} left)</span>
-                  </Button>
-                  <Button type="button" variant="secondary" data-testid="daily-done-button" disabled={state.stale || state.grading || (state.finalizing && !state.endFailed)} onClick={() => void done()} className="pp-btn gap-1.5 px-4 py-2.5 text-base uppercase tracking-wider">
-                    <CheckCircle2 className="h-4 w-4 text-[var(--sunset-1)]" aria-hidden /><span>{state.endFailed ? 'Retry submit' : state.finalizing ? 'Finishing…' : 'Submit & finish'}</span>
-                  </Button>
+            <PlayLayout
+              variant="daily"
+              prompt={
+                <div className="play-prompt daily-clipboard__prompt">
+                  <span className="play-prompt__heading">Today’s prompt</span>
+                  <span
+                    data-testid="daily-prompt"
+                    className="pp-word text-2xl uppercase tracking-wide text-[var(--sunset-1)] sm:text-3xl"
+                  >
+                    {state.prompt}
+                  </span>
+                  <DailyTimer startedAt={state.startedAt} endsAt={state.endsAt} clockOffsetMs={state.clockOffsetMs} />
                 </div>
-                <p className="text-base text-muted-foreground">Grade now keeps you drawing. Submit locks in your best score; earlier means more speed points.</p>
-              </div>
-          } bottom={<PainterTray trayRef={paletteRef} activeColor={activeColor} tool={tool} tools={
-              <ToolBar
-                tools={DAILY_TOOLS}
-                compactPick
-                active={tool}
-                onSelect={setTool}
-                onUndo={handleUndo}
-                onRedo={handleRedo}
-                canUndo={!strokeActive && history.past.length > 0}
-                canRedo={!strokeActive && history.future.length > 0}
-                disabled={!canDraw}
-              />
-          } palette={<Palette activeColor={activeColor} onSelectColor={color => { setActiveColor(color); if (tool === 'erase' || tool === 'pick') setTool('paint') }} disabled={!canDraw} />} />} />
+              }
+              timeline={
+                <AutoGradeTimeline
+                  embedded
+                  windows={state.windows}
+                  now={serverNow}
+                  startedAt={state.startedAt}
+                  manualUsed={state.asksUsed}
+                />
+              }
+              exit={<ExitDailyButton onExit={() => setPlayTransition('leaving')} />}
+              mobileTop={
+                <div className="daily-mobile-top">
+                  <div className="daily-mobile-top__prompt">
+                    <span className="daily-mobile-top__label">Prompt</span>
+                    <span data-testid="daily-prompt" className="pp-word daily-mobile-top__word">
+                      {state.prompt}
+                    </span>
+                  </div>
+                  <div className="daily-mobile-top__right">
+                    <DailyTimer startedAt={state.startedAt} endsAt={state.endsAt} clockOffsetMs={state.clockOffsetMs} />
+                    <ExitDailyButton compact onExit={() => setPlayTransition('leaving')} />
+                  </div>
+                </div>
+              }
+              canvas={
+                <div ref={boardRef} className="flex w-full min-w-0 justify-center">
+                  <HoverEasel>
+                    <PixelCanvas
+                      width={32}
+                      height={32}
+                      availWidth={boardBox.mobile ? Math.max(32, boardBox.width + 6) : Math.max(32, boardBox.width - 56)}
+                      availHeight={boardBox.mobile ? Math.max(32, boardBox.height) : Math.min(596, Math.max(32, boardBox.height - 50))}
+                      cells={cells}
+                      activeColor={activeColor}
+                      tool={tool}
+                      canDraw={canDraw}
+                      word={state.prompt}
+                      onPlace={handlePlace}
+                      onFill={handleFill}
+                      onPick={handlePick}
+                      onStrokeStart={handleStrokeStart}
+                      onStrokeEnd={handleStrokeEnd}
+                    />
+                  </HoverEasel>
+                </div>
+              }
+              score={
+                <div className="daily-right-stage">
+                  <div className="daily-haiku-perch">
+                    <div className="daily-haiku-perch__cat">
+                      <Haiku state={haikuState} bubble={haikuBubble} scale={3} />
+                    </div>
+                    <div className="daily-haiku-perch__crate" aria-hidden="true" />
+                  </div>
+                  <ScoreCard
+                    latest={state.latest}
+                    best={state.best}
+                    grading={state.grading}
+                    lastError={state.lastError}
+                    notice={state.notice}
+                    actions={
+                      <div className="play-actions daily-plaques">
+                        <Button
+                          type="button"
+                          data-testid="daily-ask-button"
+                          disabled={!canAsk}
+                          onClick={() => void askNow()}
+                          className="pp-btn daily-plaque daily-plaque--ask gap-2 px-3 py-1.5 text-base uppercase tracking-wider"
+                        >
+                          <Sparkles className="h-4 w-4 shrink-0" aria-hidden />
+                          <span>Grade now ({asksLeft} left)</span>
+                        </Button>
+                        <div className="daily-chalkboard__chains daily-chalkboard__chains--between" aria-hidden="true">
+                          <span />
+                          <span />
+                        </div>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          data-testid="daily-done-button"
+                          disabled={state.stale || state.grading || (state.finalizing && !state.endFailed)}
+                          onClick={() => void done()}
+                          className="pp-btn daily-plaque daily-plaque--submit gap-1.5 px-3 py-1.5 text-base uppercase tracking-wider"
+                        >
+                          <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden />
+                          <span>{state.endFailed ? 'Retry submit' : state.finalizing ? 'Finishing…' : 'Submit & finish'}</span>
+                        </Button>
+                      </div>
+                    }
+                  />
+                </div>
+              }
+              actions={null}
+              bottom={
+                <PainterTray
+                  trayRef={paletteRef}
+                  activeColor={activeColor}
+                  tool={tool}
+                  tools={
+                    <ToolBar
+                      tools={DAILY_TOOLS}
+                      compactPick
+                      active={tool}
+                      onSelect={setTool}
+                      onUndo={handleUndo}
+                      onRedo={handleRedo}
+                      canUndo={!strokeActive && history.past.length > 0}
+                      canRedo={!strokeActive && history.future.length > 0}
+                      disabled={!canDraw}
+                    />
+                  }
+                  palette={
+                    <Palette
+                      activeColor={activeColor}
+                      onSelectColor={color => {
+                        setActiveColor(color)
+                        if (tool === 'erase' || tool === 'pick') setTool('paint')
+                      }}
+                      disabled={!canDraw}
+                    />
+                  }
+                />
+              }
+              mobileFooter={
+                <div ref={mobileFooterRef} className="daily-mobile-footer">
+                  {mobileHaikuOpen && (
+                    <div
+                      role="dialog"
+                      aria-label="Haiku's message"
+                      data-testid="daily-mobile-haiku-popover"
+                      className="daily-mobile-haiku-popover"
+                    >
+                      <div className="daily-mobile-haiku-popover__content">{haikuBubble}</div>
+                      <button
+                        type="button"
+                        onClick={() => setMobileHaikuOpen(false)}
+                        className="daily-mobile-haiku-popover__close"
+                        aria-label="Close Haiku message"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  )}
+                  <div className="daily-mobile-strip">
+                    <button
+                      type="button"
+                      data-testid="daily-mobile-haiku"
+                      data-haiku-state={haikuState}
+                      aria-expanded={mobileHaikuOpen}
+                      aria-label={mobileHaikuOpen ? "Hide Haiku's message" : "View Haiku's message"}
+                      onClick={() => {
+                        setMobileScoreOpen(false)
+                        setMobileHaikuOpen(open => !open)
+                      }}
+                      className="daily-mobile-strip__haiku"
+                    >
+                      <Haiku state={haikuState} bubble={false} scale={1.65} data-testid="daily-mobile-haiku-sprite" />
+                      {(state.grading || state.latest) && (
+                        <span className="daily-mobile-strip__haiku-dot" aria-hidden="true" />
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="daily-mobile-score-trigger"
+                      aria-expanded={mobileScoreOpen}
+                      aria-label="Open scores and grading breakdown"
+                      onClick={() => {
+                        setMobileHaikuOpen(false)
+                        setMobileScoreOpen(true)
+                      }}
+                      className="daily-mobile-strip__score"
+                    >
+                      <span data-testid="daily-best-score" className="daily-mobile-strip__best">
+                        Best {state.best}/1000
+                      </span>
+                      <span className="daily-mobile-strip__auto">{nextAutoLabel}</span>
+                    </button>
+                    <Button
+                      type="button"
+                      data-testid="daily-ask-button"
+                      disabled={!canAsk}
+                      onClick={() => void askNow()}
+                      className="pp-btn daily-mobile-strip__btn daily-mobile-strip__btn--ask"
+                    >
+                      <span>{state.grading ? 'Looking…' : `Grade (${asksLeft})`}</span>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      data-testid="daily-done-button"
+                      disabled={state.stale || state.grading || (state.finalizing && !state.endFailed)}
+                      onClick={() => void done()}
+                      className="pp-btn daily-mobile-strip__btn daily-mobile-strip__btn--submit"
+                    >
+                      <span>{state.endFailed ? 'Retry' : state.finalizing ? 'Saving…' : 'Submit'}</span>
+                    </Button>
+                  </div>
+                  <Modal
+                    open={mobileScoreOpen}
+                    onClose={() => setMobileScoreOpen(false)}
+                    aria-label="How you're scored"
+                    hideClose
+                    className="daily-chalk-sheet-modal"
+                  >
+                    <div className="daily-chalk-sheet">
+                      <div className="daily-chalk-sheet__head">
+                        <Haiku state={haikuState} bubble={haikuBubble} scale={2} />
+                        <button
+                          type="button"
+                          onClick={() => setMobileScoreOpen(false)}
+                          className="pp-btn daily-chalk-sheet__close"
+                          aria-label="Close score breakdown"
+                        >
+                          Close
+                        </button>
+                      </div>
+                      <ScoreCard
+                        sheet
+                        latest={state.latest}
+                        best={state.best}
+                        grading={state.grading}
+                        lastError={state.lastError}
+                        notice={state.notice}
+                      />
+                      <AutoGradeTimeline
+                        embedded
+                        windows={state.windows}
+                        now={serverNow}
+                        startedAt={state.startedAt}
+                        manualUsed={state.asksUsed}
+                      />
+                    </div>
+                  </Modal>
+                </div>
+              }
+            />
           </div>
         </div>
       )}

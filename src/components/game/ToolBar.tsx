@@ -35,12 +35,17 @@ const TOOL_META: Record<Tool, { label: string; icon: ReactNode }> = {
     label: 'Paint',
     icon: (
       <PixelIcon>
-        <rect x="10" y="2" width="3" height="3" />
-        <rect x="8" y="4" width="3" height="3" />
-        <rect x="6" y="6" width="3" height="3" />
-        <rect x="4" y="8" width="3" height="3" />
-        <rect x="2" y="10" width="3" height="3" />
-        <rect x="2" y="12" width="2" height="2" />
+        {/* Wooden brush handle, metal ferrule, and paint-dipped tip */}
+        <rect x="11" y="1" width="3" height="3" fill="#614052" />
+        <rect x="9" y="3" width="3" height="3" fill="#614052" />
+        <rect x="7" y="5" width="3" height="3" fill="#614052" />
+        <rect x="11" y="2" width="2" height="1" fill="#ecae7d" />
+        <rect x="9" y="4" width="2" height="1" fill="#ecae7d" />
+        <rect x="5" y="7" width="3" height="3" fill="#a8a49a" />
+        <rect x="6" y="7" width="1" height="2" fill="#fff0cc" />
+        <rect x="3" y="9" width="3" height="3" fill="#392a45" />
+        <rect x="2" y="11" width="3" height="3" fill="#d86a58" />
+        <rect x="2" y="12" width="1" height="2" fill="#ffbd70" />
       </PixelIcon>
     ),
   },
@@ -48,10 +53,13 @@ const TOOL_META: Record<Tool, { label: string; icon: ReactNode }> = {
     label: 'Erase',
     icon: (
       <PixelIcon>
-        <rect x="6" y="3" width="6" height="2" />
-        <rect x="4" y="5" width="7" height="3" />
-        <rect x="3" y="8" width="6" height="4" />
-        <rect x="2" y="12" width="12" height="2" />
+        {/* Beveled rubber eraser with paper sleeve */}
+        <rect x="5" y="3" width="7" height="2" fill="#392a45" />
+        <rect x="4" y="4" width="8" height="4" fill="#df7662" />
+        <rect x="5" y="4" width="5" height="2" fill="#ed8b77" />
+        <rect x="2" y="8" width="8" height="4" fill="#ecd4b0" />
+        <rect x="3" y="8" width="6" height="2" fill="#fff0cc" />
+        <rect x="2" y="12" width="10" height="2" fill="#392a45" />
       </PixelIcon>
     ),
   },
@@ -59,11 +67,14 @@ const TOOL_META: Record<Tool, { label: string; icon: ReactNode }> = {
     label: 'Fill',
     icon: (
       <PixelIcon>
-        <rect x="5" y="2" width="4" height="2" />
-        <rect x="3" y="4" width="6" height="5" />
-        <rect x="4" y="9" width="5" height="2" />
-        <rect x="10" y="7" width="2" height="3" />
-        <rect x="11" y="10" width="2" height="4" />
+        {/* Tipped metal paint bucket with pouring paint */}
+        <rect x="6" y="1" width="3" height="2" fill="#392a45" />
+        <rect x="4" y="3" width="6" height="6" fill="#7b7880" />
+        <rect x="5" y="4" width="2" height="4" fill="#a8a49a" />
+        <rect x="3" y="8" width="6" height="2" fill="#392a45" />
+        <rect x="10" y="6" width="2" height="3" fill="#327782" />
+        <rect x="11" y="9" width="2" height="5" fill="#509ea0" />
+        <rect x="11" y="13" width="2" height="1" fill="#a2c1ae" />
       </PixelIcon>
     ),
   },
@@ -71,11 +82,15 @@ const TOOL_META: Record<Tool, { label: string; icon: ReactNode }> = {
     label: 'Pick colour',
     icon: (
       <PixelIcon>
-        <rect x="10" y="2" width="4" height="4" />
-        <rect x="8" y="5" width="3" height="3" />
-        <rect x="6" y="7" width="3" height="3" />
-        <rect x="4" y="9" width="3" height="3" />
-        <rect x="2" y="12" width="2" height="2" />
+        {/* Rubber-bulb glass eyedropper */}
+        <rect x="10" y="1" width="4" height="4" fill="#d86a58" />
+        <rect x="11" y="2" width="2" height="2" fill="#ed8b77" />
+        <rect x="8" y="4" width="4" height="3" fill="#392a45" />
+        <rect x="6" y="6" width="3" height="3" fill="#a2c1ae" />
+        <rect x="4" y="8" width="3" height="3" fill="#a2c1ae" />
+        <rect x="5" y="8" width="1" height="2" fill="#fff0cc" />
+        <rect x="2" y="11" width="3" height="3" fill="#392a45" />
+        <rect x="2" y="13" width="1" height="1" fill="#ffcf84" />
       </PixelIcon>
     ),
   },
@@ -127,7 +142,7 @@ export function ToolBar({
             key={tool}
             type="button"
             data-testid={`tool-${tool}`}
-            aria-label={tool === 'pick' ? 'Pick colour' : undefined}
+            aria-label={meta.label}
             aria-pressed={isSelected}
             title={meta.label}
             data-tooltip={meta.label}
@@ -142,7 +157,7 @@ export function ToolBar({
             )}
           >
             {meta.icon}
-            <span>{tool === 'pick' && compactPick ? 'Pick' : meta.label}</span>
+            <span className="painter-tray__tool-label">{tool === 'pick' && compactPick ? 'Pick' : meta.label}</span>
           </button>
         )
       })}
@@ -151,6 +166,7 @@ export function ToolBar({
         <button
           type="button"
           data-testid="tool-undo"
+          aria-label="Undo"
           title="Undo"
           data-tooltip="Undo"
           disabled={disabled || !canUndo}
@@ -161,7 +177,7 @@ export function ToolBar({
           )}
         >
           {UNDO_ICON}
-          <span>Undo</span>
+          <span className="painter-tray__tool-label">Undo</span>
         </button>
       )}
 
@@ -169,6 +185,7 @@ export function ToolBar({
         <button
           type="button"
           data-testid="tool-redo"
+          aria-label="Redo"
           title="Redo"
           data-tooltip="Redo"
           disabled={disabled || !canRedo}
@@ -179,7 +196,7 @@ export function ToolBar({
           )}
         >
           {REDO_ICON}
-          <span>Redo</span>
+          <span className="painter-tray__tool-label">Redo</span>
         </button>
       )}
     </div>
