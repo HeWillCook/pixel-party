@@ -64,6 +64,7 @@
   .painter-tray [data-testid="toolbar"] button { flex: 1; min-width: 0; }
   .play-layout__mobile-actions { grid-area: actions; position: sticky; bottom: 0; z-index: 3; }
   .play-layout__mobile-actions .play-actions { flex-direction: row; }
+  .play-layout__mobile-actions .play-actions button { flex: 1 1 0; min-width: 0; padding: 6px 4px; font-size: 14px; letter-spacing: 0; }
   .play-layout__mobile-actions p { display: none; }
   .play-layout__right > summary { display: list-item; min-height: 44px; padding: 10px; background: #ecd4b0; border: 2px solid #8e5960; color: #392a45; cursor: pointer; }
 }

@@ -49,6 +49,21 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720
   })
 }
 
+test('mobile painter tray and grading actions stay accessible', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 })
+  await playFixture(page, true)
+  await page.goto(`${origin}/home`)
+  await expect(page.getByTestId('painter-tray').getByTestId('toolbar')).toBeVisible()
+  for (const id of ['daily-ask-button', 'daily-done-button']) {
+    const bounds = (await page.getByTestId(id).boundingBox())!
+    expect(bounds.x).toBeGreaterThanOrEqual(0)
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(375)
+  }
+  await page.getByText('Scores & grading').click()
+  await expect(page.getByTestId('daily-auto-timeline')).toBeVisible()
+  await expect(page.getByTestId('daily-score-breakdown')).toBeVisible()
+})
+
 for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720 }]) {
   test(`painter tray and controls fit ${viewport.width}`, async ({ page }) => {
     await page.setViewportSize(viewport)
