@@ -15,6 +15,9 @@
 
 **Spec:** `docs/superpowers/specs/2026-11-17-porch-redesign-design.md` (sections "The world: every feature has an object", "The play screen", "Scoring legibility" Party part, "Constraints"). The approved mockups are `docs/superpowers/specs/porch-mockups/porch-scene.html` (wide porch) and `play-zoomed-v5.html` (play screen). Open them in a browser; they are the visual reference, and the real art must be richer and more detailed than them.
 
+
+> **Owner revision (2026-11-18):** no steps to the beach. The Scores chalkboard hovers on boosters (like the easel) on the right of the porch. Party lives in the house's basement: a cellar hatch in the porch floor, with a clean pan-down transition into a cosy basement studio whose high windows overlook the beach and sea. Tasks 5b and 5c below read "basement studio" wherever they say "beach": the lobby is a basement studio with easels and the sunset beach seen through the windows; "Back to the beach" becomes "Back upstairs" (`room-exit` → `/party` from a room, and the studio has an "Upstairs" exit to `/home` with a pan up). The mailbox is mounted on the house wall.
+
 ## Global Constraints
 
 - Follow `AGENTS.md`: no deploy, push, undeploy, transfer or collaborator commands; no secrets; no real AI calls.
