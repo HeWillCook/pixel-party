@@ -1,13 +1,25 @@
-import { useCallback, useContext, useEffect, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from 'react'
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type MouseEvent,
+  type ReactNode,
+} from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Globe, Hash, Lock, Plus, Users } from 'lucide-react'
 import { Hotspot } from '../../scene/Hotspot'
 import { PixelScene, SceneComposition } from '../../scene/PixelScene'
-import { rectToPercent } from '../../scene/camera'
+import { compositionFor, integerScale, rectToPercent } from '../../scene/camera'
 import { drawStudio } from '../../scene/studio/drawStudio'
 import { studioLayout } from '../../scene/studio/layout'
 import { Badge, Button, Input, Label } from '../ui'
 import './studio.css'
+
+const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect
 
 export interface StudioRoomItem {
   recordId: string
@@ -50,7 +62,7 @@ function CreateEaselForm({
   onVisibilityChange,
   onCreateRoom,
   onRequestSignIn,
-  className = '',
+  compact = false,
 }: Pick<
   StudioLobbyProps,
   | 'signedIn'
@@ -62,51 +74,58 @@ function CreateEaselForm({
   | 'onVisibilityChange'
   | 'onCreateRoom'
   | 'onRequestSignIn'
-> & { className?: string }) {
+> & { compact?: boolean }) {
   return (
     <form
       data-testid="create-room-form"
       onSubmit={onCreateRoom}
-      className={`pp-panel studio-workbench-form ${className}`}
+      className={compact ? 'studio-order-form' : 'pp-panel studio-workbench-form'}
     >
-      <div className="flex items-center justify-between gap-2">
-        <h2 className="studio-workbench-form__title">Set up an easel</h2>
-        <Badge variant="secondary" className="pp-chip text-sm uppercase">
+      <div className="studio-order-form__head">
+        <h2 className={compact ? 'studio-order-form__title' : 'studio-workbench-form__title'}>
+          Set up an easel
+        </h2>
+        <Badge variant="secondary" className={compact ? 'studio-order-form__badge' : 'pp-chip text-sm uppercase'}>
           Co-op 32×32
         </Badge>
       </div>
 
-      <div className="space-y-0.5">
-        <Label htmlFor="room-name" className="text-sm uppercase text-[var(--soft-text)]">
+      <div className={compact ? 'studio-order-form__field' : 'space-y-0.5'}>
+        <Label
+          htmlFor={compact ? 'room-name-board' : 'room-name'}
+          className={compact ? 'studio-order-form__label' : 'text-sm uppercase text-[var(--soft-text)]'}
+        >
           Room Name
         </Label>
         <Input
-          id="room-name"
+          id={compact ? 'room-name-board' : 'room-name'}
           data-testid="create-room-name"
           placeholder="e.g. Midnight Pixel Club"
           maxLength={40}
           value={roomName}
           onChange={(e) => onRoomNameChange(e.target.value)}
           disabled={!mutationsReady || creating}
-          className="h-8 text-base"
+          className={compact ? 'studio-order-form__input' : 'h-8 text-base'}
         />
       </div>
 
-      <div className="space-y-0.5">
-        <Label className="text-sm uppercase text-[var(--soft-text)]">Visibility</Label>
-        <div className="grid grid-cols-2 gap-1.5">
+      <div className={compact ? 'studio-order-form__field' : 'space-y-0.5'}>
+        <Label className={compact ? 'studio-order-form__label' : 'text-sm uppercase text-[var(--soft-text)]'}>
+          Visibility
+        </Label>
+        <div className="grid grid-cols-2 gap-1">
           <button
             type="button"
             data-testid="visibility-public"
             disabled={!mutationsReady || creating}
             onClick={() => onVisibilityChange('public')}
-            className={`flex items-center justify-center gap-1 border-2 px-2 py-1 text-base uppercase transition-colors ${
+            className={`${compact ? 'studio-order-form__vis' : 'flex items-center justify-center gap-1 border-2 px-2 py-1 text-base uppercase transition-colors'} ${
               visibility === 'public'
                 ? 'border-[var(--sunset-1)] bg-secondary text-[var(--sunset-1)]'
                 : 'border-border bg-secondary/40 text-muted-foreground hover:text-foreground'
             }`}
           >
-            <Globe className="h-4 w-4 shrink-0" aria-hidden />
+            <Globe className={compact ? 'studio-order-form__icon shrink-0' : 'h-4 w-4 shrink-0'} aria-hidden />
             <span>Public</span>
           </button>
           <button
@@ -114,13 +133,13 @@ function CreateEaselForm({
             data-testid="visibility-private"
             disabled={!mutationsReady || creating}
             onClick={() => onVisibilityChange('private')}
-            className={`flex items-center justify-center gap-1 border-2 px-2 py-1 text-base uppercase transition-colors ${
+            className={`${compact ? 'studio-order-form__vis' : 'flex items-center justify-center gap-1 border-2 px-2 py-1 text-base uppercase transition-colors'} ${
               visibility === 'private'
                 ? 'border-[var(--sunset-1)] bg-secondary text-[var(--sunset-1)]'
                 : 'border-border bg-secondary/40 text-muted-foreground hover:text-foreground'
             }`}
           >
-            <Lock className="h-4 w-4 shrink-0" aria-hidden />
+            <Lock className={compact ? 'studio-order-form__icon shrink-0' : 'h-4 w-4 shrink-0'} aria-hidden />
             <span>Private</span>
           </button>
         </div>
@@ -131,9 +150,9 @@ function CreateEaselForm({
           type="submit"
           data-testid="create-room-submit"
           disabled={!mutationsReady || creating || !roomName.trim()}
-          className="pp-btn h-9 w-full gap-1.5 text-base uppercase"
+          className={compact ? 'pp-btn studio-order-form__submit' : 'pp-btn h-9 w-full gap-1.5 text-base uppercase'}
         >
-          <Plus className="h-4 w-4 shrink-0" aria-hidden />
+          <Plus className={compact ? 'studio-order-form__icon shrink-0' : 'h-4 w-4 shrink-0'} aria-hidden />
           {creating ? 'Setting up…' : 'Set up & open'}
         </Button>
       ) : (
@@ -141,7 +160,7 @@ function CreateEaselForm({
           type="button"
           data-testid="create-room-signin"
           onClick={onRequestSignIn}
-          className="pp-btn h-9 w-full gap-1.5 text-base uppercase"
+          className={compact ? 'pp-btn studio-order-form__submit' : 'pp-btn h-9 w-full gap-1.5 text-base uppercase'}
         >
           Sign in to Host a Room
         </Button>
@@ -155,15 +174,55 @@ function JoinCodeForm({
   joining,
   onJoinCodeChange,
   onJoinCode,
-  className = '',
+  boothCounter = false,
 }: Pick<StudioLobbyProps, 'joinCodeInput' | 'joining' | 'onJoinCodeChange' | 'onJoinCode'> & {
-  className?: string
+  boothCounter?: boolean
 }) {
+  if (boothCounter) {
+    return (
+      <form
+        data-testid="join-room-form"
+        onSubmit={onJoinCode}
+        className="studio-ticket-booth"
+      >
+        <h3 className="studio-ticket-booth__sign">Got a code?</h3>
+        <div className="pp-panel studio-ticket-card">
+          <div className="studio-ticket-card__row">
+            <div className="relative flex-1 min-w-0">
+              <Hash
+                className="pointer-events-none absolute left-1.5 top-1/2 studio-ticket-card__hash -translate-y-1/2 text-muted-foreground"
+                aria-hidden
+              />
+              <Input
+                data-testid="join-code-input"
+                placeholder="Enter 4-char code"
+                maxLength={64}
+                value={joinCodeInput}
+                onChange={(e) => onJoinCodeChange(e.target.value.toUpperCase())}
+                disabled={joining}
+                className="studio-ticket-card__input"
+              />
+            </div>
+            <Button
+              type="submit"
+              variant="secondary"
+              data-testid="join-code-submit"
+              disabled={joining || !joinCodeInput.trim()}
+              className="pp-btn studio-ticket-card__btn"
+            >
+              {joining ? '…' : 'Join'}
+            </Button>
+          </div>
+        </div>
+      </form>
+    )
+  }
+
   return (
     <form
       data-testid="join-room-form"
       onSubmit={onJoinCode}
-      className={`pp-panel studio-booth-form ${className}`}
+      className="pp-panel studio-booth-form"
     >
       <h3 className="studio-booth-form__title">Got a code?</h3>
       <div className="studio-booth-form__row">
@@ -201,31 +260,38 @@ function MoreEaselsList({
   currentUserId,
   renderPackUp,
   mobile = false,
+  style,
 }: {
   rooms: StudioRoomItem[]
   currentUserId?: string
   renderPackUp: (room: StudioRoomItem) => ReactNode
   mobile?: boolean
+  style?: React.CSSProperties
 }) {
   if (rooms.length === 0) return null
   return (
-    <div className={`pp-panel studio-more-easels ${mobile ? 'studio-more-easels--mobile' : ''}`}>
+    <div
+      style={style}
+      className={`pp-panel studio-more-easels ${mobile ? 'studio-more-easels--mobile' : ''}`}
+    >
       <div className="studio-more-easels__heading">More easels</div>
-      {rooms.map((room) => (
-        <div key={room.recordId} className="studio-more-easels__row">
-          <Link
-            to={`/r/${room.joinCode}`}
-            data-testid={`room-card-${room.joinCode}`}
-            className="studio-more-easels__link"
-          >
-            <span className="truncate">{room.name}</span>
-            <span className="shrink-0 text-sm text-[var(--soft-text)]">
-              {room.joinCode} · {room.playerCount}
-            </span>
-          </Link>
-          {currentUserId === room.hostId && renderPackUp(room)}
-        </div>
-      ))}
+      <div className="studio-more-easels__items">
+        {rooms.map((room) => (
+          <div key={room.recordId} className="studio-more-easels__row">
+            <Link
+              to={`/r/${room.joinCode}`}
+              data-testid={`room-card-${room.joinCode}`}
+              className="studio-more-easels__link"
+            >
+              <span className="truncate">{room.name}</span>
+              <span className="shrink-0 text-[var(--soft-text)]">
+                {room.joinCode} · {room.playerCount}
+              </span>
+            </Link>
+            {currentUserId === room.hostId && renderPackUp(room)}
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
@@ -234,10 +300,12 @@ function StudioObjects({
   props,
   onUpstairs,
   onComposition,
+  onJumpToForm,
 }: {
   props: StudioLobbyProps
   onUpstairs: (event: MouseEvent) => void
   onComposition: (c: 'landscape' | 'portrait') => void
+  onJumpToForm: (testId: 'create-room-name' | 'join-code-input') => void
 }) {
   const composition = useContext(SceneComposition)
   useEffect(() => {
@@ -283,11 +351,30 @@ function StudioObjects({
       <div data-testid="public-rooms-list" className="studio-rooms-layer">
         <h2 className="sr-only">Live Public Rooms</h2>
         {visibleEasels.length === 0 ? (
-          <div className="pp-panel studio-empty-note">
-            {props.roomsLoading
-              ? 'Looking around the studio…'
-              : 'No custom easels yet — set one up!'}
-          </div>
+          <>
+            <div
+              className="studio-easel-slot studio-easel-slot--empty"
+              style={rectToPercent(rect.easels[0], composition)}
+            >
+              <div className="studio-easel-chalk">
+                {props.roomsLoading ? 'Looking around…' : 'No custom easels yet'}
+              </div>
+            </div>
+            {rect.easels[rect.easels.length - 1] && (
+              <div
+                className="studio-easel-slot studio-easel-slot--empty"
+                style={rectToPercent(rect.easels[rect.easels.length - 1], composition)}
+              >
+                <button
+                  type="button"
+                  onClick={() => onJumpToForm('create-room-name')}
+                  className="studio-easel-tag"
+                >
+                  Set up an easel
+                </button>
+              </div>
+            )}
+          </>
         ) : (
           visibleEasels.map((room, index) => {
             const slot = rect.easels[index]
@@ -306,7 +393,7 @@ function StudioObjects({
                   <span className="studio-pennant__meta">
                     <span>{room.joinCode}</span>
                     <span className="inline-flex items-center gap-0.5">
-                      <Users className="h-3 w-3 shrink-0" aria-hidden />
+                      <Users className="studio-pennant__user-icon shrink-0" aria-hidden />
                       {room.playerCount}
                     </span>
                   </span>
@@ -324,6 +411,7 @@ function StudioObjects({
             rooms={overflowEasels}
             currentUserId={props.currentUserId}
             renderPackUp={props.renderPackUp}
+            style={rectToPercent(rect.moreEasels, composition)}
           />
         )}
       </div>
@@ -339,11 +427,12 @@ function StudioObjects({
               joining={props.joining}
               onJoinCodeChange={props.onJoinCodeChange}
               onJoinCode={props.onJoinCode}
+              boothCounter
             />
           </div>
           <div
             className="studio-workbench-slot"
-            style={rectToPercent(rect.workbench, composition)}
+            style={rectToPercent(rect.workbenchBoard, composition)}
           >
             <CreateEaselForm
               signedIn={props.signedIn}
@@ -355,6 +444,7 @@ function StudioObjects({
               onVisibilityChange={props.onVisibilityChange}
               onCreateRoom={props.onCreateRoom}
               onRequestSignIn={props.onRequestSignIn}
+              compact
             />
           </div>
         </>
@@ -381,6 +471,30 @@ export function StudioLobby(props: StudioLobbyProps) {
     return fromPorch && !window.matchMedia('(prefers-reduced-motion: reduce)').matches
   })
   const [panningUp, setPanningUp] = useState(false)
+
+  // Keep .porch-shell (including nav) at the exact integer scene scale of the studio
+  // without mutating document.documentElement.style.--px.
+  useIsomorphicLayoutEffect(() => {
+    const stage = root.current?.querySelector('.studio-world__stage') as HTMLElement | null
+    const shell = root.current?.closest('.porch-shell') as HTMLElement | null
+    if (!stage || !shell) return
+    const previous = shell.style.getPropertyValue('--px')
+    const sync = () => {
+      const bounds = stage.getBoundingClientRect()
+      if (!bounds.width || !bounds.height) return
+      const comp = compositionFor(bounds.width, bounds.height)
+      const scale = integerScale(bounds.width, bounds.height, comp)
+      shell.style.setProperty('--px', `${scale}px`)
+    }
+    sync()
+    const observer = new ResizeObserver(sync)
+    observer.observe(stage)
+    return () => {
+      observer.disconnect()
+      if (previous) shell.style.setProperty('--px', previous)
+      else shell.style.removeProperty('--px')
+    }
+  }, [])
 
   useEffect(() => {
     if (!settling) return
@@ -421,12 +535,15 @@ export function StudioLobby(props: StudioLobbyProps) {
     [props.rooms.length],
   )
 
-  const jumpToForm = (testId: 'create-room-name' | 'join-code-input') => {
+  const jumpToForm = useCallback((testId: 'create-room-name' | 'join-code-input') => {
     const el = document.querySelector<HTMLElement>(`[data-testid="${testId}"]`)
     if (!el) return
-    el.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'center' })
+    el.scrollIntoView({
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+      block: 'center',
+    })
     el.focus({ preventScroll: true })
-  }
+  }, [])
 
   const cameraY = panningUp
     ? Math.max(240, Math.round((root.current?.clientHeight ?? 600) * 0.45))
@@ -449,6 +566,7 @@ export function StudioLobby(props: StudioLobbyProps) {
             props={props}
             onUpstairs={goUpstairs}
             onComposition={setComposition}
+            onJumpToForm={jumpToForm}
           />
         </PixelScene>
 

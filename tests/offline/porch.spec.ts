@@ -7,7 +7,7 @@ const clientDir = resolve(import.meta.dirname, '../../dist/client')
 const user = { id: 'host', name: 'Offline host', email: 'host@example.test' }
 const token = `fixture.${Buffer.from(JSON.stringify({ sub: user.id, name: user.name, exp: 4_000_000_000 })).toString('base64url')}.unsigned`
 
-async function setup(page: Page, signedOut = false) {
+async function setup(page: Page, signedOut = false, records: unknown[] = []) {
   await page.route('**/*', async (route) => {
     const url = new URL(route.request().url())
     if (url.origin !== origin) return route.abort()
@@ -27,7 +27,7 @@ async function setup(page: Page, signedOut = false) {
       if (raw === 'ping') return socket.send('pong')
       const message = JSON.parse(String(raw))
       if (message.type === 'user.list') socket.send(JSON.stringify({ type: 'user.list', payload: { users: [] } }))
-      if (message.type === 'core.subscribe') socket.send(JSON.stringify({ type: 'core.query_result', payload: { subscriptionId: message.payload.subscriptionId, records: [] } }))
+      if (message.type === 'core.subscribe') socket.send(JSON.stringify({ type: 'core.query_result', payload: { subscriptionId: message.payload.subscriptionId, records } }))
     })
   })
 }
@@ -343,6 +343,25 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720
       await page.screenshot({ path: resolve(dir, `${route}-${viewport.width}x${viewport.height}.png`), fullPage: true })
     })
   }
+
+  test(`capture party-rooms ${viewport.width}`, async ({ page }) => {
+    test.skip(process.env.SCREENSHOTS !== '1')
+    await page.setViewportSize(viewport)
+    await setup(page, false, [
+      { recordId: 'r-play', data: { name: 'Pixel Party', mode: 'coop', visibility: 'public', joinCode: 'play', hostId: 'system', status: 'playing', playerCount: 5, lastActiveAt: 5000, isDefaultBoard: true } },
+      { recordId: 'r-1', data: { name: "Will's Studio", mode: 'coop', visibility: 'public', joinCode: 'QX3J', hostId: 'host', status: 'playing', playerCount: 3, lastActiveAt: 4000, isDefaultBoard: false } },
+      { recordId: 'r-2', data: { name: 'Sunset Cove', mode: 'coop', visibility: 'public', joinCode: 'M9K2', hostId: 'other', status: 'lobby', playerCount: 2, lastActiveAt: 3000, isDefaultBoard: false } },
+      { recordId: 'r-3', data: { name: 'Night Owls', mode: 'coop', visibility: 'public', joinCode: 'P4W8', hostId: 'other', status: 'playing', playerCount: 4, lastActiveAt: 2000, isDefaultBoard: false } },
+      { recordId: 'r-4', data: { name: 'Extra Easel', mode: 'coop', visibility: 'public', joinCode: 'Z7T1', hostId: 'other', status: 'lobby', playerCount: 1, lastActiveAt: 1000, isDefaultBoard: false } },
+    ])
+    await page.goto(`${origin}/party`)
+    await expect(page.getByTestId('app-navigation')).toBeVisible()
+    await expect(page.getByTestId('room-card-QX3J')).toBeVisible()
+    await page.evaluate(() => document.fonts.ready)
+    const dir = resolve(import.meta.dirname, '../../docs/superpowers/screenshots/2026-11-18-porch')
+    await mkdir(dir, { recursive: true })
+    await page.screenshot({ path: resolve(dir, `party-rooms-${viewport.width}x${viewport.height}.png`), fullPage: true })
+  })
 }
 
 for (const viewport of [{ width: 1440, height: 900 }, { width: 375, height: 812 }]) {
