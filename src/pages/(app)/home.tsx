@@ -22,6 +22,9 @@ import { ExitDailyButton } from '../../components/daily/ExitDailyButton'
 import { Palette } from '../../components/game/Palette'
 import { PixelCanvas } from '../../components/game/PixelCanvas'
 import { ToolBar } from '../../components/game/ToolBar'
+import { PlayLayout } from '../../components/play/PlayLayout'
+import { HoverEasel } from '../../components/play/HoverEasel'
+import { ScoreCard } from '../../components/play/ScoreCard'
 import { Badge, Button } from '../../components/ui'
 import { MAX_COLOR } from '../../game/config'
 import { canAskDaily, canPaintDaily } from '../../game/daily/client-schedule'
@@ -345,19 +348,18 @@ export default function DailyHomePage() {
       data-testid="daily-page"
       className="mx-auto flex w-full max-w-[1400px] flex-col gap-5 px-4 py-4 sm:px-6"
     >
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      {state.status !== 'playing' && <div className="flex flex-wrap items-center justify-between gap-3">
         <span className="pp-logo text-3xl">Daily Challenge</span>
         <Button type="button" variant="secondary" size="sm" onClick={toggleMute} aria-label={muted ? 'Unmute sounds' : 'Mute sounds'} className="pp-chip gap-2 text-base">
           {muted ? <VolumeX className="h-4 w-4" aria-hidden /> : <Volume2 className="h-4 w-4" aria-hidden />}
           {muted ? 'Sound off' : 'Sound on'}
         </Button>
-      </div>
+      </div>}
       {isSignedIn && !state.loaded && <div data-testid="daily-loading" className="pp-panel p-6" aria-live="polite">Setting up your easel…</div>}
       {/* Signed in: Playing */}
       {isSignedIn && state.loaded && state.status === 'playing' && (
-        <div data-testid="daily-playing" className="flex flex-col gap-4">
-          {/* Top Bar: Prompt + Timer + Best */}
-          <div className="pp-panel flex flex-wrap items-center justify-between gap-3 bg-card px-4 py-3">
+        <div data-testid="daily-playing" className="daily-play">
+          <PlayLayout top={<div className="pp-panel flex flex-wrap items-center justify-between gap-3 bg-card px-4 py-3">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-base uppercase tracking-wider text-muted-foreground">
                 Prompt:
@@ -374,12 +376,7 @@ export default function DailyHomePage() {
               <DailyTimer startedAt={state.startedAt} endsAt={state.endsAt} clockOffsetMs={state.clockOffsetMs} />
               <ExitDailyButton />
             </div>
-          </div>
-
-          {/* Main Stage */}
-          <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[168px_minmax(0,1fr)_300px]">
-            {/* Left: Tools */}
-            <div className="order-2 min-w-0 lg:order-1">
+          </div>} left={
               <ToolBar
                 tools={DAILY_TOOLS}
                 active={tool}
@@ -390,15 +387,13 @@ export default function DailyHomePage() {
                 canRedo={!strokeActive && history.future.length > 0}
                 disabled={!canDraw}
               />
-            </div>
-
-            {/* Center: Canvas + Palette */}
-            <div ref={boardRef} className="order-1 flex min-w-0 flex-col gap-4 lg:order-2">
+          } canvas={<div ref={boardRef} className="flex w-full min-w-0 justify-center">
+              <HoverEasel>
               <PixelCanvas
                 width={32}
                 height={32}
-                availWidth={boardBox.width}
-                availHeight={boardBox.height}
+                availWidth={Math.max(32, boardBox.width - 56)}
+                availHeight={Math.max(32, boardBox.height - 76)}
                 cells={cells}
                 activeColor={activeColor}
                 tool={tool}
@@ -410,26 +405,16 @@ export default function DailyHomePage() {
                 onStrokeStart={handleStrokeStart}
                 onStrokeEnd={handleStrokeEnd}
               />
-
-              <div ref={paletteRef}>
-                <Palette
-                  activeColor={activeColor}
-                  onSelectColor={setActiveColor}
-                  disabled={!canDraw}
-                />
-              </div>
-            </div>
-
-            {/* Right: Controls + GradePanel */}
-            <div className="order-3 flex min-w-0 flex-col gap-4">
+              </HoverEasel>
+            </div>} right={<div className="flex min-w-0 flex-col gap-4">
               {state.notice && <div role="status" className="pp-panel p-4">{state.notice}</div>}
-              <AutoGradeTimeline windows={state.windows} now={now + state.clockOffsetMs} />
-              <GradePanel
+              <ScoreCard
                 latest={state.latest}
                 best={state.best}
                 grading={state.grading}
                 lastError={state.lastError}
               />
+              <AutoGradeTimeline windows={state.windows} now={now + state.clockOffsetMs} />
 
               <div className="pp-panel flex flex-col gap-3 bg-card p-4">
                 <div className="flex flex-wrap items-center gap-2.5">
@@ -467,8 +452,7 @@ export default function DailyHomePage() {
                   Grade now keeps you drawing. Submit locks in your best score; earlier means more speed points.
                 </p>
               </div>
-            </div>
-          </div>
+            </div>} bottom={<div ref={paletteRef} className="pp-panel p-3"><Palette activeColor={activeColor} onSelectColor={setActiveColor} disabled={!canDraw} /></div>} />
         </div>
       )}
 
