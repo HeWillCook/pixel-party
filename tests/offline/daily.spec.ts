@@ -5,6 +5,74 @@ import { resolve } from 'node:path'
 const origin = 'http://pixel.test'
 const clientDir = resolve(import.meta.dirname, '../../dist/client')
 
+async function playFixture(page: Page, initiallyPlaying = false) {
+  await offlineClient(page, true)
+  const now = Date.now()
+  const playing = { day: '2026-11-17', status: 'playing', prompt: 'A tree', startedAt: now, endsAt: now + 600_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: now + 120_000, serverNow: now }
+  await page.route('**/api/daily/**', route => route.fulfill({ json: new URL(route.request().url()).pathname.endsWith('/me') && !initiallyPlaying ? { ...playing, status: 'not_started' } : playing }))
+}
+
+for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720 }]) {
+  test(`play easel fits ${viewport.width}`, async ({ page }) => {
+    await page.setViewportSize(viewport)
+    await playFixture(page, true)
+    await page.goto(`${origin}/home`)
+    const easel = page.getByTestId('hover-easel')
+    await expect(easel).toBeVisible()
+    const easelBox = (await easel.boundingBox())!
+    const frame = (await page.getByTestId('hover-easel-frame').boundingBox())!
+    const canvas = (await page.getByTestId('pixel-canvas').boundingBox())!
+    expect(frame.x).toBeLessThanOrEqual(canvas.x)
+    expect(frame.y).toBeLessThanOrEqual(canvas.y)
+    expect(frame.x + frame.width).toBeGreaterThanOrEqual(canvas.x + canvas.width)
+    expect(frame.y + frame.height).toBeGreaterThanOrEqual(canvas.y + canvas.height)
+    if (viewport.width === 1440) {
+      expect(easelBox.x).toBeGreaterThanOrEqual(0)
+      expect(easelBox.y).toBeGreaterThanOrEqual(0)
+      expect(easelBox.x + easelBox.width).toBeLessThanOrEqual(viewport.width)
+      expect(easelBox.y + easelBox.height).toBeLessThanOrEqual(viewport.height)
+    }
+  })
+}
+
+test('start zooms into the easel', async ({ page }) => {
+  await playFixture(page)
+  await page.goto(`${origin}/home`)
+  await page.getByTestId('daily-start-button').click()
+  await expect(page.getByTestId('daily-playing')).toBeVisible()
+  await expect(page.locator('[data-camera="easel"]')).toBeAttached()
+})
+
+test('reload mid-attempt never shows porch hotspots', async ({ page }) => {
+  await playFixture(page, true)
+  await page.addInitScript(() => {
+    const observer = new MutationObserver(() => { if (document.querySelector('.porch-world .pixel-hotspot')) document.documentElement.dataset.sawPorch = 'yes' })
+    observer.observe(document, { childList: true, subtree: true })
+  })
+  await page.goto(`${origin}/home`)
+  await expect(page.getByTestId('daily-playing')).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.dataset.sawPorch)).toBeUndefined()
+  await expect(page.locator('[data-camera="easel"]')).toBeAttached()
+})
+
+test('reduced motion zoom is immediate', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await playFixture(page)
+  await page.goto(`${origin}/home`)
+  await page.getByTestId('daily-start-button').click()
+  await expect(page.getByTestId('daily-playing')).toBeVisible({ timeout: 100 })
+})
+
+test('drawable easel remains still', async ({ page }) => {
+  await playFixture(page, true)
+  await page.goto(`${origin}/home`)
+  const easel = page.getByTestId('hover-easel')
+  await expect(easel).toBeVisible()
+  const before = await easel.boundingBox()
+  await page.waitForTimeout(1000)
+  expect(await easel.boundingBox()).toEqual(before)
+})
+
 for (const askFirst of [false, true]) test(askFirst ? 'auto-grade fires at 2:00 after an ask at 1:30' : 'auto-grade fires at 2:00 without asks', async ({ page }) => {
   await page.clock.install({ time: new Date('2026-11-17T12:00:00Z') })
   await offlineClient(page, true)
