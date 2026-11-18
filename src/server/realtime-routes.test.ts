@@ -47,7 +47,7 @@ describe('PixelRoom route configuration', () => {
   it.each(['play', 'custom-room'])('overwrites forged room configuration for %s', async roomId => {
     const test = harness()
     await test.request(`${roomId}?userId=forged`, {
-      headers: { 'X-Room-Id': 'forged', 'X-Room-Mode': 'team', 'X-Room-Default': 'forged', 'X-Room-Host': 'forged', 'X-Room-Lobby': 'true', 'X-User-Id': 'forged' },
+      headers: { 'X-Room-Id': 'forged', 'X-Room-Mode': 'team', 'X-Room-Default': 'forged', 'X-Room-Host': 'forged', 'X-Room-Lobby': 'true', 'X-Room-Spectate': 'true', 'X-User-Id': 'forged' },
     })
     const expectedId = roomId === 'play' ? 'default-board' : 'record-id'
     expect(test.namespace.idFromName).toHaveBeenCalledWith(expectedId)
@@ -58,6 +58,7 @@ describe('PixelRoom route configuration', () => {
     expect(forwarded.headers.get('X-Room-Host')).toBe(roomId === 'play' ? '' : 'host')
     expect(forwarded.headers.get('X-User-Id')).toBeNull()
     expect(forwarded.headers.get('X-Room-Lobby')).toBe(String(roomId === 'play'))
+    expect(forwarded.headers.get('X-Room-Spectate')).toBe('false')
     expect(new URL(forwarded.url).searchParams.has('userId')).toBe(false)
   })
 
@@ -72,7 +73,17 @@ describe('PixelRoom route configuration', () => {
     verifyJwt.mockResolvedValue({ result: { userId: 'guest', claims: { name: 'Guest', email: 'guest@test' } } })
     expect((await test.request('custom-room?token=valid&userId=forged')).status).toBe(200)
     expect(test.rows('rooms').get('record-id')!.memberIds).toEqual(['host', 'guest'])
+    expect(test.forwarded()!.headers.get('X-Room-Spectate')).toBe('false')
     expect(Buffer.from(test.forwarded()!.headers.get('X-User-Id')!, 'base64url').toString()).toBe('guest')
+  })
+
+  it('skips addRoomMember and forwards X-Room-Spectate when spectate=1 on a private room', async () => {
+    const test = harness('private', 'playing', ['host'])
+    verifyJwt.mockResolvedValue({ result: { userId: 'guest', claims: { name: 'Guest' } } })
+    expect((await test.request('custom-room?spectate=1&token=valid')).status).toBe(200)
+    expect(test.rows('rooms').get('record-id')!.memberIds).toEqual(['host'])
+    expect(test.update).not.toHaveBeenCalled()
+    expect(test.forwarded()!.headers.get('X-Room-Spectate')).toBe('true')
   })
 
   it('normalizes private lobby codes, preserves trusted lobby state and denies anonymous JWTs', async () => {

@@ -3,9 +3,9 @@ import { Link, useNavigate } from 'react-router-dom'
 import { Sparkles, Users } from 'lucide-react'
 import { EMPTY_CANVAS, PALETTE } from '../../game/config'
 import { usePixelRoom } from '../../hooks/usePixelRoom'
-import { drawSprite, type Sprite } from '../../scene/sprite'
 import { studioSprites } from '../../scene/studio/sprites'
-import { useSceneClock } from '../../scene/useSceneClock'
+import { BoosterSprite } from '../play/BoosterSprite'
+import { StudioSprite } from '../play/StudioSprite'
 
 export interface MagicEaselRoomInfo {
   name: string
@@ -67,39 +67,6 @@ function roundStateLabel(state?: string): string {
     default:
       return 'Ready'
   }
-}
-
-function ScenePixelSprite({ sprite, className = '' }: { sprite: Sprite; className?: string }) {
-  const ref = useRef<HTMLCanvasElement>(null)
-
-  useEffect(() => {
-    const ctx = ref.current?.getContext('2d')
-    if (!ctx) return
-    ctx.imageSmoothingEnabled = false
-    ctx.clearRect(0, 0, sprite.w, sprite.h)
-    drawSprite(ctx, sprite, 0, 0)
-  }, [sprite])
-
-  return (
-    <canvas
-      ref={ref}
-      width={sprite.w}
-      height={sprite.h}
-      className={`porch-sprite ${className}`.trim()}
-      style={{
-        width: `calc(var(--px) * ${sprite.w})`,
-        height: `calc(var(--px) * ${sprite.h})`,
-      }}
-      aria-hidden="true"
-    />
-  )
-}
-
-function MagicBooster() {
-  const frame = useSceneClock(8, false)
-  const frames = studioSprites.magicBoosterFrames
-  const sprite = frames[frame % frames.length]
-  return <ScenePixelSprite sprite={sprite} className="studio-magic-easel__booster-sprite" />
 }
 
 function LiveBoardPreview({
@@ -244,7 +211,7 @@ export function MagicEasel({
       </div>
 
       <div className="studio-magic-easel__crest" aria-hidden="true">
-        <ScenePixelSprite sprite={studioSprites.easelCrest} />
+        <StudioSprite sprite={studioSprites.easelCrest} scale="scene" />
       </div>
 
       <div className="studio-magic-easel__frame">
@@ -341,13 +308,13 @@ export function MagicEasel({
         <span className="studio-magic-easel__leg studio-magic-easel__leg--left" />
         <span className="studio-magic-easel__leg studio-magic-easel__leg--right" />
         <span className="studio-magic-easel__booster">
-          <MagicBooster />
+          <BoosterSprite scale="scene" phaseOffset={0} className="studio-magic-easel__booster-sprite" />
         </span>
         <span className="studio-magic-easel__booster">
-          <MagicBooster />
+          <BoosterSprite scale="scene" phaseOffset={2} className="studio-magic-easel__booster-sprite" />
         </span>
         <span className="studio-magic-easel__booster">
-          <MagicBooster />
+          <BoosterSprite scale="scene" phaseOffset={4} className="studio-magic-easel__booster-sprite" />
         </span>
       </div>
       <div className="studio-magic-easel__shadow" aria-hidden="true" />

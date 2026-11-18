@@ -3,7 +3,7 @@ import { BOOSTER_HEIGHT, BOOSTER_WIDTH, drawBooster } from '../../scene/porch/bo
 import { useSceneClock } from '../../scene/useSceneClock'
 
 export interface BoosterSpriteProps {
-  scale?: number
+  scale?: number | 'scene'
   phaseOffset?: number
   className?: string
 }
@@ -21,16 +21,20 @@ export function BoosterSprite({ scale = 3, phaseOffset = 0, className = '' }: Bo
     drawBooster(ctx, 0, 0, frame + phaseOffset)
   }, [frame, phaseOffset])
 
+  const sizeStyle =
+    scale === 'scene'
+      ? { width: `calc(var(--px) * ${BOOSTER_WIDTH})`, height: `calc(var(--px) * ${BOOSTER_HEIGHT})` }
+      : { width: BOOSTER_WIDTH * scale, height: BOOSTER_HEIGHT * scale }
+
   return (
     <canvas
       ref={ref}
       width={BOOSTER_WIDTH}
       height={BOOSTER_HEIGHT}
       aria-hidden="true"
-      className={className}
+      className={`porch-sprite ${className}`.trim()}
       style={{
-        width: BOOSTER_WIDTH * scale,
-        height: BOOSTER_HEIGHT * scale,
+        ...sizeStyle,
         imageRendering: 'pixelated',
       }}
     />

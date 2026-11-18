@@ -58,7 +58,7 @@ function stateView(day: string, row: AttemptRow | null, now: number): DailyState
     nextAutoAt: ended ? null : windows.find(window => window.status === 'pending')?.dueAt ?? null,
     serverNow: now,
     ...(row.lastCells !== null ? { lastCells: row.lastCells } : {}),
-    ...(row.bestGrade?.cells ? { bestCells: row.bestGrade.cells } : {}),
+    ...(ended && row.bestGrade?.cells ? { bestCells: row.bestGrade.cells } : {}),
   }
 }
 

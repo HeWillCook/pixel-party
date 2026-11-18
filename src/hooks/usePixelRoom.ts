@@ -134,13 +134,14 @@ export function usePixelRoom(joinCode: string, options?: UsePixelRoomOptions): U
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
       const baseUrl = `${protocol}//${window.location.host}`
       const url = new URL(`/api/pixel/${encodeURIComponent(joinCode)}/ws`, baseUrl)
+      if (spectator) {
+        url.searchParams.set('spectate', '1')
+      }
       if (token) {
         url.searchParams.set('token', token)
       }
 
-      const httpProbeUrl = `${window.location.origin}/api/pixel/${encodeURIComponent(joinCode)}/ws${
-        token ? `?token=${encodeURIComponent(token)}` : ''
-      }`
+      const httpProbeUrl = `${window.location.origin}/api/pixel/${encodeURIComponent(joinCode)}/ws${url.search}`
 
       let receivedSnapshot = false
       const socket = new WebSocket(url.toString())

@@ -1017,3 +1017,113 @@ test('lostpointercapture ends active stroke, ignores other pointers, and stops s
   await expect.poll(() => pixelColor(2, 2)).toEqual([243, 234, 216, 255])
   expect(errors).toEqual([])
 })
+
+test('hung grade request times out, exits thinking state, and re-enables actions', async ({ page }) => {
+  await page.clock.install({ time: new Date('2026-11-17T12:00:00Z') })
+  const errors = await offlineClient(page, true)
+  const now = Date.parse('2026-11-17T12:00:00Z')
+  let releaseHang!: () => void
+  const hangGate = new Promise<void>(resolve => { releaseHang = resolve })
+  const playing = {
+    day: '2026-11-17',
+    status: 'playing',
+    prompt: 'A lighthouse',
+    startedAt: now - 30_000,
+    endsAt: now + 570_000,
+    autoUsed: 0,
+    asksUsed: 0,
+    asksLeft: 3,
+    finalUsed: false,
+    best: 0,
+    windows: [],
+    nextAutoAt: now + 90_000,
+    serverNow: now,
+  }
+  await page.route('**/api/daily/**', async route => {
+    const path = new URL(route.request().url()).pathname
+    if (path.endsWith('/me')) return route.fulfill({ json: playing })
+    if (path.endsWith('/grade')) {
+      await hangGate
+      try {
+        await route.abort()
+      } catch {
+        // Ignore if page closed cleanly after client abort
+      }
+      return
+    }
+    return route.fulfill({ json: {} })
+  })
+  await page.goto(`${origin}/home`)
+  await expect(page.getByTestId('daily-playing')).toBeVisible()
+
+  const askBtn = page.getByTestId('daily-ask-button')
+  const doneBtn = page.getByTestId('daily-done-button')
+  const haiku = page.getByTestId('haiku')
+
+  await askBtn.click()
+  await expect(haiku).toHaveAttribute('data-haiku-state', 'thinking')
+  await expect(page.getByTestId('haiku-bubble')).toHaveText('Hmm…')
+  await expect(askBtn).toBeDisabled()
+  await expect(doneBtn).toBeDisabled()
+
+  await page.clock.fastForward(25_500)
+
+  await expect(haiku).toHaveAttribute('data-haiku-state', 'idle')
+  await expect(page.getByTestId('daily-grade-error')).toContainText('Haiku took too long to answer — try again.')
+  await expect(page.getByTestId('haiku-bubble')).toContainText('Haiku took too long to answer — try again.')
+  await expect(askBtn).toBeEnabled()
+  await expect(doneBtn).toBeEnabled()
+  releaseHang()
+  expect(errors).toEqual([])
+})
+
+test('mobile Haiku popover exposes dialog/status semantics and restores focus on Escape', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 })
+  const errors = await offlineClient(page, true)
+  const now = Date.now()
+  const playing = {
+    day: new Date(now).toISOString().slice(0, 10),
+    status: 'playing',
+    prompt: 'A lighthouse',
+    startedAt: now - 30_000,
+    endsAt: now + 570_000,
+    autoUsed: 0,
+    asksUsed: 0,
+    asksLeft: 3,
+    finalUsed: false,
+    best: 0,
+    windows: [],
+    nextAutoAt: now + 90_000,
+    serverNow: now,
+  }
+  await page.route('**/api/daily/**', async route => {
+    const path = new URL(route.request().url()).pathname
+    if (path.endsWith('/me')) return route.fulfill({ json: playing })
+    return route.fulfill({ json: {} })
+  })
+  await page.goto(`${origin}/home`)
+
+  const trigger = page.getByTestId('daily-mobile-haiku')
+  await expect(trigger).toHaveAttribute('aria-haspopup', 'dialog')
+  await expect(trigger).toHaveAttribute('aria-expanded', 'false')
+  await expect(trigger).not.toHaveAttribute('aria-controls', /.+/)
+
+  await trigger.click()
+  await expect(trigger).toHaveAttribute('aria-expanded', 'true')
+  await expect(trigger).toHaveAttribute('aria-controls', 'daily-mobile-haiku-popover')
+
+  const popover = page.getByTestId('daily-mobile-haiku-popover')
+  await expect(popover).toHaveAttribute('id', 'daily-mobile-haiku-popover')
+  await expect(popover).toHaveAttribute('role', 'dialog')
+  await expect(popover).toHaveAttribute('aria-modal', 'false')
+  await expect(popover).toHaveAttribute('aria-label', "Haiku's message")
+  const liveRegion = popover.locator('.daily-mobile-haiku-popover__content')
+  await expect(liveRegion).toHaveAttribute('role', 'status')
+  await expect(liveRegion).toHaveAttribute('aria-live', 'polite')
+  await expect(liveRegion).toHaveAttribute('aria-atomic', 'true')
+
+  await page.keyboard.press('Escape')
+  await expect(popover).toHaveCount(0)
+  await expect(trigger).toBeFocused()
+  expect(errors).toEqual([])
+})

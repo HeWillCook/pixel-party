@@ -57,20 +57,23 @@ export function registerRealtimeRoutes(app: Hono<AppContext>): void {
     if (!lookup.data) return new Response('Not found', { status: 404 })
     const room = lookup.data
     if (room.data.status === 'closed') return new Response('Room closed', { status: 410 })
-    const token = new URL(context.req.url).searchParams.get('token')
+    const url = new URL(context.req.url)
+    const token = url.searchParams.get('token')
+    const spectate = url.searchParams.get('spectate') === '1'
     const auth = token ? (await verifyJwt(jwtConfig(context.env), token)).result : null
     if ((token && !auth) || (room.data.visibility === 'private' && (!auth || isAnonymousUserId(auth.userId)))) return new Response('Unauthorized', { status: 401 })
-    if (room.data.visibility === 'private' && auth) {
+    if (room.data.visibility === 'private' && auth && !spectate) {
       const joined = await addRoomMember(tools, room, auth.userId)
       if (!joined.success) return new Response('Room unavailable', { status: 503 })
     }
     const request = authenticatedRoomRequest(context.req.raw, auth)
-    for (const header of ['X-Room-Id', 'X-Room-Mode', 'X-Room-Default', 'X-Room-Host', 'X-Room-Lobby']) request.headers.delete(header)
+    for (const header of ['X-Room-Id', 'X-Room-Mode', 'X-Room-Default', 'X-Room-Host', 'X-Room-Lobby', 'X-Room-Spectate']) request.headers.delete(header)
     request.headers.set('X-Room-Id', room.recordId)
     request.headers.set('X-Room-Mode', room.data.mode)
     request.headers.set('X-Room-Default', String(Boolean(room.data.isDefaultBoard)))
     request.headers.set('X-Room-Host', room.data.hostId)
     request.headers.set('X-Room-Lobby', String(room.data.status === 'lobby'))
+    request.headers.set('X-Room-Spectate', String(spectate))
     return context.env.PIXEL_ROOMS.get(context.env.PIXEL_ROOMS.idFromName(room.recordId)).fetch(request)
   })
 

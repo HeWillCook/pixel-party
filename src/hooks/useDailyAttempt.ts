@@ -20,6 +20,7 @@ import type { DailyStateView, GradeView } from '../server/daily-service'
 const GRID_CELLS = 1024
 const GRID_WIDTH = 32
 const GRID_HEIGHT = 32
+export const DAILY_GRADE_TIMEOUT_MS = 25_000
 
 type GradeResponse =
   | { ok: true; grade: GradeView; state: DailyStateView }
@@ -245,6 +246,11 @@ export function useDailyAttempt(): {
       mutationEpochRef.current++
       dispatch({ type: 'grade_start', kind })
 
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => {
+        controller.abort(new DOMException('Signal timed out', 'TimeoutError'))
+      }, DAILY_GRADE_TIMEOUT_MS)
+
       const promise = (async () => {
         try {
           const headers = await authHeaders()
@@ -253,6 +259,7 @@ export function useDailyAttempt(): {
             method: 'POST',
             headers,
             body: JSON.stringify({ day, kind, cells: encoded, ...(kind === 'auto' ? { window } : {}) }),
+            signal: controller.signal,
           })
           if (stateRef.current.day !== day) return
           const now = Date.now()
@@ -293,15 +300,19 @@ export function useDailyAttempt(): {
               now,
             })
           }
-        } catch {
+        } catch (err) {
           if (stateRef.current.day !== day || stateRef.current.stale) return
+          const timedOut = err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')
           dispatch({
             type: 'error',
-            message: 'Network error while grading.',
+            message: timedOut
+              ? 'Haiku took too long to answer — try again.'
+              : 'Network error while grading.',
             kind,
             now: Date.now(),
           })
         } finally {
+          clearTimeout(timeoutId)
           mutationEpochRef.current++
           inFlightGradeRef.current = null
         }
@@ -317,6 +328,10 @@ export function useDailyAttempt(): {
     async (day: string, encodedCells: string): Promise<boolean> => {
       if (stateRef.current.day !== day || stateRef.current.stale) return false
       mutationEpochRef.current++
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => {
+        controller.abort(new DOMException('Signal timed out', 'TimeoutError'))
+      }, DAILY_GRADE_TIMEOUT_MS)
       try {
         const headers = await authHeaders()
         if (stateRef.current.day !== day || stateRef.current.stale) return false
@@ -324,6 +339,7 @@ export function useDailyAttempt(): {
           method: 'POST',
           headers,
           body: JSON.stringify({ day, cells: encodedCells }),
+          signal: controller.signal,
         })
         if (stateRef.current.day !== day || stateRef.current.stale) return false
         if (!res.ok) {
@@ -361,6 +377,7 @@ export function useDailyAttempt(): {
         })
         return false
       } finally {
+        clearTimeout(timeoutId)
         mutationEpochRef.current++
       }
     },

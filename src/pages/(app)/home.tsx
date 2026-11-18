@@ -78,6 +78,7 @@ export default function DailyHomePage() {
   const boardRef = useRef<HTMLDivElement>(null)
   const paletteRef = useRef<HTMLDivElement>(null)
   const mobileFooterRef = useRef<HTMLDivElement>(null)
+  const mobileHaikuTriggerRef = useRef<HTMLButtonElement>(null)
   const [boardBox, setBoardBox] = useState({ width: 320, height: 600, mobile: false })
   const [resultDay, setResultDay] = useState('')
   const [showPorch, setShowPorch] = useState(false)
@@ -94,7 +95,10 @@ export default function DailyHomePage() {
   useEffect(() => {
     if (!mobileHaikuOpen) return
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setMobileHaikuOpen(false)
+      if (event.key === 'Escape') {
+        setMobileHaikuOpen(false)
+        mobileHaikuTriggerRef.current?.focus()
+      }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
@@ -428,13 +432,15 @@ export default function DailyHomePage() {
 
   const haikuState: HaikuState = state.grading
     ? 'thinking'
-    : state.latest
-      ? state.latest.total >= 700
-        ? 'correct'
-        : state.latest.total >= 350
-          ? 'guess'
-          : 'idle'
-      : 'idle'
+    : state.lastError && state.lastError.includes('napping')
+      ? 'resting'
+      : state.latest
+        ? state.latest.total >= 700
+          ? 'correct'
+          : state.latest.total >= 350
+            ? 'guess'
+            : 'idle'
+        : 'idle'
 
   const guessWord = state.latest?.guess?.trim()
   const guessLine = guessWord
@@ -445,6 +451,11 @@ export default function DailyHomePage() {
 
   const haikuBubble = state.grading ? (
     'Hmm…'
+  ) : state.lastError ? (
+    <span className="daily-haiku__speech">
+      <strong className="daily-haiku__headline">Oops!</strong>
+      <span className="daily-haiku__reason">{state.lastError}</span>
+    </span>
   ) : state.latest ? (
     <span className="daily-haiku__speech">
       <strong className="daily-haiku__headline">
@@ -623,15 +634,27 @@ export default function DailyHomePage() {
                 <div ref={mobileFooterRef} className="daily-mobile-footer">
                   {mobileHaikuOpen && (
                     <div
+                      id="daily-mobile-haiku-popover"
                       role="dialog"
+                      aria-modal="false"
                       aria-label="Haiku's message"
                       data-testid="daily-mobile-haiku-popover"
                       className="daily-mobile-haiku-popover"
                     >
-                      <div className="daily-mobile-haiku-popover__content">{haikuBubble}</div>
+                      <div
+                        role="status"
+                        aria-live="polite"
+                        aria-atomic="true"
+                        className="daily-mobile-haiku-popover__content"
+                      >
+                        {haikuBubble}
+                      </div>
                       <button
                         type="button"
-                        onClick={() => setMobileHaikuOpen(false)}
+                        onClick={() => {
+                          setMobileHaikuOpen(false)
+                          mobileHaikuTriggerRef.current?.focus()
+                        }}
                         className="daily-mobile-haiku-popover__close"
                         aria-label="Close Haiku message"
                       >
@@ -641,10 +664,13 @@ export default function DailyHomePage() {
                   )}
                   <div className="daily-mobile-strip">
                     <button
+                      ref={mobileHaikuTriggerRef}
                       type="button"
                       data-testid="daily-mobile-haiku"
                       data-haiku-state={haikuState}
                       aria-expanded={mobileHaikuOpen}
+                      aria-controls={mobileHaikuOpen ? 'daily-mobile-haiku-popover' : undefined}
+                      aria-haspopup="dialog"
                       aria-label={mobileHaikuOpen ? "Hide Haiku's message" : "View Haiku's message"}
                       onClick={() => {
                         setMobileScoreOpen(false)
@@ -653,7 +679,7 @@ export default function DailyHomePage() {
                       className="daily-mobile-strip__haiku"
                     >
                       <Haiku state={haikuState} bubble={false} scale={1.65} data-testid="daily-mobile-haiku-sprite" />
-                      {(state.grading || state.latest) && (
+                      {(state.grading || state.latest || state.lastError) && (
                         <span className="daily-mobile-strip__haiku-dot" aria-hidden="true" />
                       )}
                     </button>

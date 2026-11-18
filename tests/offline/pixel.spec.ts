@@ -1136,3 +1136,56 @@ test('Haiku critic transitions across idle, thinking, guess, correct, and restin
   expect(errors).toEqual([])
 })
 
+test('magic easel sends spectate=1 and preserves it on private room token retry', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 })
+  const errors = await clientFixture(page, {
+    signedIn: true,
+    rooms: [
+      { recordId: 'r-1', data: { name: 'Sky Studio', mode: 'coop', visibility: 'public', joinCode: 'QX3J', hostId: 'host', status: 'playing', playerCount: 2, lastActiveAt: 4000, isDefaultBoard: false } },
+    ],
+  })
+  const wsUrls: string[] = []
+  await page.route('**/api/actions/joinRoom', async route => {
+    const { joinCode } = route.request().postDataJSON() as { joinCode: string }
+    await route.fulfill({ json: { success: true, data: { roomId: 'room-pvt', joinCode } } })
+  })
+  await page.routeWebSocket('**/api/pixel/**', (socket) => {
+    const url = new URL(socket.url())
+    wsUrls.push(socket.url())
+    if (url.pathname.includes('/PVT1/') && !url.searchParams.get('token')) {
+      socket.close({ code: 1008 })
+      return
+    }
+    const snap = snapshot('playing')
+    socket.send(JSON.stringify({
+      ...snap,
+      players: 2,
+      watching: 0,
+      you: { userId: null, cooldownUntil: 0 },
+      round: { ...snap.round, word: 'HOUSE' },
+    }))
+  })
+
+  await page.goto(`${origin}/party`)
+  await page.getByTestId('room-card-QX3J').click()
+  await expect(page.getByTestId('magic-easel-canvas')).toBeVisible()
+  expect(wsUrls.length).toBe(1)
+  const pubUrl = new URL(wsUrls[0]!)
+  expect(pubUrl.searchParams.get('spectate')).toBe('1')
+  expect(pubUrl.searchParams.get('token')).toBeNull()
+
+  await page.getByTestId('join-code-input').fill('pvt1')
+  await page.getByTestId('join-code-submit').click()
+  await expect.poll(() => wsUrls.length).toBe(3)
+  await expect(page.getByTestId('magic-easel-canvas')).toBeVisible()
+
+  const firstPrivate = new URL(wsUrls[1]!)
+  const retryPrivate = new URL(wsUrls[2]!)
+  expect(firstPrivate.pathname).toContain('/PVT1/ws')
+  expect(firstPrivate.searchParams.get('spectate')).toBe('1')
+  expect(firstPrivate.searchParams.get('token')).toBeNull()
+  expect(retryPrivate.pathname).toContain('/PVT1/ws')
+  expect(retryPrivate.searchParams.get('spectate')).toBe('1')
+  expect(retryPrivate.searchParams.get('token')).toBe(fixtureToken)
+  expect(errors).toEqual([])
+})

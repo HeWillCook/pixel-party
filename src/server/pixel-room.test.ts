@@ -129,8 +129,8 @@ function durableState(database: TestDatabase, sockets: WebSocket[] = []) {
   }
 }
 
-function socket(userId: string) {
-  let attachment = { userId, userName: 'Test', userEmail: '' }
+function socket(userId: string, spectate = false) {
+  let attachment = spectate ? { userId, userName: 'Test', userEmail: '', spectate: true } : { userId, userName: 'Test', userEmail: '' }
   const connection = {
     readyState: WebSocket.OPEN as number,
     send: vi.fn(),
@@ -164,8 +164,8 @@ function roomHarness(isDefaultBoard = false, configure: (state: RoomState) => Ro
   const makeRoom = () => new TestPixelRoom(durable as unknown as DurableObjectState, env)
   const room = makeRoom()
   const saved = () => JSON.parse((database.prepare('SELECT state FROM pixel_state').get() as { state: string }).state) as RoomState
-  const connect = async (userId: string, target = room) => {
-    const client = socket(userId)
+  const connect = async (userId: string, target = room, spectate = false) => {
+    const client = socket(userId, spectate)
     sockets.push(client.connection)
     await target.connect(client.connection)
     return client
@@ -713,6 +713,39 @@ describe('durable room boundaries', () => {
     expect(harness.saved().status).toBe('paused')
     expect(messages(spectator).at(-1)).toEqual({ t: 'players', count: 0, roster: [], watching: 1 })
     expect(harness.durable.storage.setAlarm).toHaveBeenCalledOnce()
+    harness.database.close()
+  })
+
+  it('excludes lobby spectate previews from player/watcher counts, unpausing, and room commands', async () => {
+    const harness = roomHarness(false, state => ({
+      ...state,
+      status: 'paused',
+      pausedAt: Date.now() - 5000,
+      pausedFrom: 'playing',
+      emptySince: Date.now() - 5000,
+      round: { ...state.round, state: 'paused' },
+    }))
+    const preview = await harness.connect('signed-in-viewer', harness.room, true)
+    expect(harness.saved().status).toBe('paused')
+    expect(harness.room.onRoomStatus).not.toHaveBeenCalled()
+    expect(messages(preview)).toHaveLength(1)
+    expect(messages(preview)[0]).toMatchObject({ t: 'snapshot', players: 0, watching: 0, roster: [], you: { userId: null } })
+
+    for (const command of [{ t: 'place', x: 0, y: 0, c: 1 }, { t: 'ask' }, { t: 'next' }, { t: 'team', team: 'red' }]) {
+      await harness.room.webSocketMessage(preview.connection, JSON.stringify(command))
+      expect(messages(preview).at(-1)).toMatchObject({ t: 'reject', reason: 'not_signed_in' })
+    }
+
+    const owner = await harness.connect('owner')
+    expect(harness.saved().status).toBe('playing')
+    expect(messages(owner).find(message => message.t === 'snapshot')).toMatchObject({ players: 1, watching: 0 })
+    owner.send.mockClear()
+    await harness.room.disconnect(preview.connection)
+    expect(messages(owner)).toEqual([])
+
+    const fetchSpy = vi.spyOn(BaseRoom.prototype, 'fetch').mockResolvedValueOnce(new Response('ok'))
+    await harness.room.fetch(new Request('https://room/ws', { headers: { Upgrade: 'websocket', 'X-Room-Spectate': 'true' } }))
+    expect(fetchSpy).toHaveBeenCalledOnce()
     harness.database.close()
   })
 
