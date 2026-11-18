@@ -8,6 +8,7 @@ export function PainterTray({ tools, palette, trayRef, activeColor, tool }: { to
     <div className="painter-tray__tools">
       <div data-testid="current-colour" className="painter-tray__current" role="img" aria-label={tool === 'erase' ? 'Current action: erase' : 'Current colour'} style={{ background: tool === 'erase' ? '#fff0cc' : PALETTE[activeColor] }}>
         {tool === 'erase' && <span data-testid="current-eraser" aria-hidden="true">◩</span>}
+        <span className="painter-tray__caption" aria-hidden="true">Colour</span>
       </div>
       {tools}
     </div>

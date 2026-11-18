@@ -42,6 +42,32 @@ test('current colour chip shows eraser when erasing', async ({ page }) => {
   await expect(page.getByTestId('current-colour').getByTestId('current-eraser')).toBeVisible()
 })
 
+test('stacked tray aligns chip and uses legible tool targets', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await playFixture(page, true)
+  await page.goto(`${origin}/home`)
+  const chip = (await page.getByTestId('current-colour').boundingBox())!
+  const tool = page.getByTestId('tool-paint')
+  const bounds = (await tool.boundingBox())!
+  expect(bounds.width).toBeGreaterThanOrEqual(48)
+  expect(bounds.height).toBeGreaterThanOrEqual(48)
+  expect(Math.abs((chip.y + chip.height / 2) - (bounds.y + bounds.height / 2))).toBeLessThanOrEqual(2)
+  await expect(tool.locator('svg')).toHaveCSS('width', '32px')
+  await expect(page.getByText('Colour', { exact: true })).toBeVisible()
+})
+
+test('mobile tools form a clean three by two grid', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 })
+  await playFixture(page, true)
+  await page.goto(`${origin}/home`)
+  const boxes = await Promise.all(['paint', 'erase', 'fill', 'pick', 'undo', 'redo'].map(async name => (await page.getByTestId(`tool-${name}`).boundingBox())!))
+  expect(boxes[0].x).toBe(boxes[3].x)
+  expect(boxes[1].x).toBe(boxes[4].x)
+  expect(boxes[2].x).toBe(boxes[5].x)
+  expect(boxes[0].y).toBe(boxes[2].y)
+  expect(boxes[3].y).toBe(boxes[5].y)
+})
+
 test('palette starts with black and white and raises the selected swatch', async ({ page }) => {
   await playFixture(page, true)
   await page.goto(`${origin}/home`)
