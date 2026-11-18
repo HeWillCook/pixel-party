@@ -1,15 +1,21 @@
-.painter-tray { display: flex; align-items: center; justify-content: center; width: fit-content; max-width: 100%; margin: auto; padding: 4px; background-color: #c57d63; }
-.painter-tray__divider { flex: none; width: 3px; height: 38px; margin: 0 4px; background: #614052; }
-.painter-tray [data-testid="toolbar"] { display: flex; flex-direction: row; align-items: center; gap: 2px; padding: 0; border: 0; box-shadow: none; background: transparent; }
-.painter-tray [data-testid="toolbar"] button { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 48px; width: auto; min-height: 44px; padding: 2px; font-size: 13px; line-height: 1; letter-spacing: 0; }
-.painter-tray [data-testid="tool-undo"] { margin-left: 6px; }
+.painter-tray { display: flex; flex-direction: column; align-items: center; width: fit-content; max-width: 100%; margin: auto; padding: 4px; background-color: #c57d63; }
+.painter-tray__tools { display: flex; justify-content: center; align-items: center; gap: 6px; }
+.painter-tray__current { display: grid; place-items: center; flex: none; width: 44px; height: 44px; border: 4px solid #614052; color: #392a45; font-size: 27px; line-height: 1; }
+.painter-tray [data-testid="toolbar"] { display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 2px; padding: 0; border: 0; box-shadow: none; background: transparent; }
+.painter-tray [data-testid="toolbar"] button { position: relative; display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 48px; width: auto; min-height: 44px; padding: 2px; font-size: 13px; line-height: 1; letter-spacing: 0; }
+.painter-tray [data-testid="toolbar"] button[aria-pressed="true"] { background: #ecae7d; color: #392a45; border-color: #614052; box-shadow: inset 2px 2px #985c5a; }
+.painter-tray [data-testid="tool-undo"] { margin-left: 10px; }
+.painter-tray [data-testid="tool-undo"]::before { content: ''; position: absolute; width: 2px; height: 34px; left: -8px; background: #614052; }
+.painter-tray [data-testid="toolbar"] button:disabled { opacity: 1; color: #614052; }
+.painter-tray__tooltip { display: none; position: absolute; z-index: 10; bottom: calc(100% + 4px); left: 50%; transform: translateX(-50%); padding: 4px 6px; white-space: nowrap; background: #fff0cc; color: #392a45; border: 2px solid #614052; }
+.painter-tray [data-testid="toolbar"] button:hover .painter-tray__tooltip, .painter-tray [data-testid="toolbar"] button:focus-visible .painter-tray__tooltip { display: block; }
+.painter-tray [data-testid="palette"] > div { display: grid; grid-template-columns: repeat(16, 44px); gap: 0; }
 .painter-tray [data-testid="palette"] button { width: 44px; height: 44px; padding: 6px; background: transparent !important; border: 0; }
 .painter-tray [data-testid="palette"] button span[aria-hidden] { display: block; width: 100%; height: 100%; border: 2px solid #614052; background: var(--swatch); }
-.painter-tray [data-testid="swatch-16"] { margin-right: 8px; }
-.painter-tray [data-testid="toolbar"] button:disabled { opacity: 1; color: #614052; }
+.painter-tray [data-testid="swatch-16"] span[aria-hidden] { margin-right: 4px; width: calc(100% - 4px); }
 @media (max-width: 767px) {
-  .painter-tray { flex-direction: column; width: 100%; }
-  .painter-tray__divider { width: 90%; height: 2px; margin: 4px 0; }
-  .painter-tray [data-testid="toolbar"] { width: 100%; justify-content: center; }
-  .painter-tray [data-testid="toolbar"] button { flex: 1; min-width: 0; }
+  .painter-tray { width: 100%; }
+  .painter-tray [data-testid="palette"] > div { grid-template-columns: repeat(8, minmax(0, 44px)); }
+  .painter-tray [data-testid="toolbar"] { flex-wrap: wrap; }
+  .painter-tray [data-testid="toolbar"] button { min-width: 44px; }
 }

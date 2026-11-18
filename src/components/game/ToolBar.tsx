@@ -129,6 +129,7 @@ export function ToolBar({
             data-testid={`tool-${tool}`}
             aria-label={tool === 'pick' ? 'Pick colour' : undefined}
             aria-pressed={isSelected}
+            title={meta.label}
             disabled={disabled}
             onClick={() => onSelect(tool)}
             className={cn(
@@ -141,6 +142,7 @@ export function ToolBar({
           >
             {meta.icon}
             <span>{tool === 'pick' && compactPick ? 'Pick' : meta.label}</span>
+            <span className="painter-tray__tooltip" aria-hidden="true">{meta.label}</span>
           </button>
         )
       })}
@@ -149,6 +151,7 @@ export function ToolBar({
         <button
           type="button"
           data-testid="tool-undo"
+          title="Undo"
           disabled={disabled || !canUndo}
           onClick={onUndo}
           className={cn(
@@ -158,6 +161,7 @@ export function ToolBar({
         >
           {UNDO_ICON}
           <span>Undo</span>
+          <span className="painter-tray__tooltip" aria-hidden="true">Undo</span>
         </button>
       )}
 
@@ -165,6 +169,7 @@ export function ToolBar({
         <button
           type="button"
           data-testid="tool-redo"
+          title="Redo"
           disabled={disabled || !canRedo}
           onClick={onRedo}
           className={cn(
@@ -174,6 +179,7 @@ export function ToolBar({
         >
           {REDO_ICON}
           <span>Redo</span>
+          <span className="painter-tray__tooltip" aria-hidden="true">Redo</span>
         </button>
       )}
     </div>

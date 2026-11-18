@@ -27,6 +27,7 @@ import { AskAiButton } from '../../../components/game/AskAiButton'
 import { GuessFeed } from '../../../components/game/GuessFeed'
 import { MuteButton } from '../../../components/game/MuteButton'
 import { Palette } from '../../../components/game/Palette'
+import { PainterTray } from '../../../components/game/PainterTray'
 import { PixelCanvas } from '../../../components/game/PixelCanvas'
 import { PlayerCursors } from '../../../components/game/PlayerCursors'
 import { PlayersPanel } from '../../../components/game/PlayersPanel'
@@ -837,13 +838,13 @@ export default function RoomPage() {
           </div>
 
           <div ref={paletteWrapRef} className="w-full">
-            <Palette
+            <PainterTray activeColor={activeColor} tool={tool} tools={<ToolBar tools={PARTY_TOOLS} active={tool} onSelect={setTool} disabled={isSpectator} compactPick />} palette={<Palette
               activeColor={activeColor}
-              onSelectColor={setActiveColor}
+              onSelectColor={color => { setActiveColor(color); if (tool === 'erase' || tool === 'pick') setTool('paint') }}
               disabled={isSpectator}
               cooldownRemainingMs={cooldownRemainingMs}
               cooldownTotalMs={cooldownTotalMs}
-            />
+            />} />
           </div>
         </div>
 
@@ -868,12 +869,6 @@ export default function RoomPage() {
 
         {/* Left Column on lg, 3rd on mobile: ToolBar + PlayersPanel */}
         <div className="order-3 flex flex-col gap-3 lg:order-1">
-          <ToolBar
-            tools={PARTY_TOOLS}
-            active={tool}
-            onSelect={setTool}
-            disabled={isSpectator}
-          />
           <PlayersPanel
             players={state.players}
             roster={state.roster}

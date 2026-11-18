@@ -415,7 +415,7 @@ export default function DailyHomePage() {
                 </div>
                 <p className="text-base text-muted-foreground">Grade now keeps you drawing. Submit locks in your best score; earlier means more speed points.</p>
               </div>
-          } bottom={<PainterTray trayRef={paletteRef} tools={
+          } bottom={<PainterTray trayRef={paletteRef} activeColor={activeColor} tool={tool} tools={
               <ToolBar
                 tools={DAILY_TOOLS}
                 compactPick
@@ -427,7 +427,7 @@ export default function DailyHomePage() {
                 canRedo={!strokeActive && history.future.length > 0}
                 disabled={!canDraw}
               />
-          } palette={<Palette activeColor={activeColor} onSelectColor={setActiveColor} disabled={!canDraw} />} />} />
+          } palette={<Palette activeColor={activeColor} onSelectColor={color => { setActiveColor(color); if (tool === 'erase' || tool === 'pick') setTool('paint') }} disabled={!canDraw} />} />} />
           </div>
         </div>
       )}

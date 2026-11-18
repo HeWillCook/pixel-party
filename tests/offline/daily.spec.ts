@@ -12,6 +12,36 @@ async function playFixture(page: Page, initiallyPlaying = false) {
   await page.route('**/api/daily/**', route => route.fulfill({ json: new URL(route.request().url()).pathname.endsWith('/me') && !initiallyPlaying ? { ...playing, status: 'not_started' } : playing }))
 }
 
+test('selecting a colour while erasing switches to paint', async ({ page }) => {
+  await playFixture(page, true)
+  await page.goto(`${origin}/home`)
+  await page.getByTestId('tool-erase').click()
+  await page.getByTestId('swatch-7').click()
+  await expect(page.getByTestId('tool-paint')).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByTestId('swatch-7')).toHaveAttribute('aria-pressed', 'true')
+})
+
+test('pick switches to paint with the picked colour', async ({ page }) => {
+  await playFixture(page, true)
+  await page.goto(`${origin}/home`)
+  await page.getByTestId('swatch-7').click()
+  const canvas = page.getByTestId('pixel-canvas')
+  await canvas.click({ position: { x: 10, y: 10 } })
+  await page.getByTestId('swatch-4').click()
+  await page.getByTestId('tool-pick').click()
+  await canvas.click({ position: { x: 10, y: 10 } })
+  await expect(page.getByTestId('tool-paint')).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByTestId('swatch-7')).toHaveAttribute('aria-pressed', 'true')
+})
+
+test('current colour chip shows eraser when erasing', async ({ page }) => {
+  await playFixture(page, true)
+  await page.goto(`${origin}/home`)
+  await page.getByTestId('tool-erase').click()
+  await expect(page.getByTestId('current-colour')).toHaveAttribute('aria-label', 'Current action: erase')
+  await expect(page.getByTestId('current-colour').getByTestId('current-eraser')).toBeVisible()
+})
+
 test('palette starts with black and white and raises the selected swatch', async ({ page }) => {
   await playFixture(page, true)
   await page.goto(`${origin}/home`)
