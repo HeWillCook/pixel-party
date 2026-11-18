@@ -68,6 +68,16 @@ test('mobile tools form a clean three by two grid', async ({ page }) => {
   expect(boxes[3].y).toBe(boxes[5].y)
 })
 
+test('canvas restores its desktop size after scrolling on mobile', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 })
+  await playFixture(page, true)
+  await page.goto(`${origin}/home`)
+  await page.getByText('Scores & grading').click()
+  await page.getByTestId('daily-auto-timeline').scrollIntoViewIfNeeded()
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await expect.poll(async () => (await page.getByTestId('pixel-canvas').boundingBox())!.width).toBeGreaterThanOrEqual(576)
+})
+
 test('palette starts with black and white and raises the selected swatch', async ({ page }) => {
   await playFixture(page, true)
   await page.goto(`${origin}/home`)

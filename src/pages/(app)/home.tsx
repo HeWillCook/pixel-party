@@ -87,7 +87,8 @@ export default function DailyHomePage() {
     const board = boardRef.current
     if (!board) return
     const measure = () => {
-      const top = board.getBoundingClientRect().top + (board.closest('main')?.scrollTop ?? 0)
+      const layout = state.status === 'playing' && window.innerWidth >= 768 ? board.closest('.play-layout') : null
+      const top = (layout ?? board).getBoundingClientRect().top + (board.closest('main')?.scrollTop ?? 0)
       const paletteHeight = paletteRef.current?.getBoundingClientRect().height ?? 0
       const width = board.clientWidth
       const height = Math.max(200, window.innerHeight - top - paletteHeight - (state.status === 'playing' ? 10 : 0))
@@ -96,6 +97,8 @@ export default function DailyHomePage() {
     measure()
     const observer = new ResizeObserver(measure)
     observer.observe(board)
+    const layout = board.closest('.play-layout')
+    if (layout) observer.observe(layout)
     if (paletteRef.current) observer.observe(paletteRef.current)
     window.addEventListener('resize', measure)
     return () => { observer.disconnect(); window.removeEventListener('resize', measure) }
