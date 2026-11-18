@@ -3,6 +3,7 @@ import { drawSea, drawSun, drawSunsetSky, mulberry32 } from '../procedural'
 import { drawSprite } from '../sprite'
 import { porchLayout } from './layout'
 import { sprites } from './sprites'
+import { drawBooster } from './booster'
 
 export interface PorchOptions {
   easelState: 'draped' | 'cover' | 'finished' | 'signin'
@@ -135,8 +136,7 @@ export function drawPorch(ctx: CanvasRenderingContext2D, frame: number, opts: Po
   rect(board.x + 6, boardY + 7, board.w - 12, board.h - 28, P.foliage[0])
   rect(board.x + 3, boardY + board.h - 18, board.w - 6, 2, P.wood[2])
   for (const offset of [6, Math.floor(board.w / 2) - 2, board.w - 10]) {
-    rect(board.x + offset, boardY + board.h - 9, 5, 5, P.stone[0]); rect(board.x + offset + 1, boardY + board.h - 8, 3, 2, P.stone[2])
-    rect(board.x + offset + 1, boardY + board.h - 4, 3, 3 + (Math.floor(frame / 3 + offset) % 2), P.flame[1]); rect(board.x + offset + 2, boardY + board.h - 4, 1, 3, P.flame[4])
+    drawBooster(ctx, board.x + offset - 1, boardY + board.h - 11, frame + offset)
   }
 
   const scaledSprite = (key: 'mailbox' | 'radio' | 'plant' | 'lantern', x: number, y: number) => {
@@ -184,8 +184,7 @@ export function drawPorch(ctx: CanvasRenderingContext2D, frame: number, opts: Po
   rect(ex + 4, ey + 78, 61, 4, P.wood[0]); rect(ex + 5, ey + 78, 60, 1, P.wood[4])
   rect(ex + 11, ey + 76, 8, 2, P.stone[2]); rect(ex + 23, ey + 76, 6, 2, P.flame[1]); rect(ex + 45, ey + 75, 9, 1, P.wood[4]); rect(ex + 53, ey + 74, 3, 2, P.stone[1])
   for (const offset of [13, 32, 51]) {
-    rect(ex + offset, ey + 103, 7, 7, P.stone[0]); rect(ex + offset + 1, ey + 104, 5, 4, P.stone[2])
-    rect(ex + offset + 2, ey + 110, 3, 5 + (Math.floor(frame / 3 + offset) % 3), P.flame[1]); rect(ex + offset + 3, ey + 110, 1, 4, P.flame[4])
+    drawBooster(ctx, ex + offset, ey + 103, frame + offset)
   }
   }
   const hatch = layout.hatch
