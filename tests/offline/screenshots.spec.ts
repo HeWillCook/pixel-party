@@ -64,7 +64,7 @@ async function setupClient(page: Page, options: { signedOut?: boolean; dailyStat
     if (url.pathname === '/api/daily/me') {
       const now = Date.now()
       const status = options.dailyStatus ?? 'not_started'
-      return route.fulfill({ json: { day: new Date(now).toISOString().slice(0, 10), status, autoUsed: 0, asksUsed: 0, finalUsed: status === 'ended', best: status === 'ended' ? 840 : 0, ...(status !== 'not_started' ? { prompt: 'A lighthouse by the sea', startedAt: now - 60_000, endsAt: now + 540_000, nextAutoAt: now + 60_000, lastCells: lighthouseCells() } : {}) } })
+      return route.fulfill({ json: { day: new Date(now).toISOString().slice(0, 10), status, autoUsed: 0, asksUsed: 0, asksLeft: 3, windows: [], serverNow: now, finalUsed: status === 'ended', best: status === 'ended' ? 840 : 0, ...(status !== 'not_started' ? { prompt: 'A lighthouse by the sea', startedAt: now - 60_000, endsAt: now + 540_000, nextAutoAt: now + 60_000, lastCells: lighthouseCells() } : {}) } })
     }
     if (url.pathname === '/api/auth/get-session') {
       if (options.signedOut) return route.fulfill({ json: null })
@@ -441,6 +441,7 @@ for (const view of ['signed-out', 'not_started', 'playing', 'ended', 'profile'] 
     await page.goto(`${origin}/${view === 'profile' ? 'u/host' : 'home'}`)
     if (view === 'profile') await expect(page.getByRole('heading', { name: "Will's Gallery" })).toBeVisible()
     else await expect(page.getByTestId(view === 'signed-out' ? 'daily-signed-out' : `daily-${view.replace('_', '-')}`)).toBeVisible()
+    if (view === 'ended') await page.getByRole('button', { name: 'View result' }).click()
     await page.evaluate(() => document.fonts.ready)
     for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720 }, { width: 375, height: 812 }]) {
       await page.setViewportSize(viewport)

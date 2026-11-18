@@ -11,7 +11,7 @@ export function PlayBackdrop({ phase, onTransitionEnd }: { phase: PlayTransition
   const [camera, setCamera] = useState<Camera>({ x: 0, y: 0, zoom: 1 })
   const [duration, setDuration] = useState(0)
   const draw = useCallback((ctx: CanvasRenderingContext2D, frame: number) => {
-    drawPorch(ctx, frame, { easelState: 'cover', bob: false, hideEasel: phase === 'active' })
+    drawPorch(ctx, frame, { easelState: 'cover', bob: false, hideEasel: phase === 'active', backgroundOnly: phase === 'active' })
   }, [phase])
 
   useLayoutEffect(() => {

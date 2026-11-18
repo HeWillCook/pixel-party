@@ -11,6 +11,7 @@ export interface PorchOptions {
   signedIn?: boolean
   roofTop?: number
   hideEasel?: boolean
+  backgroundOnly?: boolean
 }
 
 export function drawPorchRoof(ctx: CanvasRenderingContext2D, roofTop: number): void {
@@ -84,6 +85,7 @@ export function drawPorch(ctx: CanvasRenderingContext2D, frame: number, opts: Po
     for (let y = -radius; y <= radius; y++) if ((x + y) % 2 === 0) rect(layout.lighthouse.x + 10 + x, middle + y, 1, 1, P.sky[4])
   }
   drawSprite(ctx, sprites.lighthouse, layout.lighthouse.x, towerY)
+  if (opts.backgroundOnly) return
 
   for (const x of [0, width - 9]) {
     rect(x, 8, 9, floor - 8, P.wood[0]); rect(x + 2, 8, 4, floor - 8, P.wood[2]); rect(x + 6, 8, 1, floor - 8, P.wood[4])

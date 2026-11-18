@@ -80,6 +80,7 @@ export default function DailyHomePage() {
   const boardRef = useRef<HTMLDivElement>(null)
   const paletteRef = useRef<HTMLDivElement>(null)
   const [boardBox, setBoardBox] = useState({ width: 320, height: 600 })
+  const [resultDay, setResultDay] = useState('')
 
   useEffect(() => {
     const board = boardRef.current
@@ -88,7 +89,7 @@ export default function DailyHomePage() {
       const top = board.getBoundingClientRect().top + (board.closest('main')?.scrollTop ?? 0)
       const paletteHeight = paletteRef.current?.getBoundingClientRect().height ?? 0
       const width = board.clientWidth
-      const height = Math.max(200, window.innerHeight - top - paletteHeight - 48)
+      const height = Math.max(200, window.innerHeight - top - paletteHeight - (state.status === 'playing' ? 10 : 0))
       setBoardBox(previous => previous.width === width && previous.height === height ? previous : { width, height })
     }
     measure()
@@ -97,7 +98,7 @@ export default function DailyHomePage() {
     if (paletteRef.current) observer.observe(paletteRef.current)
     window.addEventListener('resize', measure)
     return () => { observer.disconnect(); window.removeEventListener('resize', measure) }
-  }, [state.status, isSignedIn])
+  }, [state.status, isSignedIn, resultDay])
 
   const userId = user?.id ?? ''
   const queryDay = state.day || '__none__'
@@ -127,7 +128,6 @@ export default function DailyHomePage() {
   const [playTransition, setPlayTransition] = useState<PlayTransition>('active')
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [showAccount, setShowAccount] = useState(false)
-  const [resultDay, setResultDay] = useState('')
   const [now, setNow] = useState<number>(() => Date.now())
 
   const cellsRef = useRef(cells)
@@ -405,7 +405,7 @@ export default function DailyHomePage() {
                 width={32}
                 height={32}
                 availWidth={Math.max(32, boardBox.width - 56)}
-                availHeight={Math.max(32, boardBox.height - 76)}
+                availHeight={Math.min(596, Math.max(32, boardBox.height - 50))}
                 cells={cells}
                 activeColor={activeColor}
                 tool={tool}

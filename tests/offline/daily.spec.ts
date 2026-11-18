@@ -42,6 +42,9 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720
       expect(easelBox.y).toBeGreaterThanOrEqual(0)
       expect(easelBox.x + easelBox.width).toBeLessThanOrEqual(viewport.width)
       expect(easelBox.y + easelBox.height).toBeLessThanOrEqual(viewport.height)
+      const booster = (await easel.locator('.hover-easel__booster').first().boundingBox())!
+      const palette = (await page.getByTestId('palette').boundingBox())!
+      expect(booster.y + booster.height + 9).toBeLessThanOrEqual(palette.y)
     }
   })
 }
@@ -82,6 +85,33 @@ test('drawable easel remains still', async ({ page }) => {
   const before = await easel.boundingBox()
   await page.waitForTimeout(1000)
   expect(await easel.boundingBox()).toEqual(before)
+})
+
+test('camera centers the porch board on the measured drawing canvas', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await playFixture(page)
+  await page.goto(`${origin}/home`)
+  await page.getByTestId('daily-start-button').click()
+  await expect(page.getByTestId('pixel-canvas')).toBeVisible()
+  await expect.poll(async () => page.evaluate(() => {
+    const scene = document.querySelector('[data-camera="easel"] canvas')!.getBoundingClientRect()
+    const target = document.querySelector('[data-testid="pixel-canvas"]')!.getBoundingClientRect()
+    const sceneCenterX = scene.left + (138 + 15 + 39 / 2) / 320 * scene.width
+    const sceneCenterY = scene.top + (40 + 23 + 51 / 2) / 180 * scene.height
+    return Math.max(Math.abs(sceneCenterX - target.left - target.width / 2), Math.abs(sceneCenterY - target.top - target.height / 2))
+  })).toBeLessThan(3)
+})
+
+test('reduced motion exit returns to the porch and resumes the attempt', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await playFixture(page, true)
+  await page.goto(`${origin}/home`)
+  await page.getByTestId('daily-exit').click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Exit', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Start Daily Challenge' })).toBeVisible({ timeout: 100 })
+  await expect(page).toHaveURL(`${origin}/home`)
+  await page.getByRole('button', { name: 'Start Daily Challenge' }).click()
+  await expect(page.getByTestId('pixel-canvas')).toBeVisible({ timeout: 100 })
 })
 
 for (const askFirst of [false, true]) test(askFirst ? 'auto-grade fires at 2:00 after an ask at 1:30' : 'auto-grade fires at 2:00 without asks', async ({ page }) => {
