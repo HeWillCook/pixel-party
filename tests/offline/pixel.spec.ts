@@ -9,7 +9,7 @@ const fixtureUser = { id: 'host', name: 'Offline host', email: 'host@example.tes
 // Deliberately unsigned fixture, consumed only by the intercepted client APIs.
 const fixtureToken = `fixture.${Buffer.from(JSON.stringify({ sub: fixtureUser.id, name: fixtureUser.name, exp: 4_000_000_000 })).toString('base64url')}.unsigned`
 
-async function clientFixture(page: Page, options: { signedIn?: boolean; hostId?: string; preflight?: () => Promise<void> } = {}) {
+async function clientFixture(page: Page, options: { signedIn?: boolean; hostId?: string; preflight?: () => Promise<void>; rooms?: { recordId: string; data: Record<string, unknown> }[] } = {}) {
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   await page.route('**/*', async route => {
@@ -42,9 +42,9 @@ async function clientFixture(page: Page, options: { signedIn?: boolean; hostId?:
       if (message.type === 'user.list') socket.send(JSON.stringify({ type: 'user.list', payload: { users: [] } }))
       if (message.type !== 'core.subscribe') return
       const { subscriptionId, query } = message.payload
-      const records = query.collection === 'rooms' ? [{ recordId: 'room', data: {
+      const records = query.collection === 'rooms' ? (options.rooms ?? [{ recordId: 'room', data: {
         name: 'Offline party', mode: 'coop', visibility: 'private', joinCode: 'AB2Z', hostId: options.hostId ?? 'host', status: 'lobby', isDefaultBoard: false,
-      } }] : []
+      } }]) : []
       socket.send(JSON.stringify({ type: 'core.query_result', payload: { subscriptionId, records } }))
     })
   })
@@ -694,5 +694,139 @@ test('party reject with id settles provisional cooldown after peer pixel and res
   await canvas.dispatchEvent('pointerup', { pointerId: 1, pointerType: 'mouse' })
   await expect.poll(() => sent.flat()).toContainEqual({ x: 4, y: 4, c: 4, id: 2 })
   await expect.poll(() => pixelColor(page, 4, 4)).toEqual([239, 68, 68, 255])
+  expect(errors).toEqual([])
+})
+
+test('lobby easels link to rooms and overflow into More easels', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 })
+  const errors = await clientFixture(page, {
+    signedIn: true,
+    rooms: [
+      { recordId: 'r-play', data: { name: 'Pixel Party', mode: 'coop', visibility: 'public', joinCode: 'play', hostId: 'system', status: 'playing', playerCount: 4, lastActiveAt: 5000, isDefaultBoard: true } },
+      { recordId: 'r-1', data: { name: "Will's Studio", mode: 'coop', visibility: 'public', joinCode: 'QX3J', hostId: 'host', status: 'playing', playerCount: 3, lastActiveAt: 4000, isDefaultBoard: false } },
+      { recordId: 'r-2', data: { name: 'Sunset Sketch', mode: 'coop', visibility: 'public', joinCode: 'M9K2', hostId: 'other', status: 'lobby', playerCount: 2, lastActiveAt: 3000, isDefaultBoard: false } },
+      { recordId: 'r-3', data: { name: 'Late Night', mode: 'coop', visibility: 'public', joinCode: 'P4W8', hostId: 'other', status: 'playing', playerCount: 1, lastActiveAt: 2000, isDefaultBoard: false } },
+      { recordId: 'r-4', data: { name: 'Overflow Easel', mode: 'coop', visibility: 'public', joinCode: 'Z7T1', hostId: 'other', status: 'lobby', playerCount: 1, lastActiveAt: 1000, isDefaultBoard: false } },
+    ],
+  })
+  await page.goto(`${origin}/party`)
+  await expect(page.locator('.studio-world .pixel-scene__canvas')).toBeVisible()
+  const list = page.getByTestId('public-rooms-list')
+  await expect(list.getByTestId('room-card-QX3J')).toHaveAttribute('href', '/r/QX3J')
+  await expect(list.getByTestId('room-card-QX3J')).toContainText("Will's Studio")
+  await expect(page.getByRole('button', { name: 'Pack up easel', exact: true })).toBeVisible()
+  await expect(page.getByText('More easels')).toBeVisible()
+  await expect(page.getByTestId('room-card-Z7T1')).toHaveAttribute('href', '/r/Z7T1')
+  expect(errors).toEqual([])
+})
+
+test('public board frame opens play room', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await clientFixture(page, { signedIn: true })
+  await page.goto(`${origin}/party`)
+  await expect(page.locator('.studio-world .pixel-scene__canvas')).toBeVisible()
+  await expect(page.getByTestId('room-card-play')).toHaveAttribute('href', '/r/play')
+  await expect(page.getByTestId('lobby-play-now')).toHaveAttribute('href', '/r/play')
+  await page.getByTestId('room-card-play').click()
+  await expect(page).toHaveURL(`${origin}/r/play`)
+})
+
+test('ticket booth joins by code', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await clientFixture(page, { signedIn: true })
+  let joinedCode = ''
+  await page.route('**/api/actions/joinRoom', async route => {
+    joinedCode = (route.request().postDataJSON() as { joinCode: string }).joinCode
+    await route.fulfill({ json: { success: true } })
+  })
+  await page.goto(`${origin}/party`)
+  await expect(page.getByTestId('join-room-form')).toContainText('Got a code?')
+  await page.getByTestId('join-code-input').fill('ab2z')
+  await page.getByTestId('join-code-submit').click()
+  await expect.poll(() => joinedCode).toBe('AB2Z')
+  await expect(page).toHaveURL(`${origin}/r/AB2Z`)
+})
+
+test('workbench sign creates room', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await clientFixture(page, { signedIn: true })
+  let body: Record<string, unknown> | null = null
+  await page.route('**/api/actions/createRoom', async route => {
+    body = route.request().postDataJSON() as Record<string, unknown>
+    await route.fulfill({ json: { success: true, data: { roomId: 'room-new', joinCode: 'N3W1' } } })
+  })
+  await page.goto(`${origin}/party`)
+  await expect(page.getByTestId('create-room-form')).toContainText('Set up an easel')
+  await page.getByTestId('create-room-name').fill('Basement Club')
+  await page.getByTestId('visibility-private').click()
+  await page.getByTestId('create-room-submit').click()
+  await expect.poll(() => body).toEqual({ name: 'Basement Club', mode: 'coop', visibility: 'private' })
+  await expect(page).toHaveURL(`${origin}/r/N3W1`)
+})
+
+test('upstairs stairs return home with pan transition and reduced motion is instant', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await clientFixture(page, { signedIn: true })
+  await page.goto(`${origin}/party`)
+  const upstairs = page.locator('.studio-world').getByRole('link', { name: 'Upstairs', exact: true })
+  await expect(upstairs).toBeVisible()
+  await upstairs.click()
+  await expect(page).toHaveURL(`${origin}/home`)
+
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.goto(`${origin}/party`)
+  const start = Date.now()
+  await page.locator('.studio-world').getByRole('link', { name: 'Upstairs', exact: true }).click()
+  await expect(page).toHaveURL(`${origin}/home`)
+  expect(Date.now() - start).toBeLessThan(300)
+})
+
+test('375 lobby no horizontal scroll and primary controls stay reachable', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 })
+  const errors = await clientFixture(page, {
+    signedIn: true,
+    rooms: [
+      { recordId: 'r-play', data: { name: 'Pixel Party', mode: 'coop', visibility: 'public', joinCode: 'play', hostId: 'system', status: 'playing', playerCount: 4, lastActiveAt: 5000, isDefaultBoard: true } },
+      { recordId: 'r-1', data: { name: 'A Very Long Studio Room Name That Must Truncate Cleanly', mode: 'coop', visibility: 'public', joinCode: 'QX3J', hostId: 'host', status: 'playing', playerCount: 3, lastActiveAt: 4000, isDefaultBoard: false } },
+    ],
+  })
+  await page.goto(`${origin}/party`)
+  await expect(page.locator('.studio-world .pixel-scene__canvas')).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375)
+  await expect(page.getByTestId('room-card-play')).toBeVisible()
+  await expect(page.getByTestId('lobby-play-now')).toBeVisible()
+  const card = page.getByTestId('room-card-QX3J')
+  const roomName = card.locator('.truncate')
+  await expect(roomName).toBeVisible()
+  const cardBox = (await card.boundingBox())!
+  const nameBox = (await roomName.boundingBox())!
+  expect(nameBox.width).toBeLessThanOrEqual(cardBox.width)
+  await page.getByTestId('join-room-form').scrollIntoViewIfNeeded()
+  await expect(page.getByTestId('join-room-form')).toBeVisible()
+  await expect(page.getByTestId('create-room-form')).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375)
+  expect(errors).toEqual([])
+})
+
+test('signed-out studio lobby shows sign-in button for hosting', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 })
+  const errors = await clientFixture(page, { signedIn: false })
+  await page.goto(`${origin}/party`)
+  await expect(page.getByTestId('create-room-signin')).toBeVisible()
+  await expect(page.getByTestId('create-room-submit')).toHaveCount(0)
+  await page.getByTestId('create-room-signin').click()
+  await expect(page.getByRole('heading', { name: 'Sign in to DeepSpace' })).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('arriving from porch settles cleanly into the studio', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 })
+  const errors = await clientFixture(page, { signedIn: true })
+  await page.goto(`${origin}/home`)
+  await page.locator('.porch-world').getByRole('link', { name: 'Party studio', exact: true }).click()
+  await expect(page).toHaveURL(`${origin}/party`)
+  await expect(page.getByTestId('lobby-page')).toBeVisible()
+  await expect.poll(() => page.evaluate(() => sessionStorage.getItem('studio-from-porch'))).toBeNull()
+  await expect.poll(() => page.locator('.studio-world .pixel-scene').evaluate(el => getComputedStyle(el).transform)).toMatch(/matrix\(1, 0, 0, 1, 0, 0\)|none/)
   expect(errors).toEqual([])
 })

@@ -66,6 +66,7 @@ export function PorchScene(props: PorchSceneProps) {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const goParty = useCallback(() => {
     if (timer.current) return
+    try { sessionStorage.setItem('studio-from-porch', '1') } catch { /* ignore */ }
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { navigate('/party'); return }
     setPanning(true)
     timer.current = setTimeout(() => navigate('/party'), 500)
