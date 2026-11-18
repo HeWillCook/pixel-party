@@ -89,7 +89,7 @@
 .porch-nav__mail-art { position: relative; display: block; }
 .porch-nav__flag { position: absolute; top: calc(var(--px) * 3); right: 0; }
 .porch-nav__username { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: #fff0cc; border: var(--px) solid #8e5960; padding: var(--px) calc(var(--px) * 2); font-size: 18px; }
-.porch-nav__toggle { display: none; align-self: center; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; color: #392a45; }
+.porch-nav__toggle { display: none; align-self: center; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; color: #fff0cc; }
 .porch-nav__mobile { display: none; }
 @media (max-width: 767px) {
   .porch-nav__links { display: none; }

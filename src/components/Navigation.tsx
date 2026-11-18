@@ -6,19 +6,11 @@ import type { Role } from '../constants'
 import { nav } from '../nav'
 import { P } from '../scene/palette'
 import { PixelScene } from '../scene/PixelScene'
+import { drawPorchRoof } from '../scene/porch/drawPorch'
 import { defineSprite, drawSprite, type Sprite } from '../scene/sprite'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from './ui'
 
 const woodPalette = { a: P.wood[0], b: P.wood[1], c: P.wood[2], d: P.wood[3], e: P.wood[4], f: P.sun[4], g: P.flame[1], h: P.paper[3], i: P.sea[1], j: P.sun[2] }
-const beam = defineSprite(Array.from({ length: 12 }, (_, y) => Array.from({ length: 32 }, (_, x) => {
-  if (y === 0 || y === 11) return 'a'
-  if (y === 1 || y === 2) return 'e'
-  if (y === 10) return 'b'
-  if (x === 0 || (x === 16 && y > 6)) return 'b'
-  if ((y === 4 && x > 4 && x < 13) || (y === 7 && x > 19 && x < 28) || (y === 8 && x > 7 && x < 11)) return 'b'
-  return y < 6 ? 'c' : 'd'
-}).join('')), woodPalette)
-
 function plank(width: number, active = false): Sprite {
   return defineSprite(Array.from({ length: 16 }, (_, y) => Array.from({ length: width }, (_, x) => {
     if (y < 4) return x === 7 || x === 8 || x === width - 9 || x === width - 8 ? (y % 2 ? 'b' : 'h') : '.'
@@ -71,11 +63,11 @@ const logoSign = (() => {
 })()
 function drawRoofStrip(ctx: CanvasRenderingContext2D) {
   const { width, height } = ctx.canvas
-  ctx.fillStyle = P.wood[0]; ctx.fillRect(0, 0, width, height)
-  for (let x = 0; x < width; x += 16) {
-    ctx.fillStyle = P.wood[1]; ctx.fillRect(x, 0, 12, height)
-    ctx.fillStyle = P.wood[2]; ctx.fillRect(x + 1, 0, 1, height)
-  }
+  ctx.fillStyle = P.wood[1]; ctx.fillRect(0, 0, width, height)
+  const root = ctx.canvas.closest('.pixel-scene')
+  const scale = ctx.canvas.getBoundingClientRect().width / width
+  const roofTop = root && scale ? Math.max(0, Math.floor((height - root.getBoundingClientRect().height / scale) / 2)) : 0
+  drawPorchRoof(ctx, roofTop)
 }
 const lantern = defineSprite([
   '.......a.......', '......aba......', '.....ababa.....', '...j.abeba.j...', '..j.jafffa.jj..',
@@ -132,7 +124,6 @@ export default function Navigation() {
   return <>
     <nav data-testid="app-navigation" className="porch-nav">
       {location.pathname !== '/home' && <PixelScene draw={drawRoofStrip} className="porch-nav__roof" />}
-      <div className="porch-nav__beam" aria-hidden="true">{Array.from({ length: 40 }, (_, index) => <SpriteImage key={index} sprite={beam} />)}</div>
       <div className="porch-nav__row">
         <Link to="/home" aria-label="Pixel Party, home" className="porch-nav__logo"><SpriteImage sprite={logoSign} /></Link>
         <div className="porch-nav__links">{visibleNav.map(navLink)}</div>

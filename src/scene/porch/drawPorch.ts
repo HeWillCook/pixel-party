@@ -12,6 +12,14 @@ export interface PorchOptions {
   roofTop?: number
 }
 
+export function drawPorchRoof(ctx: CanvasRenderingContext2D, roofTop: number): void {
+  const width = ctx.canvas.width
+  const rect = (x: number, y: number, w: number, h: number, color: string) => { ctx.fillStyle = color; ctx.fillRect(x, y, w, h) }
+  rect(0, roofTop, width, 16, P.wood[1])
+  for (let x = 0; x < width; x += 18) { rect(x, roofTop + 7, 3, 9, P.wood[0]); rect(x + 3, roofTop + 7, 1, 9, P.wood[2]) }
+  rect(0, roofTop, width, 7, P.wood[0]); rect(0, roofTop + 1, width, 4, P.wood[2]); rect(0, roofTop + 6, width, 1, P.wood[4])
+}
+
 export function drawPorch(ctx: CanvasRenderingContext2D, frame: number, opts: PorchOptions): void {
   const portrait = ctx.canvas.height > ctx.canvas.width
   const layout = porchLayout[portrait ? 'portrait' : 'landscape']
@@ -85,9 +93,7 @@ export function drawPorch(ctx: CanvasRenderingContext2D, frame: number, opts: Po
   for (let y = 12; y < floor; y += 7) { rect(0, y, wallWidth, 1, P.wood[1]); rect(0, y + 1, wallWidth, 1, P.wood[3]) }
   rect(wallWidth - 5, 8, 5, floor - 8, P.wood[0]); rect(wallWidth - 3, 8, 2, floor - 8, P.wood[4])
   const roofTop = opts.roofTop ?? 0
-  rect(0, roofTop, width, 16, P.wood[1])
-  for (let x = 0; x < width; x += 18) { rect(x, roofTop + 7, 3, 9, P.wood[0]); rect(x + 3, roofTop + 7, 1, 9, P.wood[2]) }
-  rect(0, roofTop, width, 7, P.wood[0]); rect(0, roofTop + 1, width, 4, P.wood[2]); rect(0, roofTop + 6, width, 1, P.wood[4])
+  drawPorchRoof(ctx, roofTop)
   if (!portrait) {
     rect(19, 38, 25, 32, P.wood[0]); rect(21, 40, 21, 28, P.wood[3]); rect(23, 42, 17, 24, P.sun[3])
     rect(30, 42, 2, 24, P.wood[1]); rect(23, 53, 17, 2, P.wood[1])

@@ -209,11 +209,11 @@ test('mailbox menu provides account actions', async ({ page }) => {
   for (const name of ['My gallery', 'Settings', 'Sign out']) await expect(page.getByRole('menuitem', { name })).toBeVisible()
 })
 
-test('navigation artwork uses a substantial beam and mailbox', async ({ page }) => {
+test('navigation artwork uses the scene roof and mailbox', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 })
   await setup(page)
   await page.goto(`${origin}/party`)
-  const beam = page.locator('.porch-nav__beam canvas').first()
+  const beam = page.locator('.porch-nav__roof canvas').first()
   const mailbox = page.getByRole('button', { name: 'Account menu' }).locator('canvas').first()
   await expect(beam).toBeVisible()
   await expect(mailbox).toBeVisible()
