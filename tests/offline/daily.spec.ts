@@ -92,6 +92,23 @@ test('start zooms into the easel', async ({ page }) => {
   await expect(page.locator('[data-camera="easel"]')).toBeAttached()
 })
 
+test('easel camera crossfades on entry and reverses on exit', async ({ page }) => {
+  await playFixture(page)
+  await page.goto(`${origin}/home`)
+  await page.getByTestId('daily-start-button').click()
+  const backdrop = page.locator('[data-camera="easel"]')
+  await expect(backdrop).toHaveAttribute('data-phase', 'entering')
+  await expect(backdrop.locator('.pixel-scene__camera')).toHaveCSS('transition-duration', '0.6s')
+  await expect(backdrop).toHaveAttribute('data-phase', 'active')
+  await expect(backdrop.locator('.play-scenery-layer')).toHaveCSS('opacity', '1')
+  await expect(backdrop.locator('.play-scenery-layer')).toHaveCSS('transition-duration', '0.15s')
+  await page.getByTestId('daily-exit').click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Exit', exact: true }).click()
+  await expect(backdrop).toHaveAttribute('data-phase', 'leaving')
+  await expect(page.getByTestId('daily-playing')).toHaveCount(0)
+  await expect(page.locator('.porch-world .pixel-hotspot').first()).toBeVisible()
+})
+
 test('reload mid-attempt never shows porch hotspots', async ({ page }) => {
   await playFixture(page, true)
   await page.addInitScript(() => {
