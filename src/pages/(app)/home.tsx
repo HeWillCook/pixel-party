@@ -25,6 +25,7 @@ import { ToolBar } from '../../components/game/ToolBar'
 import { PlayLayout } from '../../components/play/PlayLayout'
 import { HoverEasel } from '../../components/play/HoverEasel'
 import { ScoreCard } from '../../components/play/ScoreCard'
+import { PainterTray } from '../../components/game/PainterTray'
 import { PlayBackdrop, type PlayTransition } from '../../components/play/PlayBackdrop'
 import { Badge, Button } from '../../components/ui'
 import { MAX_COLOR } from '../../game/config'
@@ -371,36 +372,16 @@ export default function DailyHomePage() {
         <div data-testid="daily-playing" className="daily-play">
           <PlayBackdrop phase={playTransition} onTransitionEnd={finishPlayTransition} />
           <div className={playTransition === 'active' ? 'play-controls' : 'play-controls play-controls--transition'}>
-          <PlayLayout top={<div className="pp-panel flex flex-wrap items-center justify-between gap-3 bg-card px-4 py-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-base uppercase tracking-wider text-muted-foreground">
-                Prompt:
-              </span>
+          <PlayLayout prompt={<div className="pp-panel play-prompt">
+              <span className="play-prompt__heading">Today’s prompt</span>
               <span
                 data-testid="daily-prompt"
                 className="pp-word text-2xl uppercase tracking-wide text-[var(--sunset-1)] sm:text-3xl"
               >
                 {state.prompt}
               </span>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2.5">
               <DailyTimer startedAt={state.startedAt} endsAt={state.endsAt} clockOffsetMs={state.clockOffsetMs} />
-              <ExitDailyButton onExit={() => setPlayTransition('leaving')} />
-            </div>
-          </div>} left={
-              <ToolBar
-                tools={DAILY_TOOLS}
-                compactPick
-                active={tool}
-                onSelect={setTool}
-                onUndo={handleUndo}
-                onRedo={handleRedo}
-                canUndo={!strokeActive && history.past.length > 0}
-                canRedo={!strokeActive && history.future.length > 0}
-                disabled={!canDraw}
-              />
-          } canvas={<div ref={boardRef} className="flex w-full min-w-0 justify-center">
+          </div>} timeline={<><AutoGradeTimeline windows={state.windows} now={now + state.clockOffsetMs} startedAt={state.startedAt} /><div className="play-manual">Manual grades: {3 - asksLeft} of 3 used</div></>} exit={<ExitDailyButton onExit={() => setPlayTransition('leaving')} />} canvas={<div ref={boardRef} className="flex w-full min-w-0 justify-center">
               <HoverEasel>
               <PixelCanvas
                 width={32}
@@ -419,53 +400,34 @@ export default function DailyHomePage() {
                 onStrokeEnd={handleStrokeEnd}
               />
               </HoverEasel>
-            </div>} right={<div className="flex min-w-0 flex-col gap-4">
+            </div>} score={<div className="flex min-w-0 flex-col gap-4">
               {state.notice && <div role="status" className="pp-panel p-4">{state.notice}</div>}
-              <ScoreCard
-                latest={state.latest}
-                best={state.best}
-                grading={state.grading}
-                lastError={state.lastError}
-              />
-              <AutoGradeTimeline windows={state.windows} now={now + state.clockOffsetMs} startedAt={state.startedAt} />
-
+              <ScoreCard latest={state.latest} best={state.best} grading={state.grading} lastError={state.lastError} />
+            </div>} actions={
               <div className="pp-panel flex flex-col gap-3 bg-card p-4">
                 <div className="play-actions">
-                  <Button
-                    type="button"
-                    data-testid="daily-ask-button"
-                    disabled={!canAsk}
-                    onClick={() => void askNow()}
-                    className="pp-btn flex-1 gap-2 bg-secondary px-4 py-2.5 text-base uppercase tracking-wider text-white hover:bg-secondary disabled:opacity-60 sm:text-lg"
-                  >
-                    <Bot className="h-4 w-4 shrink-0" aria-hidden />
-                    <span>Grade now ({asksLeft} left)</span>
+                  <Button type="button" data-testid="daily-ask-button" disabled={!canAsk} onClick={() => void askNow()} className="pp-btn gap-2 px-4 py-2.5 text-base uppercase tracking-wider">
+                    <Bot className="h-4 w-4 shrink-0" aria-hidden /><span>Grade now ({asksLeft} left)</span>
                   </Button>
-
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    data-testid="daily-done-button"
-                    disabled={state.stale || state.grading || (state.finalizing && !state.endFailed)}
-                    onClick={() => void done()}
-                    className="pp-btn gap-1.5 px-4 py-2.5 text-base uppercase tracking-wider sm:text-lg"
-                  >
-                    <CheckCircle2 className="h-4 w-4 text-[var(--sunset-1)]" aria-hidden />
-                    <span>
-                      {state.endFailed
-                        ?'Retry submit'
-                        : state.finalizing
-                          ?'Finishing…'
-                          : 'Submit & finish'}
-                    </span>
+                  <Button type="button" variant="secondary" data-testid="daily-done-button" disabled={state.stale || state.grading || (state.finalizing && !state.endFailed)} onClick={() => void done()} className="pp-btn gap-1.5 px-4 py-2.5 text-base uppercase tracking-wider">
+                    <CheckCircle2 className="h-4 w-4 text-[var(--sunset-1)]" aria-hidden /><span>{state.endFailed ? 'Retry submit' : state.finalizing ? 'Finishing…' : 'Submit & finish'}</span>
                   </Button>
                 </div>
-
-                <p className="text-base text-muted-foreground">
-                  Grade now keeps you drawing. Submit locks in your best score; earlier means more speed points.
-                </p>
+                <p className="text-base text-muted-foreground">Grade now keeps you drawing. Submit locks in your best score; earlier means more speed points.</p>
               </div>
-            </div>} bottom={<div ref={paletteRef} className="pp-panel p-3"><Palette activeColor={activeColor} onSelectColor={setActiveColor} disabled={!canDraw} /></div>} />
+          } bottom={<PainterTray trayRef={paletteRef} tools={
+              <ToolBar
+                tools={DAILY_TOOLS}
+                compactPick
+                active={tool}
+                onSelect={setTool}
+                onUndo={handleUndo}
+                onRedo={handleRedo}
+                canUndo={!strokeActive && history.past.length > 0}
+                canRedo={!strokeActive && history.future.length > 0}
+                disabled={!canDraw}
+              />
+          } palette={<Palette activeColor={activeColor} onSelectColor={setActiveColor} disabled={!canDraw} />} />} />
           </div>
         </div>
       )}

@@ -49,6 +49,22 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720
   })
 }
 
+for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720 }]) {
+  test(`painter tray and controls fit ${viewport.width}`, async ({ page }) => {
+    await page.setViewportSize(viewport)
+    await playFixture(page, true)
+    await page.goto(`${origin}/home`)
+    const tray = page.getByTestId('painter-tray')
+    await expect(tray.getByTestId('toolbar')).toBeVisible()
+    await expect(tray.getByTestId('palette')).toBeVisible()
+    for (const target of [page.getByTestId('pixel-canvas'), tray, page.getByTestId('daily-ask-button')]) {
+      const bounds = (await target.boundingBox())!
+      expect(bounds.y + bounds.height).toBeLessThanOrEqual(viewport.height)
+    }
+    if (viewport.width === 1440) expect((await page.getByTestId('pixel-canvas').boundingBox())!.width).toBeGreaterThanOrEqual(576)
+  })
+}
+
 test('start zooms into the easel', async ({ page }) => {
   await playFixture(page)
   await page.goto(`${origin}/home`)
