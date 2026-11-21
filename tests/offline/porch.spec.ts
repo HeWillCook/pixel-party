@@ -1438,6 +1438,31 @@ test.describe('captions never clip', () => {
   }
 })
 
+test('caption cards are as tall as the tallest caption on their page, not the longest possible prompt', async ({ page }) => {
+  test.setTimeout(60_000)
+  const cells = samplePaintingBase64()
+  const { DAILY_PROMPTS } = await import('../../src/game/daily/prompts')
+  const longest = [...DAILY_PROMPTS].map((entry) => entry.prompt).sort((a, b) => b.length - a.length)[0]
+  const heights = async (prompts: string[]) => {
+    const fresh = await page.context().newPage()
+    await setup(fresh, false, (query) => query.collection === 'dailyDrawings' && query.where?.userId === 'host'
+      ? prompts.map((prompt, index) => ({ recordId: `d${index}`, data: { day: `2026-10-${String(20 - index).padStart(2, '0')}`, userId: 'host', displayName: 'Offline host', prompt, cells, score: 500, guess: 'thing' } }))
+      : [])
+    await fresh.setViewportSize({ width: 1440, height: 900 })
+    await fresh.goto(`${origin}/u/host`)
+    await expect(framesOn(fresh).first()).toBeVisible()
+    await fresh.evaluate(() => document.fonts.ready)
+    const out = await fresh.evaluate(() => Array.from(document.querySelectorAll('[data-testid="gallery-caption"]')).map((card) => Math.round(card.getBoundingClientRect().height)))
+    await fresh.close()
+    return out
+  }
+  const short = await heights(['Cat', 'Hat', 'Sun', 'Bee'])
+  expect(new Set(short).size, 'one height for the whole page').toBe(1)
+  const mixed = await heights(['Cat', 'Hat', 'Sun', longest])
+  expect(new Set(mixed).size, 'one height for the whole page').toBe(1)
+  expect(mixed[0], 'a long prompt on the page makes every card taller').toBeGreaterThan(short[0])
+})
+
 test('empty gallery shows the empty rack with its first-painting card and a Paint today prompt link to /home', async ({ page }) => {
   const cells = samplePaintingBase64()
   await setup(page, false, (query) => {

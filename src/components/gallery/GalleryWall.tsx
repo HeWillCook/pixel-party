@@ -1,8 +1,8 @@
-import { useContext, useLayoutEffect, useRef, type CSSProperties, type MouseEvent, type ReactNode } from 'react'
+import { useContext, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from 'react'
 import { PixelMedal } from '../daily/PixelMedals'
 import { PixelThumb } from '../daily/PixelThumb'
 import { SceneComposition } from '../../scene/PixelScene'
-import { captionType, wallPageCount, wallSlot, type WallPageLayout } from '../../scene/porch/wallLayout'
+import { captionType, wallPageCount, wallPageLayout, wallSlot, type WallPageLayout } from '../../scene/porch/wallLayout'
 import { useWallPageLayout } from '../../scene/useSceneScale'
 import { SCENE_ZOOM_EASING, SCENE_ZOOM_MS } from '../../scene/zoom'
 import type { Rect } from '../../scene/camera'
@@ -16,15 +16,50 @@ const unit = (n: number) => `calc(var(--px) * ${n})`
 const place = (rect: Rect): CSSProperties => ({ left: unit(rect.x), top: unit(rect.y), width: unit(rect.w), height: unit(rect.h) })
 const MEDALS = ['Gold', 'Silver', 'Bronze']
 const stop = (event: MouseEvent) => event.stopPropagation()
+/** The frames of a full page that clear the card on an empty wall (their caption rows included), as scene rects. */
+function emptyFrames(composition: Parameters<typeof wallPageLayout>[0], viewport: { w: number; h: number }, scale: number, card: Rect): Rect[] {
+  const full = wallPageLayout(composition, viewport, scale, Number.MAX_SAFE_INTEGER)
+  const clear = 3
+  return Array.from({ length: full.perPage }, (_, index) => {
+    const { frame, card: caption } = wallSlot(full, index, full.perPage)
+    return { x: full.rail.x + frame.x, y: full.rail.y + frame.y, w: frame.w, h: frame.h, bottom: full.rail.y + caption.y + caption.h }
+  })
+    .filter(({ x, y, w, bottom }) => !(x + w + clear > card.x && x - clear < card.x + card.w && bottom + clear > card.y && y - clear < card.y + card.h))
+    .map(({ x, y, w, h }) => ({ x, y, w, h }))
+}
+
 /** A page turn takes about two thirds of a zoom: the same curve, a little quicker, so a wheel of pages never drags. */
 const TURN_MS = Math.round(SCENE_ZOOM_MS * 0.65)
 
 const formatDay = (day: string) => new Date(`${day}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
 
-/** One page of paintings: a frame and a caption card each, hung on the page grid. */
-function WallPage({ items, layout, border, mat, cell, refEl }: { items: WallItem[]; layout: WallPageLayout; border: number; mat: number; cell: number; refEl?: React.Ref<HTMLDivElement> }) {
+/**
+ * One page of paintings: a frame and a caption card each, hung on the page grid. The grid reserves room for the tallest caption there
+ * could be; the cards on a page are drawn only as tall as the tallest caption actually on it (measured, so no caption is ever clipped).
+ */
+function WallPage({ items, layout, border, mat, cell, scale, refEl }: { items: WallItem[]; layout: WallPageLayout; border: number; mat: number; cell: number; scale: number; refEl?: React.RefObject<HTMLDivElement | null> }) {
+  const root = useRef<HTMLDivElement | null>(null)
+  const [cardPx, setCardPx] = useState<number | null>(null)
+  useLayoutEffect(() => {
+    const element = root.current
+    if (!element) return
+    let live = true
+    const measure = () => {
+      const cards = Array.from(element.querySelectorAll<HTMLElement>('.wall-card'))
+      if (!live || !cards.length) return
+      const saved = cards.map((card) => card.style.height)
+      for (const card of cards) card.style.height = 'auto'
+      const tallest = Math.ceil(Math.max(...cards.map((card) => card.offsetHeight)))
+      cards.forEach((card, index) => { card.style.height = saved[index] })
+      setCardPx((current) => (current === tallest ? current : tallest))
+    }
+    measure()
+    // The caption font arriving can re-wrap a prompt: measure again once fonts are in.
+    void document.fonts?.ready.then(measure)
+    return () => { live = false }
+  }, [items, layout.frame, layout.card, scale])
   return (
-    <div ref={refEl} className="wall-page">
+    <div ref={(element) => { root.current = element; if (refEl) refEl.current = element }} className="wall-page">
       {items.map((item, index) => {
         const slot = wallSlot(layout, index, items.length)
         const medal = item.medal >= 1 && item.medal <= 3 ? (item.medal as 1 | 2 | 3) : 0
@@ -34,7 +69,7 @@ function WallPage({ items, layout, border, mat, cell, refEl }: { items: WallItem
               <PixelThumb cells={item.cells} size={cell * 32} className="wall-frame__thumb" />
             </div>
             {medal ? <PixelMedal medal={medal} scale="scene" label={`${MEDALS[medal - 1]} medal`} className="wall-card__medal" /> : null}
-            <div className="wall-card" data-testid="gallery-caption" style={{ left: 0, top: unit(layout.frame + 1), width: '100%', height: unit(layout.card) }}>
+            <div className="wall-card" data-testid="gallery-caption" style={{ left: 0, top: unit(layout.frame + 1), width: '100%', height: cardPx ? `${cardPx}px` : unit(layout.card) }}>
               <h2 className="wall-card__prompt">{item.prompt}</h2>
               <p className="wall-card__meta">
                 <span className="wall-card__date">{formatDay(item.day)}</span>
@@ -68,7 +103,7 @@ export function GalleryWall({ items, page = 0, turn = null, onTurn, onGo, inert 
 }) {
   const composition = useContext(SceneComposition)
   const ref = useRef<HTMLDivElement>(null)
-  const { scale, layout } = useWallPageLayout(ref, composition, items.length)
+  const { scale, layout, w: sceneW, h: sceneH } = useWallPageLayout(ref, composition, items.length)
   // Whole-pixel painting cells: the frame's inner width, less its border and mat, in 32 whole cells.
   const border = Math.max(2, Math.round(scale * 2.2))
   const mat = Math.max(2, Math.round(scale * 1.4))
@@ -100,7 +135,12 @@ export function GalleryWall({ items, page = 0, turn = null, onTurn, onGo, inert 
   const note = (body: ReactNode, testId: string, h: number) => {
     const w = Math.min(90, layout.rail.w - 4)
     const rect = { x: layout.rail.x + 2 + (layout.rail.w - 4 - w) / 2, y: layout.top + Math.floor((layout.band - h) / 2), w, h }
-    return <article className="wall-note" data-testid={testId} style={place(rect)} onClick={stop}>{body}</article>
+    // An empty wall is a place waiting to be filled: faint outlines of the frames that will hang round the card.
+    const ghosts = testId === 'gallery-empty' && !inert && scale ? emptyFrames(composition, { w: sceneW, h: sceneH }, scale, rect) : []
+    return <>
+      {ghosts.length > 0 && <div className="wall-ghosts" aria-hidden="true">{ghosts.map((ghost, index) => <span key={index} className="wall-ghost" style={place(ghost)} />)}</div>}
+      <article className="wall-note" data-testid={testId} style={place(rect)} onClick={stop}>{body}</article>
+    </>
   }
   const showPage = !loading && !failed && items.length > 0
   const style = { '--wall-prompt': unit(type.prompt), '--wall-meta': unit(type.meta) } as CSSProperties
@@ -127,8 +167,8 @@ export function GalleryWall({ items, page = 0, turn = null, onTurn, onGo, inert 
           : (
             <>
               <div className="wall-rail" style={place(layout.rail)}>
-                <WallPage key={page} refEl={outgoing} items={slice(page)} layout={layout} border={border} mat={mat} cell={cell} />
-                {turn ? <WallPage key={turn.to} refEl={incoming} items={slice(turn.to)} layout={layout} border={border} mat={mat} cell={cell} /> : null}
+                <WallPage key={page} refEl={outgoing} items={slice(page)} layout={layout} border={border} mat={mat} cell={cell} scale={scale} />
+                {turn ? <WallPage key={turn.to} refEl={incoming} items={slice(turn.to)} layout={layout} border={border} mat={mat} cell={cell} scale={scale} /> : null}
               </div>
               {pages > 1 ? (
                 <>
