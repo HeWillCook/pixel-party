@@ -927,7 +927,10 @@ export function StudioLobby(props: StudioLobbyProps) {
         onRoomShift?.(shift)
       }
     }
-    if (!room || room.phase === 'leaving' || !room.boardRect || !focusLocal || !stageBox.w || !stageBox.h) { report(null, { x: 0, y: 0 }); return }
+    // Leaving keeps what the room was sized and slid to: resetting at the start of the exit re-sized the board (and un-slid the room) in one
+    // frame while the camera pulled back. The room unmounts when the route lands, and that resets it.
+    if (room?.phase === 'leaving') return
+    if (!room || !room.boardRect || !focusLocal || !stageBox.w || !stageBox.h) { report(null, { x: 0, y: 0 }); return }
     const viewport = { w: stageBox.w, h: stageBox.h }
     // The room reports its board where it would sit without the slide (see `onRoomShift`), so none of this feeds back on itself.
     const natural = {

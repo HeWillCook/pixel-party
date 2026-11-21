@@ -580,9 +580,11 @@
 
 /* ---- Below the nav ------------------------------------------------------------------------------------------------
    The nav is an overlay on scene pages, so the room starts below it: nothing here sits under the nav or its logo link
-   (on phones the logo link is 68px tall). `--porch-nav-height` comes from the shell; the fallbacks are today's heights. */
+   (on phones the logo link is 68px tall). The room's nav is always the compact one (52px; 44px on a phone), so this is a constant:
+   following the live bar (108px -> 52px over 360ms as the room opens) moved the room's top, and so its board, during the zoom
+   and snapped it back when the bar settled. */
 .room-play[data-testid="room-page"] {
-  --room-top-clear: var(--porch-nav-height, 52px);
+  --room-top-clear: 52px;
   padding-top: calc(var(--room-top-clear) + 4px);
 }
 /* Short desktop windows (1280x720): the room is below the nav now, so Haiku's perch gives back some height. */
@@ -593,7 +595,7 @@
 }
 @media (max-width: 767px) {
   .room-play[data-testid="room-page"] {
-    --room-top-clear: max(var(--porch-nav-height, 44px), 68px);
+    --room-top-clear: 68px;
     padding-top: calc(var(--room-top-clear) + 4px);
   }
 }

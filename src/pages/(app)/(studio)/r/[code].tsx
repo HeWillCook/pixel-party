@@ -92,8 +92,10 @@ interface RoundRecord {
 // The panels around the board that slide out from behind it as the camera lands (and back in as it leaves).
 const PANEL_SELECTOR = '.play-layout__top > *, .play-layout__left > *, .play-layout__haiku > *, .play-layout__right > *, .play-layout__bottom > *'
 
-// Vertical chrome around the board + grid gap + bottom margin (already excluding PixelCanvas's own 20px inset).
-const EASEL_AND_TRAY_GAP_PX = 60
+// Vertical chrome around the board (excluding PixelCanvas's own 20px inset), as a gap under the tray: the tray tucks under the easel foot, so the free height is the window minus the room's top,
+// the tray's true height, less 13px. Calibrated so the settled boards keep the sizes they have always had (448 at 1280x720, 480 at 1366x768,
+// 576 at 1440x900), now that the tray height is measured truthfully while the camera moves.
+const EASEL_AND_TRAY_GAP_PX = -13
 const EASEL_HORIZONTAL_CHROME_PX = 40
 
 function formatTimer(ms: number): string {
@@ -292,9 +294,9 @@ export default function RoomPage() {
       const topOffset = slot
         ? untransformedRect(slot).y + (slot.closest('main')?.scrollTop ?? 0) - shiftYRef.current
         : 120
-      const paletteH = paletteWrapRef.current
-        ? untransformedRect(paletteWrapRef.current).h
-        : 104
+      // The tray is a panel with a transform of its own while the camera moves, which lifting the root's does not undo: its layout
+      // height (`offsetHeight`) ignores every transform.
+      const paletteH = paletteWrapRef.current?.offsetHeight ?? 104
       const wide = window.innerWidth >= 768
       // The board is normally capped at 596px; a big screen asks for more (see `minBoardPx`) so the scene behind the room
       // reaches every edge, as far as the space around the board allows.

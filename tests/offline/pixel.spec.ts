@@ -1544,3 +1544,59 @@ test('after a round the ask button says "Round over" and the brush note is only 
   await expect(page.getByTestId('ask-ai-button')).not.toContainText('Waiting for active round')
   await expect(page.getByTestId('shared-brush-note')).toHaveCount(0)
 })
+
+// Opening a room used to paint its first frames with the board ~100 px smaller than it settles at (the free height was measured from the
+// nav while it was still shrinking and from the tray while its panel transform was on), then jump when the chain caught up.
+for (const viewport of [{ width: 1440, height: 900 }, { width: 1980, height: 1240 }]) {
+  test(`opening a room never re-sizes the board mid-zoom at ${viewport.width}x${viewport.height}`, async ({ page }) => {
+    await page.setViewportSize(viewport)
+    const errors = await clientFixture(page, { signedIn: true })
+    await page.routeWebSocket('**/api/pixel/**', socket => socket.send(JSON.stringify(snapshot('playing'))))
+    await page.goto(`${origin}/party`)
+    await expect(page.getByTestId('lobby-page')).toBeVisible()
+    await page.evaluate(() => {
+      const sizes = new Set<string>()
+      ;(window as unknown as { __sizes: Set<string> }).__sizes = sizes
+      const tick = () => {
+        const board = document.querySelector<HTMLElement>('.room-board')
+        const play = document.querySelector<HTMLElement>('.room-play')
+        if (board && play) sizes.add(`${board.offsetWidth}x${play.offsetHeight}`)
+        requestAnimationFrame(tick)
+      }
+      requestAnimationFrame(tick)
+    })
+    await page.getByTestId('lobby-play-now').click()
+    await expect(page.getByTestId('room-page')).toHaveAttribute('data-play-phase', 'active')
+    await page.waitForTimeout(400)
+    const sizes = await page.evaluate(() => [...(window as unknown as { __sizes: Set<string> }).__sizes])
+    expect(sizes).toHaveLength(1)
+    expect(errors).toEqual([])
+  })
+}
+
+// Leaving used to reset the cover size the room was grown to (big windows), shrinking the board in one frame as the exit began.
+test('leaving a room never re-sizes the board while the camera pulls back at 1980x1240', async ({ page }) => {
+  await page.setViewportSize({ width: 1980, height: 1240 })
+  const errors = await clientFixture(page, { signedIn: true })
+  await page.routeWebSocket('**/api/pixel/**', socket => socket.send(JSON.stringify(snapshot('playing'))))
+  await page.goto(`${origin}/party`)
+  await page.getByTestId('lobby-play-now').click()
+  await expect(page.getByTestId('room-page')).toHaveAttribute('data-play-phase', 'active')
+  await page.waitForTimeout(300)
+  await page.evaluate(() => {
+    const sizes = new Set<string>()
+    ;(window as unknown as { __sizes: Set<string> }).__sizes = sizes
+    const tick = () => {
+      const board = document.querySelector<HTMLElement>('.room-board')
+      const play = document.querySelector<HTMLElement>('.room-play')
+      if (board && play) sizes.add(`${board.offsetWidth}x${play.offsetHeight}`)
+      requestAnimationFrame(tick)
+    }
+    requestAnimationFrame(tick)
+  })
+  await page.getByTestId('room-exit').click()
+  await expect(page).toHaveURL(`${origin}/party`)
+  const sizes = await page.evaluate(() => [...(window as unknown as { __sizes: Set<string> }).__sizes])
+  expect(sizes).toHaveLength(1)
+  expect(errors).toEqual([])
+})
