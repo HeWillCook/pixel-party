@@ -419,7 +419,8 @@ export function PorchScene(props: PorchSceneProps) {
   return <div ref={root} className={[props.landing ? 'porch-world porch-world--landing' : 'porch-world', transition || local ? 'porch-world--transitioning' : '', transition?.kind === 'scores' ? 'porch-world--to-scores' : '', overlayFade ? 'porch-world--returning' : '', verticalArrival ? 'porch-world--vertical-arrival' : ''].filter(Boolean).join(' ')}>
     <PixelScene draw={draw} className="porch-world__scene" camera={camera} zoomMs={activeZoomMs} instant={Boolean(continuedCamera)} syncScale>{props.wall ?? <PorchWall />}<Objects {...props} moreOpen={moreOpen} onToggleMore={toggleMore} onParty={onParty} onScores={onScores} onGallery={onGallery} onRules={openRules} onMailbox={openMailbox} /></PixelScene>
     <nav className="porch-dock" aria-label="Porch shortcuts">
-      <button type="button" disabled={props.easelDisabled} onClick={props.onEasel}><span aria-hidden="true">✎</span>Daily</button>
+      {/* Like the desktop Daily sign: back to the easel's rest pose, never "start" (that is the easel's own button). */}
+      <button type="button" aria-current={props.landing ? undefined : 'page'} onClick={props.landing ? props.onEasel : () => { closeMore(); window.dispatchEvent(new Event('pixel:return-porch')) }}><span aria-hidden="true">✎</span>Daily</button>
       <a href="/scores" onClick={onScores}><span aria-hidden="true">★</span>Scores</a>
       <a href="/party" onClick={onParty}><span aria-hidden="true">♫</span>Party</a>
       {props.signedIn && props.galleryHref ? <a href={props.galleryHref} onClick={onGallery}><span aria-hidden="true">▣</span>Gallery</a> : <button type="button" onClick={props.landing ? props.onSignIn : openMailbox}><span aria-hidden="true">▣</span>Gallery</button>}

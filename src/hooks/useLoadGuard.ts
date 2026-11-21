@@ -21,11 +21,12 @@ export function useQueryRetry() {
  * copy and a Retry. `attempt` restarts the clock after a retry.
  */
 export function useLoadTimeout(status: QueryStatus, attempt = 0, timeoutMs = LOAD_TIMEOUT_MS): QueryStatus {
-  const [timedOutAt, setTimedOutAt] = useState(-1)
+  const [timedOut, setTimedOut] = useState(false)
   useEffect(() => {
     if (status !== 'loading') return
-    const timer = window.setTimeout(() => setTimedOutAt(attempt), timeoutMs)
-    return () => window.clearTimeout(timer)
+    const timer = window.setTimeout(() => setTimedOut(true), timeoutMs)
+    // Leaving `loading` (answered, or retried) forgets the timeout: the next load gets a fresh clock.
+    return () => { window.clearTimeout(timer); setTimedOut(false) }
   }, [status, attempt, timeoutMs])
-  return status === 'loading' && timedOutAt === attempt ? 'error' : status
+  return status === 'loading' && timedOut ? 'error' : status
 }

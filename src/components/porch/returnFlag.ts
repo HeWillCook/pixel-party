@@ -50,6 +50,9 @@ export function peekZoomHandoff(): ZoomHandoffFlag | null {
     if (!raw) return null
     const parsed = JSON.parse(raw) as Partial<ZoomHandoffFlag>
     if (!parsed || typeof parsed.at !== 'number' || typeof parsed.durationMs !== 'number' || typeof parsed.progress !== 'number') return null
+    // A hand-off no page picked up (the arriving page was an ended Daily close-up, say) must not fly a later arrival: it expires, and one from an earlier page load (a different clock) is void.
+    const age = performance.now() - parsed.at
+    if (age < 0 || age > parsed.durationMs + 2000) { sessionStorage.removeItem(ZOOM_HANDOFF_KEY); return null }
     const from = parseCamera(parsed.from)
     const to = parseCamera(parsed.to)
     return from && to ? { at: parsed.at, durationMs: parsed.durationMs, progress: parsed.progress, from, to } : null

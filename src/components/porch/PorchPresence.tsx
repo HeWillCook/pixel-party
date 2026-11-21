@@ -19,9 +19,11 @@ const PresenceContext = createContext<PorchSummary | null>(null)
 export function PorchPresenceProvider({ children }: { children: ReactNode }) {
   const { pathname } = useLocation()
   const { isLoaded, isSignedIn, user, userLoading } = useAuthProfileReady({ requireUser: true })
+  const { state } = useDaily()
   const [summary, setSummary] = useState<PorchSummary | null>(null)
   // Joined once who you are is known, so the room never sees you twice (a reconnect when the account settles).
-  const ready = isLoaded && (!isSignedIn || (!userLoading && !!user))
+  // ...and once today's date is known from the server (the scope is named by it), so the room is joined exactly once.
+  const ready = isLoaded && state.loaded && (!isSignedIn || (!userLoading && !!user))
   return (
     <PresenceContext.Provider value={summary}>
       {ready && isPorchRoute(pathname) && <PorchPresenceSession onSummary={setSummary} />}
@@ -49,7 +51,8 @@ function PorchPresenceSession({ onSummary }: { onSummary: (summary: PorchSummary
     updateState({ ...next })
   }, [connected, name, painting, updateState])
 
-  const summary = useMemo(() => (connected ? summarizePorch(peers as PorchPeer[], painting) : null), [connected, peers, painting])
+  const others = useMemo(() => (peers as PorchPeer[]).filter((peer) => peer.userId !== user?.id), [peers, user?.id])
+  const summary = useMemo(() => (connected ? summarizePorch(others, painting) : null), [connected, others, painting])
   useEffect(() => { onSummary(summary) }, [summary, onSummary])
   useEffect(() => () => onSummary(null), [onSummary])
   return null

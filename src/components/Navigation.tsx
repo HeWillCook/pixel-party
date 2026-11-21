@@ -219,14 +219,20 @@ function useNavHeightVar() {
       const value = `${bar} ${bottom}`
       if (value === last) return
       last = value
-      shell.style.setProperty('--porch-nav-height', `${bar}px`)
-      shell.style.setProperty('--porch-nav-bottom', `${bottom}px`)
+      // On the shell, and on the document too: a floor pan carries `main` into an overlay outside the shell.
+      for (const element of [shell, document.documentElement]) {
+        element.style.setProperty('--porch-nav-height', `${bar}px`)
+        element.style.setProperty('--porch-nav-bottom', `${bottom}px`)
+      }
     }
     const observer = new ResizeObserver(publish)
     observer.observe(row)
     observer.observe(nav)
     publish()
-    return () => { observer.disconnect(); shell.style.removeProperty('--porch-nav-height'); shell.style.removeProperty('--porch-nav-bottom') }
+    return () => {
+      observer.disconnect()
+      for (const element of [shell, document.documentElement]) { element.style.removeProperty('--porch-nav-height'); element.style.removeProperty('--porch-nav-bottom') }
+    }
   }, [])
   return ref
 }

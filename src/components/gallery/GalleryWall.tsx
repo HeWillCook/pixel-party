@@ -40,6 +40,8 @@ const formatDay = (day: string) => new Date(`${day}T00:00:00Z`).toLocaleDateStri
 function WallPage({ items, layout, border, mat, cell, scale, refEl }: { items: WallItem[]; layout: WallPageLayout; border: number; mat: number; cell: number; scale: number; refEl?: React.RefObject<HTMLDivElement | null> }) {
   const root = useRef<HTMLDivElement | null>(null)
   const [cardPx, setCardPx] = useState<number | null>(null)
+  // Re-measure when the captions or the type size change, not on every render (a hand-off zoom re-renders the page each frame).
+  const captions = items.map((item) => `${item.day}|${item.prompt}|${item.score}`).join('\n')
   useLayoutEffect(() => {
     const element = root.current
     if (!element) return
@@ -57,7 +59,7 @@ function WallPage({ items, layout, border, mat, cell, scale, refEl }: { items: W
     // The caption font arriving can re-wrap a prompt: measure again once fonts are in.
     void document.fonts?.ready.then(measure)
     return () => { live = false }
-  }, [items, layout.frame, layout.card, scale])
+  }, [captions, layout.frame, layout.card, scale])
   return (
     <div ref={(element) => { root.current = element; if (refEl) refEl.current = element }} className="wall-page">
       {items.map((item, index) => {

@@ -275,7 +275,7 @@ export function Leaderboard({
                     <Avatar className="scores-avatar">
                       <AvatarImage src={score.avatarUrl || undefined} />
                       <AvatarFallback className="bg-[#263451] text-[#fff0cc]">
-                        {playerName.slice(0, 1)}
+                        {Array.from(playerName)[0] ?? ''}
                       </AvatarFallback>
                     </Avatar>
                     <span className="scores-row-name">{playerName}</span>
