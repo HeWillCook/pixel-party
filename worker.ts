@@ -38,6 +38,7 @@ import { createServerTools } from './src/server/server-tools.js'
 import { registerActionRoutes } from './src/server/action-routes.js'
 import { registerDailyRoutes } from './src/server/daily-routes.js'
 import { registerProfileRoutes } from './src/server/profile-routes.js'
+import { registerStatsRoutes } from './src/server/stats-routes.js'
 import {
   registerAuthAndIntegrationRoutes,
   registerPlatformProxyRoutes,
@@ -198,6 +199,7 @@ registerRealtimeRoutes(app)
 registerActionRoutes(app, resolveAuth)
 registerDailyRoutes(app)
 registerProfileRoutes(app)
+registerStatsRoutes(app)
 // Read-only tools for the local agent (`deepspace agent tools/invoke`) and the
 // browser surface the app's <AgentTools /> mounts. There is no website chat.
 registerAgentToolRoutes(app, {

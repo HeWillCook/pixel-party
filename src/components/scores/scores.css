@@ -409,6 +409,16 @@
   color: #fff0cc;
 }
 
+/* The avatar and name are one tap target: both open the player's stats card. The name still fills the
+   row, so the link keeps its existing layout. */
+.scores-player-stats {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--px, 3px) * 4);
+  flex: 1;
+  min-width: 0;
+}
+
 .scores-row-name {
   flex: 1;
   min-width: 0;
