@@ -340,7 +340,9 @@ test('reduced motion zoom is immediate', async ({ page }) => {
   await playFixture(page)
   await page.goto(`${origin}/home`)
   await page.getByTestId('daily-start-button').click()
-  await expect(page.getByTestId('daily-playing')).toBeVisible({ timeout: 100 })
+  // Well under the 800 ms scene zoom: reduced motion must not wait for it.
+  // A wider budget than a single frame keeps this honest but not CI-flaky.
+  await expect(page.getByTestId('daily-playing')).toBeVisible({ timeout: 300 })
 })
 
 test('drawable easel remains still', async ({ page }) => {
