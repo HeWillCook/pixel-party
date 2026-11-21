@@ -28,79 +28,164 @@ function plank(width: number, active = false): Sprite {
 }
 const sign = plank(36)
 const activeSign = plank(36, true)
-const logoPalette = { ...woodPalette, k: P.flame[2], l: P.sun[3], m: P.sea[2], n: P.sky[3], o: P.sun[4] }
-const logoSign = (() => {
-  const width = 70, height = 34
+/**
+ * The Pixle wordmark signs. Both boards are painted by `buildSign` from a glyph table, the letter
+ * positions, the vertical zone rows, the row bands that pick a gradient step and the plank geometry,
+ * so the full and compact signs share one painter and differ only in the numbers.
+ *
+ * Palette keys: a/b outline + drop shadow (wood[0]), B shade row, c board fill, f bevel row,
+ * h/j light + dark chain links, n nail head, p..s the warm "pix" ramp, t..w the cool "le" ramp,
+ * d/e/g the aqua dot core, its glint pixel and its halo.
+ */
+const logoPalette = {
+  a: P.wood[0], b: P.wood[0], B: P.woodMid[0], c: P.wood[1], f: P.woodMid[1],
+  h: P.paper[3], j: P.wood[0], n: P.stone[3],
+  p: P.flame[4], q: P.flame[3], r: P.flame[2], s: P.flame[1],
+  t: P.sky[5], u: P.sky[4], v: P.sky[3], w: P.ui[2],
+  // The i's dot is the wordmark's one bright pixel: an aqua a step past the sea ramp, a paper glint, a sea halo.
+  d: '#8ce8dc', e: P.paper[4], g: P.sea[3],
+}
+type SignZone = 'A' | 'R' | 'D'
+/** A glyph split into its ascender, x-height and descender rows; `#` is ink, `.` is empty. */
+interface SignGlyph { A?: readonly string[]; R: readonly string[]; D?: readonly string[] }
+interface SignLetter { glyph: SignGlyph; x: number; ramp: 'pix' | 'le' }
+/** A row range inside one zone, and which step of the letter's ramp it takes (1-based). */
+interface SignBand { zone: SignZone; from: number; to: number; band: number }
+interface SignDot { x: number; y: number; size: number; halo: boolean }
+interface SignBoard {
+  width: number; height: number
+  topRow: number; bevelRow: number; shadeRow: number; bottomRow: number
+  chainRows: number; chainXs: readonly number[]; nailRow: number | null
+  /** Pixels shaved off each corner along the top/bottom rows, for a rounded plank end. */
+  cornerCut: number
+}
+interface SignSpec {
+  board: SignBoard
+  /** First row of each zone. */
+  zones: Record<SignZone, number>
+  bands: readonly SignBand[]
+  ramps: Record<SignLetter['ramp'], readonly string[]>
+  letters: readonly SignLetter[]
+  dots: readonly SignDot[]
+}
+const showRows = (row: string, count: number) => Array.from({ length: count }, () => row)
+function buildSign({ board, zones, bands, ramps, letters, dots }: SignSpec): Sprite {
+  const { width, height } = board
+  const left = 1, right = width - 2
   const pixels = Array.from({ length: height }, () => Array<string>(width).fill('.'))
-  const put = (x: number, y: number, color: string) => { if (x >= 0 && x < width && y >= 0 && y < height) pixels[y][x] = color }
-  for (let y = 0; y < 8; y++) for (const x of [9, 10, 58, 59]) put(x, y, y % 2 ? 'h' : 'a')
-  for (let y = 4; y < height; y++) for (let x = 1; x < width - 1; x++) {
-    const inset = y < 10 ? Math.max(0, 8 - y + Math.floor(Math.abs(x - width / 2) / 13)) : y > 30 ? y - 30 : 0
-    if (x < inset + 1 || x >= width - inset - 1) continue
-    put(x, y, y === 4 || y === 33 || x === inset + 1 || x === width - inset - 2 ? 'a' : y === 5 ? 'f' : 'c')
+  const put = (x: number, y: number, colour: string) => {
+    if (x >= 0 && x < width && y >= 0 && y < height) pixels[y][x] = colour
   }
-  const glyphs: Record<string, string[]> = {
-    P: ['11110', '10001', '11110', '10000', '10000'], I: ['11111', '00100', '00100', '00100', '11111'],
-    X: ['11011', '11011', '01110', '11011', '11011'], E: ['11111', '10000', '11110', '10000', '11111'],
-    L: ['10000', '10000', '10000', '10000', '11111'], A: ['01110', '10001', '11111', '10001', '10001'],
-    R: ['11110', '10001', '11110', '10010', '10001'], T: ['11111', '00100', '00100', '00100', '00100'],
-    Y: ['11011', '11011', '01110', '00100', '00100'],
+  // The plank: fill, top bevel, bottom shade, then the dark border ring and its cut corners.
+  for (let y = board.bevelRow + 1; y < board.shadeRow; y++) for (let x = left + 1; x < right; x++) put(x, y, 'c')
+  for (let x = left + 1; x < right; x++) { put(x, board.bevelRow, 'f'); put(x, board.shadeRow, 'B') }
+  for (let x = left; x <= right; x++) { put(x, board.topRow, 'a'); put(x, board.bottomRow, 'a') }
+  for (let y = board.topRow; y <= board.bottomRow; y++) { put(left, y, 'a'); put(right, y, 'a') }
+  for (let step = 0; step < board.cornerCut; step++) {
+    for (const x of [left + step, right - step]) { put(x, board.topRow, '.'); put(x, board.bottomRow, '.') }
   }
-  const lettering: { marks: [number, number][], color: string }[] = []
-  ;['PIXEL', 'PARTY'].forEach((word, row) => Array.from(word).forEach((letter, index) => {
-    const x = 4 + index * 12, y = 7 + row * 12
-    const marks: [number, number][] = []
-    glyphs[letter].forEach((line, lineIndex) => Array.from(line).forEach((pixel, column) => {
-      if (pixel === '1') for (let dx = 0; dx < 2; dx++) for (let dy = 0; dy < 2; dy++) marks.push([x + column * 2 + dx, y + lineIndex * 2 + dy])
-    }))
-    lettering.push({ marks, color: row === 0 ? 'k' : 'l' })
-  }))
-  lettering.forEach(({ marks }) => marks.forEach(([px, py]) => put(px + 1, py + 1, 'b')))
-  lettering.forEach(({ marks }) => marks.forEach(([px, py]) => { put(px - 1, py, 'a'); put(px + 1, py, 'a'); put(px, py - 1, 'a'); put(px, py + 1, 'a') }))
-  lettering.forEach(({ marks, color }) => {
-    marks.forEach(([px, py]) => put(px, py, color))
-    if (marks[0]) put(marks[0][0], marks[0][1], 'o')
-  })
-  put(62, 27, 'm'); put(62, 28, 'm'); put(63, 29, 'm'); put(63, 30, 'm')
-  for (let offset = 0; offset < 6; offset++) put(3 + offset, 31 - Math.floor(offset / 2), offset < 2 ? 'k' : 'h')
-  return defineSprite(pixels.map(row => row.join('')), logoPalette)
-})()
-const compactLogoSign = (() => {
-  const width = 43, height = 20
-  const pixels = Array.from({ length: height }, () => Array<string>(width).fill('.'))
-  const put = (x: number, y: number, color: string) => { if (x >= 0 && x < width && y >= 0 && y < height) pixels[y][x] = color }
-  for (let y = 0; y < 3; y++) for (const x of [6, 7, 35, 36]) put(x, y, y % 2 ? 'h' : 'a')
-  for (let y = 2; y < height; y++) for (let x = 1; x < width - 1; x++) {
-    const inset = y < 4 ? 4 - y : y > 17 ? y - 17 : 0
-    if (x < inset + 1 || x >= width - inset - 1) continue
-    put(x, y, y === 2 || y === height - 1 || x === inset + 1 || x === width - inset - 2 ? 'a' : y === 3 ? 'f' : 'c')
+  for (const x of [left, right]) { put(x, board.topRow + 1, '.'); put(x, board.bottomRow - 1, '.') }
+  for (let row = 0; row < board.chainRows; row++) for (const x of board.chainXs) put(x, row, row % 2 ? 'j' : 'h')
+  if (board.nailRow !== null) for (const x of board.chainXs) put(x, board.nailRow, 'n')
+  // Ink marks first, then the dot: the shadow and the 1px outline wrap both, fills and dots paint last.
+  const ink: { x: number; y: number; colour: string }[] = []
+  for (const { glyph, x, ramp } of letters) {
+    const steps = ramps[ramp]
+    for (const zone of ['A', 'R', 'D'] as const) {
+      const rows = glyph[zone]
+      if (!rows) continue
+      const band = (index: number) => bands.find((rule) => rule.zone === zone && index >= rule.from && index <= rule.to)?.band ?? 1
+      rows.forEach((row, index) => Array.from(row).forEach((pixel, column) => {
+        if (pixel === '#') ink.push({ x: x + column, y: zones[zone] + index, colour: steps[band(index) - 1] })
+      }))
+    }
   }
-  const glyphs: Record<string, string[]> = {
-    P: ['11110', '10001', '11110', '10000', '10000'], I: ['11111', '00100', '00100', '00100', '11111'],
-    X: ['11011', '11011', '01110', '11011', '11011'], E: ['11111', '10000', '11110', '10000', '11111'],
-    L: ['10000', '10000', '10000', '10000', '11111'], A: ['01110', '10001', '11111', '10001', '10001'],
-    R: ['11110', '10001', '11110', '10010', '10001'], T: ['11111', '00100', '00100', '00100', '00100'],
-    Y: ['11011', '11011', '01110', '00100', '00100'],
+  // A dot's core, and the 1px halo ring around it, are part of the outlined shape; the halo paints over its own outline.
+  const core = (dot: SignDot) => {
+    const points: [number, number][] = []
+    for (let dy = 0; dy < dot.size; dy++) for (let dx = 0; dx < dot.size; dx++) points.push([dot.x + dx, dot.y + dy])
+    return points
   }
-  const lettering: { marks: [number, number][], color: string }[] = []
-  ;['PIXEL', 'PARTY'].forEach((word, row) => Array.from(word).forEach((letter, index) => {
-    const x = 4 + index * 7, y = 5 + row * 7
-    const marks: [number, number][] = []
-    glyphs[letter].forEach((line, lineIndex) => Array.from(line).forEach((pixel, column) => {
-      if (pixel === '1') marks.push([x + column, y + lineIndex])
-    }))
-    lettering.push({ marks, color: row === 0 ? 'k' : 'l' })
-  }))
-  lettering.forEach(({ marks }) => marks.forEach(([px, py]) => put(px + 1, py + 1, 'b')))
-  lettering.forEach(({ marks }) => marks.forEach(([px, py]) => { put(px - 1, py, 'a'); put(px + 1, py, 'a'); put(px, py - 1, 'a'); put(px, py + 1, 'a') }))
-  lettering.forEach(({ marks, color }) => {
-    marks.forEach(([px, py]) => put(px, py, color))
-    if (marks[0]) put(marks[0][0], marks[0][1], 'o')
-  })
-  put(39, 15, 'm'); put(39, 16, 'm')
-  put(3, 17, 'k'); put(4, 17, 'h')
-  return defineSprite(pixels.map(row => row.join('')), logoPalette)
-})()
+  const halo = (dot: SignDot) => {
+    const points: [number, number][] = []
+    // Edges only, no corners, so the glow reads round rather than as a framed square.
+    for (let step = 0; step < dot.size; step++) {
+      points.push([dot.x + step, dot.y - 1], [dot.x + step, dot.y + dot.size], [dot.x - 1, dot.y + step], [dot.x + dot.size, dot.y + step])
+    }
+    return points
+  }
+  const shape: [number, number][] = [...ink.map(({ x, y }): [number, number] => [x, y]), ...dots.flatMap(core), ...dots.filter((dot) => dot.halo).flatMap(halo)]
+  for (const [x, y] of shape) put(x + 1, y + 1, 'b')
+  for (const [x, y] of shape) { put(x - 1, y, 'a'); put(x + 1, y, 'a'); put(x, y - 1, 'a'); put(x, y + 1, 'a') }
+  for (const { x, y, colour } of ink) put(x, y, colour)
+  for (const [x, y] of dots.filter((dot) => dot.halo).flatMap(halo)) put(x, y, 'g')
+  for (const [x, y] of dots.flatMap(core)) put(x, y, 'd')
+  for (const dot of dots) put(dot.x, dot.y, 'e')
+  return defineSprite(pixels.map((row) => row.join('')), logoPalette)
+}
+/** Full sign, 70x34: 3px strokes on a 5/12/4 zone grid, 3px letter gaps from x=8. */
+const logoSign = buildSign({
+  board: { width: 70, height: 34, topRow: 4, bevelRow: 5, shadeRow: 32, bottomRow: 33, chainRows: 4, chainXs: [12, 57], nailRow: 5, cornerCut: 2 },
+  zones: { A: 8, R: 13, D: 25 },
+  bands: [
+    { zone: 'A', from: 0, to: 4, band: 1 },
+    { zone: 'R', from: 0, to: 2, band: 1 }, { zone: 'R', from: 3, to: 6, band: 2 }, { zone: 'R', from: 7, to: 10, band: 3 }, { zone: 'R', from: 11, to: 11, band: 4 },
+    { zone: 'D', from: 0, to: 3, band: 4 },
+  ],
+  ramps: { pix: ['p', 'q', 'r', 's'], le: ['t', 'u', 'v', 'w'] },
+  letters: [
+    {
+      x: 8, ramp: 'pix',
+      glyph: {
+        R: ['#########..', '##########.', '###########', ...showRows('###.....###', 6), '###########', '##########.', '#########..'],
+        D: showRows('###........', 4),
+      },
+    },
+    { x: 22, ramp: 'pix', glyph: { R: showRows('###', 12) } },
+    {
+      x: 28, ramp: 'pix',
+      glyph: {
+        R: [
+          '###......###', '###......###', '.###....###.', '..###..###..', '...######...', '....####....',
+          '....####....', '...######...', '..###..###..', '.###....###.', '###......###', '###......###',
+        ],
+      },
+    },
+    { x: 43, ramp: 'le', glyph: { A: showRows('###..', 5), R: [...showRows('###..', 10), '####.', '.####'] } },
+    {
+      x: 51, ramp: 'le',
+      glyph: {
+        R: [
+          '..#######..', '.#########.', '###########', '###.....###', '###.....###', '###########',
+          '###########', '###........', '###........', '###########', '.##########', '..#########',
+        ],
+      },
+    },
+  ],
+  dots: [{ x: 22, y: 8, size: 3, halo: true }],
+})
+/** Compact sign, 43x20: 2px strokes on a 3/7/2 zone grid, 2px letter gaps from x=4. */
+const compactLogoSign = buildSign({
+  board: { width: 43, height: 20, topRow: 2, bevelRow: 3, shadeRow: 18, bottomRow: 19, chainRows: 2, chainXs: [7, 35], nailRow: null, cornerCut: 1 },
+  zones: { A: 5, R: 8, D: 15 },
+  bands: [
+    { zone: 'A', from: 0, to: 2, band: 1 },
+    { zone: 'R', from: 0, to: 2, band: 1 }, { zone: 'R', from: 3, to: 4, band: 2 }, { zone: 'R', from: 5, to: 6, band: 3 },
+    { zone: 'D', from: 0, to: 1, band: 3 },
+  ],
+  ramps: { pix: ['p', 'q', 'r', 's'], le: ['t', 'u', 'v', 'w'] },
+  letters: [
+    { x: 4, ramp: 'pix', glyph: { R: ['######.', ...showRows('##...##', 5), '######.'], D: showRows('##.....', 2) } },
+    { x: 13, ramp: 'pix', glyph: { R: showRows('##', 7) } },
+    {
+      x: 17, ramp: 'pix',
+      glyph: { R: ['##....##', '.##..##.', '..####..', '...##...', '..####..', '.##..##.', '##....##'] },
+    },
+    { x: 27, ramp: 'le', glyph: { A: showRows('##.', 3), R: [...showRows('##.', 5), '###', '.##'] } },
+    { x: 32, ramp: 'le', glyph: { R: ['.#####.', '##...##', '##...##', '#######', '##.....', '##.....', '.######'] } },
+  ],
+  dots: [{ x: 13, y: 5, size: 2, halo: false }],
+})
 function PorchNavRoof({ pathname }: { pathname: string }) {
   const ref = useRef<HTMLCanvasElement>(null)
   useEffect(() => {
@@ -260,7 +345,7 @@ export function StaticPorchNav() {
     <nav ref={navRef} data-testid="app-navigation" className="porch-nav">
       <PorchNavRoof pathname="/" />
       <div className="porch-nav__row">
-        <Link to="/" aria-label="Pixel Party, home" className="porch-nav__logo"><SpriteImage sprite={logoSign} className="porch-nav__logo-full" /><SpriteImage sprite={compactLogoSign} className="porch-nav__logo-compact" /></Link>
+        <Link to="/" aria-label="Pixle, home" className="porch-nav__logo"><SpriteImage sprite={logoSign} className="porch-nav__logo-full" /><SpriteImage sprite={compactLogoSign} className="porch-nav__logo-compact" /></Link>
         <div className="porch-nav__links">{staticNavItems.map(navLink)}</div>
         <div className="porch-nav__spacer" />
         <Link to="/home" data-testid="nav-sign-in-button" className="porch-nav__mail">
@@ -350,7 +435,7 @@ export default function Navigation() {
         ) : (
         <Link
           to="/home"
-          aria-label="Pixel Party, home"
+          aria-label="Pixle, home"
           onClick={(event) => {
             if (!isPrimaryClick(event)) return
             if (dispatchSceneNavigation('porch', '/home')) { event.preventDefault(); return }

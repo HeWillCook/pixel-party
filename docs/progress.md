@@ -9,7 +9,7 @@ Build and deploy a small, finished full-stack app on DeepSpace within five days.
 a working important path, technical depth, sensible use (or deliberate non-use) of integrations, readable code,
 protected secrets, use of platform primitives, and an honest writeup of tradeoffs, agent work, and what I verified.
 
-## The idea: Pixel Party (working name)
+## The idea: Pixle (first called Pixel Party)
 
 A daily solo pixel-art challenge judged by an AI, with the live shared canvas retained as party mode.
 
@@ -42,6 +42,7 @@ A daily solo pixel-art challenge judged by an AI, with the live shared canvas re
 | 2026-11-16 | Rooms (friends via link/code, or random quick-play) plus an always-on public co-op board | Reviewers likely visit alone; co-op works solo, team mode needs a room of friends or two tabs |
 | 2026-11-17 | Pivot the main feature to daily mode: one shared prompt, one 5-minute attempt, best grade kept, every attempt ranked; sign-in required to play | A focused solo game is more fun and reviewers can test it alone. Score is 0–1000: fit×5 + recognition×4 + speed. |
 | 2026-11-21 | Party cooldown 250 ms × painters, capped at 1.5 s (2 painters 0.5 s, 4 painters 1 s, 6 or more 1.5 s; alone stays instant) | 1 s × painters made drawing with a friend feel broken: two painters got 2 s per pixel, so a five-minute round gave each of them at most 150 pixels and nothing recognisable. The palette now says why ("Sharing the brush: one pixel every 0.5s each") and the active swatch drains while the brush recharges |
+| 2026-11-21 | Rebrand to "Pixle" (prose "Pixle", lowercase "pixle" wordmark, no punctuation): GitHub repo renamed to HeWillCook/pixle, subdomain moved to pixle.app.space, new hanging-sign logo with a cyan pixel as the i's dot | A Wordle-family "-le" name says "daily puzzle" at a glance. Plain spelling survives typing and search (pix.le reads as a URL, pixLe as a typo). GitHub redirects the old repo; the DeepSpace source claim keeps the label hewillcook/pixel-party, which deploys never re-check (the CLI reads the remote only for an unclaimed app). pixel-party.app.space stops serving at the rename deploy and stays reserved for us for 30 days |
 
 ## DeepSpace features: planned use
 
