@@ -4,7 +4,10 @@ import { dailyReducer, initialDailyClientState, needsDailyDayRefresh } from './c
 const day = '2026-11-17'
 const nextDay = '2026-11-18'
 const midnight = Date.UTC(2026, 10, 18)
-const grade = { guess: 'old', reason: 'old', fit: 500, recognition: 400, speed: 99, total: 999, elapsedMs: 5000 }
+const grade = {
+  guess: 'old', reason: 'old', match: 90, recognition: 100, quality: 90,
+  matchPoints: 430, qualityBonus: 387, total: 817, elapsedMs: 300_000,
+}
 
 describe('final client regressions', () => {
   it('locks an invalid-day attempt without adopting the fabricated current-day state', () => {
@@ -36,5 +39,17 @@ describe('final client regressions', () => {
     const state = { ...initialDailyClientState(day), best: 359 }
     expect(dailyReducer(old, { type: 'grade_ok', grade, state }).best).toBe(359)
     expect(dailyReducer(old, { type: 'grade_rejected', reason: 'stale', state })).toMatchObject({ best: 359, latest: null })
+  })
+
+  it('keeps the latest canvas from the server state, even when a lower final grade lands', () => {
+    const state = dailyReducer({ ...initialDailyClientState(day), ...{ status: 'playing' as const } }, {
+      type: 'state_loaded',
+      state: {
+        day, status: 'ended', prompt: 'A tree', startedAt: midnight - 300_000, endsAt: midnight,
+        autoUsed: 1, finalUsed: true, best: 817, windows: [], nextAutoAt: null, serverNow: midnight,
+        lastCells: 'latest-art',
+      },
+    })
+    expect(state).toMatchObject({ status: 'ended', best: 817, lastCells: 'latest-art' })
   })
 })

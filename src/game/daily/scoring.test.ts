@@ -1,75 +1,55 @@
 import { describe, expect, it } from 'vitest'
-import { gradeScore } from './scoring'
+import { blankGradeParts, gradeScore } from './scoring'
+
+const parts = (match: number, recognition: number, quality: number) => gradeScore({ match, recognition, quality })
 
 describe('daily scoring', () => {
-  it('awards the full 1000 for a perfect, instant drawing', () => {
-    expect(gradeScore({ fit: 100, recognition: 100, elapsedMs: 0 })).toEqual({
-      fit: 500,
-      recognition: 400,
-      speed: 100,
+  it('awards the full 1000 for a perfect drawing: matching prompt, recognized, polished', () => {
+    expect(parts(100, 100, 100)).toEqual({
+      match: 100,
+      recognition: 100,
+      quality: 100,
+      promptScore: 100,
+      matchPoints: 500,
+      qualityBonus: 500,
       total: 1000,
     })
   })
 
-  it('weights mid-range scores and scales speed by drawing quality', () => {
-    expect(gradeScore({ fit: 80, recognition: 50, elapsedMs: 60_000 })).toEqual({
-      fit: 400,
-      recognition: 200,
-      // raw speed 80 x quality (80 + 50) / 200 = 52
-      speed: 52,
-      total: 652,
-    })
+  it('weights the prompt 60/40 between match and recognition, then scales the bonus by craft', () => {
+    // round(0.6*80 + 0.4*50) = round(48 + 20) = 68 -> 340 points; bonus round(340 * 0.6) = 204
+    expect(parts(80, 50, 60)).toMatchObject({ promptScore: 68, matchPoints: 340, qualityBonus: 204, total: 544 })
   })
 
-  it('never pays speed for a blank canvas', () => {
-    expect(gradeScore({ fit: 0, recognition: 0, elapsedMs: 0 })).toEqual({
-      fit: 0,
-      recognition: 0,
-      speed: 0,
-      total: 0,
-    })
-    expect(gradeScore({ fit: 0, recognition: 0, elapsedMs: 295_000 }).speed).toBe(0)
+  it('caps an unrecognized drawing at 300, however beautiful', () => {
+    // recognition 0: weighted round(0.6*90) = 54 caps to 30 -> 150 points; a 100 craft bonus is 150.
+    expect(parts(90, 0, 100)).toMatchObject({ promptScore: 30, matchPoints: 150, qualityBonus: 150, total: 300 })
+    // Even a perfect prompt match cannot escape the cap while the guess missed the subject.
+    expect(parts(100, 0, 100).total).toBe(300)
+    expect(parts(100, 0, 100).total).toBeLessThan(400)
   })
 
-  it('caps fit at 55 and scales speed down when the guess missed the subject entirely', () => {
-    // recognition 0 with a generous fit of 90: fit caps at 55 (275 pts).
-    expect(gradeScore({ fit: 90, recognition: 0, elapsedMs: 0 })).toEqual({
-      fit: 275,
-      recognition: 0,
-      // raw speed 100 x quality 55 / 200 = 27.5 -> 28
-      speed: 28,
-      total: 303,
-    })
-
-    const fast = gradeScore({ fit: 90, recognition: 0, elapsedMs: 60_000 })
-    const slow = gradeScore({ fit: 90, recognition: 0, elapsedMs: 150_000 })
-    // raw speed 80 -> 22, raw speed 50 -> 14 (both x 0.275)
-    expect(fast.speed).toBe(22)
-    expect(slow.speed).toBe(14)
-    expect(fast.speed).toBeLessThan(80)
-
-    // An unrecognized drawing can never reach 400, let alone 700.
-    expect(gradeScore({ fit: 100, recognition: 0, elapsedMs: 0 }).total).toBeLessThan(400)
+  it('a beautiful off-prompt drawing earns less than a crude on-prompt one', () => {
+    const polishedOnPrompt = parts(95, 95, 95)
+    const crudeOnPrompt = parts(55, 60, 25)
+    const polishedOffPrompt = parts(20, 0, 100)
+    const blank = blankGradeParts()
+    expect(polishedOnPrompt.total).toBeGreaterThan(crudeOnPrompt.total)
+    expect(crudeOnPrompt.total).toBeGreaterThan(polishedOffPrompt.total)
+    expect(polishedOffPrompt.total).toBeGreaterThanOrEqual(blank.total)
+    expect(blank.total).toBe(0)
   })
 
-  it('clamps out-of-range judges and time', () => {
-    expect(gradeScore({ fit: 150, recognition: -5, elapsedMs: 700_000 })).toEqual({
-      fit: 275,
-      recognition: 0,
-      speed: 0,
-      total: 275,
-    })
-    expect(gradeScore({ fit: 150, recognition: 100, elapsedMs: 700_000 })).toEqual({
-      fit: 500,
-      recognition: 400,
-      speed: 0,
-      total: 900,
-    })
-    expect(gradeScore({ fit: -20, recognition: 100, elapsedMs: -5_000 })).toEqual({
-      fit: 0,
-      recognition: 400,
-      speed: Math.round(100 * (100 / 200)),
-      total: 450,
-    })
+  it('pays no quality bonus when nothing matches the prompt', () => {
+    expect(parts(0, 0, 100).total).toBe(0)
+  })
+
+  it('clamps out-of-range judge values', () => {
+    expect(parts(150, 100, 150)).toMatchObject({ match: 100, recognition: 100, quality: 100, total: 1000 })
+    expect(parts(-20, -5, -5)).toMatchObject({ match: 0, recognition: 0, quality: 0, total: 0 })
+  })
+
+  it('a blank canvas is all zeroes, with no parts to show', () => {
+    expect(blankGradeParts()).toEqual({ match: 0, recognition: 0, quality: 0, promptScore: 0, matchPoints: 0, qualityBonus: 0, total: 0 })
   })
 })

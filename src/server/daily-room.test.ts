@@ -5,7 +5,10 @@ import type { ServerTools } from './server-tools'
 import { memoryTools } from './room-test-tools'
 import { createServerTools } from './server-tools'
 
-const grade = { guess: 'cat', reason: 'test', fit: 0, recognition: 0, speed: 0, total: 500, elapsedMs: 1000 }
+const grade = {
+  guess: 'cat', reason: 'test', match: 80, recognition: 100, quality: 50,
+  matchPoints: 360, qualityBonus: 180, total: 540, elapsedMs: 150_000,
+}
 
 vi.mock('deepspace/worker', () => ({
   BaseRoom: class {
@@ -50,34 +53,40 @@ describe.each([['memory', memoryAttemptStore], ['durable object', fakeDOStore]])
     const store = createStore()
     const day = '2026-11-17'
     await store.start('user', day, 1_000)
-    const skip = await store.reserve('user', day, 'auto', 'hash', 61_000, true)
+    const skip = await store.reserve('user', day, 'auto', 'hash', 151_000, true)
     expect(skip).toMatchObject({ ok: 'skipped', status: 'skipped_blank', window: 0 })
-    expect((await store.get('user', day, 152_000))?.windows.slice(0, 2).map(window => window.status)).toEqual(['skipped_blank', 'missed'])
-    expect((await store.get('user', day))?.windows.slice(0, 2).map(window => window.status)).toEqual(['skipped_blank', 'missed'])
+    expect((await store.get('user', day, 152_000))?.windows[0].status).toBe('skipped_blank')
+    expect((await store.get('user', day))?.windows[0].status).toBe('skipped_blank')
   })
-  it('publishes the durable winning snapshot through an ordered current-best writer', async () => {
+  it('publishes the winning score with the latest snapshot through an ordered writer', async () => {
     const records = memoryTools()
     const store = createStore(records.tools as ServerTools)
     const day = '2026-11-17'
     await store.start('user', day, 1000, { name: 'Alice', image: 'alice.png' })
     await store.publish('user', day, 1000)
-    await store.reserve('user', day, 'ask', 'first', 2000)
-    await store.complete('user', day, grade, 'first', 'first cells', 3000, 2000)
+    await store.reserve('user', day, 'auto', 'first', 151_000)
+    await store.complete('user', day, grade, 'first', 'first cells', 152_000, 151_000)
     let release!: () => void
     const held = new Promise<void>(resolve => { release = resolve })
     const update = records.update.getMockImplementation()!
     records.update.mockImplementationOnce(async (...args) => { await held; return update(...args) })
-    const oldWrite = store.publish('user', day, 3000)
+    const oldWrite = store.publish('user', day, 152_000)
     await vi.waitFor(() => expect(records.update).toHaveBeenCalled())
-    const better = { ...grade, total: 800, elapsedMs: 24_000, reason: 'winner' }
-    await store.reserve('user', day, 'ask', 'next', 25_000)
-    await store.complete('user', day, better, 'next', 'winning cells', 26_000, 25_000)
-    const newWrite = store.publish('user', day, 26_000)
+    const later = { ...grade, total: 500, elapsedMs: 300_000, reason: 'later' }
+    await store.reserve('user', day, 'final', 'next', 301_000)
+    await store.complete('user', day, later, 'next', 'later cells', 302_000, 301_000)
+    const newWrite = store.publish('user', day, 302_000)
     release()
     await Promise.all([oldWrite, newWrite])
-    expect(await store.get('user', day)).toMatchObject({ bestGrade: { cells: 'winning cells', grade: better } })
-    expect([...records.rows('dailyScores').values()]).toMatchObject([{ score: 800, displayName: 'Alice' }])
-    expect([...records.rows('dailyDrawings').values()]).toMatchObject([{ score: 800, cells: 'winning cells', reason: 'winner' }])
+    expect(await store.get('user', day)).toMatchObject({
+      bestGrade: { cells: 'first cells', grade },
+      lastGrade: { cells: 'later cells', grade: later },
+      lastCells: 'later cells',
+      bestScore: 540,
+      endedAt: 302_000,
+    })
+    expect([...records.rows('dailyScores').values()]).toMatchObject([{ score: 540, displayName: 'Alice' }])
+    expect([...records.rows('dailyDrawings').values()]).toMatchObject([{ score: 540, cells: 'later cells', reason: 'later' }])
   })
 
   it('starts, reserves, completes and ends an attempt independently per day', async () => {
@@ -85,21 +94,32 @@ describe.each([['memory', memoryAttemptStore], ['durable object', fakeDOStore]])
     const day = '2026-11-17'
     expect((await store.start('user', day, 1000)).created).toBe(true)
     expect((await store.start('user', day, 2000)).created).toBe(false)
-    expect((await store.reserve('user', day, 'ask', 'hash', 2000)).ok).toBe(true)
-    expect(await store.reserve('user', day, 'ask', 'hash', 2001)).toEqual({ ok: false, reason: 'busy' })
-    expect((await store.complete('user', day, grade, 'hash', 'cells', 3000, 2000)).improved).toBe(true)
-    expect((await store.get('user', day))?.bestScore).toBe(500)
+    expect((await store.reserve('user', day, 'auto', 'hash', 151_000)).ok).toBe(true)
+    expect(await store.reserve('user', day, 'auto', 'hash', 151_001)).toEqual({ ok: false, reason: 'busy' })
+    expect((await store.complete('user', day, grade, 'hash', 'cells', 152_000, 151_000)).improved).toBe(true)
+    expect((await store.get('user', day))?.bestScore).toBe(540)
     expect(await store.get('user', '2026-11-18')).toBeNull()
-    expect((await store.end('user', day, null, 4000))?.endedAt).toBe(4000)
-    expect(await store.reserve('user', day, 'ask', 'hash', 5000)).toEqual({ ok: false, reason: 'ended' })
+    expect((await store.end('user', day, null, 301_000))?.endedAt).toBe(301_000)
+    expect(await store.reserve('user', day, 'final', 'hash', 302_000)).toEqual({ ok: false, reason: 'ended' })
+  })
+
+  it('saves the latest canvas and counts peeks without touching the grade', async () => {
+    const store = createStore()
+    const day = '2026-11-17'
+    await store.start('user', day, 1000)
+    expect(await store.save('user', day, 'art', 11_000)).toMatchObject({ ok: true, row: { lastCells: 'art' } })
+    expect(await store.reservePeek('user', day, 76_000)).toMatchObject({ ok: true, row: { peeksUsed: 1 } })
+    expect(await store.reservePeek('user', day, 226_000)).toMatchObject({ ok: true, row: { peeksUsed: 2 } })
+    expect(await store.reservePeek('user', day, 227_000)).toEqual({ ok: false, reason: 'no_peeks_left' })
+    expect(await store.get('user', day)).toMatchObject({ lastCells: 'art', bestScore: 0, lastGradedHash: null, peeksUsed: 2 })
   })
 
   it('ignores completion for a different reservation', async () => {
     const store = createStore()
     await store.start('user', '2026-11-17', 1000)
-    await store.reserve('user', '2026-11-17', 'ask', 'hash', 2000)
+    await store.reserve('user', '2026-11-17', 'auto', 'hash', 151_000)
     const before = await store.get('user', '2026-11-17')
-    const result = await store.complete('user', '2026-11-17', grade, 'hash', 'cells', 3000, 1999)
+    const result = await store.complete('user', '2026-11-17', grade, 'hash', 'cells', 152_000, 150_999)
     expect(result).toEqual({ row: before, improved: false, applied: false })
     expect(await store.get('user', '2026-11-17')).toEqual(before)
   })

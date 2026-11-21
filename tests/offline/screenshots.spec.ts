@@ -463,8 +463,8 @@ for (const view of ['signed-out', 'not_started', 'playing', 'ended', 'profile'] 
       if (view === 'playing' && viewport.width === 375) {
         const lastSwatch = page.getByTestId('swatch-15')
         const swatchBounds = (await lastSwatch.boundingBox())!
-        const actionBounds = (await page.getByTestId('daily-done-button').boundingBox())!
-        expect(swatchBounds.y + swatchBounds.height).toBeLessThanOrEqual(actionBounds.y)
+        const stripBounds = (await page.getByTestId('daily-mobile-score-trigger').boundingBox())!
+        expect(swatchBounds.y + swatchBounds.height).toBeLessThanOrEqual(stripBounds.y)
         await lastSwatch.click()
         await page.screenshot({ path: resolve(screenshotsDir, 'daily-playing-tray-375x812.png') })
         await page.getByTestId('daily-mobile-score-trigger').click()
@@ -479,16 +479,20 @@ for (const view of ['signed-out', 'not_started', 'playing', 'ended', 'profile'] 
 }
 
 test('capture graded daily play at three sizes', async ({ page }) => {
+  await page.clock.install({ time: new Date() })
   await setupClient(page, { dailyStatus: 'playing' })
   const now = Date.now()
+  const playingState = { day: new Date(now).toISOString().slice(0, 10), status: 'playing', prompt: 'A lighthouse by the sea', startedAt: now - 140_000, endsAt: now + 160_000, autoUsed: 0, finalUsed: false, best: 0, windows: [], nextAutoAt: now + 10_000, serverNow: now }
+  await page.route('**/api/daily/me', route => route.fulfill({ json: playingState }))
   await page.route('**/api/daily/grade', route => route.fulfill({ json: {
     ok: true,
-    grade: { guess: 'lighthouse', reason: 'A bright beacon above the waves.', fit: 450, recognition: 310, speed: 80, total: 840, elapsedMs: 60_000 },
-    state: { day: new Date(now).toISOString().slice(0, 10), status: 'playing', prompt: 'A lighthouse by the sea', startedAt: now - 60_000, endsAt: now + 540_000, autoUsed: 0, asksUsed: 1, asksLeft: 2, finalUsed: false, best: 840, windows: [], nextAutoAt: now + 60_000, serverNow: now },
+    grade: { guess: 'lighthouse', reason: 'A bright beacon above the waves.', match: 90, recognition: 80, quality: 70, matchPoints: 430, qualityBonus: 301, total: 731, elapsedMs: 150_000 },
+    state: { ...playingState, autoUsed: 1, best: 731, windows: [{ index: 0, dueAt: now + 10_000, status: 'graded', score: 731, late: false }], nextAutoAt: null },
   } }))
   await page.goto(`${origin}/home`)
-  await page.getByTestId('daily-ask-button').click()
-  await expect(page.getByTestId('grade-total')).toContainText('840')
+  await page.getByTestId('pixel-canvas').click({ position: { x: 5, y: 5 } })
+  await page.clock.fastForward(12_000)
+  await expect(page.getByTestId('grade-total')).toContainText('731')
   for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720 }, { width: 375, height: 812 }]) {
     await page.setViewportSize(viewport)
     await page.waitForTimeout(180)
@@ -498,10 +502,10 @@ test('capture graded daily play at three sizes', async ({ page }) => {
       await expect(page.getByTestId('daily-score-breakdown')).toBeVisible()
       await page.waitForTimeout(250)
     } else {
-      const gradeButton = (await page.getByTestId('daily-ask-button').boundingBox())!
-      expect(gradeButton.y + gradeButton.height).toBeLessThanOrEqual(viewport.height)
+      const panel = (await page.getByTestId('grade-panel').boundingBox())!
+      expect(panel.y + panel.height).toBeLessThanOrEqual(viewport.height)
       const column = (await page.locator('.play-layout__right').boundingBox())!
-      expect(gradeButton.y + gradeButton.height).toBeLessThanOrEqual(column.y + column.height)
+      expect(panel.y + panel.height).toBeLessThanOrEqual(column.y + column.height)
     }
     await page.screenshot({ path: resolve(screenshotsDir, `daily-graded-${viewport.width}x${viewport.height}.png`) })
     if (viewport.width === 1280) {

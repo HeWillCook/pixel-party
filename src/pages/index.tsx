@@ -34,7 +34,7 @@ export default function Landing() {
         />
         <section className="sr-only">
           <h1>Draw together at Pixle</h1>
-          <p>Paint a daily prompt in five minutes, or join friends on a shared pixel canvas. Haiku the cat guesses your art and scores your best drawing.</p>
+          <p>Paint a daily prompt in five minutes, or join friends on a shared pixel canvas. Haiku the cat judges your art at the halfway mark and again at the final verdict — your best judgement counts.</p>
         </section>
       </main>
     </div>

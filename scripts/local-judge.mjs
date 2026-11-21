@@ -1,3 +1,11 @@
+// Dev-only proxy for the Daily judge: forwards the app's own system/user prompt to `claude -p` and
+// returns its text. The rubric lives in the app (src/game/daily/judge.ts) and is the single source
+// of truth, so this proxy serves the current one automatically:
+//   - blind guess:  {"guess": "short phrase"}
+//   - score:        {"match": 0-100, "recognition": 0-100, "quality": 0-100, "reason": "one sentence"}
+//                   (match = how much of the prompt is drawn; quality = pixel-art craft; no speed)
+//   - peeks:        {"line": "one playful non-scoring sentence"} — no digits, at most 90 chars
+// The final verdict asks for a theatrical reason; the halfway check-in for an encouraging one.
 import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { promises as fs } from 'node:fs'

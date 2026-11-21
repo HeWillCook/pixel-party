@@ -3,9 +3,9 @@ import { getAuthToken, useAuthProfileReady } from 'deepspace'
 import { DAILY, MAX_COLOR, PALETTE } from '../game/config'
 import type { GradeKind } from '../game/daily/attempt'
 import {
-  canAskDaily,
   canPaintDaily,
   dailyReducer,
+  duePeekIndex,
   initialDailyClientState,
   needsDailyDayRefresh,
   shouldFireAutoGrade,
@@ -14,6 +14,16 @@ import {
   type DailyClientState,
   type DailyRejectReason,
 } from '../game/daily/client-schedule'
+import {
+  cannedLine,
+  FINAL_SUSPENSE_LINE,
+  momentsCrossed,
+  peekFallbackLine,
+  prefersReducedMotion,
+  verdictBeatMs,
+  verdictGuessMs,
+  type CannedMoment,
+} from '../game/daily/voice'
 import { decodeCells, encodeCells } from '../game/grid'
 import type { DailyStateView, GradeView } from '../server/daily-service'
 
@@ -21,6 +31,16 @@ const GRID_CELLS = 1024
 const GRID_WIDTH = 32
 const GRID_HEIGHT = 32
 export const DAILY_GRADE_TIMEOUT_MS = 25_000
+/** While the player is drawing, the current canvas is saved at most this often. */
+export const DAILY_CANVAS_SAVE_MS = 10_000
+/** A canned line stays up this long before the last verdict/grade takes the bubble back. */
+const VOICE_LINE_MS = 7_000
+
+export type VerdictStage = 'suspense' | 'guess' | 'score'
+export interface DailyVoice {
+  line: string | null
+  verdict: VerdictStage | null
+}
 
 type GradeResponse =
   | { ok: true; grade: GradeView; state: DailyStateView }
@@ -82,10 +102,10 @@ export function useDailyAttempt(): {
   paint(x: number, y: number, color: number): void
   replaceCells(next: Uint8Array): void
   start(): Promise<boolean>
-  askNow(): Promise<void>
-  done(): Promise<void>
   tick(): void
-  // DEV ONLY (__DEBUG_TOOLS__)
+  /** Haiku's live, non-scoring voice and the final verdict choreography. */
+  voice: DailyVoice
+  /** DEV ONLY (__DEBUG_TOOLS__) */
   reset(): Promise<boolean>
 } {
   const { isSignedIn, user } = useAuthProfileReady({ requireUser: false })
@@ -101,6 +121,7 @@ export function useDailyAttempt(): {
   const stateRef = useRef<DailyClientState>(state)
   const cellsRef = useRef<Uint8Array>(cells)
   const userIdRef = useRef<string>(userId)
+  const tokenRef = useRef<string | null>(null)
   const inFlightGradeRef = useRef<Promise<void> | null>(null)
   const finalizingRef = useRef<boolean>(false)
   const finishPromiseRef = useRef<Promise<void> | null>(null)
@@ -110,6 +131,15 @@ export function useDailyAttempt(): {
   const missedRefreshAtRef = useRef(0)
   const mutationEpochRef = useRef(0)
   const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const [voice, setVoice] = useState<DailyVoice>({ line: null, verdict: null })
+  const voiceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const verdictTimersRef = useRef<ReturnType<typeof setTimeout>[]>([])
+  const cannedIndexRef = useRef(0)
+  const lastTickElapsedRef = useRef(0)
+  const peekFiredRef = useRef(DAILY.peekWindowsMs.map(() => false))
+  const peekInFlightRef = useRef(false)
+  const canvasSaveRef = useRef<{ sentHash: string | null; at: number }>({ sentHash: null, at: 0 })
 
   const dispatch = useCallback((action: DailyAction) => {
     stateRef.current = dailyReducer(stateRef.current, action)
@@ -130,7 +160,64 @@ export function useDailyAttempt(): {
 
   useEffect(() => () => {
     if (noticeTimerRef.current !== null) clearTimeout(noticeTimerRef.current)
+    if (voiceTimerRef.current !== null) clearTimeout(voiceTimerRef.current)
+    for (const timer of verdictTimersRef.current) clearTimeout(timer)
+    verdictTimersRef.current = []
   }, [])
+
+  const clearVoiceTimers = useCallback(() => {
+    if (voiceTimerRef.current !== null) {
+      clearTimeout(voiceTimerRef.current)
+      voiceTimerRef.current = null
+    }
+    for (const timer of verdictTimersRef.current) clearTimeout(timer)
+    verdictTimersRef.current = []
+  }, [])
+
+  /** Show a transient line in Haiku's bubble (never a score; it yields to the verdict choreography). */
+  const showVoiceLine = useCallback((line: string) => {
+    clearVoiceTimers()
+    setVoice({ line, verdict: null })
+    voiceTimerRef.current = setTimeout(() => {
+      voiceTimerRef.current = null
+      setVoice({ line: null, verdict: null })
+    }, VOICE_LINE_MS)
+  }, [clearVoiceTimers])
+
+  const showCanned = useCallback((moment: CannedMoment) => {
+    showVoiceLine(cannedLine(moment, cannedIndexRef.current++))
+  }, [showVoiceLine])
+
+  /** The verdict reveal: suspense line, a beat, the guess, then the score. Reduced motion skips the beat. */
+  const playVerdict = useCallback(() => {
+    clearVoiceTimers()
+    const reduced = prefersReducedMotion()
+    const beat = verdictBeatMs(reduced)
+    const guessHold = verdictGuessMs(reduced)
+    if (beat <= 0) {
+      setVoice({ line: null, verdict: 'score' })
+      return
+    }
+    setVoice({ line: FINAL_SUSPENSE_LINE, verdict: 'suspense' })
+    const first = setTimeout(() => {
+      setVoice({ line: null, verdict: 'guess' })
+      const second = setTimeout(() => {
+        setVoice({ line: null, verdict: 'score' })
+      }, guessHold)
+      verdictTimersRef.current.push(second)
+    }, beat)
+    verdictTimersRef.current.push(first)
+  }, [clearVoiceTimers])
+
+  const resetVoice = useCallback(() => {
+    clearVoiceTimers()
+    lastTickElapsedRef.current = 0
+    cannedIndexRef.current = 0
+    peekFiredRef.current = DAILY.peekWindowsMs.map(() => false)
+    peekInFlightRef.current = false
+    canvasSaveRef.current = { sentHash: null, at: 0 }
+    setVoice({ line: null, verdict: null })
+  }, [clearVoiceTimers])
 
   const restoreCanvas = useCallback(
     (serverState: DailyStateView, uid: string) => {
@@ -167,11 +254,9 @@ export function useDailyAttempt(): {
           day: new Date().toISOString().slice(0, 10),
           status: 'not_started',
           autoUsed: 0,
-          asksUsed: 0,
           finalUsed: false,
           best: 0,
           windows: [],
-          asksLeft: DAILY.maxAsks,
           nextAutoAt: null,
           serverNow: Date.now(),
         },
@@ -189,6 +274,7 @@ export function useDailyAttempt(): {
       const epoch = mutationEpochRef.current
       try {
         const headers = await authHeaders()
+        if (headers.Authorization) tokenRef.current = headers.Authorization.replace('Bearer ', '')
         const res = await fetch('/api/daily/me', { method: 'GET', headers })
         if (!res.ok) throw new Error('Daily state unavailable')
         if (cancelled) return
@@ -235,6 +321,72 @@ export function useDailyAttempt(): {
     }
   }, [userId, state, restoreCanvas])
 
+  const sendCanvas = useCallback(async (encoded: string, keepalive = false): Promise<void> => {
+    const day = stateRef.current.day
+    if (!day) return
+    const send = async () => {
+      const token = keepalive ? tokenRef.current : null
+      const headers = keepalive
+        ? { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }
+        : await authHeaders()
+      if (!keepalive && headers.Authorization) tokenRef.current = headers.Authorization.replace('Bearer ', '')
+      return fetch('/api/daily/canvas', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ day, cells: encoded }),
+        ...(keepalive ? { keepalive: true } : {}),
+      })
+    }
+    try {
+      const res = await send()
+      if (!res.ok) canvasSaveRef.current.sentHash = null
+    } catch {
+      canvasSaveRef.current.sentHash = null
+    }
+  }, [])
+
+  // A closed tab still stores the canvas it had: flush the latest art as the page goes away.
+  useEffect(() => {
+    const flush = () => {
+      const current = stateRef.current
+      if (current.status !== 'playing' || !userIdRef.current) return
+      const encoded = encodeCells(cellsRef.current)
+      if (canvasSaveRef.current.sentHash === encoded) return
+      canvasSaveRef.current.sentHash = encoded
+      void sendCanvas(encoded, true)
+    }
+    const onHidden = () => { if (document.visibilityState === 'hidden') flush() }
+    window.addEventListener('pagehide', flush)
+    document.addEventListener('visibilitychange', onHidden)
+    return () => {
+      window.removeEventListener('pagehide', flush)
+      document.removeEventListener('visibilitychange', onHidden)
+    }
+  }, [sendCanvas])
+
+  const servicePeek = useCallback(async (index: number): Promise<void> => {
+    if (peekInFlightRef.current) return
+    if (cellsRef.current.every(cell => cell === 0)) return
+    const day = stateRef.current.day
+    peekInFlightRef.current = true
+    try {
+      const headers = await authHeaders()
+      if (headers.Authorization) tokenRef.current = headers.Authorization.replace('Bearer ', '')
+      const res = await fetch('/api/daily/peek', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ day, cells: encodeCells(cellsRef.current) }),
+      })
+      const payload = res.ok ? await res.json() as { ok?: boolean; line?: string } : null
+      if (stateRef.current.day !== day || stateRef.current.stale) return
+      showVoiceLine(payload?.ok === true && typeof payload.line === 'string' ? payload.line : peekFallbackLine(index))
+    } catch {
+      if (stateRef.current.day === day && !stateRef.current.stale) showVoiceLine(peekFallbackLine(index))
+    } finally {
+      peekInFlightRef.current = false
+    }
+  }, [showVoiceLine])
+
   const sendGrade = useCallback(
     (kind: GradeKind, encodedOverride?: string, window?: number): Promise<void> => {
       if (stateRef.current.stale) return Promise.resolve()
@@ -256,6 +408,7 @@ export function useDailyAttempt(): {
       const promise = (async () => {
         try {
           const headers = await authHeaders()
+          if (headers.Authorization) tokenRef.current = headers.Authorization.replace('Bearer ', '')
           if (stateRef.current.day !== day || stateRef.current.stale) return
           const res = await fetch('/api/daily/grade', {
             method: 'POST',
@@ -293,6 +446,8 @@ export function useDailyAttempt(): {
               state: payload.state,
               now,
             })
+            if (kind === 'final') playVerdict()
+            else showCanned('halfway')
           } else {
             dispatch({
               type: 'grade_rejected',
@@ -323,67 +478,7 @@ export function useDailyAttempt(): {
       inFlightGradeRef.current = promise
       return promise
     },
-    [dispatch],
-  )
-
-  const sendEnd = useCallback(
-    async (day: string, encodedCells: string): Promise<boolean> => {
-      if (stateRef.current.day !== day || stateRef.current.stale) return false
-      mutationEpochRef.current++
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => {
-        controller.abort(new DOMException('Signal timed out', 'TimeoutError'))
-      }, DAILY_GRADE_TIMEOUT_MS)
-      try {
-        const headers = await authHeaders()
-        if (stateRef.current.day !== day || stateRef.current.stale) return false
-        const res = await fetch('/api/daily/end', {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ day, cells: encodedCells }),
-          signal: controller.signal,
-        })
-        if (stateRef.current.day !== day || stateRef.current.stale) return false
-        if (!res.ok) {
-          const payload = await res.json().catch(() => null) as { error?: string } | null
-          if (stateRef.current.day !== day || stateRef.current.stale) return false
-          if (payload?.error === 'invalid_attempt_day') {
-            dispatch({ type: 'grade_rejected', reason: 'invalid_day' })
-            return false
-          }
-          dispatch({
-            type: 'end_failed',
-            message: 'Could not finish attempt — press Retry submit to try again.',
-          })
-          return false
-        }
-        const serverState = (await res.json()) as DailyStateView
-        if (stateRef.current.day !== day || stateRef.current.stale) return false
-        if (serverState.day !== day) {
-          dispatch({ type: 'grade_rejected', reason: 'invalid_day' })
-          return false
-        }
-        finalizingRef.current = false
-        frozenFinalCellsRef.current = null
-        dispatch({
-          type: 'state_loaded',
-          state: serverState,
-          preserveError: Boolean(stateRef.current.lastError) && !stateRef.current.endFailed,
-        })
-        return serverState.status === 'ended'
-      } catch {
-        if (stateRef.current.day !== day || stateRef.current.stale) return false
-        dispatch({
-          type: 'end_failed',
-          message: 'Network error while finishing attempt — press Retry submit to try again.',
-        })
-        return false
-      } finally {
-        clearTimeout(timeoutId)
-        mutationEpochRef.current++
-      }
-    },
-    [dispatch],
+    [dispatch, playVerdict, showCanned],
   )
 
   const finishAttempt = useCallback(async (timeoutCells?: Uint8Array): Promise<void> => {
@@ -401,21 +496,19 @@ export function useDailyAttempt(): {
 
     const promise = (async () => {
       try {
-        // Wait for any grade already in flight before running final grade
+        // Wait for any grade already in flight before running the final judgement.
         if (inFlightGradeRef.current) {
           await inFlightGradeRef.current
         }
         if (stateRef.current.day !== day || stateRef.current.stale) return
-        if (
-          stateRef.current.status !== 'ended' &&
-          !stateRef.current.finalUsed &&
-          !stateRef.current.endFailed
-        ) {
+        if (stateRef.current.status !== 'ended') {
           await sendGrade('final', frozenCells)
         }
         if (stateRef.current.day !== day || stateRef.current.stale) return
         if (stateRef.current.status !== 'ended') {
-          await sendEnd(day, frozenCells)
+          // The final judgement always ends the attempt server-side. If the response was lost or
+          // the server was busy, re-read the authoritative state and let a later tick retry.
+          loadMeRef.current?.()
         } else {
           finalizingRef.current = false
           frozenFinalCellsRef.current = null
@@ -427,42 +520,64 @@ export function useDailyAttempt(): {
 
     finishPromiseRef.current = promise
     return promise
-  }, [dispatch, sendGrade, sendEnd])
+  }, [dispatch, sendGrade])
 
   const tick = useCallback(() => {
-      if (!userIdRef.current || loadedUserIdRef.current !== userIdRef.current) return
-      const cur = stateRef.current
-      if (cur.status !== 'playing' || cur.startedAt === undefined || cur.stale) return
-      const now = Date.now()
+    if (!userIdRef.current || loadedUserIdRef.current !== userIdRef.current) return
+    const cur = stateRef.current
+    if (cur.status !== 'playing' || cur.startedAt === undefined || cur.stale) return
+    const now = Date.now()
 
-      if (cur.endFailed && !finishPromiseRef.current) {
-        void finishAttempt()
-        return
-      }
+    // Haiku's timed, non-scoring lines (start and the halfway verdict are triggered elsewhere).
+    const elapsed = now + cur.clockOffsetMs - cur.startedAt
+    if (elapsed < lastTickElapsedRef.current) lastTickElapsedRef.current = elapsed
+    if (!finalizingRef.current) {
+      for (const moment of momentsCrossed(lastTickElapsedRef.current, elapsed)) showCanned(moment)
+    }
+    lastTickElapsedRef.current = elapsed
 
-      if (shouldFinalGrade(now, cur.startedAt, cur.clockOffsetMs)) {
-        if (!finishPromiseRef.current) {
-          const localCells = readLocalCells(cur.day, userIdRef.current)
-          if (localCells) void finishAttempt(localCells)
-        }
-        return
-      }
+    // Keep the server's copy of the latest canvas current (debounced), so the final verdict uses
+    // the art the player actually ended on even if this tab never gets to send it.
+    const encoded = encodeCells(cellsRef.current)
+    if (canvasSaveRef.current.sentHash !== encoded && now - canvasSaveRef.current.at >= DAILY_CANVAS_SAVE_MS) {
+      canvasSaveRef.current.at = now
+      canvasSaveRef.current.sentHash = encoded
+      void sendCanvas(encoded)
+    }
 
-      if (finalizingRef.current || cur.finalizing || inFlightGradeRef.current) return
+    if (shouldFinalGrade(now, cur.startedAt, cur.clockOffsetMs)) {
+      if (!finishPromiseRef.current) {
+        // The final lands even on an untouched canvas: the attempt always runs its five minutes.
+        const localCells = readLocalCells(cur.day, userIdRef.current)
+        void finishAttempt(localCells ?? undefined)
+      }
+      return
+    }
 
-      if (cur.nextAutoAt != null && now + cur.clockOffsetMs - cur.nextAutoAt > DAILY.autoMissAfterMs) {
-        if (now >= missedRefreshAtRef.current) {
-          missedRefreshAtRef.current = now + 10_000
-          loadMeRef.current?.()
-        }
-        return
+    if (finalizingRef.current || cur.finalizing || inFlightGradeRef.current) return
+
+    if (cur.nextAutoAt != null && now + cur.clockOffsetMs - cur.nextAutoAt > DAILY.autoMissAfterMs) {
+      if (now >= missedRefreshAtRef.current) {
+        missedRefreshAtRef.current = now + 10_000
+        loadMeRef.current?.()
       }
-      const localCells = readLocalCells(cur.day, userIdRef.current)
-      if (shouldFireAutoGrade(cur, now, localCells !== null) && localCells) {
-        const window = DAILY.autoWindowsMs.findIndex(offset => cur.startedAt! + offset === cur.nextAutoAt)
-        if (window >= 0) void sendGrade('auto', encodeCells(localCells), window)
+      return
+    }
+    const localCells = readLocalCells(cur.day, userIdRef.current)
+    if (shouldFireAutoGrade(cur, now, localCells !== null) && localCells) {
+      const window = DAILY.autoWindowsMs.findIndex(offset => cur.startedAt! + offset === cur.nextAutoAt)
+      if (window >= 0) void sendGrade('auto', encodeCells(localCells), window)
+      return
+    }
+
+    if (!cur.grading) {
+      const peek = duePeekIndex(now, cur.startedAt, cur.clockOffsetMs, peekFiredRef.current)
+      if (peek !== null) {
+        peekFiredRef.current[peek] = true
+        void servicePeek(peek)
       }
-  }, [finishAttempt, sendGrade])
+    }
+  }, [finishAttempt, sendCanvas, sendGrade, servicePeek, showCanned])
 
   const paint = useCallback((x: number, y: number, color: number) => {
     const now = Date.now()
@@ -506,6 +621,7 @@ export function useDailyAttempt(): {
     mutationEpochRef.current++
     try {
       const headers = await authHeaders()
+      if (headers.Authorization) tokenRef.current = headers.Authorization.replace('Bearer ', '')
       const res = await fetch('/api/daily/start', {
         method: 'POST',
         headers,
@@ -518,6 +634,7 @@ export function useDailyAttempt(): {
       finalizingRef.current = false
       finishPromiseRef.current = null
       frozenFinalCellsRef.current = null
+      resetVoice()
       dispatch({ type: 'state_loaded', state: serverState })
       if (userIdRef.current) {
         restoreCanvas(serverState, userIdRef.current)
@@ -525,6 +642,7 @@ export function useDailyAttempt(): {
           writeLocalCells(serverState.day, userIdRef.current, cellsRef.current)
         }
       }
+      if (serverState.status === 'playing') showCanned('start')
       return serverState.status === 'playing'
     } catch {
       dispatch({ type: 'error', message: 'Network error while starting attempt.' })
@@ -532,24 +650,7 @@ export function useDailyAttempt(): {
     } finally {
       mutationEpochRef.current++
     }
-  }, [restoreCanvas, dispatch])
-
-  const askNow = useCallback(async (): Promise<void> => {
-    const now = Date.now()
-    if (
-      finalizingRef.current ||
-      inFlightGradeRef.current ||
-      !canAskDaily(stateRef.current, now)
-    ) {
-      return
-    }
-    await sendGrade('ask')
-  }, [sendGrade])
-
-  const done = useCallback(async (): Promise<void> => {
-    if (stateRef.current.status !== 'playing') return
-    await finishAttempt()
-  }, [finishAttempt])
+  }, [restoreCanvas, dispatch, resetVoice, showCanned])
 
   // DEV ONLY (__DEBUG_TOOLS__): POST /api/daily/reset exists only in dev and
   // PIXLE_TEST builds; in production this returns before the fetch.
@@ -559,6 +660,7 @@ export function useDailyAttempt(): {
     mutationEpochRef.current++
     try {
       const headers = await authHeaders()
+      if (headers.Authorization) tokenRef.current = headers.Authorization.replace('Bearer ', '')
       const res = await fetch('/api/daily/reset', {
         method: 'POST',
         headers,
@@ -573,6 +675,7 @@ export function useDailyAttempt(): {
       frozenFinalCellsRef.current = null
       inFlightGradeRef.current = null
       restoredKeyRef.current = ''
+      resetVoice()
       if (userIdRef.current) {
         try {
           if (prevDay) window.localStorage.removeItem(storageKey(prevDay, userIdRef.current))
@@ -592,7 +695,8 @@ export function useDailyAttempt(): {
     } finally {
       mutationEpochRef.current++
     }
-  }, [dispatch])
+  }, [dispatch, resetVoice])
 
-  return { state: isSignedIn && (!userId || loadedUserId !== userId) ? { ...state, loaded: false } : state, cells, paint, replaceCells, start, askNow, done, tick, reset }
+  const exposedVoice = voice
+  return { state: isSignedIn && (!userId || loadedUserId !== userId) ? { ...state, loaded: false } : state, cells, paint, replaceCells, start, tick, voice: exposedVoice, reset }
 }

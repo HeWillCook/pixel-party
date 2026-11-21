@@ -1,4 +1,4 @@
-import { timelineLabel } from '../../game/daily/timeline-labels'
+import { finalVerdictLabel, timelineLabel } from '../../game/daily/timeline-labels'
 import type { AutoWindowView } from '../../server/daily-service'
 import { DAILY } from '../../game/config'
 
@@ -6,13 +6,15 @@ export function AutoGradeTimeline({
   windows,
   now,
   startedAt,
-  manualUsed,
+  finalUsed = false,
+  ended = false,
   embedded = false,
 }: {
   windows: AutoWindowView[]
   now: number
   startedAt?: number | null
-  manualUsed?: number
+  finalUsed?: boolean
+  ended?: boolean
   embedded?: boolean
 }) {
   const rows = windows.length
@@ -32,18 +34,18 @@ export function AutoGradeTimeline({
     <section
       className={embedded ? 'daily-clipboard__timeline' : 'pp-panel bg-card p-4'}
       data-testid="daily-auto-timeline"
-      aria-label="Auto-grade timeline"
+      aria-label="Judgement timeline"
     >
       <h2 className={embedded ? 'daily-clipboard__subhead' : 'text-lg text-[var(--sunset-1)]'}>
-        Auto-grades
+        Judgements
       </h2>
       <ol className={embedded ? 'daily-clipboard__rows' : 'mt-2 space-y-1 text-base text-muted-foreground'}>
         {rows.map(window => (
           <li key={window.index}>{timelineLabel(window, now)}</li>
         ))}
-        {manualUsed !== undefined && (
-          <li className="play-manual">Manual grades: {manualUsed} of 3 used</li>
-        )}
+        <li data-testid="daily-final-verdict-row">
+          {finalVerdictLabel({ startedAt, finalUsed, ended, now })}
+        </li>
       </ol>
     </section>
   )
