@@ -17,6 +17,7 @@ import {
 import { reserveBudget } from './budget'
 import { configuredJudgeMode } from './daily-judge'
 import { createServerTools } from './server-tools'
+import { getUsername } from './usernames'
 import { utcDay, withTimeout } from './room-time'
 import type { RoomData } from './rooms'
 
@@ -152,7 +153,10 @@ export class PixelRoom extends BaseRoom<Env> {
   protected override async onConnect(ws: WebSocket, user: UserAttachment): Promise<UserAttachment | void> {
     const spectate = Boolean(user.spectate) || this.connectingSpectator
     this.connectingSpectator = false
-    const attachment: UserAttachment = spectate ? { ...user, spectate: true } : user
+    // The roster shows the player's chosen username; the sign-in name is only a fallback.
+    const username = user.userId && !isAnonymousUserId(user.userId) ? await getUsername(this.env, user.userId) : null
+    const named: UserAttachment = username ? { ...user, userName: username } : user
+    const attachment: UserAttachment = spectate ? { ...named, spectate: true } : named
     try {
       if (this.game?.status === 'closed') {
         this.sendGame(ws, { t: 'closed' })

@@ -66,6 +66,7 @@ import { usePixelRoom } from '../../../../hooks/usePixelRoom'
 import { useToolShortcuts } from '../../../../hooks/useToolShortcuts'
 import { untransformedRect, useSceneRegistration } from '../../../../scene/registration'
 import { studioSprites } from '../../../../scene/studio/sprites'
+import { Username } from '../../../../components/profile/Username'
 
 interface RoomRecord {
   name: string
@@ -425,6 +426,7 @@ export default function RoomPage() {
         names: ids.map(
           (id) => getName(id) || (id === user?.id ? user.name || 'You' : `Painter ${id.slice(0, 5)}`),
         ),
+        ids: ids as string[],
         fallbackText: null as string | null,
       }
     }
@@ -434,11 +436,13 @@ export default function RoomPage() {
         state.round?.result?.contributorCount ?? currentRoundDoc?.data.contributorIds?.length
       return {
         names: [] as string[],
+        ids: [] as string[],
         fallbackText: contributorLabel(painterCount, usedPx),
       }
     }
     return {
       names: [] as string[],
+      ids: [] as string[],
       fallbackText: 'No pixels placed this round.',
     }
   }, [currentRoundDoc, getName, confirmedPixelsCount, state.round?.result?.contributorCount, user])
@@ -1144,7 +1148,7 @@ export default function RoomPage() {
                               key={`${name}-${idx}`}
                               className="pp-chip px-1.5 py-0.5 text-xs"
                             >
-                              {name}
+                              {contributorInfo.ids[idx] ? <Username userId={contributorInfo.ids[idx]} fallback={name} /> : name}
                             </span>
                           ))}
                         </div>

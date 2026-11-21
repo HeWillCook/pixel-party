@@ -1,4 +1,5 @@
 import { getUserColor, type PresencePeerClient } from 'deepspace'
+import { Username } from '../profile/Username'
 
 export interface PlayerCursorsProps {
   peers: PresencePeerClient[]
@@ -38,7 +39,7 @@ export function PlayerCursors({ peers, width, height }: PlayerCursorsProps) {
           return null
         }
         const color = getUserColor(peer.userId)
-        const label = peer.userName || 'Painter'
+        const label = <Username userId={peer.userId} fallback={peer.userName || 'Painter'} />
         return (
           <div
             key={peer.userId}
