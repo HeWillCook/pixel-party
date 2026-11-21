@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { Outlet, useLocation, useMatch, useNavigate } from 'react-router-dom'
+import { Outlet, useBlocker, useLocation, useMatch, useNavigate } from 'react-router-dom'
 import {
   getAuthToken,
   useAuthProfileReady,
@@ -7,6 +7,7 @@ import {
   useQuery,
 } from 'deepspace'
 import { DeleteRoomButton } from '../../../components/game/DeleteRoomButton'
+import { requestVerticalSceneTransition } from '../../../components/porch/VerticalSceneTransition'
 import { enableNavMotion } from '../../../components/porch/returnFlag'
 import { StudioLobby, type ConjureCodeResult, type StudioRoomItem } from '../../../components/studio/StudioLobby'
 import { StudioWorldContext, type RoomPhase, type RoomSummary, type StudioWorldValue } from '../../../components/studio/StudioWorld'
@@ -227,6 +228,17 @@ export default function StudioLayout() {
       finishLeave(path)
     }, SCENE_ZOOM_MS)
   }, [finishLeave])
+
+  // Browser Back from the studio to the porch is the same move as the Upstairs sign: the floor pans up. The pop is held for
+  // the instant the pan takes its snapshot of the studio, then let through, so the porch is swapped in under it (and the
+  // history stays honest: Forward walks back down).
+  const upstairsBlocker = useBlocker(({ currentLocation, nextLocation, historyAction }) =>
+    historyAction === 'POP' && currentLocation.pathname === '/party' && nextLocation.pathname === '/home')
+  useEffect(() => {
+    if (upstairsBlocker.state !== 'blocked') return
+    requestVerticalSceneTransition({ source: 'studio', target: 'porch', direction: 'up', path: '/home', navigate: false })
+    upstairsBlocker.proceed()
+  }, [upstairsBlocker])
 
   const phase: RoomPhase = leaving ? 'leaving' : entering ? 'entering' : 'active'
   const setBoardRect = useCallback((rect: Rect | null) => {

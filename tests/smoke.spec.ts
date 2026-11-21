@@ -63,9 +63,11 @@ test.describe('Smoke tests', () => {
     await expect(page.getByTestId('nav-user-name')).toHaveCount(0)
   })
 
-  test('unknown route shows 404', async ({ page }) => {
+  test('unknown route shows the not-found notice', async ({ page }) => {
+    // The 404 is Haiku's corner of the porch (no "404" text): the page, its noindex tag and the way back.
     await page.goto('/nonexistent-page-xyz')
     await waitForApp(page)
-    await expect(page.locator('text=404')).toBeVisible()
+    await expect(page.getByTestId('not-found-page')).toBeVisible()
+    await expect(page.getByTestId('not-found-porch-sign')).toBeVisible()
   })
 })
