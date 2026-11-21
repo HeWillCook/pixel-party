@@ -16,8 +16,17 @@ export function signCopyStyle(composition: Composition): CSSProperties {
   }
 }
 
-/** What the hatch sign says: a phone's sign is narrower, so it drops "studio" (the hatch's own label still says it). */
-export const basementSignText = (composition: Composition) => composition === 'portrait' ? 'Basement ↓' : 'Basement studio ↓'
+/**
+ * What the hatch sign says. A phone's sign is narrower, so it drops "studio" (the hatch's own label still says it); on a landscape
+ * screen too small for the whole line at the 11px floor (a short wide window) a container query on the sign's box drops it as well.
+ */
+export function BasementSignCopy({ composition }: { composition: Composition }) {
+  return (
+    <span className="porch-basement-sign-copy" style={signCopyStyle(composition)}>
+      <span>{composition === 'portrait' ? 'Basement ↓' : <>Basement<span className="porch-basement-sign-extra"> studio</span> ↓</>}</span>
+    </span>
+  )
+}
 
 /**
  * Every word that is physically on a porch object (the easel's card, the chalkboard's board, the hatch sign, the gallery sign,
@@ -42,7 +51,7 @@ export function PorchLabels({ easel, best, board, easelAway = false, basementAwa
       <EaselFaceObject mode={easel} best={best} away={easelAway} />
       {board ?? <ChalkboardBoard />}
       <div aria-hidden="true" className={basementAway ? 'porch-label--away' : 'porch-label'} style={{ position: 'absolute', pointerEvents: 'none', ...rectToPercent(rect.basement, composition) }}>
-        <span className="porch-basement-sign-copy" style={signCopyStyle(composition)}>{basementSignText(composition)}</span>
+        <BasementSignCopy composition={composition} />
       </div>
       <div aria-hidden="true" style={{ position: 'absolute', pointerEvents: 'none', ...rectToPercent(rect.gallery, composition) }}><span className="porch-gallery-sign-copy">Gallery</span></div>
       {!portrait && <div aria-hidden="true" style={{ position: 'absolute', pointerEvents: 'none', ...rectToPercent(rect.note, composition) }}><span className="porch-note-title">House rules</span></div>}

@@ -1992,6 +1992,32 @@ test('Open canvas in the phone More sheet is a client-side move, not a page load
   expect(await page.evaluate(() => (window as unknown as { __kept?: boolean }).__kept)).toBe(true)
 })
 
+// The painted sign labels (Basement, Gallery, House rules) sit inside their planks at every window size, including a short wide window where the 11px floor
+// used to make "Basement studio" wider than the plank.
+for (const viewport of [{ width: 1980, height: 1240 }, { width: 1440, height: 900 }, { width: 1280, height: 720 }, { width: 640, height: 360 }, { width: 375, height: 812 }]) {
+  test(`painted sign labels fit their planks at ${viewport.width}x${viewport.height}`, async ({ page }) => {
+    await page.setViewportSize(viewport)
+    await setup(page)
+    await page.goto(`${origin}/home`)
+    await expect(page.locator('.porch-basement-sign-copy').first()).toBeVisible()
+    const rows = await page.evaluate(() => {
+      const out: string[] = []
+      for (const selector of ['.porch-basement-sign-copy', '.porch-gallery-sign-copy', '.porch-note-title']) {
+        for (const element of document.querySelectorAll(selector)) {
+          const box = element.getBoundingClientRect()
+          if (!box.width) continue
+          const range = document.createRange()
+          range.selectNodeContents(element)
+          const text = range.getBoundingClientRect()
+          if (text.width > box.width - 1 || text.height > box.height + 1) out.push(`${selector} "${element.textContent}" text ${Math.round(text.width)}x${Math.round(text.height)} in ${Math.round(box.width)}x${Math.round(box.height)}`)
+        }
+      }
+      return out
+    })
+    expect(rows).toEqual([])
+  })
+}
+
 test('Haiku introduces himself, then has something else to say', async ({ page }) => {
   await setup(page)
   await page.goto(`${origin}/home`)

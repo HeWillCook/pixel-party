@@ -21,7 +21,7 @@ import { HaikuHello } from './HaikuHello'
 import { PorchPresenceSign } from './PorchPresence'
 import type { HaikuFacts } from './haikuGreeting'
 import { PorchWall } from '../gallery/PorchWall'
-import { basementSignText, signCopyStyle } from './PorchLabels'
+import { BasementSignCopy } from './PorchLabels'
 import { ChalkboardBoard } from './ChalkboardBoard'
 import { SignInCard } from '../auth/SignInCard'
 import { localCloseup, type LocalKind } from '../../scene/porch/localPoses'
@@ -117,7 +117,7 @@ function Objects({
     {!props.landing && <ChalkboardBoard />}
     {composition === 'landscape' && <Hotspot rect={rect.radio} label={props.muted ? 'Unmute sounds' : 'Mute sounds'} pressed={props.muted} onClick={props.onToggleMute} />}
     <Hotspot rect={rect.basement} label="Basement studio" href="/party" onClick={onParty} testId={props.landing ? 'landing-browse-lobby' : undefined}>
-      <span className="porch-basement-sign-copy" style={signCopyStyle(composition)}>{basementSignText(composition)}</span>
+      <BasementSignCopy composition={composition} />
     </Hotspot>
     {composition !== 'landscape' && <button type="button" className="porch-more-ticket" style={rectToPercent(rect.more, composition)} aria-expanded={moreOpen} onClick={onToggleMore}>More</button>}
   </>
