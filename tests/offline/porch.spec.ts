@@ -2050,6 +2050,22 @@ test('the presence plank on a phone overlaps nothing painted or interactive', as
   expect(result.rightOfEasel).toBe(true)
 })
 
+// The account chip used to cut "Offline host" short with lots of free room; it shows about 20 characters on a desktop and still truncates past that.
+test('the account chip shows about twenty characters of the name on a desktop, and truncates beyond', async ({ page }) => {
+  await page.setViewportSize({ width: 1980, height: 1240 })
+  await setup(page)
+  await page.goto(`${origin}/home`)
+  const chip = page.locator('.porch-nav__username').first()
+  await expect(chip).toBeVisible()
+  const fit = async (name: string) => chip.evaluate((element, value) => {
+    element.textContent = value
+    return element.scrollWidth <= element.clientWidth + 1
+  }, name)
+  expect(await fit('Offline host')).toBe(true)
+  expect(await fit('Alexandria Humboldt-Sm')).toBe(true)
+  expect(await fit('Alexandria Humboldt-Smithson-Jones')).toBe(false)
+})
+
 test('Haiku introduces himself, then has something else to say', async ({ page }) => {
   await setup(page)
   await page.goto(`${origin}/home`)
