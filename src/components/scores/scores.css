@@ -581,6 +581,7 @@
   }
 }
 
-.porch-easel-object { transition: opacity 160ms ease-out; }
-.porch-easel-object--away { opacity: 0; }
-@media (prefers-reduced-motion: reduce) { .porch-easel-object { transition: none; } }
+/* Words on a porch object whose object the screen cuts through step out of view while the camera rests there (and come back as it leaves). */
+.porch-easel-object, .porch-label, .porch-label--away { transition: opacity 160ms ease-out; }
+.porch-easel-object--away, .porch-label--away { opacity: 0; }
+@media (prefers-reduced-motion: reduce) { .porch-easel-object, .porch-label, .porch-label--away { transition: none; } }

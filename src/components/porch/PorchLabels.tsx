@@ -20,7 +20,15 @@ export function signCopyStyle(composition: Composition): CSSProperties {
  * (the gallery wall, Haiku's corner) carries them, so the camera flying back finds each word where it belongs the moment the porch
  * takes over, instead of every label popping in at the swap.
  */
-export function PorchLabels({ easel, best, board, easelAway = false }: { easel: EaselFaceMode; best: number; /** The chalkboard's writing: the inert board unless the page has the live one. */ board?: ReactNode; /** Put the easel's card away while the camera rests where only a sliver of the easel shows. */ easelAway?: boolean }) {
+export function PorchLabels({ easel, best, board, easelAway = false, basementAway = false }: {
+  easel: EaselFaceMode
+  best: number
+  /** The chalkboard's writing: the inert board unless the page has the live one. */
+  board?: ReactNode
+  /** Put the easel's card (or the hatch sign's words) away while the camera rests where the object is cut by the screen's edge. */
+  easelAway?: boolean
+  basementAway?: boolean
+}) {
   const composition = useContext(SceneComposition)
   const rect = porchLayout[composition]
   const portrait = composition === 'portrait'
@@ -28,7 +36,7 @@ export function PorchLabels({ easel, best, board, easelAway = false }: { easel: 
     <>
       <EaselFaceObject mode={easel} best={best} away={easelAway} />
       {board ?? <ChalkboardBoard />}
-      <div aria-hidden="true" style={{ position: 'absolute', pointerEvents: 'none', ...rectToPercent(rect.basement, composition) }}>
+      <div aria-hidden="true" className={basementAway ? 'porch-label--away' : 'porch-label'} style={{ position: 'absolute', pointerEvents: 'none', ...rectToPercent(rect.basement, composition) }}>
         <span className="porch-basement-sign-copy" style={signCopyStyle(composition)}>Basement studio ↓</span>
       </div>
       <div aria-hidden="true" style={{ position: 'absolute', pointerEvents: 'none', ...rectToPercent(rect.gallery, composition) }}><span className="porch-gallery-sign-copy">Gallery</span></div>
