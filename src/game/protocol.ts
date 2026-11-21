@@ -31,7 +31,7 @@ export const RECENT_JUDGEMENTS = 5
 
 export type ServerMsg =
   | { t: 'closed' }
-  | { t: 'snapshot'; mode: Mode; width: number; height: number; cells: string; round: RoundView; you: { userId: string | null; cooldownUntil: number; team?: 'red' | 'blue' }; players: number; roster?: ConnectedPlayer[]; watching?: number; aiResting: boolean; judgements?: RecentJudgement[] }
+  | { t: 'snapshot'; mode: Mode; width: number; height: number; cells: string; round: RoundView; you: { userId: string | null; team?: 'red' | 'blue' }; players: number; roster?: ConnectedPlayer[]; watching?: number; aiResting: boolean; judgements?: RecentJudgement[] }
   | { t: 'pixel'; x: number; y: number; c: number; by: string }
   | { t: 'noop'; x: number; y: number; id?: number }
   | { t: 'reject'; reason: RejectReason | 'ask_too_soon' | 'not_host' | 'canvas_unchanged' | 'canvas_blank'; retryAt?: number; x?: number; y?: number; id?: number }
@@ -57,7 +57,6 @@ const REJECT_REASONS = new Set<string>([
   'round_inactive',
   'out_of_bounds',
   'bad_color',
-  'cooldown',
   'rate_limited',
   'ask_too_soon',
   'not_host',

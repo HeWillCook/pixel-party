@@ -55,7 +55,7 @@ function snapshot(state: 'playing' | 'lobby'): Extract<ServerMsg, { t: 'snapshot
   return {
     t: 'snapshot', mode: 'coop', width: 32, height: 32, cells: Buffer.alloc(1024).toString('base64'),
     round: { id: state, word: state === 'playing' ? 'sun' : '', state, startedAt: Date.now(), endsAt: state === 'playing' ? Date.now() + 300000 : null, askAvailableAt: Date.now() + 10000 },
-    you: { userId: 'host', cooldownUntil: 0 }, players: 1, watching: 0, roster: [{ userId: 'host', name: 'Offline host' }], aiResting: false,
+    you: { userId: 'host' }, players: 1, watching: 0, roster: [{ userId: 'host', name: 'Offline host' }], aiResting: false,
   }
 }
 
@@ -376,6 +376,35 @@ test('fast solo drag paints a solid optimistic stroke and sends a frame batch wi
   expect(errors).toEqual([])
 })
 
+test('with friends a drag paints a solid stroke with no per-pixel wait', async ({ page }) => {
+  const errors = await clientFixture(page, { signedIn: true })
+  const sent: { x: number; y: number; c: number }[][] = []
+  await page.routeWebSocket('**/api/pixel/**', socket => {
+    socket.send(JSON.stringify({
+      ...snapshot('playing'),
+      players: 2,
+      roster: [{ userId: 'host', name: 'Offline host' }, { userId: 'pal', name: 'Pal' }],
+    }))
+    socket.onMessage(raw => {
+      const message = JSON.parse(String(raw))
+      if (message.t === 'place') sent.push(message.cells)
+    })
+  })
+  await page.goto(`${origin}/r/AB2Z`)
+  const canvas = page.getByTestId('pixel-canvas')
+  await expect(canvas).toBeVisible()
+  const box = (await canvas.boundingBox())!
+  const point = (x: number, y: number) => ({ x: box.x + box.width * (x + 0.5) / 32, y: box.y + box.height * (y + 0.5) / 32 })
+  // One gesture: click, drag 19 cells, release. Every cell must survive to the wire and the canvas.
+  await canvas.dispatchEvent('pointerdown', { clientX: point(1, 1).x, clientY: point(1, 1).y, pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1 })
+  await canvas.dispatchEvent('pointermove', { clientX: point(20, 1).x, clientY: point(20, 1).y, pointerId: 1, pointerType: 'mouse', buttons: 1 })
+  await canvas.dispatchEvent('pointerup', { pointerId: 1, pointerType: 'mouse' })
+  await expect.poll(() => sent.flat().length).toBe(20)
+  expect(sent.flat().map(cell => cell.x)).toEqual(Array.from({ length: 20 }, (_, i) => i + 1))
+  for (let x = 1; x <= 20; x++) expect(await pixelColor(page, x, 1)).toEqual([239, 68, 68, 255])
+  expect(errors).toEqual([])
+})
+
 test('private lobby shows code and roster, copies full link, and host can start solo', async ({ page }) => {
   const errors = await clientFixture(page, { signedIn: true })
   await page.addInitScript(() => {
@@ -403,7 +432,7 @@ test('public spectators retain click-to-sign-in and never send placements', asyn
   const placements: unknown[] = []
   await page.routeWebSocket('**/api/pixel/**', socket => {
     const state = snapshot('playing')
-    socket.send(JSON.stringify({ ...state, you: { userId: null, cooldownUntil: 0 }, players: 0, roster: [] }))
+    socket.send(JSON.stringify({ ...state, you: { userId: null }, players: 0, roster: [] }))
     socket.onMessage(raw => { if (JSON.parse(String(raw)).t === 'place') placements.push(raw) })
   })
   await page.goto(`${origin}/r/play`)
@@ -423,7 +452,7 @@ test('switching from a public board to a private invite clears the previous room
   const errors = await clientFixture(page, { preflight: () => preflight })
   await page.routeWebSocket('**/api/pixel/**', socket => {
     if (new URL(socket.url()).pathname.includes('/play/')) {
-      socket.send(JSON.stringify({ ...snapshot('playing'), you: { userId: null, cooldownUntil: 0 } }))
+      socket.send(JSON.stringify({ ...snapshot('playing'), you: { userId: null } }))
     } else socket.close({ code: 1008 })
   })
   await page.goto(`${origin}/r/play`)
@@ -550,7 +579,7 @@ test('banner-aware canvas sizing keeps palette inside 1280x720 with spectator ba
   await page.routeWebSocket('**/api/pixel/**', socket => {
     server = socket
     const state = snapshot('playing')
-    socket.send(JSON.stringify({ ...state, you: { userId: null, cooldownUntil: 0 }, players: 1, watching: 2, roster: [{ userId: 'host', name: 'Offline host' }] }))
+    socket.send(JSON.stringify({ ...state, you: { userId: null }, players: 1, watching: 2, roster: [{ userId: 'host', name: 'Offline host' }] }))
   })
   await page.setViewportSize({ width: 1280, height: 720 })
   await page.goto(`${origin}/r/AB2Z`)
@@ -636,26 +665,22 @@ test('room shows Paint, Erase and Pick colour; no Fill, Undo or Redo', async ({ 
   expect(errors).toEqual([])
 })
 
-test('party noop clears provisional cooldown so next paint sends immediately', async ({ page }) => {
+test('party empty erase noops and the next paint on that cell sends immediately', async ({ page }) => {
   const errors = await clientFixture(page, { signedIn: true })
   const sent: { x: number; y: number; c: number; id?: number }[][] = []
-  let serverSocket!: WebSocketRoute
   await page.routeWebSocket('**/api/pixel/**', socket => {
-    serverSocket = socket
     const state = snapshot('playing')
     const cells = Buffer.alloc(1024)
-    cells[2 * 32 + 2] = 9
+    cells[4 * 32 + 4] = 9
     socket.send(JSON.stringify({ ...state, players: 2, cells: cells.toString('base64') }))
     socket.onMessage(raw => {
       const message = JSON.parse(String(raw))
       if (message.t !== 'place') return
       sent.push(message.cells)
       for (const cell of message.cells as { x: number; y: number; c: number; id?: number }[]) {
-        if (cell.c === 0) {
-          socket.send(JSON.stringify({ t: 'noop', x: cell.x, y: cell.y, ...(cell.id === undefined ? {} : { id: cell.id }) }))
-        } else {
-          socket.send(JSON.stringify({ t: 'pixel', x: cell.x, y: cell.y, c: cell.c, by: 'host' }))
-        }
+        // The cell was already clear, so the erase is a no-op; a paint is confirmed normally.
+        if (cell.c === 0) socket.send(JSON.stringify({ t: 'noop', x: cell.x, y: cell.y, ...(cell.id === undefined ? {} : { id: cell.id }) }))
+        else socket.send(JSON.stringify({ t: 'pixel', x: cell.x, y: cell.y, c: cell.c, by: 'host' }))
       }
     })
   })
@@ -666,31 +691,25 @@ test('party noop clears provisional cooldown so next paint sends immediately', a
   const box = (await canvas.boundingBox())!
   const point = (x: number, y: number) => ({ x: box.x + box.width * (x + 0.5) / 32, y: box.y + box.height * (y + 0.5) / 32 })
 
-  // Erase (2, 2); client starts provisional 2s cooldown, server echoes placement id in noop
+  // Erasing (4, 4): the server's noop settles the optimistic cell, with its placement id echoed.
   await page.getByTestId('tool-erase').click()
-  await canvas.dispatchEvent('pointerdown', { clientX: point(2, 2).x, clientY: point(2, 2).y, pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1 })
+  await canvas.dispatchEvent('pointerdown', { clientX: point(4, 4).x, clientY: point(4, 4).y, pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1 })
   await canvas.dispatchEvent('pointerup', { pointerId: 1, pointerType: 'mouse' })
-  await expect.poll(() => sent.flat()).toContainEqual({ x: 2, y: 2, c: 0, id: 1 })
-  await expect.poll(() => pixelColor(page, 2, 2)).toEqual([243, 234, 216, 255])
+  await expect.poll(() => sent.flat()).toContainEqual({ x: 4, y: 4, c: 0, id: 1 })
+  await expect.poll(() => pixelColor(page, 4, 4)).toEqual([243, 234, 216, 255])
 
-  // Immediately paint (4, 4) without waiting 2s; succeeds because matching noop cleared provisional cooldown
+  // The settled cell is paintable at once: no pending entry and no brush wait.
   await page.getByTestId('tool-paint').click()
   await page.getByTestId('swatch-4').click()
   await canvas.dispatchEvent('pointerdown', { clientX: point(4, 4).x, clientY: point(4, 4).y, pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1 })
   await canvas.dispatchEvent('pointerup', { pointerId: 1, pointerType: 'mouse' })
   await expect.poll(() => sent.flat()).toContainEqual({ x: 4, y: 4, c: 4, id: 2 })
   await expect.poll(() => pixelColor(page, 4, 4)).toEqual([239, 68, 68, 255])
-
-  // Stale noop with old id=1 must NOT clear the active cooldown from placement id=2
-  serverSocket.send(JSON.stringify({ t: 'noop', x: 2, y: 2, id: 1 }))
-  await canvas.dispatchEvent('pointerdown', { clientX: point(6, 6).x, clientY: point(6, 6).y, pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1 })
-  await canvas.dispatchEvent('pointerup', { pointerId: 1, pointerType: 'mouse' })
-  await page.waitForTimeout(100)
-  expect(sent.flat().some(cell => cell.x === 6 && cell.y === 6)).toBe(false)
+  expect(page.getByTestId('reject-notice')).toHaveCount(0)
   expect(errors).toEqual([])
 })
 
-test('party reject with id settles provisional cooldown after peer pixel and respects retryAt', async ({ page }) => {
+test('a pace-limited reject rolls the cell back to a peer pixel without an error banner', async ({ page }) => {
   const errors = await clientFixture(page, { signedIn: true })
   const sent: { x: number; y: number; c: number; id?: number }[][] = []
   await page.routeWebSocket('**/api/pixel/**', socket => {
@@ -701,8 +720,9 @@ test('party reject with id settles provisional cooldown after peer pixel and res
       sent.push(message.cells)
       const [first] = message.cells as { x: number; y: number; c: number; id?: number }[]
       if (first?.id === 1) {
+        // A peer painted the cell first, and our placement arrived over this painter's pace.
         socket.send(JSON.stringify({ t: 'pixel', x: first.x, y: first.y, c: 9, by: 'peer' }))
-        socket.send(JSON.stringify({ t: 'reject', reason: 'cooldown', x: first.x, y: first.y, id: first.id, retryAt: Date.now() - 10 }))
+        socket.send(JSON.stringify({ t: 'reject', reason: 'rate_limited', x: first.x, y: first.y, id: first.id, retryAt: Date.now() - 10 }))
       } else if (first) {
         socket.send(JSON.stringify({ t: 'pixel', x: first.x, y: first.y, c: first.c, by: 'host' }))
       }
@@ -715,18 +735,17 @@ test('party reject with id settles provisional cooldown after peer pixel and res
   const box = (await canvas.boundingBox())!
   const point = (x: number, y: number) => ({ x: box.x + box.width * (x + 0.5) / 32, y: box.y + box.height * (y + 0.5) / 32 })
 
-  // Paint (2, 2) starting 2s provisional cooldown; peer supersedes cell before reject(id=1) arrives
   await canvas.dispatchEvent('pointerdown', { clientX: point(2, 2).x, clientY: point(2, 2).y, pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1 })
   await canvas.dispatchEvent('pointerup', { pointerId: 1, pointerType: 'mouse' })
   await expect.poll(() => sent.flat()).toContainEqual({ x: 2, y: 2, c: 4, id: 1 })
+  // The peer's pixel wins and the pace limit never surfaces as an error mid-drag.
   await expect.poll(() => pixelColor(page, 2, 2)).toEqual([6, 182, 212, 255])
+  await page.waitForTimeout(100)
+  await expect(page.getByTestId('reject-notice')).toHaveCount(0)
 
-  // Wait for reject handling (banner triggers resize), then paint (4, 4) immediately without waiting 2s
-  await expect(page.getByTestId('reject-notice')).toBeVisible()
-  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
-  const updatedBox = (await canvas.boundingBox())!
-  const updatedPoint = (x: number, y: number) => ({ x: updatedBox.x + updatedBox.width * (x + 0.5) / 32, y: updatedBox.y + updatedBox.height * (y + 0.5) / 32 })
-  await canvas.dispatchEvent('pointerdown', { clientX: updatedPoint(4, 4).x, clientY: updatedPoint(4, 4).y, pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1 })
+  // The stroke carries on immediately: the next cell goes out at once.
+  await page.getByTestId('swatch-4').click()
+  await canvas.dispatchEvent('pointerdown', { clientX: point(4, 4).x, clientY: point(4, 4).y, pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1 })
   await canvas.dispatchEvent('pointerup', { pointerId: 1, pointerType: 'mouse' })
   await expect.poll(() => sent.flat()).toContainEqual({ x: 4, y: 4, c: 4, id: 2 })
   await expect.poll(() => pixelColor(page, 4, 4)).toEqual([239, 68, 68, 255])
@@ -921,7 +940,7 @@ test('magic easel streams live spectator preview without revealing secret word',
       ...snap,
       cells: cells.toString('base64'),
       players: 3,
-      you: { userId: null, cooldownUntil: 0 },
+      you: { userId: null },
       round: { ...snap.round, word: 'HOUSE' },
     }))
   })
@@ -1045,7 +1064,7 @@ test('room exit zooms back out of the studio easel on the same scene', async ({ 
   await page.goto(`${origin}/r/AB2Z`)
   await expect(page.getByTestId('pixel-canvas')).toBeVisible()
   await expect(page.getByTestId('critic-bubble')).toBeVisible()
-  await expect(page.getByTestId('party-score-note')).toHaveText('Fewer pixels and a faster guess score higher. The round ends when Haiku guesses the word.')
+  await expect(page.getByTestId('party-score-note')).toHaveText('Bigger drawings score higher: size is 60%, speed the other 40%.')
   const exit = page.getByTestId('room-exit')
   await expect(exit).toBeVisible()
   await expect(exit).toHaveText(/Back to the studio/)
@@ -1177,15 +1196,15 @@ test('results show pixels and time saved and exclude unconfirmed pending pixels'
       startedAt: now - 60_000,
       endedAt: now,
       askAvailableAt: 0,
-      result: { outcome: 'won', score: 775, contributorCount: 2 },
+      result: { outcome: 'won', score: 520, contributorCount: 2 },
     },
   }))
   const overlay = page.getByTestId('round-overlay')
   await expect(overlay).toBeVisible()
   await expect(overlay).toContainText('256 px')
-  await expect(overlay).toContainText('Pixel bonus: 375/500')
-  await expect(overlay).toContainText('Speed bonus: 400/500')
-  await expect(page.getByTestId('overlay-score')).toContainText('775')
+  await expect(overlay).toContainText('Size bonus: 200/600')
+  await expect(overlay).toContainText('Speed bonus: 320/400')
+  await expect(page.getByTestId('overlay-score')).toContainText('520')
   await expect(page.locator('#overlay-heading')).toHaveText('Haiku Guessed It!')
   expect(errors).toEqual([])
 })
@@ -1304,7 +1323,7 @@ test('magic easel sends spectate=1 and preserves it on private room token retry'
       ...snap,
       players: 2,
       watching: 0,
-      you: { userId: null, cooldownUntil: 0 },
+      you: { userId: null },
       round: { ...snap.round, word: 'HOUSE' },
     }))
   })
@@ -1436,18 +1455,29 @@ test('phones always show Haiku\'s latest guess, and a late joiner sees the recen
   await expect(page.getByTestId('guess-empty')).toHaveCount(0)
 })
 
-test('with friends the brush is shared: one explanation, and the wait stays on one readable line', async ({ page }) => {
+test('with friends painting is a drag: a live size meter replaces the brush wait', async ({ page }) => {
   await clientFixture(page, { signedIn: true })
   const state = snapshot('playing')
-  await page.routeWebSocket('**/api/pixel/**', socket => socket.send(JSON.stringify({
-    ...state, players: 2, roster: [{ userId: 'host', name: 'Offline host' }, { userId: 'pal', name: 'Pal' }], you: { userId: 'host', cooldownUntil: Date.now() + 60_000 },
-  })))
+  let server!: WebSocketRoute
+  await page.routeWebSocket('**/api/pixel/**', socket => {
+    server = socket
+    socket.send(JSON.stringify({
+      ...state, players: 2, roster: [{ userId: 'host', name: 'Offline host' }, { userId: 'pal', name: 'Pal' }], you: { userId: 'host' },
+    }))
+  })
   await page.goto(`${origin}/r/AB2Z`)
-  await expect(page.getByTestId('shared-brush-note')).toHaveText('Sharing the brush: one pixel every 0.5s each')
-  const wait = page.getByTestId('palette-cooldown')
-  await expect(wait).toHaveText(/^Wait \d+\.\ds$/)
-  const box = (await wait.boundingBox())!
-  expect(box.height).toBeLessThan(24)
+  const meter = page.getByTestId('party-size-meter')
+  await expect(meter).toBeVisible()
+  await expect(meter).toHaveAttribute('title', /Bigger drawings score more/)
+  await expect(page.getByTestId('party-size-value')).toHaveText('0%')
+  await expect(page.getByTestId('palette-cooldown')).toHaveCount(0)
+  await expect(page.getByTestId('shared-brush-note')).toHaveCount(0)
+  await expect(page.getByTestId('party-score-note')).toContainText('Bigger drawings score higher')
+  // A big shape on the canvas fills the meter: the same function the score uses.
+  const big = Buffer.alloc(1024)
+  for (let y = 4; y < 28; y++) for (let x = 4; x < 28; x++) big[y * 32 + x] = 4
+  server.send(JSON.stringify({ ...state, players: 2, cells: big.toString('base64') }))
+  await expect(page.getByTestId('party-size-value')).toHaveText('100%')
   const roster = page.getByTestId('roster-row')
   await expect(roster.first()).toContainText('Offline host')
   await expect(roster.first()).toContainText('host')
@@ -1474,7 +1504,7 @@ test('a spectator\'s click on the canvas opens the sign-in slip and places nothi
   await clientFixture(page)
   const sent: string[] = []
   await page.routeWebSocket('**/api/pixel/**', socket => {
-    socket.send(JSON.stringify({ ...snapshot('playing'), you: { userId: null, cooldownUntil: 0 } }))
+    socket.send(JSON.stringify({ ...snapshot('playing'), you: { userId: null } }))
     socket.onMessage(raw => sent.push(String(raw)))
   })
   await page.goto(`${origin}/r/AB2Z`)
@@ -1536,7 +1566,7 @@ for (const how of ['exit link then Back', 'Back twice']) {
   })
 }
 
-test('after a round the ask button says "Round over" and the brush note is only shown while painting', async ({ page }) => {
+test('after a round the ask button says "Round over" and the size meter only shows while painting', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   await clientFixture(page, { signedIn: true })
   let server!: WebSocketRoute
@@ -1546,12 +1576,12 @@ test('after a round the ask button says "Round over" and the brush note is only 
     socket.send(JSON.stringify({ ...state, players: 2, roster: [{ userId: 'host', name: 'Offline host' }, { userId: 'pal', name: 'Pal' }] }))
   })
   await page.goto(`${origin}/r/AB2Z`)
-  await expect(page.getByTestId('shared-brush-note')).toBeVisible()
+  await expect(page.getByTestId('party-size-meter')).toBeVisible()
   await expect(page.getByTestId('ask-ai-button')).toContainText('Ask Haiku')
   server.send(JSON.stringify({ t: 'round', round: { ...state.round, state: 'intermission', endsAt: null, endedAt: Date.now(), result: { outcome: 'timeout' } } }))
   await expect(page.getByTestId('ask-ai-button')).toContainText('Round over')
   await expect(page.getByTestId('ask-ai-button')).not.toContainText('Waiting for active round')
-  await expect(page.getByTestId('shared-brush-note')).toHaveCount(0)
+  await expect(page.getByTestId('party-size-meter')).toHaveCount(0)
 })
 
 // Opening a room used to paint its first frames with the board ~100 px smaller than it settles at (the free height was measured from the

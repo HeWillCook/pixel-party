@@ -284,7 +284,7 @@ export function MagicEasel({
               <div className="studio-magic-easel__shimmer" aria-hidden="true" />
               <Sparkles className="studio-magic-easel__idle-icon" aria-hidden="true" />
               <p data-testid="studio-howto" className="studio-magic-easel__howto">
-                One secret word, everyone paints, Haiku guesses. Fewer pixels, faster guess, higher score.
+                One secret word, everyone paints, Haiku guesses. Bigger drawings, faster guess, higher score.
               </p>
               <p className="studio-magic-easel__idle-text">
                 Select a ticket or drop in a code

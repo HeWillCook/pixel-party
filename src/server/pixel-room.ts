@@ -14,7 +14,6 @@ import {
   newRoomState, nextAlarmAt, nextRoundRejection, serializeRoomState, startNextRound,
   type RoomState, type RoomTransition, type RoundEndedEvent, type RoomStatusEvent,
 } from '../game/room-logic'
-import { cooldownMs } from '../game/rules'
 import { reserveBudget } from './budget'
 import { configuredJudgeMode } from './daily-judge'
 import { createServerTools } from './server-tools'
@@ -35,7 +34,7 @@ const roomStateSchema = z.object({
   }),
   wordEntry: z.object({ word: z.string().min(1), synonyms: z.array(z.string()), tier: z.enum(['easy', 'medium', 'hard']) }),
   recentWords: z.array(z.string()), lastGuesses: z.array(z.string()), roundCounter: finite.int().nonnegative(),
-  lastPlacedAt: z.record(z.string(), finite), soloBuckets: z.record(z.string(), z.object({ tokens: finite.nonnegative(), updatedAt: finite })), judgeCalls: z.array(finite), lastJudgedAt: finite,
+  paintBuckets: z.record(z.string(), z.object({ tokens: finite.nonnegative(), updatedAt: finite })), judgeCalls: z.array(finite), lastJudgedAt: finite,
   judgeInFlight: z.boolean(), emptySince: finite.nullable(), intermissionEndsAt: finite.nullable(),
   pausedAt: finite.nullable(), pausedFrom: z.enum(['playing', 'intermission']).nullable(),
   status: z.enum(['lobby', 'playing', 'intermission', 'paused', 'closed']),
@@ -44,6 +43,13 @@ const roomStateSchema = z.object({
 function signedInId(userId: string | null | undefined): string | null {
   return userId && !isAnonymousUserId(userId) ? userId : null
 }
+
+/**
+ * Paint arrives in one message per animation frame. A durable write per message would be a
+ * write per frame per painter once cooldowns are gone, so paint bursts are coalesced into at
+ * most one write per window; every structural change (round, pause, close, judge) writes at once.
+ */
+const PAINT_PERSIST_COALESCE_MS = 250
 
 function logAlarmError(): void {
   console.warn('[PixelRoom] Alarm scheduling failed')
@@ -83,6 +89,9 @@ export class PixelRoom extends BaseRoom<Env> {
   private recentJudgements: { roundId: string; list: RecentJudgement[] } = { roundId: '', list: [] }
   /** When each player first connected (memory only), so the roster keeps a stable join order across reconnects of other players. */
   private joinedAt = new Map<string, number>()
+  /** A paint burst waiting to be written, and its coalescing timer (memory only). */
+  private paintPersistDirty = false
+  private paintPersistTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor(state: DurableObjectState, env: Env) {
     super(state, env)
@@ -151,6 +160,7 @@ export class PixelRoom extends BaseRoom<Env> {
         return attachment
       }
       ws.serializeAttachment(attachment)
+      this.flushPaint()
       const players = this.playerCount()
       const next = advance(this.game!, Date.now(), players, Math.random)
       await this.transition(spectate ? next : this.withRoomStatus(next, players), undefined, ws)
@@ -204,6 +214,8 @@ export class PixelRoom extends BaseRoom<Env> {
   protected override async onAlarm(): Promise<void> {
     try {
       if (!this.game || this.game.status === 'closed') return
+      // A pending paint burst is written before the alarm reads state back from storage.
+      this.flushPaint()
       await this.transition(advance(this.game, Date.now(), this.playerCount(), Math.random))
       await this.judge('tick')
     } finally {
@@ -291,12 +303,11 @@ export class PixelRoom extends BaseRoom<Env> {
   private snapshot(ws: WebSocket): void {
     const state = this.game!
     const userId = this.socketUserId(ws)
-    const placedAt = userId === null ? undefined : state.lastPlacedAt[userId]
     const players = this.playerCount()
     this.sendGame(ws, {
       t: 'snapshot', mode: state.mode, width: state.grid.width, height: state.grid.height,
       cells: encodeCells(state.grid.cells), round: state.round, players, roster: this.playerRoster(), watching: this.watcherCount(),
-      you: { userId, cooldownUntil: placedAt === undefined ? 0 : placedAt + cooldownMs(players) },
+      you: { userId },
       aiResting: this.restingDay === utcDay(Date.now()),
       judgements: this.recentJudgements.roundId === state.round.id ? this.recentJudgements.list : [],
     })
@@ -308,8 +319,37 @@ export class PixelRoom extends BaseRoom<Env> {
   }
 
   private persist(): void {
-    if (!this.game) return
+    if (this.paintPersistTimer !== null) {
+      clearTimeout(this.paintPersistTimer)
+      this.paintPersistTimer = null
+    }
+    if (!this.game) {
+      this.paintPersistDirty = false
+      return
+    }
     this.sql.exec('INSERT OR REPLACE INTO pixel_state (id, room_id, mode, is_default, state, resting_day, host_id) VALUES (1, ?, ?, ?, ?, ?, ?)', this.game.roomId, this.game.mode, Number(this.game.isDefaultBoard), serializeRoomState(this.game), this.restingDay, this.hostUserId)
+    this.paintPersistDirty = false
+  }
+
+  /** Coalesced write for paint: many painters' drag frames share one durable write per window. */
+  private persistPaint(): void {
+    if (!this.game) return
+    this.paintPersistDirty = true
+    if (this.paintPersistTimer !== null) return
+    this.paintPersistTimer = setTimeout(() => {
+      this.paintPersistTimer = null
+      if (!this.paintPersistDirty) return
+      try {
+        this.persist()
+      } catch {
+        console.warn('[PixelRoom] Coalesced paint write failed; the next transition rewrites it')
+      }
+    }, PAINT_PERSIST_COALESCE_MS)
+  }
+
+  /** Writes any pending paint before work that reads durability back (alarm, wake, close). */
+  private flushPaint(): void {
+    if (this.paintPersistDirty || this.paintPersistTimer !== null) this.persist()
   }
 
   private async armAlarm(): Promise<void> {
@@ -323,7 +363,12 @@ export class PixelRoom extends BaseRoom<Env> {
     const previousRound = this.game?.round
     if (this.game && (this.game.status !== transition.state.status || previousRound?.id !== transition.state.round.id)) this.withRoomStatus(transition, this.playerCount())
     this.game = transition.state
-    if (stateChanged || transition.events.some(event => event.type !== 'reject' && event.type !== 'noop')) this.persist()
+    const paintOnly = transition.events.some(event => event.type === 'pixel') &&
+      transition.events.every(event => event.type === 'pixel' || event.type === 'noop' || event.type === 'reject')
+    if (stateChanged || transition.events.some(event => event.type !== 'reject' && event.type !== 'noop')) {
+      if (paintOnly) this.persistPaint()
+      else this.persist()
+    }
     if (snapshotFirst) this.snapshot(snapshotFirst)
     for (const event of transition.events) {
       switch (event.type) {

@@ -1,7 +1,6 @@
 import { MODES, type Mode, type ZoneId } from './config'
 import { decodeCells } from './grid'
 import type { RoundView, ServerMsg } from './protocol'
-import { cooldownMs } from './rules'
 
 export type SnapshotYou = Extract<ServerMsg, { t: 'snapshot' }>['you']
 export type RejectMsg = Extract<ServerMsg, { t: 'reject' }>
@@ -20,12 +19,6 @@ export interface GuessLogEntry {
   matched: boolean
 }
 
-export interface ProvisionalCooldown {
-  id?: number
-  idx: number
-  until: number
-}
-
 export interface ClientState {
   connected: boolean
   snapshotLoaded: boolean
@@ -38,7 +31,6 @@ export interface ClientState {
   cells: Uint8Array
   pending: Map<number, number>
   pendingIds: Map<number, number>
-  provisionalCooldown: ProvisionalCooldown | null
   round: RoundView | null
   guesses: Record<ZoneId, ZoneGuess | undefined>
   guessLog: GuessLogEntry[]
@@ -65,7 +57,6 @@ export function initialClientState(): ClientState {
     cells: new Uint8Array(width * height),
     pending: new Map<number, number>(),
     pendingIds: new Map<number, number>(),
-    provisionalCooldown: null,
     round: null,
     guesses: {} as Record<ZoneId, ZoneGuess | undefined>,
     guessLog: [],
@@ -73,14 +64,10 @@ export function initialClientState(): ClientState {
     players: 0,
     watching: 0,
     roster: [],
-    you: { userId: null, cooldownUntil: 0 },
+    you: { userId: null },
     aiResting: false,
     lastReject: null,
   }
-}
-
-export function effectiveCooldownUntil(s: ClientState): number {
-  return Math.max(s.you.cooldownUntil, s.provisionalCooldown?.until ?? 0)
 }
 
 export function statusToConnectError(status: number): ConnectError | null {
@@ -114,7 +101,7 @@ export function applyOptimisticPlace(
   x: number,
   y: number,
   c: number,
-  options?: { id?: number; provisionalCooldownUntil?: number },
+  options?: { id?: number },
 ): ClientState {
   if (!Number.isInteger(x) || !Number.isInteger(y)) return s
   if (x < 0 || x >= s.width || y < 0 || y >= s.height) return s
@@ -131,16 +118,11 @@ export function applyOptimisticPlace(
     pendingIds.delete(idx)
   }
   cells[idx] = c
-  const provisionalCooldown =
-    options?.provisionalCooldownUntil !== undefined
-      ? { id: options.id, idx, until: options.provisionalCooldownUntil }
-      : s.provisionalCooldown
   return {
     ...s,
     cells,
     pending,
     pendingIds,
-    provisionalCooldown,
     lastReject: null,
   }
 }
@@ -162,7 +144,6 @@ export function applyServerMsg(s: ClientState, m: ServerMsg, now: number = Date.
         cells,
         pending: new Map<number, number>(),
         pendingIds: new Map<number, number>(),
-        provisionalCooldown: null,
         round: m.round,
         guessLog: m.round.id === s.guessLogRoundId ? s.guessLog : [],
         guessLogRoundId: m.round.id,
@@ -188,66 +169,38 @@ export function applyServerMsg(s: ClientState, m: ServerMsg, now: number = Date.
       cells[idx] = m.c
       const pending = new Map(s.pending)
       const pendingIds = new Map(s.pendingIds)
-      const resolvedId = pendingIds.get(idx)
       // M4: Any authoritative pixel (from self or another player) resolves/supersedes the pending entry for that cell
       if (pending.has(idx)) {
         pending.delete(idx)
         pendingIds.delete(idx)
       }
-      const isSelf = m.by === s.you.userId
-      const you = isSelf
-        ? {
-            ...s.you,
-            cooldownUntil: Math.max(
-              s.you.cooldownUntil,
-              now + cooldownMs(Math.max(1, s.players)),
-            ),
-          }
-        : s.you
-      const clearsProvisional =
-        isSelf &&
-        s.provisionalCooldown !== null &&
-        s.provisionalCooldown.idx === idx &&
-        s.provisionalCooldown.id === resolvedId
       return {
         ...s,
         cells,
         pending,
         pendingIds,
-        provisionalCooldown: clearsProvisional ? null : s.provisionalCooldown,
-        you,
       }
     }
     case 'noop': {
       if (m.x < 0 || m.x >= s.width || m.y < 0 || m.y >= s.height) return s
       const idx = m.y * s.width + m.x
+      // A no-op only settles a placement we sent for that cell; a stale id changes nothing.
       const matchesPending = s.pending.has(idx) && s.pendingIds.get(idx) === m.id
-      const matchesCooldown =
-        s.provisionalCooldown !== null &&
-        (m.id === undefined
-          ? s.provisionalCooldown.id === undefined && s.provisionalCooldown.idx === idx
-          : s.provisionalCooldown.id === m.id)
-      if (!matchesPending && !matchesCooldown) return s
-
-      let pending = s.pending
-      let pendingIds = s.pendingIds
+      if (!matchesPending) return s
+      const pending = new Map(s.pending)
+      pending.delete(idx)
+      const pendingIds = new Map(s.pendingIds)
+      pendingIds.delete(idx)
       let cells = s.cells
-      if (matchesPending) {
-        pending = new Map(s.pending)
-        pending.delete(idx)
-        pendingIds = new Map(s.pendingIds)
-        pendingIds.delete(idx)
-        if (s.cells[idx] !== 0) {
-          cells = s.cells.slice()
-          cells[idx] = 0
-        }
+      if (s.cells[idx] !== 0) {
+        cells = s.cells.slice()
+        cells[idx] = 0
       }
       return {
         ...s,
         cells,
         pending,
         pendingIds,
-        provisionalCooldown: matchesCooldown ? null : s.provisionalCooldown,
       }
     }
     case 'reject': {
@@ -257,13 +210,10 @@ export function applyServerMsg(s: ClientState, m: ServerMsg, now: number = Date.
         m.reason === 'round_inactive' ||
         m.reason === 'out_of_bounds' ||
         m.reason === 'bad_color' ||
-        m.reason === 'cooldown' ||
         m.reason === 'rate_limited'
 
       const pending = new Map(s.pending)
       const pendingIds = new Map(s.pendingIds)
-      let rejectedIdx: number | undefined
-      let rejectedId: number | undefined
       if (isPlacementReject && pending.size > 0) {
         // Batches identify the rejected cell; retain FIFO compatibility with older servers.
         const idx = m.x === undefined || m.y === undefined ? undefined : m.y * s.width + m.x
@@ -288,26 +238,11 @@ export function applyServerMsg(s: ClientState, m: ServerMsg, now: number = Date.
         }
         if (entry) {
           const [entryIdx, prevColor] = entry
-          rejectedIdx = entryIdx
-          rejectedId = pendingIds.get(entryIdx)
           cells[entryIdx] = prevColor
           pending.delete(entryIdx)
           pendingIds.delete(entryIdx)
         }
       }
-
-      const settlesProvisional =
-        s.provisionalCooldown !== null &&
-        (m.id === undefined
-          ? rejectedIdx !== undefined &&
-            s.provisionalCooldown.idx === rejectedIdx &&
-            s.provisionalCooldown.id === rejectedId
-          : s.provisionalCooldown.id === m.id)
-
-      const you =
-        (m.reason === 'cooldown' || m.reason === 'rate_limited') && m.retryAt !== undefined
-          ? { ...s.you, cooldownUntil: m.retryAt }
-          : s.you
 
       const round =
         m.reason === 'ask_too_soon' && m.retryAt !== undefined && s.round
@@ -317,15 +252,14 @@ export function applyServerMsg(s: ClientState, m: ServerMsg, now: number = Date.
             }
           : s.round
 
+      // Pace limits are part of a drag, not an error: the cell is rolled back, the stroke carries on.
       return {
         ...s,
         cells,
         pending,
         pendingIds,
-        provisionalCooldown: settlesProvisional ? null : s.provisionalCooldown,
-        you,
         round,
-        lastReject: m,
+        lastReject: m.reason === 'rate_limited' ? s.lastReject : m,
       }
     }
     case 'round': {
