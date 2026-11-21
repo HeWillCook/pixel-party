@@ -33,7 +33,7 @@ const roomStateSchema = z.object({
     startedAt: finite, endsAt: finite.nullable(), askAvailableAt: finite, endedAt: finite.optional(),
     result: z.object({ outcome: z.enum(['won', 'timeout', 'teamWin']), score: finite.optional(), contributorCount: finite.int().nonnegative().optional(), winningTeam: z.enum(['red', 'blue', 'draw']).optional() }).optional(),
   }),
-  wordEntry: z.object({ word: z.string().min(1), synonyms: z.array(z.string()), tier: z.enum(['easy', 'medium']) }),
+  wordEntry: z.object({ word: z.string().min(1), synonyms: z.array(z.string()), tier: z.enum(['easy', 'medium', 'hard']) }),
   recentWords: z.array(z.string()), lastGuesses: z.array(z.string()), roundCounter: finite.int().nonnegative(),
   lastPlacedAt: z.record(z.string(), finite), soloBuckets: z.record(z.string(), z.object({ tokens: finite.nonnegative(), updatedAt: finite })), judgeCalls: z.array(finite), lastJudgedAt: finite,
   judgeInFlight: z.boolean(), emptySince: finite.nullable(), intermissionEndsAt: finite.nullable(),
