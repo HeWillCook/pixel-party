@@ -572,7 +572,13 @@
    (on phones the logo link is 68px tall). `--porch-nav-height` comes from the shell; the fallbacks are today's heights. */
 .room-play[data-testid="room-page"] {
   --room-top-clear: var(--porch-nav-height, 52px);
-  padding-top: calc(var(--room-top-clear) + 6px);
+  padding-top: calc(var(--room-top-clear) + 4px);
+}
+/* Short desktop windows (1280x720): the room is below the nav now, so Haiku's perch gives back some height. */
+@media (min-width: 768px) and (max-height: 800px) {
+  .critic-bubble__perch { min-height: 108px; padding-bottom: 10px; }
+  .room-play .room-bell-shelf { margin-top: 4px; padding: 6px 8px 8px; }
+  .room-play .room-top-bar { padding-top: 3px; padding-bottom: 3px; }
 }
 @media (max-width: 767px) {
   .room-play[data-testid="room-page"] {

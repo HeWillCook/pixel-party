@@ -1362,16 +1362,18 @@ for (const viewport of waveViewports) {
       await page.routeWebSocket('**/api/pixel/**', socket => socket.send(JSON.stringify(snapshot(state))))
       await page.goto(`${origin}/r/AB2Z`)
       await expect(page.getByTestId(state === 'lobby' ? 'room-lobby' : 'pixel-canvas')).toBeVisible()
-      // What the nav (and, on phones, the 68px logo link) covers: nothing tappable may sit under it.
-      const covered = await page.evaluate(() => {
-        const nav = document.querySelector('[data-testid="app-navigation"]')!.getBoundingClientRect()
-        const logo = document.querySelector('.porch-nav__logo')?.getBoundingClientRect()
-        return Math.max(nav.bottom, logo?.bottom ?? 0)
-      })
+      // What the nav and its logo link cover (the logo hangs below the nav bar, 68px tall): nothing tappable may sit under either.
+      const blockers = await page.evaluate(() => ['[data-testid="app-navigation"]', '.porch-nav__logo'].flatMap((selector) => {
+        const box = document.querySelector(selector)?.getBoundingClientRect()
+        return box ? [{ left: box.left, top: box.top, right: box.right, bottom: box.bottom }] : []
+      }))
       for (const id of ['room-exit', 'room-code', 'copy-room-link', 'room-name', 'host-menu-button']) {
         const box = await page.getByTestId(id).boundingBox()
         expect(box, id).not.toBeNull()
-        expect(box!.y, `${id} below the nav`).toBeGreaterThanOrEqual(covered - 1)
+        for (const blocker of blockers) {
+          const overlaps = box!.x < blocker.right && box!.x + box!.width > blocker.left && box!.y < blocker.bottom && box!.y + box!.height > blocker.top
+          expect(overlaps, `${id} must not sit under the nav or logo`).toBe(false)
+        }
         expect(box!.y + box!.height, `${id} on screen`).toBeLessThanOrEqual(viewport.height)
         expect(box!.x + box!.width, `${id} inside the width`).toBeLessThanOrEqual(viewport.width)
       }
