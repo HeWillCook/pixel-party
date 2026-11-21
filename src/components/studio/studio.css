@@ -1053,6 +1053,21 @@
   background: #fff0bb;
 }
 
+/* Inside the room the sign is calm: nothing to step into, so no glow and no link. */
+.studio-magic-easel__here {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: calc(var(--px) * 0.55) calc(var(--px) * 3.2);
+  background: #ecd4b0;
+  color: #614052;
+  border: calc(var(--px) * 0.65) solid #614052;
+  font-size: max(15px, calc(var(--px) * 3.2));
+  line-height: 1;
+  text-transform: uppercase;
+}
+
 /* Three porch-matched thrusters bolted under the tray */
 .studio-magic-easel__base {
   position: relative;
@@ -1322,17 +1337,14 @@
    out. They ride the same duration and curve as the camera, so they move with it rather than after it. */
 .studio-corkboard,
 .studio-booth-slot,
-.studio-workbench-slot,
-.studio-world .pixel-hotspot[aria-label="Upstairs"] {
+.studio-workbench-slot {
   transition: transform var(--scene-zoom-ms, 800ms) var(--scene-zoom-easing, cubic-bezier(0.6, 0, 0.2, 1));
 }
 .studio-world--room-open .studio-corkboard { transform: translateX(calc(var(--px) * -120)); }
 .studio-world--room-open .studio-booth-slot,
 .studio-world--room-open .studio-workbench-slot { transform: translateX(calc(var(--px) * -240)); }
-.studio-world--room-open .pixel-hotspot[aria-label="Upstairs"] { transform: translateX(calc(var(--px) * 120)); }
 @media (prefers-reduced-motion: reduce) {
   .studio-corkboard,
   .studio-booth-slot,
-  .studio-workbench-slot,
-  .studio-world .pixel-hotspot[aria-label="Upstairs"] { transition: none; }
+  .studio-workbench-slot { transition: none; }
 }

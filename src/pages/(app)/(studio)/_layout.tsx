@@ -176,6 +176,8 @@ export default function StudioLayout() {
   const normalizedRoomCode = roomCode ? (roomCode.toLowerCase() === 'play' ? 'play' : roomCode.toUpperCase()) : null
   const [boardRect, setBoardRectState] = useState<Rect | null>(null)
   const [summary, setSummaryState] = useState<RoomSummary | null>(null)
+  const [minBoardPx, setMinBoardPx] = useState<number | null>(null)
+  const [roomShift, setRoomShift] = useState({ x: 0, y: 0 })
   const focusRef = useRef<Rect | null>(null)
   const stageRef = useRef<HTMLElement | null>(null)
   const [entering, setEntering] = useState(false)
@@ -234,11 +236,13 @@ export default function StudioLayout() {
     focus: (_composition: Composition) => focusRef.current ?? { x: 0, y: 0, w: 1, h: 1 },
     setBoardRect,
     setSummary,
+    minBoardPx,
+    roomShift,
     phase,
     signInOpen,
     setSignInOpen,
     leave,
-  }), [phase, signInOpen, leave, setBoardRect, setSummary])
+  }), [phase, signInOpen, leave, setBoardRect, setSummary, minBoardPx, roomShift])
 
   return (
     <StudioWorldContext.Provider value={world}>
@@ -247,6 +251,8 @@ export default function StudioLayout() {
         room={normalizedRoomCode ? { code: normalizedRoomCode, phase, boardRect, summary } : null}
         stageRef={stageRef}
         onFocus={onFocus}
+        onMinBoard={setMinBoardPx}
+        onRoomShift={setRoomShift}
         rooms={livePublicRooms}
         roomsLoading={roomsStatus === 'loading'}
         defaultBoardPlayers={defaultBoardRoom?.data.playerCount ?? 0}

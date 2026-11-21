@@ -14,6 +14,7 @@ export function PlayLayout({
   variant = 'room',
   mobileTop,
   mobileFooter,
+  mobileHaiku,
 }: {
   top?: ReactNode
   prompt: ReactNode
@@ -27,6 +28,8 @@ export function PlayLayout({
   variant?: 'daily' | 'room'
   mobileTop?: ReactNode
   mobileFooter?: ReactNode
+  /** Phones only: Haiku's latest guess, kept in view above the board. */
+  mobileHaiku?: ReactNode
 }) {
   const [wide, setWide] = useState(() => typeof window === 'undefined' || window.innerWidth >= 768)
   const [scoreOpen, setScoreOpen] = useState(false)
@@ -73,6 +76,7 @@ export function PlayLayout({
           )}
         </div>
       )}
+      {!wide && variant !== 'daily' && mobileHaiku && <div className="play-layout__haiku">{mobileHaiku}</div>}
       <div className="play-layout__canvas">{canvas}</div>
       {!wide && variant !== 'daily' && <div className="play-layout__mobile-actions">{actions}</div>}
       {!dailyMobile &&

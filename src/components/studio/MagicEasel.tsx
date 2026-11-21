@@ -299,7 +299,9 @@ export function MagicEasel({
       )}
 
       <div className="studio-magic-easel__tray">
-        {selectedCode && !effectiveSmoke ? (
+        {roomView ? (
+          <span data-testid="magic-easel-here" className="studio-magic-easel__here">You&apos;re here</span>
+        ) : selectedCode && !effectiveSmoke ? (
           <Link
             to={`/r/${encodeURIComponent(selectedCode)}`}
             data-testid="magic-easel-step-in"

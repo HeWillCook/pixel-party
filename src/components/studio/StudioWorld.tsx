@@ -23,6 +23,10 @@ export interface StudioWorldValue {
   setBoardRect: (rect: Rect | null) => void
   /** The room reports its headline facts for the easel's HUD (the board itself is the room's own HTML). */
   setSummary: (summary: RoomSummary | null) => void
+  /** The smallest board (px) the room must use so the studio scene covers the screen behind it (null: unknown). */
+  minBoardPx: number | null
+  /** How far the room slides (px) so its board stays on the easel while the scene still covers the screen. */
+  roomShift: { x: number; y: number }
   phase: RoomPhase
   /** The sign-in slip: in the studio it is pinned to the room-tickets corkboard, in a room to the room's ticket. */
   signInOpen: boolean

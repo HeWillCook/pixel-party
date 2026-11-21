@@ -14,7 +14,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { Globe, Hash, Lock, Plus, Sparkles, Users } from 'lucide-react'
 import { Hotspot } from '../../scene/Hotspot'
 import { PixelScene, SceneComposition } from '../../scene/PixelScene'
-import { cameraForLocal, compositionFor, integerScale, rectToPercent, sceneSize, type Camera, type Rect } from '../../scene/camera'
+import { cameraForLocal, compositionFor, coverCamera, coverZoom, integerScale, rectToPercent, sceneSize, type Camera, type Rect } from '../../scene/camera'
 import { drawStudio } from '../../scene/studio/drawStudio'
 import { studioLayout } from '../../scene/studio/layout'
 import { fitCloseupCamera } from '../../scene/porch/fitCamera'
@@ -101,6 +101,10 @@ export interface StudioLobbyProps {
   stageRef?: { current: HTMLElement | null }
   /** The magic easel's board in scene units (re-measured when the stage changes), for registering a room's board. */
   onFocus?: (rect: Rect | null) => void
+  /** The smallest board (px) a room must use so the scene covers the viewport once the camera is on it (null: no room open). */
+  onMinBoard?: (px: number | null) => void
+  /** How far the room must slide (px) to stay on the easel when the scene can only cover the screen by moving. */
+  onRoomShift?: (shift: { x: number; y: number }) => void
 }
 
 type HatEffect = 'idle' | 'dropping' | 'sparkle' | 'smoke'
@@ -862,8 +866,36 @@ export function StudioLobby(props: StudioLobbyProps) {
   useIsomorphicLayoutEffect(() => {
     onFocus?.(room && focusLocal ? { x: focusLocal.x / stageBox.scale, y: focusLocal.y / stageBox.scale, w: focusLocal.w / stageBox.scale, h: focusLocal.h / stageBox.scale } : null)
   }, [onFocus, room, focusLocal, stageBox.scale])
+  // The camera keeps the scene covering the screen. When the easel cannot be centred under the room's board without
+  // showing void at an edge, the room slides by the difference instead, so the board still sits exactly on the easel.
+  const { onMinBoard, onRoomShift } = props
+  const shiftRef = useRef({ x: 0, y: 0 })
+  const boardTop = room?.boardRect?.y
+  const boardCentre = room?.boardRect ? room.boardRect.x + room.boardRect.w / 2 : undefined
+  useIsomorphicLayoutEffect(() => {
+    const report = (px: number | null, shift: { x: number; y: number }) => {
+      onMinBoard?.(px)
+      if (shift.x !== shiftRef.current.x || shift.y !== shiftRef.current.y) {
+        shiftRef.current = shift
+        onRoomShift?.(shift)
+      }
+    }
+    if (!room || room.phase === 'leaving' || !room.boardRect || !focusLocal || !stageBox.w || !stageBox.h) { report(null, { x: 0, y: 0 }); return }
+    const viewport = { w: stageBox.w, h: stageBox.h }
+    // The room reports its board where it would sit without the slide (see `onRoomShift`), so none of this feeds back on itself.
+    const natural = {
+      x: room.boardRect.x - stageOrigin.current.x,
+      y: room.boardRect.y - stageOrigin.current.y,
+      w: room.boardRect.w,
+      h: room.boardRect.h,
+    }
+    const exact = cameraForLocal(focusLocal, natural, viewport, composition)
+    const cover = coverCamera(focusLocal, natural, viewport, composition)
+    const wanted = Math.ceil(focusLocal.w * coverZoom(focusLocal, { ...natural, x: natural.x + natural.w / 2, w: 0 }, viewport, composition))
+    report(wanted, { x: Math.round(cover.x - exact.x), y: Math.round(cover.y - exact.y) })
+  }, [onMinBoard, onRoomShift, room?.phase, Boolean(room), focusLocal, boardTop, boardCentre, room?.boardRect?.w, stageBox.w, stageBox.h, composition])
   const roomCamera: Camera | null = room?.boardRect && focusLocal && stageBox.w && stageBox.h
-    ? cameraForLocal(
+    ? coverCamera(
         focusLocal,
         { x: room.boardRect.x - stageOrigin.current.x, y: room.boardRect.y - stageOrigin.current.y, w: room.boardRect.w, h: room.boardRect.h },
         { w: stageBox.w, h: stageBox.h },

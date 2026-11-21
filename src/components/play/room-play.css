@@ -136,9 +136,9 @@
   justify-content: space-between;
   gap: 8px;
   width: auto;
-  max-width: min(100%, 760px);
+  max-width: min(100%, 980px);
   margin: 0 auto;
-  padding: 2px 10px;
+  padding: 6px 12px;
   background:
     repeating-linear-gradient(to bottom, transparent 0 3px, rgba(142, 89, 96, 0.12) 3px 4px),
     #fff0cc;
@@ -532,8 +532,6 @@
 .room-board--face {
   box-sizing: border-box;
   display: flex;
-  align-items: center;
-  justify-content: center;
   overflow: auto;
   padding: 12px;
   background: #fff0cc;
@@ -542,6 +540,8 @@
 }
 .room-board--face > * {
   max-width: 100%;
+  /* `margin: auto` centres what fits and lets what does not fit scroll from its top (justify-content: center would clip it). */
+  margin: auto;
 }
 .room-board__loading {
   font-size: 24px;
@@ -566,3 +566,239 @@
     margin-top: 34px;
   }
 }
+
+/* ---- Below the nav ------------------------------------------------------------------------------------------------
+   The nav is an overlay on scene pages, so the room starts below it: nothing here sits under the nav or its logo link
+   (on phones the logo link is 68px tall). `--porch-nav-height` comes from the shell; the fallbacks are today's heights. */
+.room-play[data-testid="room-page"] {
+  --room-top-clear: var(--porch-nav-height, 52px);
+  padding-top: calc(var(--room-top-clear) + 6px);
+}
+@media (max-width: 767px) {
+  .room-play[data-testid="room-page"] {
+    --room-top-clear: max(var(--porch-nav-height, 44px), 72px);
+    padding-top: calc(var(--room-top-clear) + 4px);
+  }
+}
+
+/* ---- The ticket stub: way back, invite, name, host and sound -------------------------------------------------------- */
+.room-top-bar__who {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 4px 14px;
+  min-width: 0;
+}
+.room-top-bar__name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 20px;
+  line-height: 1.1;
+  text-transform: uppercase;
+  color: var(--soft-text);
+}
+.room-top-bar__exit {
+  min-height: 34px;
+  white-space: nowrap;
+}
+.room-top-bar__controls {
+  display: flex;
+  align-items: center;
+}
+@media (max-width: 767px) {
+  .room-top-bar__exit-long { display: none; }
+  .room-top-bar__exit { order: 1; }
+  .room-top-bar__controls { order: 2; margin-left: auto; }
+  .room-top-bar__who { order: 3; flex-basis: 100%; justify-content: space-between; }
+  .room-top-bar__name { font-size: 16px; }
+}
+
+/* ---- The room lobby ------------------------------------------------------------------------------------------------ */
+.room-lobby {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: center;
+}
+.room-lobby__title {
+  margin: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font-size: 26px;
+  line-height: 1.05;
+  text-transform: uppercase;
+  color: var(--sunset-2);
+}
+.room-lobby__status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  gap: 2px 12px;
+}
+.room-lobby-stools {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.room-lobby-stool {
+  display: flex;
+  flex: 0 1 132px;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 8px 8px 6px;
+  background: #ecd4b0;
+  border: 2px solid #8e5960;
+  box-shadow: inset 0 0 0 2px #fff0cc, 2px 2px #614052;
+}
+.room-lobby-stool__name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 17px;
+  line-height: 1.1;
+  color: #392a45;
+}
+@media (max-width: 767px) {
+  .room-lobby { gap: 6px; }
+  .room-lobby__title { font-size: 21px; }
+  .room-lobby-stool { flex: 0 1 auto; padding: 1px 8px; box-shadow: none; }
+  .room-lobby-stool__sprite { display: none; }
+  .room-lobby-stool__name { font-size: 15px; }
+}
+
+/* "Invite friends": the four letters, large, on a plank. */
+.invite-plank {
+  width: 100%;
+  max-width: 380px;
+  box-sizing: border-box;
+  padding: 8px 12px 10px;
+  background: linear-gradient(#c57d63, #985c5a 80%, #8e5960);
+  border: 3px solid #392a45;
+  box-shadow: inset 0 2px #ecae7d, 0 3px #392a45;
+}
+.invite-plank__label {
+  margin: 0 0 4px;
+  font-size: 16px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #fff0cc;
+  text-shadow: 1px 1px #392a45;
+}
+.invite-plank__code {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin: 0 0 8px;
+}
+.invite-plank__tile {
+  display: inline-flex;
+  width: 44px;
+  height: 52px;
+  align-items: center;
+  justify-content: center;
+  background: #fff0cc;
+  color: #392a45;
+  border: 3px solid #392a45;
+  box-shadow: inset 0 0 0 2px #ecd4b0, 0 2px #392a45;
+  font-size: 38px;
+  line-height: 1;
+}
+.invite-plank__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+.invite-plank__btn {
+  display: inline-flex;
+  height: 36px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  background: #ecd4b0;
+  color: #392a45;
+  border: 3px solid #392a45;
+  box-shadow: inset 0 2px #fff0cc;
+  font-size: 18px;
+  line-height: 1;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.invite-plank__btn:hover { background: #ecae7d; }
+@media (max-width: 767px) {
+  .invite-plank { max-width: none; padding: 5px 8px 7px; }
+  .invite-plank__label { margin-bottom: 2px; font-size: 14px; }
+  .invite-plank__code { gap: 5px; margin-bottom: 5px; }
+  .invite-plank__tile { width: 34px; height: 38px; font-size: 28px; }
+  .invite-plank__btn { height: 34px; padding: 0 10px; font-size: 16px; }
+}
+
+/* Roster tags ("host", "you"). */
+.roster-tag {
+  flex: none;
+  padding: 0 4px;
+  background: #ecd4b0;
+  color: #614052;
+  border: 2px solid #8e5960;
+  font-size: 13px;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+.roster-tag--you { background: #ffe29a; color: #392a45; }
+
+/* ---- Round over: what the word was, what Haiku guessed, the picture ----------------------------------------------- */
+.room-results-guess {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.1;
+  color: #392a45;
+}
+.room-results-guess strong { color: #985c5a; text-transform: uppercase; }
+.room-results-main {
+  display: flex;
+  width: 100%;
+  align-items: stretch;
+  justify-content: center;
+  gap: 10px;
+}
+.room-results-thumb {
+  flex: none;
+  width: 104px;
+  height: 104px;
+  border: 3px solid #8e5960;
+  image-rendering: pixelated;
+}
+.room-results-main .room-results-stats { flex: 1 1 auto; min-width: 0; align-content: center; }
+.room-results-stats--solo { grid-template-columns: minmax(0, 1fr); }
+.room-results-frame .pp-results-body > * { flex-shrink: 0; }
+@container (max-width: 460px) {
+  .room-results-thumb { display: none; }
+  .room-results-guess { font-size: 15px; }
+  .room-results-frame .pp-results-word { text-shadow: none; }
+}
+
+/* The toast lives on the board's foot (not over the controls), and never takes a tap. */
+.room-board .room-reject-float {
+  top: auto;
+  bottom: 8px;
+  max-width: calc(100% - 16px);
+  white-space: normal;
+  text-align: center;
+  pointer-events: none;
+}
+.room-board .room-reject-float button { pointer-events: auto; }

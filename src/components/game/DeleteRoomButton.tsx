@@ -28,7 +28,7 @@ export function DeleteRoomDialog({
       })
       const result = await response.json() as { success?: boolean; error?: string }
       if (!response.ok || !result.success) {
-        setError(result.error ?? 'Could not delete the room. Please try again.')
+        setError(result.error ?? 'Could not pack up the room. Please try again.')
         return
       }
       onOpenChange(false)
@@ -43,19 +43,19 @@ export function DeleteRoomDialog({
   return (
     <Dialog open={open} onOpenChange={value => { if (!deleting) onOpenChange(value) }}>
       <DialogContent hideClose={deleting}>
-        <DialogTitle>Delete room {joinCode}?</DialogTitle>
+        <DialogTitle>Pack up room {joinCode}?</DialogTitle>
         <DialogDescription>This ends the room for everyone. This code cannot be used again.</DialogDescription>
         {error && <p role="alert" className="text-base text-[var(--sunset-2)]">{error}</p>}
         <DialogFooter>
           <Button variant="secondary" className="pp-chip text-base uppercase" disabled={deleting} onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button className="pp-chip pp-danger pp-danger-solid text-base uppercase" loading={deleting} onClick={() => void remove()}>End room</Button>
+          <Button className="pp-chip pp-danger pp-danger-solid text-base uppercase" loading={deleting} onClick={() => void remove()}>Pack up</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   )
 }
 
-export function DeleteRoomButton({ joinCode, onDeleted, label = 'Delete room' }: { joinCode: string; onDeleted?: () => void; label?: string }) {
+export function DeleteRoomButton({ joinCode, onDeleted, label = 'Pack up' }: { joinCode: string; onDeleted?: () => void; label?: string }) {
   const [open, setOpen] = useState(false)
 
   return (

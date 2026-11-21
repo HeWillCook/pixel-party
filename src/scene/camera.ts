@@ -84,3 +84,48 @@ export function cameraForLocal(local: Rect, target: Rect, viewport: { w: number;
     zoom,
   }
 }
+
+/**
+ * The smallest board (in the camera element's own pixels, i.e. a multiple of the room's board size over the
+ * easel's) for which the scene still covers the whole viewport once the easel board has landed on `target`:
+ * scaling about the easel, the scene must reach every edge. `target` is the board's rect when it is at its
+ * natural size; only its horizontal centre and its top edge are used (it grows downwards from the top edge and is
+ * centred in its column).
+ */
+export function coverZoom(local: Rect, target: Rect, viewport: { w: number; h: number }, composition: Composition): number {
+  const size = sceneSize(composition)
+  const scale = integerScale(viewport.w, viewport.h, composition)
+  const sceneW = size.w * scale
+  const sceneH = size.h * scale
+  const centreX = target.x + target.w / 2
+  const easelCentreX = local.x + local.w / 2
+  return Math.max(
+    1,
+    centreX / easelCentreX,
+    (viewport.w - centreX) / (sceneW - easelCentreX),
+    target.y / local.y,
+    (viewport.h - target.y) / (sceneH - local.y),
+  )
+}
+
+/**
+ * `cameraForLocal`, kept covering the viewport: never zoomed out past the scene's edges and never panned off them.
+ * When the board is big enough (see `coverZoom`) this is exactly `cameraForLocal`; a room too cramped to grow its
+ * board lands a little off the easel rather than leaving a band of void.
+ */
+export function coverCamera(local: Rect, target: Rect, viewport: { w: number; h: number }, composition: Composition): Camera {
+  const size = sceneSize(composition)
+  const scale = integerScale(viewport.w, viewport.h, composition)
+  const sceneW = size.w * scale
+  const sceneH = size.h * scale
+  const ox = (viewport.w - sceneW) / 2
+  const oy = (viewport.h - sceneH) / 2
+  const zoom = Math.max(Math.min(target.w / local.w, target.h / local.h), viewport.w / sceneW, viewport.h / sceneH)
+  const x = target.x + target.w / 2 - ox - (local.x + local.w / 2) * zoom
+  const y = target.y + target.h / 2 - oy - (local.y + local.h / 2) * zoom
+  return {
+    x: Math.min(-ox, Math.max(viewport.w - ox - sceneW * zoom, x)),
+    y: Math.min(-oy, Math.max(viewport.h - oy - sceneH * zoom, y)),
+    zoom,
+  }
+}
