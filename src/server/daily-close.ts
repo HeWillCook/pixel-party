@@ -1,4 +1,5 @@
 import { roomRecords } from './rooms'
+import { utcDay } from './room-time'
 import type { ServerTools } from './server-tools'
 
 export interface DayCloseResult {
@@ -47,4 +48,18 @@ export async function closeDay(tools: ServerTools, day: string): Promise<DayClos
     if (!updated.success) throw new Error(updated.error)
   }
   return { published: drawings.data.length, medals: Math.min(ranked.length, MEDAL_RANKS) }
+}
+
+/**
+ * Closes the two most recent complete UTC days. The cron fires at 00:10 UTC, so
+ * "yesterday" is normally the only open day; but if the alarm is delayed past
+ * 00:10 the next day (a retry after an outage), `now - 24h` names the day
+ * before yesterday and the day that just ended would otherwise never close, so
+ * its drawings would stay private forever. closeDay is idempotent, so closing
+ * both is safe on every ordinary run.
+ */
+export async function closeRecentDays(tools: ServerTools, now: number): Promise<string[]> {
+  const days = [utcDay(now - 86_400_000), utcDay(now - 172_800_000)]
+  for (const day of days) await closeDay(tools, day)
+  return days
 }

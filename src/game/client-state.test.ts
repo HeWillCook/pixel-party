@@ -69,6 +69,24 @@ describe('client-state', () => {
     expect(state.guessLogRoundId).toBe('r3')
   })
 
+  it('seeds the feed and latest guess from the snapshot a late joiner receives', () => {
+    const snapshot = { t: 'snapshot' as const, mode: 'coop' as const, width: 32, height: 32, cells: encodeCells(new Uint8Array(32 * 32)), round: makeRound('r1'), you: { userId: null, cooldownUntil: 0 }, players: 2, aiResting: false }
+    const judgements = [
+      { zone: 'all' as const, guesses: ['bird', 'moth'], confidence: 0.4, matched: false, at: 31000 },
+      { zone: 'all' as const, guesses: ['dragon'], confidence: 0.6, matched: false, at: 61000 },
+    ]
+    let state = applyServerMsg(initialClientState(), { ...snapshot, judgements })
+    expect(state.guessLog.map(entry => entry.guesses)).toEqual([['dragon'], ['bird', 'moth']])
+    expect(state.guessLog[0].atMs).toBe(60000)
+    expect(state.guesses.all).toMatchObject({ guesses: ['dragon'], confidence: 0.6 })
+    // A same-round reconnect keeps the log it has rather than replaying the snapshot's copy on top of it.
+    state = applyServerMsg(state, { ...snapshot, judgements })
+    expect(state.guessLog).toHaveLength(2)
+    // A new round starts blank even if the server still lists the old round's judgements.
+    state = applyServerMsg(state, { ...snapshot, round: makeRound('r2'), judgements: [] })
+    expect(state.guessLog).toEqual([])
+  })
+
   it('increments snapshotSeq for each snapshot', () => {
     const snapshot = { t: 'snapshot' as const, mode: 'coop' as const, width: 32, height: 32, cells: encodeCells(new Uint8Array(32 * 32)), round: makeRound('r1'), you: { userId: null, cooldownUntil: 0 }, players: 1, aiResting: false }
     let state = initialClientState()

@@ -1,12 +1,17 @@
-import { useEffect, useRef, useState } from 'react'
-import { Link, useLocation } from 'react-router-dom'
-import { AuthOverlay, useAuthProfileReady, signOut } from 'deepspace'
+import { useEffect, useRef, useState, type MouseEvent } from 'react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { useAuthProfileReady, signOut } from 'deepspace'
 import { Menu, X } from 'lucide-react'
 import type { Role } from '../constants'
 import { nav } from '../nav'
+import { DETAIL } from '../scene/detail'
 import { P } from '../scene/palette'
 import { drawPorchRoof } from '../scene/porch/drawPorch'
+import { paintMailbox } from '../scene/porch/houseArt'
 import { defineSprite, drawSprite, type Sprite } from '../scene/sprite'
+import { dispatchSceneNavigation, isPrimaryClick, markPorchReturn as markPorchReturnFrom, requestSignIn, type SceneNavKind } from './porch/returnFlag'
+import { prefetchRoute } from '../prefetch-routes'
+import { useDailyLock } from '../hooks/useDailyLock'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from './ui'
 
 const woodPalette = { a: P.wood[0], b: P.wood[1], c: P.wood[2], d: P.wood[3], e: P.wood[4], f: P.sun[4], g: P.flame[1], h: P.paper[3], i: P.sea[1], j: P.sun[2] }
@@ -110,15 +115,16 @@ function PorchNavRoof({ pathname }: { pathname: string }) {
       const px = Number.isFinite(rawPx) && rawPx >= 2 ? Math.round(rawPx) : 3
       const w = Math.max(1, Math.ceil(bounds.width / px))
       const h = Math.max(18, Math.ceil(bounds.height / px))
-      canvas.width = w
-      canvas.height = h
+      // Painted at 2x detail; the CSS size is unchanged.
+      canvas.width = w * DETAIL
+      canvas.height = h * DETAIL
       canvas.style.width = `${w * px}px`
       canvas.style.height = `${h * px}px`
       const ctx = canvas.getContext('2d')
       if (!ctx) return
       ctx.imageSmoothingEnabled = false
-      ctx.clearRect(0, 0, w, h)
-      drawPorchRoof(ctx, 0)
+      ctx.scale(DETAIL, DETAIL)
+      drawPorchRoof(ctx, 0, w)
     }
     const observer = new ResizeObserver(draw)
     observer.observe(container)
@@ -142,16 +148,18 @@ function CompactRoof() {
     const draw = () => {
       const bounds = container.getBoundingClientRect()
       if (!bounds.width || !bounds.height) return
-      canvas.width = Math.ceil(bounds.width / 2)
-      canvas.height = Math.ceil(bounds.height / 2)
-      canvas.style.width = `${canvas.width * 2}px`
-      canvas.style.height = `${canvas.height * 2}px`
+      const w = Math.ceil(bounds.width / 2), h = Math.ceil(bounds.height / 2)
+      canvas.width = w * DETAIL
+      canvas.height = h * DETAIL
+      canvas.style.width = `${w * 2}px`
+      canvas.style.height = `${h * 2}px`
       const ctx = canvas.getContext('2d')
       if (!ctx) return
       ctx.imageSmoothingEnabled = false
+      ctx.scale(DETAIL, DETAIL)
       ctx.fillStyle = P.wood[1]
-      ctx.fillRect(0, 0, canvas.width, canvas.height)
-      drawPorchRoof(ctx, Math.max(0, canvas.height - 18))
+      ctx.fillRect(0, 0, w, h)
+      drawPorchRoof(ctx, Math.max(0, h - 18), w)
     }
     const observer = new ResizeObserver(draw)
     observer.observe(container)
@@ -165,16 +173,19 @@ const lantern = defineSprite([
   '.j.j.abffba.j..', '..j..abgfba..j.', '.j.j.abffba.j..', '..j.jabffbaj...', '...j.abbba.j...',
   '.....aaaaa.....', '......aaa......',
 ], woodPalette)
-const mailbox = defineSprite([
-  '.....aaaaaaaaa.......', '...aabbbbbbbbbaa.....', '..abcccccccccccba....', '.abcccccccccccccba...',
-  '.abcccccccccccccba...', 'abcccccccccccccccba..', 'abcccceeeccccccccba..', 'abcccccccccccccccba..',
-  'abcccccccccccccccba..', 'abcccccccccccccccba..', 'abcccccccccccccccba..', 'abcccccccccccccccba..',
-  'abbbbbbbbbbbbbbbbba..', '.aaaaaaaaaaaaaaaaa...', '......abbbba.........', '......abbbba.........',
-  '......abbbba.........', '......abbbba.........', '......abbbba.........', '......abbbba.........',
-  '.....aabbbbaa........', '....aaaaaaaaaa.......', '.....................',
-], woodPalette)
-const flagUp = defineSprite(['ggggg', 'gffgg', 'ggggg', 'g....', 'g....', 'g....', 'g....'], woodPalette)
-const flagDown = defineSprite(['.......', '.......', '.......', '.......', '.......', 'ggggggg', 'gggffgg'], woodPalette)
+/** The porch letterbox, at the nav's pixel scale (2x detail): flag up when signed out, down when signed in. */
+function NavMailbox({ signedIn }: { signedIn: boolean }) {
+  const ref = useRef<HTMLCanvasElement>(null)
+  useEffect(() => {
+    const ctx = ref.current?.getContext('2d')
+    if (!ctx) return
+    ctx.setTransform(DETAIL, 0, 0, DETAIL, 0, 0)
+    ctx.imageSmoothingEnabled = false
+    ctx.clearRect(0, 0, 28, 24)
+    paintMailbox(ctx, { x: 0, y: 0, signedIn, shadow: false })
+  }, [signedIn])
+  return <canvas ref={ref} className="porch-sprite" width={28 * DETAIL} height={24 * DETAIL} style={{ width: 'calc(var(--px) * 28)', height: 'calc(var(--px) * 24)' }} aria-hidden="true" />
+}
 
 function SpriteImage({ sprite, className = '' }: { sprite: Sprite; className?: string }) {
   const ref = useRef<HTMLCanvasElement>(null)
@@ -188,28 +199,72 @@ function SpriteImage({ sprite, className = '' }: { sprite: Sprite; className?: s
   return <canvas ref={ref} className={`porch-sprite ${className}`} width={sprite.w} height={sprite.h} style={{ width: `calc(var(--px) * ${sprite.w})`, height: `calc(var(--px) * ${sprite.h})` }} aria-hidden="true" />
 }
 
+/** Publishes the bar's live height as `--porch-nav-height` on the shell, so scene overlays can sit below it without measuring. */
+function useNavHeightVar() {
+  const ref = useRef<HTMLElement>(null)
+  useEffect(() => {
+    const nav = ref.current
+    const shell = nav?.closest<HTMLElement>('.porch-shell')
+    const row = nav?.querySelector<HTMLElement>('.porch-nav__row')
+    if (!nav || !shell || !row) return
+    let last = ''
+    let barHeight = 0
+    // The phone menu drops below the bar. `--porch-nav-height` stays the bar's own height; `--porch-nav-bottom` is the lowest edge of
+    // the bar or the open menu, so scene pages that sit under the bar (the gallery's header card) can step down clear of the menu.
+    const publish = () => {
+      const drawer = nav.querySelector('.porch-nav__mobile')?.getBoundingClientRect()
+      if (!drawer) barHeight = Math.round(nav.getBoundingClientRect().height)
+      const bar = barHeight || Math.round(row.getBoundingClientRect().height)
+      const bottom = Math.round(drawer ? drawer.bottom : bar)
+      const value = `${bar} ${bottom}`
+      if (value === last) return
+      last = value
+      // On the shell, and on the document too: a floor pan carries `main` into an overlay outside the shell.
+      for (const element of [shell, document.documentElement]) {
+        element.style.setProperty('--porch-nav-height', `${bar}px`)
+        element.style.setProperty('--porch-nav-bottom', `${bottom}px`)
+      }
+    }
+    const observer = new ResizeObserver(publish)
+    observer.observe(row)
+    observer.observe(nav)
+    publish()
+    return () => {
+      observer.disconnect()
+      for (const element of [shell, document.documentElement]) { element.style.removeProperty('--porch-nav-height'); element.style.removeProperty('--porch-nav-bottom') }
+    }
+  }, [])
+  return ref
+}
+
 const staticNavItems = nav.filter((item) => !item.devOnly && !item.roles)
 
 export function StaticPorchNav() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const navRef = useNavHeightVar()
   const navLink = (item: (typeof nav)[number]) => {
     const to = item.label === 'Gallery' ? '/home' : item.path
+    const onClick = (event: MouseEvent<HTMLElement>) => {
+      if (!isPrimaryClick(event)) return
+      if (item.label === 'Party' && !window.dispatchEvent(new Event('porch-party-transition', { cancelable: true }))) { event.preventDefault(); return }
+      if (item.label === 'Scores' && !window.dispatchEvent(new Event('porch-scores-transition', { cancelable: true }))) { event.preventDefault(); return }
+    }
     return (
-      <Link key={item.label} to={to} className="porch-nav__sign">
+      <Link key={item.label} to={to} onClick={onClick} className="porch-nav__sign">
         <SpriteImage sprite={sign} />
         <span>{item.label}</span>
       </Link>
     )
   }
   return (
-    <nav data-testid="app-navigation" className="porch-nav">
+    <nav ref={navRef} data-testid="app-navigation" className="porch-nav">
       <PorchNavRoof pathname="/" />
       <div className="porch-nav__row">
         <Link to="/" aria-label="Pixel Party, home" className="porch-nav__logo"><SpriteImage sprite={logoSign} className="porch-nav__logo-full" /><SpriteImage sprite={compactLogoSign} className="porch-nav__logo-compact" /></Link>
         <div className="porch-nav__links">{staticNavItems.map(navLink)}</div>
         <div className="porch-nav__spacer" />
         <Link to="/home" data-testid="nav-sign-in-button" className="porch-nav__mail">
-          <span className="porch-nav__mail-art"><SpriteImage sprite={mailbox} /><SpriteImage sprite={flagUp} className="porch-nav__flag" /></span>
+          <span className="porch-nav__mail-art"><NavMailbox signedIn={false} /></span>
           <span className="porch-nav__username">Sign in</span>
         </Link>
         <button type="button" className="porch-nav__toggle" onClick={() => setMobileMenuOpen((previous) => !previous)} aria-label="Toggle menu" aria-expanded={mobileMenuOpen}>
@@ -221,11 +276,23 @@ export function StaticPorchNav() {
   )
 }
 
+function navKindFor(item: (typeof nav)[number]): SceneNavKind {
+  if (item.label === 'Party') return 'party'
+  if (item.label === 'Scores') return 'scores'
+  if (item.label === 'Gallery') return 'gallery'
+  return 'porch'
+}
+
 export default function Navigation() {
   const { isLoaded, isSignedIn, user, userLoading } = useAuthProfileReady({ requireUser: true })
+  // While a Daily attempt runs there is no way out of the easel: every exit is removed from the bar.
+  const locked = useDailyLock()
   const location = useLocation()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const [showAuthModal, setShowAuthModal] = useState(false)
+  const navRef = useNavHeightVar()
+  const navigate = useNavigate()
+  // Sign-in is a form on a scene object (the mailbox on the porch, the ticket board below): the scene on screen takes the request.
+  const openSignIn = () => { if (!requestSignIn()) navigate('/settings') }
   const profileReady = !isSignedIn || (!userLoading && !!user)
   const userRole = (user?.role ?? 'anonymous') as Role | 'anonymous'
   const visibleNav = nav.filter((item) => {
@@ -234,41 +301,86 @@ export default function Navigation() {
   })
   useEffect(() => { setMobileMenuOpen(false) }, [location.pathname])
 
+  const galleryPath = user ? `/u/${encodeURIComponent(user.id)}` : '/u'
+  const pathFor = (item: (typeof nav)[number]) => item.label === 'Gallery' ? galleryPath : item.path
+
+  // Leaving /party, /r/:code, /scores or a gallery for the porch: flag it so the porch settles out of the matching object.
+  // Already on the porch: tell it to cancel any pending zoom or zoom back out from Daily play/ended.
+  const markPorchReturn = () => {
+    if (location.pathname === '/home') window.dispatchEvent(new Event('pixel:return-porch'))
+    else markPorchReturnFrom(location.pathname)
+  }
+
+  // One click handler for the nav signs, the mobile menu and the account dropdown so every
+  // route in/out of any scene carries consistent physical transitions.
+  const routeClick = (item: (typeof nav)[number], path: string, event: MouseEvent<HTMLElement>) => {
+    const gallery = item.label === 'Gallery'
+    if (gallery && !isSignedIn) { event.preventDefault(); setMobileMenuOpen(false); openSignIn(); return }
+    if (!isPrimaryClick(event)) return
+    const kind = navKindFor(item)
+    setMobileMenuOpen(false)
+    if (dispatchSceneNavigation(kind, path)) { event.preventDefault(); return }
+    if (item.label === 'Party' && !window.dispatchEvent(new Event('porch-party-transition', { cancelable: true }))) { event.preventDefault(); return }
+    if (item.label === 'Scores' && !window.dispatchEvent(new Event('porch-scores-transition', { cancelable: true }))) { event.preventDefault(); return }
+    if (gallery && !window.dispatchEvent(new CustomEvent('porch-gallery-transition', { cancelable: true, detail: path }))) { event.preventDefault(); return }
+    if (item.label === 'Daily') markPorchReturn()
+  }
+
   const navLink = (item: (typeof nav)[number]) => {
     const gallery = item.label === 'Gallery'
-    const path = gallery && user ? `/u/${encodeURIComponent(user.id)}` : item.path
-    const active = location.pathname === item.path || (gallery && location.pathname.startsWith('/u/'))
-    return <Link key={item.label} to={path} onClick={(event) => {
-      if (gallery && !isSignedIn) { event.preventDefault(); setMobileMenuOpen(false); setShowAuthModal(true); return }
-      if (item.label === 'Party' && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey && event.button === 0 && !window.dispatchEvent(new Event('porch-party-transition', { cancelable: true }))) event.preventDefault()
-    }} aria-current={active ? 'page' : undefined} className="porch-nav__sign">
+    const path = gallery && user ? galleryPath : item.path
+    const active =
+      location.pathname === item.path ||
+      (item.label === 'Party' && location.pathname.startsWith('/r/')) ||
+      (gallery && location.pathname.startsWith('/u/'))
+    return <Link key={item.label} to={path} onClick={(event) => routeClick(item, path, event)} onMouseEnter={() => prefetchRoute(path)} onFocus={() => prefetchRoute(path)} aria-current={active ? 'page' : undefined} className="porch-nav__sign">
       <SpriteImage sprite={active ? activeSign : sign} /><span>{item.label}</span>{active && <SpriteImage sprite={lantern} className="porch-nav__lantern" />}
     </Link>
   }
   return <>
-    <nav data-testid="app-navigation" className="porch-nav">
+    <nav ref={navRef} data-testid="app-navigation" className="porch-nav">
       <PorchNavRoof pathname={location.pathname} />
       <CompactRoof />
       <div className="porch-nav__row">
-        <Link to="/home" aria-label="Pixel Party, home" className="porch-nav__logo"><SpriteImage sprite={logoSign} className="porch-nav__logo-full" /><SpriteImage sprite={compactLogoSign} className="porch-nav__logo-compact" /></Link>
-        <div className="porch-nav__links">{visibleNav.map(navLink)}</div>
+        {locked ? (
+          <span aria-label="Pixel Party" className="porch-nav__logo" data-testid="nav-logo-locked">
+            <SpriteImage sprite={logoSign} className="porch-nav__logo-full" />
+            <SpriteImage sprite={compactLogoSign} className="porch-nav__logo-compact" />
+          </span>
+        ) : (
+        <Link
+          to="/home"
+          aria-label="Pixel Party, home"
+          onClick={(event) => {
+            if (!isPrimaryClick(event)) return
+            if (dispatchSceneNavigation('porch', '/home')) { event.preventDefault(); return }
+            markPorchReturn()
+          }}
+          onMouseEnter={() => prefetchRoute('/home')}
+          onFocus={() => prefetchRoute('/home')}
+          className="porch-nav__logo"
+        >
+          <SpriteImage sprite={logoSign} className="porch-nav__logo-full" />
+          <SpriteImage sprite={compactLogoSign} className="porch-nav__logo-compact" />
+        </Link>
+        )}
+        {!locked && <div className="porch-nav__links">{visibleNav.map(navLink)}</div>}
         <div className="porch-nav__spacer" />
-        {!isLoaded || !profileReady ? null : isSignedIn && user ? <DropdownMenu>
-          <DropdownMenuTrigger render={<button aria-label={`Account menu: ${user.name || user.email}`} title={user.name || user.email} className="porch-nav__mail"><span className="porch-nav__mail-art"><SpriteImage sprite={mailbox} /><SpriteImage sprite={flagDown} className="porch-nav__flag" /></span><span data-testid="nav-user-name" className="porch-nav__username">{user.name || user.email}</span></button>} />
+        {locked || !isLoaded || !profileReady ? null : isSignedIn && user ? <DropdownMenu>
+          <DropdownMenuTrigger render={<button aria-label={`${user.name || user.email}, your account`} title={user.name || user.email} className="porch-nav__mail"><span className="porch-nav__mail-art"><NavMailbox signedIn /></span><span data-testid="nav-user-name" className="porch-nav__username">{user.name || user.email}</span></button>} />
           <DropdownMenuContent align="end" className="w-56">
             <DropdownMenuLabel><div>{user.name || 'Signed in'}</div><div data-testid="nav-user-email" className="text-sm text-muted-foreground">{user.email}</div></DropdownMenuLabel>
             <DropdownMenuSeparator />
-            {visibleNav.map(item => <DropdownMenuItem key={item.label} render={<Link to={item.label === 'Gallery' ? `/u/${encodeURIComponent(user.id)}` : item.path} />}>{item.label}</DropdownMenuItem>)}
+            {visibleNav.map(item => <DropdownMenuItem key={item.label} render={<Link to={pathFor(item)} onClick={(event) => routeClick(item, pathFor(item), event)} />}>{item.label}</DropdownMenuItem>)}
             <DropdownMenuSeparator />
-            <DropdownMenuItem render={<Link to={`/u/${encodeURIComponent(user.id)}`} />}>My gallery</DropdownMenuItem>
-            <DropdownMenuItem render={<Link to="/settings" />}>Settings</DropdownMenuItem>
+            <DropdownMenuItem render={<Link to={galleryPath} onClick={(event) => routeClick({ path: '/u', label: 'Gallery' }, galleryPath, event)} />}>My gallery</DropdownMenuItem>
+            <DropdownMenuItem render={<Link to="/settings" onClick={(event) => { if (isPrimaryClick(event) && dispatchSceneNavigation('settings', '/settings')) event.preventDefault() }} />}>Settings</DropdownMenuItem>
             <DropdownMenuItem onClick={() => signOut()}>Sign out</DropdownMenuItem>
           </DropdownMenuContent>
-        </DropdownMenu> : <button data-testid="nav-sign-in-button" onClick={() => setShowAuthModal(true)} className="porch-nav__mail"><span className="porch-nav__mail-art"><SpriteImage sprite={mailbox} /><SpriteImage sprite={flagUp} className="porch-nav__flag" /></span><span className="porch-nav__username">Sign in</span></button>}
-        <button className="porch-nav__toggle" onClick={() => setMobileMenuOpen((previous) => !previous)} aria-label="Toggle menu" aria-expanded={mobileMenuOpen}>{mobileMenuOpen ? <X aria-hidden /> : <Menu aria-hidden />}</button>
+        </DropdownMenu> : <button data-testid="nav-sign-in-button" onClick={openSignIn} className="porch-nav__mail"><span className="porch-nav__mail-art"><NavMailbox signedIn={false} /></span><span className="porch-nav__username">Sign in</span></button>}
+        {!locked && <button className="porch-nav__toggle" onClick={() => setMobileMenuOpen((previous) => !previous)} aria-label="Toggle menu" aria-expanded={mobileMenuOpen}>{mobileMenuOpen ? <X aria-hidden /> : <Menu aria-hidden />}</button>}
       </div>
-      {mobileMenuOpen && <div className="porch-nav__mobile">{visibleNav.map(navLink)}</div>}
+      {!locked && mobileMenuOpen && <div className="porch-nav__mobile">{visibleNav.map(navLink)}</div>}
     </nav>
-    {showAuthModal && <AuthOverlay onClose={() => setShowAuthModal(false)} />}
   </>
 }

@@ -4,43 +4,94 @@
 .porch-world__scene { position: absolute; inset: 0; }
 .porch-loading { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 16px; }
 .porch-error { position: absolute; left: 50%; bottom: 8%; transform: translateX(-50%); padding: calc(var(--px) * 3); }
+.porch-retry-debug { position: absolute; right: 16px; bottom: 16px; z-index: 9; }
+@media (max-width: 640px) { .porch-retry-debug { bottom: 68px; right: 10px; } }
 .porch-easel-copy { position: absolute; left: 23%; top: 28%; width: 55%; display: grid; gap: var(--px); padding: calc(var(--px) * 2); color: #392a45; background: #fff0cc; border: var(--px) solid #d1b5a3; box-shadow: var(--px) var(--px) #8e5960; font-size: calc(var(--px) * 4); line-height: 1; white-space: normal; text-align: center; }
 .porch-easel-copy--tag { left: 10%; top: 56%; width: 80%; padding: var(--px) calc(var(--px) * 1.5); }
 .porch-easel-copy::before { content: ''; width: calc(var(--px) * 2); height: calc(var(--px) * 2); position: absolute; top: calc(var(--px) * -1); left: 50%; background: #d86a58; }
 .porch-easel-action { display: block; padding: var(--px); background: #8e5960; color: #fff0cc; border: var(--px) solid #392a45; box-shadow: var(--px) var(--px) #bc806e; }
-.porch-scores { position: absolute; pointer-events: none; padding: calc(var(--px) * 8); color: #fff0cc; font-size: calc(var(--px) * 4); line-height: 1.1; overflow: hidden; animation: porch-board-bob 3.33s steps(1) infinite; }
-.porch-scores strong { display: block; margin-bottom: var(--px); }
-.porch-score-row { display: flex; gap: var(--px); white-space: nowrap; }
-.porch-score-row span:first-child { overflow: hidden; text-overflow: ellipsis; }
-.porch-score-more { margin-top: var(--px); }
+.porch-basement-sign-copy { container-type: inline-size; position: absolute; display: flex; flex-direction: row; align-items: center; justify-content: center; gap: calc(var(--px) * 0.5); color: #392a45; font-size: max(11px, calc(var(--px) * 3.3)); line-height: 1; letter-spacing: -0.01em; text-align: center; white-space: nowrap; text-shadow: 1px 1px #fff0cc; }
+@container (max-width: 99px) { .porch-basement-sign-extra { display: none; } }
+.porch-gallery-sign-copy { position: absolute; left: 22%; right: 8%; top: 12%; bottom: 12%; display: flex; align-items: center; justify-content: center; color: #392a45; font-size: calc(var(--px) * 3.3); line-height: 1; letter-spacing: -0.01em; white-space: nowrap; text-shadow: 1px 1px #ffcf84; pointer-events: none; }
+.porch-note-title { position: absolute; left: 9%; right: 9%; top: 9%; padding-bottom: calc(var(--px) * 0.4); color: #392a45; background: #fff0cc; border-bottom: 1px solid #8e5960; font-size: max(11px, calc(var(--px) * 2.1)); font-weight: 700; line-height: 1.02; letter-spacing: 0.03em; text-align: center; text-transform: uppercase; pointer-events: none; }
 .porch-world .pixel-hotspot__label { z-index: 3; background: #ecd4b0; color: #392a45; border: var(--px) solid #8e5960; box-shadow: var(--px) var(--px) #392a45; font-size: calc(var(--px) * 4); line-height: 1; }
 @media (hover: hover) and (pointer: fine) {
   .porch-world .pixel-hotspot::after { content: '✦'; position: absolute; top: 0; right: 0; color: #fff0bb; font-size: calc(var(--px) * 4); opacity: .35; animation: porch-glint 6s steps(1) infinite; pointer-events: none; }
   .porch-world .pixel-hotspot:nth-child(3n)::after { animation-delay: -2s; }
   .porch-world .pixel-hotspot:nth-child(3n + 1)::after { animation-delay: -4s; }
 }
+/* While the camera zooms, only the hover chrome (labels, glints, the mobile dock) steps aside. The things that are
+   physically on porch objects — the prompt card on the easel, the top five on the chalkboard — travel with the scene,
+   and the close-up replaces them in place. */
+.porch-world .pixel-hotspot::after, .porch-world .pixel-hotspot__label, .porch-world .porch-more-ticket, .porch-world .porch-dock { transition: opacity 180ms ease-out; }
+.porch-world--transitioning { pointer-events: none; }
+.porch-world--transitioning .pixel-hotspot::after, .porch-world--transitioning .pixel-hotspot__label, .porch-world--transitioning .porch-more-ticket, .porch-world--transitioning .porch-dock { opacity: 0; transition-duration: 120ms; }
+/* Daily entry swaps the view for the play chrome: fade the easel card out first, don't remove it in frame 1. */
+.porch-home__scene--leaving .pixel-hotspot, .porch-home__scene--leaving .porch-dock { opacity: 0; transition-duration: 120ms; }
+.porch-home__scene--leaving .porch-easel-copy { animation: none; }
+.porch-world--returning .pixel-hotspot::after, .porch-world--returning .pixel-hotspot__label, .porch-world--returning .porch-more-ticket, .porch-world--returning .porch-dock { opacity: 0; transition: none; }
+/* Vertical arrivals ride in with the room, so their overlays must already be at rest. */
+.porch-world--vertical-arrival .porch-easel-copy { animation: none; }
 @keyframes porch-glint { 0%, 88%, 100% { opacity: .25; } 90%, 94% { opacity: .85; } }
 @keyframes porch-board-bob { 0%, 25%, 50%, 100% { transform: translateY(0); } 26%, 49% { transform: translateY(var(--px)); } 75%, 99% { transform: translateY(calc(var(--px) * -1)); } }
-@media (prefers-reduced-motion: reduce) { .porch-world .pixel-hotspot::after, .porch-scores { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .porch-world .pixel-hotspot::after, .porch-easel-copy { animation: none; } .porch-world .pixel-hotspot, .porch-home__scene--leaving .pixel-hotspot, .porch-world .porch-more-ticket, .porch-world .porch-dock { transition: none; animation: none; } }
 .porch-more-ticket { position: absolute; z-index: 4; min-width: 44px; min-height: 44px; color: #392a45; background: #ecd4b0; border: var(--px) solid #8e5960; box-shadow: var(--px) var(--px) #392a45; font-size: calc(var(--px) * 5); }
 .porch-more-ticket:focus-visible { outline: var(--px) solid #392a45; }
-.porch-more-actions { display: grid; gap: 8px; }
-.porch-more-actions :is(a, button) { min-height: 44px; text-align: left; }
+.porch-more-actions { display: grid; gap: calc(var(--px) * 2); }
+/* Small pixel planks, the dock's own style: a sheet of buttons that stays out of the scene's way. */
+.porch-more-actions :is(a, button) { position: relative; display: flex; align-items: center; min-height: 44px; padding: 0 calc(var(--px) * 4); color: #392a45; background: linear-gradient(#f3e2c4, #d1b5a3 68%, #c57d63); border: var(--px) solid #614052; box-shadow: inset 0 var(--px) 0 #fff0cc, var(--px) var(--px) 0 #392a45; font-size: 15px; line-height: 1; text-align: left; text-decoration: none; white-space: nowrap; }
+.porch-more-actions small { display: block; margin-top: 2px; font-size: 11px; opacity: .8; }
+.porch-more-actions :is(a, button):active { transform: translateY(var(--px)); box-shadow: inset 0 var(--px) 0 #e3b28a; }
+.porch-more-actions :is(a, button):focus-visible { outline: var(--px) solid #392a45; outline-offset: var(--px); }
 .porch-dock { display: none; }
-.porch-landing-copy { margin: 16px auto; max-width: 60rem; padding: 20px; }
-.porch-landing-copy h1 { font-size: 28px; }
-.porch-landing-copy p { font-size: 20px; }
-:is(html:has(.porch-home), .porch-shell--landing) .porch-nav__sign { font-size: calc(var(--px) * 7); }
-:is(html:has(.porch-home), .porch-shell--landing) .porch-nav__username { font-size: calc(var(--px) * 5); max-width: calc(var(--px) * 34); }
-@media (min-width: 768px) { :is(html:has(.porch-home), .porch-shell--landing) .porch-nav__mail-art { display: none; } }
+/* The landing is exactly one viewport, like the porch it shows: its copy for search and screen readers is visually hidden. */
+.porch-shell--landing { height: 100dvh; overflow: hidden; }
+:is(html:has(.porch-home), html:has(.scores-page), .porch-shell--landing) .porch-nav__sign { font-size: calc(var(--px) * 7); }
 @media (max-width: 640px) {
-  :is(html:has(.porch-home), .porch-shell--landing) .porch-nav__mail { display: none; }
+  :is(html:has(.porch-home), html:has(.scores-page), .porch-shell--landing) .porch-nav__mail { display: none; }
   .porch-world .pixel-hotspot__label, .porch-more-ticket { display: none; }
   .porch-world--landing { height: 100dvh; }
-  .porch-dock { position: absolute; z-index: 8; display: grid; grid-template-columns: repeat(5, 1fr); gap: var(--px); left: var(--px); right: var(--px); bottom: var(--px); }
-  .porch-dock :is(a, button) { display: grid; place-content: center; min-width: 44px; min-height: 48px; color: #392a45; background: #ecd4b0; border: var(--px) solid #8e5960; box-shadow: var(--px) var(--px) #392a45; font-size: calc(var(--px) * 4); line-height: 1; text-align: center; }
+  .porch-dock {
+    position: absolute;
+    z-index: 8;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: calc(var(--px) * 1);
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: calc(var(--px) * 1.2) calc(var(--px) * 1.5);
+    background: linear-gradient(#8e5960, #614052 45%, #392a45);
+    border-top: var(--px) solid #392a45;
+    box-shadow: inset 0 var(--px) 0 #ecd4b0;
+  }
+  .porch-dock :is(a, button) {
+    position: relative;
+    display: grid;
+    place-content: center;
+    min-width: 44px;
+    min-height: 48px;
+    color: #392a45;
+    background: linear-gradient(#f3e2c4, #d1b5a3 68%, #c57d63);
+    border: var(--px) solid #614052;
+    box-shadow: inset 0 var(--px) 0 #fff0cc, var(--px) var(--px) 0 #392a45;
+    font-size: calc(var(--px) * 4);
+    line-height: 1;
+    text-align: center;
+  }
+  .porch-dock :is(a, button):disabled { opacity: .55; }
+  .porch-dock :is(a, button)::before {
+    content: '';
+    position: absolute;
+    top: calc(var(--px) * -0.6);
+    left: 50%;
+    width: calc(var(--px) * 1.2);
+    height: calc(var(--px) * 1.2);
+    transform: translateX(-50%);
+    background: #392a45;
+    box-shadow: 0 0 0 1px #ecd4b0;
+  }
   .porch-dock :is(a, button):focus-visible { outline: var(--px) solid #fff0cc; outline-offset: var(--px); }
-  .porch-scores { font-size: calc(var(--px) * 4); }
   .pixel-hotspot[aria-label="Scoring rules"] .pixel-hotspot__label,
   .pixel-hotspot[aria-label="Public board"] .pixel-hotspot__label { left: 0; transform: none; }
   .pixel-hotspot[aria-label="Your gallery"] .pixel-hotspot__label { left: 0; top: auto; bottom: 100%; transform: none; }
@@ -49,3 +100,44 @@
   .pixel-hotspot[aria-label="Account menu"] .pixel-hotspot__label,
   .pixel-hotspot[aria-label="Sign in"] .pixel-hotspot__label { top: auto; bottom: 100%; }
 }
+
+/* Local close-ups (the house-rules note, the mailbox's account menu): the camera is on the object, its HTML is glued to
+   it while the camera moves (scene/registration.ts), and the scene around it is the way back out. */
+.porch-local__dismiss { position: fixed; inset: 0; z-index: 16; pointer-events: none; }
+.porch-local__dismiss--open { pointer-events: auto; cursor: zoom-out; }
+.porch-local { position: fixed; inset: 0; z-index: 17; pointer-events: none; }
+.porch-local__paper, .porch-local__panel { position: absolute; box-sizing: border-box; pointer-events: auto; color: #392a45; background: #fff0cc; border: calc(var(--px) * 1.5) solid #d1b5a3; box-shadow: calc(var(--px) * 1.5) calc(var(--px) * 1.5) #8e5960; }
+.porch-local[data-local-phase='in'] .porch-local__paper, .porch-local[data-local-phase='out'] .porch-local__paper,
+.porch-local[data-local-phase='in'] .porch-local__panel, .porch-local[data-local-phase='out'] .porch-local__panel { pointer-events: none; }
+.porch-local__anchor { position: absolute; pointer-events: none; }
+.porch-rules-paper { display: flex; flex-direction: column; justify-content: center; gap: 12px; height: 100%; padding: 20px; font-size: 20px; line-height: 1.25; }
+.porch-rules-paper h2 { font-size: 26px; text-transform: uppercase; letter-spacing: 0.02em; }
+.porch-mailbox-card { display: grid; gap: 8px; padding: 16px; font-size: 18px; }
+.porch-mailbox-card h2 { font-size: 22px; text-transform: uppercase; }
+.porch-mailbox-card :is(a, button) { min-height: 44px; display: inline-flex; align-items: center; padding: 0 12px; color: #392a45; background: #ecd4b0; border: calc(var(--px) * 1) solid #8e5960; text-align: left; text-decoration: none; }
+.porch-mailbox-card .pp-btn { color: #fff0cc; }
+/* The More ticket's sheet slides up out of the ticket (transform only). */
+.porch-more-sheet { position: fixed; z-index: 17; width: max-content; max-width: 90%; pointer-events: auto; color: #392a45; background: #ecd4b0; border: var(--px) solid #8e5960; box-shadow: var(--px) var(--px) #392a45; padding: calc(var(--px) * 2.5); animation: porch-more-up 220ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+@keyframes porch-more-up { 0% { transform: translateY(calc(var(--px) * 6)); } 100% { transform: none; } }
+/* On a phone the sheet rises out of the dock's More plank, right-aligned above it. */
+@media (max-width: 640px) { .porch-more-sheet { left: auto !important; right: calc(var(--px) * 3); bottom: calc(var(--px) * 31) !important; } }
+@media (prefers-reduced-motion: reduce) { .porch-more-sheet { animation: none; } }
+
+/* Haiku says hello: his bubble stands over the cat, in scene units, in the same style as his other bubbles. */
+.porch-haiku { cursor: help; }
+.porch-haiku__bubble { position: absolute; left: 0; bottom: calc(100% + var(--px) * 1.5); z-index: 5; width: max-content; max-width: calc(var(--px) * 40); padding: calc(var(--px) * 1.2) calc(var(--px) * 2); color: #392a45; background: #fff0cc; border: var(--px) solid #985c5a; box-shadow: inset 0 0 0 var(--px) #ecae7d, var(--px) var(--px) 0 #614052; font-size: max(12px, calc(var(--px) * 2.7)); font-weight: 700; line-height: 1.1; text-align: left; white-space: normal; pointer-events: none; animation: porch-haiku-pop 220ms steps(3) both; }
+@keyframes porch-haiku-pop { 0% { opacity: 0; transform: translateY(calc(var(--px) * 1.5)) scale(0.92); } 100% { opacity: 1; transform: none; } }
+.porch-haiku__bubble::after { content: ''; position: absolute; left: calc(var(--px) * 5); bottom: calc(var(--px) * -2.6); width: calc(var(--px) * 1.6); height: calc(var(--px) * 1.6); background: #fff0cc; border-right: var(--px) solid #985c5a; border-bottom: var(--px) solid #985c5a; transform: rotate(45deg); }
+@media (prefers-reduced-motion: reduce) { .porch-haiku__bubble { animation: none; } }
+
+/* The porch tally: a small plank hanging from the easel's crossbar (two cords), the names dropping out of it on hover or focus. */
+.porch-presence { position: absolute; z-index: 4; display: flex; justify-content: center; align-items: flex-start; pointer-events: none; }
+.porch-presence__plank { position: relative; display: grid; gap: calc(var(--px) * 0.4); justify-items: center; min-width: 44px; min-height: 44px; margin-top: calc(var(--px) * 2); padding: calc(var(--px) * 1) calc(var(--px) * 2.5); color: #392a45; background: linear-gradient(#f3e2c4, #d1b5a3 70%, #c57d63); border: var(--px) solid #614052; box-shadow: inset 0 var(--px) 0 #fff0cc, var(--px) var(--px) 0 rgba(57, 42, 69, 0.55); font-size: max(11px, calc(var(--px) * 2.8)); line-height: 1.05; text-align: center; white-space: nowrap; pointer-events: auto; cursor: help; }
+.porch-presence__plank::before, .porch-presence__plank::after { content: ''; position: absolute; top: calc(var(--px) * -2.4); width: var(--px); height: calc(var(--px) * 2.4); background: #614052; }
+.porch-presence__plank::before { left: 22%; }
+.porch-presence__plank::after { right: 22%; }
+.porch-presence__plank:focus-visible { outline: var(--px) solid #392a45; outline-offset: var(--px); }
+.porch-presence__headline { font-weight: 700; }
+.porch-presence__detail { color: #8e3f4c; }
+.porch-presence__names { display: grid; gap: calc(var(--px) * 0.3); margin-top: calc(var(--px) * 0.6); padding-top: calc(var(--px) * 0.8); border-top: 1px dashed #985c5a; font-size: max(11px, calc(var(--px) * 2.5)); }
+.porch-world--transitioning .porch-presence { pointer-events: none; }

@@ -1,0 +1,1336 @@
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
+import { Link, useBlocker, useNavigate, useParams } from 'react-router-dom'
+import {
+  useAuthProfileReady,
+  usePresenceRoom,
+  useQuery,
+  useUserLookup,
+} from 'deepspace'
+import {
+  AlertCircle,
+  ArrowLeft,
+  Award,
+  ChevronDown,
+  Clock,
+  Copy,
+  Eye,
+  FastForward,
+  LogIn,
+  Trash2,
+  Trophy,
+  Users,
+  WifiOff,
+} from 'lucide-react'
+import { AskAiButton } from '../../../../components/game/AskAiButton'
+import { CanvasThumb } from '../../../../components/game/CanvasThumb'
+import { DeleteRoomDialog } from '../../../../components/game/DeleteRoomButton'
+import { InvitePlank, useCopyLink } from '../../../../components/game/InvitePlank'
+import { MuteButton } from '../../../../components/game/MuteButton'
+import { PainterTray } from '../../../../components/game/PainterTray'
+import { Palette } from '../../../../components/game/Palette'
+import { PixelCanvas } from '../../../../components/game/PixelCanvas'
+import { PlayerCursors } from '../../../../components/game/PlayerCursors'
+import { orderRoster, PlayersPanel } from '../../../../components/game/PlayersPanel'
+import { ToolBar } from '../../../../components/game/ToolBar'
+import { useGameSounds } from '../../../../components/game/useGameSounds'
+import { CriticBubble } from '../../../../components/play/CriticBubble'
+import { HaikuStrip } from '../../../../components/play/HaikuStrip'
+import { PartyScoreNote } from '../../../../components/play/PartyScoreNote'
+import { PlayLayout } from '../../../../components/play/PlayLayout'
+import '../../../../components/play/room-play.css'
+import { StudioSprite } from '../../../../components/play/StudioSprite'
+import { RoomSignInSlip } from '../../../../components/studio/RoomSignInSlip'
+import { useStudioWorld } from '../../../../components/studio/StudioWorld'
+import { requestVerticalSceneTransition } from '../../../../components/porch/VerticalSceneTransition'
+import {
+  isPrimaryClick,
+  SCENE_NAV_EVENT,
+  type SceneNavKind,
+} from '../../../../components/porch/returnFlag'
+import {
+  Button,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '../../../../components/ui'
+import { effectiveCooldownUntil, roomAccessView, type RejectMsg } from '../../../../game/client-state'
+import { MODES } from '../../../../game/config'
+import { contributorLabel } from '../../../../game/contributor-label'
+import { cooldownMs } from '../../../../game/rules'
+import { coopScoreParts } from '../../../../game/scoring'
+import { PARTY_TOOLS, pickAt, type Tool } from '../../../../game/tools'
+import { boardCellSize } from '../../../../game/board-size'
+import { usePixelRoom } from '../../../../hooks/usePixelRoom'
+import { useToolShortcuts } from '../../../../hooks/useToolShortcuts'
+import { untransformedRect, useSceneRegistration } from '../../../../scene/registration'
+import { studioSprites } from '../../../../scene/studio/sprites'
+
+interface RoomRecord {
+  name: string
+  mode: 'coop' | 'team'
+  visibility: 'public' | 'private'
+  joinCode: string
+  hostId: string
+  status: 'lobby' | 'playing' | 'intermission' | 'paused' | 'closed'
+  isDefaultBoard: boolean
+}
+
+interface RoundRecord {
+  roomId: string
+  roundId: string
+  word: string
+  outcome: 'won' | 'timeout' | 'teamWin'
+  score?: number
+  pixelsUsed?: number
+  durationMs?: number
+  contributorIds?: string[]
+  finalGuesses?: string[]
+}
+
+// The panels around the board that slide out from behind it as the camera lands (and back in as it leaves).
+const PANEL_SELECTOR = '.play-layout__top > *, .play-layout__left > *, .play-layout__haiku > *, .play-layout__right > *, .play-layout__bottom > *'
+
+// Vertical chrome around the board (excluding PixelCanvas's own 20px inset), as a gap under the tray: the tray tucks under the easel foot, so the free height is the window minus the room's top,
+// the tray's true height, less 13px. Calibrated so the settled boards keep the sizes they have always had (448 at 1280x720, 480 at 1366x768,
+// 576 at 1440x900), now that the tray height is measured truthfully while the camera moves.
+const EASEL_AND_TRAY_GAP_PX = -13
+const EASEL_HORIZONTAL_CHROME_PX = 40
+
+function formatTimer(ms: number): string {
+  const totalSec = Math.max(0, Math.ceil(ms / 1000))
+  const m = Math.floor(totalSec / 60)
+  const s = totalSec % 60
+  return `${m}:${s.toString().padStart(2, '0')}`
+}
+
+function rejectMessage(reject: RejectMsg | null, now: number): string | null {
+  if (!reject) return null
+  switch (reject.reason) {
+    case 'not_signed_in':
+      return 'Sign in to place pixels or ask Haiku.'
+    case 'rate_limited':
+      return 'Painting too quickly — try again in a moment.'
+    case 'cooldown': {
+      const wait = reject.retryAt ? Math.max(0.1, (reject.retryAt - now) / 1000) : 0.2
+      return `Brush cooling down — ready in ${wait.toFixed(1)}s`
+    }
+    case 'ask_too_soon': {
+      const wait = reject.retryAt ? Math.max(1, Math.ceil((reject.retryAt - now) / 1000)) : 5
+      return `Hold on! You can ask Haiku again in ${wait}s.`
+    }
+    case 'canvas_unchanged':
+      return 'Draw something new first!'
+    case 'canvas_blank':
+      return 'Draw something first!'
+    case 'round_inactive':
+      return 'Round is not currently active.'
+    case 'not_host':
+      return 'The host starts the next round while connected.'
+    case 'out_of_bounds':
+      return 'That spot is outside the canvas.'
+    case 'bad_color':
+      return 'Pick a valid palette swatch first.'
+    default:
+      return null
+  }
+}
+
+function InviteBadge({ code }: { code: string }) {
+  const { label, copy } = useCopyLink(code)
+  return (
+    <div className="room-invite-ticket">
+      <span
+        data-testid="room-code"
+        className="room-invite-ticket__code uppercase"
+        aria-label={`Room code ${code}`}
+      >
+        {code}
+      </span>
+      <button
+        type="button"
+        className="room-invite-ticket__copy inline-flex cursor-pointer items-center gap-1.5 text-base uppercase"
+        data-testid="copy-room-link"
+        onClick={() => void copy()}
+      >
+        <Copy className="h-3.5 w-3.5 shrink-0" aria-hidden />
+        <span aria-live="polite">{label}</span>
+      </button>
+    </div>
+  )
+}
+
+export default function RoomPage() {
+  const { code = 'play' } = useParams<{ code: string }>()
+  const rawCode = code.trim() || 'play'
+  const joinCode = rawCode.toLowerCase() === 'play' ? 'play' : rawCode.toUpperCase()
+
+  const { isSignedIn, user } = useAuthProfileReady({ requireUser: false })
+  const { getName } = useUserLookup()
+
+  const { state, sessionExpired, place, ask, next } = usePixelRoom(joinCode)
+  const { muted, toggleMute } = useGameSounds(state)
+  const { peers, updateState: updatePresence } = usePresenceRoom(`pixel:${joinCode}`)
+
+  const { records: roomRecords } = useQuery<RoomRecord>('rooms', {
+    where: { joinCode },
+    limit: 1,
+  })
+  const roomDoc = roomRecords[0]
+
+  const { records: roundRecords } = useQuery<RoundRecord>('rounds', {
+    where: { roundId: state.round?.id ?? '__none__' },
+    limit: 1,
+  })
+  const currentRoundDoc = useMemo(
+    () => (state.round?.id ? roundRecords.find((r) => r.data.roundId === state.round?.id) : undefined),
+    [roundRecords, state.round?.id],
+  )
+
+  const [activeColor, setActiveColor] = useState<number>(4) // Default red
+  const [tool, setTool] = useState<Tool>('paint')
+  const [now, setNow] = useState<number>(() => Date.now())
+  const world = useStudioWorld()
+  // Signing in is a slip pinned to the room's ticket on the easel (the studio layout owns whether it is open).
+  const { signInOpen: showAuthModal, setSignInOpen: setShowAuthModal } = world
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [dismissedOverlayRoundId, setDismissedOverlayRoundId] = useState<string | null>(null)
+  const [asking, setAsking] = useState(false)
+  const askingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastGuessCountRef = useRef<number>(state.guessLog.length)
+  const lastPresenceSentRef = useRef<number>(0)
+  const trailingCursorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const overlayDialogRef = useRef<HTMLDivElement | null>(null)
+
+  const minBoardRef = useRef(0)
+  minBoardRef.current = world.minBoardPx ?? 0
+  // The room's own slide (see `roomShift`) is not part of the space above the board.
+  const shiftXRef = useRef(0)
+  const shiftYRef = useRef(0)
+  shiftXRef.current = world.roomShift.x
+  shiftYRef.current = world.roomShift.y
+  const roomPageRef = useRef<HTMLDivElement | null>(null)
+  const headerRef = useRef<HTMLDivElement | null>(null)
+  const centerColRef = useRef<HTMLDivElement | null>(null)
+  const roundBarWrapRef = useRef<HTMLDivElement | null>(null)
+  const canvasSlotRef = useRef<HTMLDivElement | null>(null)
+  const paletteWrapRef = useRef<HTMLDivElement | null>(null)
+  const [availBox, setAvailBox] = useState<{ width: number; height: number }>({
+    width: 600,
+    height: 600,
+  })
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setNow(Date.now())
+    }, 100)
+    return () => clearInterval(interval)
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (trailingCursorTimerRef.current) {
+        clearTimeout(trailingCursorTimerRef.current)
+      }
+      if (askingTimerRef.current) {
+        clearTimeout(askingTimerRef.current)
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    if (state.guessLog.length !== lastGuessCountRef.current) {
+      lastGuessCountRef.current = state.guessLog.length
+      if (asking) {
+        setAsking(false)
+        if (askingTimerRef.current) {
+          clearTimeout(askingTimerRef.current)
+          askingTimerRef.current = null
+        }
+      }
+    }
+  }, [asking, state.guessLog.length])
+
+  useEffect(() => {
+    if (!asking) return
+    if (state.aiResting || state.round?.state !== 'playing' || state.lastReject) {
+      setAsking(false)
+      if (askingTimerRef.current) {
+        clearTimeout(askingTimerRef.current)
+        askingTimerRef.current = null
+      }
+    }
+  }, [asking, state.aiResting, state.lastReject, state.round?.state])
+
+  const handleAsk = useCallback(() => {
+    setAsking(true)
+    if (askingTimerRef.current) clearTimeout(askingTimerRef.current)
+    askingTimerRef.current = setTimeout(() => {
+      setAsking(false)
+      askingTimerRef.current = null
+    }, 5000)
+    ask()
+  }, [ask])
+
+  const isSpectator = state.snapshotLoaded ? !state.you.userId : !isSignedIn
+  const roundPlaying = state.round?.state === 'playing'
+  const canDraw = Boolean(state.you.userId) && Boolean(roundPlaying)
+  const cooldownTotalMs = cooldownMs(Math.max(1, state.players))
+  const cooldownRemainingMs = Math.max(0, effectiveCooldownUntil(state) - now)
+  const friendlyReject = rejectMessage(state.lastReject, now)
+  const cooldownFraction = cooldownRemainingMs > 0 && cooldownTotalMs > 0 ? Math.min(1, cooldownRemainingMs / cooldownTotalMs) : 0
+
+  useLayoutEffect(() => {
+    const measure = () => {
+      const col = centerColRef.current
+      if (!col) return
+      const colWidth = col.clientWidth || Math.max(280, window.innerWidth - 32)
+      const availWidth = Math.max(200, colWidth - EASEL_HORIZONTAL_CHROME_PX)
+      const slot = canvasSlotRef.current
+      // The app shell locks document scrolling; main is the sole scroll container.
+      // Measured with the registration's transform lifted: mid-move the room is scaled onto the easel, and a
+      // scaled rect would shrink the board (and re-scale the whole assembly) in the middle of the camera move.
+      const topOffset = slot
+        ? untransformedRect(slot).y + (slot.closest('main')?.scrollTop ?? 0) - shiftYRef.current
+        : 120
+      // The tray is a panel with a transform of its own while the camera moves, which lifting the root's does not undo: its layout
+      // height (`offsetHeight`) ignores every transform.
+      const paletteH = paletteWrapRef.current?.offsetHeight ?? 104
+      const wide = window.innerWidth >= 768
+      // The board is normally capped at 596px; a big screen asks for more (see `minBoardPx`) so the scene behind the room
+      // reaches every edge, as far as the space around the board allows.
+      const wanted = Math.max(596, Math.ceil(minBoardRef.current / 32) * 32 + 20)
+      const availHeight = wide
+        ? Math.min(wanted, Math.max(200, window.innerHeight - topOffset - paletteH - EASEL_AND_TRAY_GAP_PX))
+        : Math.max(288, availWidth)
+      setAvailBox((prev) =>
+        prev.width === availWidth && prev.height === availHeight
+          ? prev
+          : { width: availWidth, height: availHeight },
+      )
+    }
+
+    measure()
+    const ro = new ResizeObserver(measure)
+    if (roomPageRef.current) ro.observe(roomPageRef.current)
+    if (centerColRef.current) ro.observe(centerColRef.current)
+    if (headerRef.current) ro.observe(headerRef.current)
+    if (paletteWrapRef.current) ro.observe(paletteWrapRef.current)
+    window.addEventListener('resize', measure)
+    return () => {
+      ro.disconnect()
+      window.removeEventListener('resize', measure)
+    }
+  }, [
+    state.snapshotLoaded,
+    state.round?.state,
+    isSpectator,
+    sessionExpired,
+    roomDoc?.data.name,
+    world.minBoardPx,
+  ])
+
+  const handleHoverCell = useCallback(
+    (cell: { x: number; y: number } | null) => {
+      if (trailingCursorTimerRef.current) {
+        clearTimeout(trailingCursorTimerRef.current)
+        trailingCursorTimerRef.current = null
+      }
+      if (!cell) {
+        lastPresenceSentRef.current = Date.now()
+        updatePresence({ cursor: null })
+        return
+      }
+      const t = Date.now()
+      const elapsed = t - lastPresenceSentRef.current
+      if (elapsed >= 100) {
+        lastPresenceSentRef.current = t
+        updatePresence({ cursor: { x: cell.x, y: cell.y } })
+      } else {
+        trailingCursorTimerRef.current = setTimeout(() => {
+          trailingCursorTimerRef.current = null
+          lastPresenceSentRef.current = Date.now()
+          updatePresence({ cursor: { x: cell.x, y: cell.y } })
+        }, 100 - elapsed)
+      }
+    },
+    [updatePresence],
+  )
+
+  const pixelsCount = useMemo(() => {
+    let count = 0
+    for (let i = 0; i < state.cells.length; i++) {
+      if (state.cells[i] !== 0) count++
+    }
+    return count
+  }, [state.cells])
+
+  const confirmedPixelsCount = useMemo(() => {
+    let count = 0
+    for (let i = 0; i < state.cells.length; i++) {
+      const value = state.pending.has(i) ? state.pending.get(i)! : state.cells[i]
+      if (value !== 0) count++
+    }
+    return count
+  }, [state.cells, state.pending])
+
+  const isHost =
+    Boolean(user?.id) &&
+    Boolean(roomDoc?.data.hostId) &&
+    !roomDoc?.data.isDefaultBoard &&
+    joinCode !== 'play' &&
+    roomDoc?.data.hostId === user?.id
+
+  const hostConnected = state.roster.some((player) => player.userId === roomDoc?.data.hostId)
+  const canStart =
+    Boolean(state.connected && state.you.userId) &&
+    (joinCode === 'play' || isHost || (Boolean(roomDoc?.data.hostId) && !hostConnected))
+  // The public board has no host, so a signed-out visitor must be offered sign-in
+  // instead of a permanently disabled "waiting for the host" message.
+  const publicSignedOut = joinCode === 'play' && !state.you.userId
+
+  const handlePlace = useCallback(
+    (x: number, y: number, color: number) => {
+      if (isSpectator) {
+        setShowAuthModal(true)
+        return
+      }
+      if (!canDraw) return
+      place(x, y, color)
+    },
+    [isSpectator, canDraw, place],
+  )
+
+  const handlePick = useCallback(
+    (x: number, y: number) => {
+      if (!canDraw) return
+      const picked = pickAt(state.cells, state.width, x, y)
+      if (picked.tool === 'erase') {
+        setTool('erase')
+      } else {
+        setActiveColor(picked.color)
+        setTool('paint')
+      }
+    },
+    [canDraw, state.cells, state.width],
+  )
+
+  const contributorInfo = useMemo(() => {
+    const rawIds = currentRoundDoc?.data.contributorIds
+    const ids = Array.isArray(rawIds) ? rawIds : []
+    if (ids.length > 0) {
+      return {
+        names: ids.map(
+          (id) => getName(id) || (id === user?.id ? user.name || 'You' : `Painter ${id.slice(0, 5)}`),
+        ),
+        fallbackText: null as string | null,
+      }
+    }
+    const usedPx = currentRoundDoc?.data.pixelsUsed ?? confirmedPixelsCount
+    if (usedPx > 0) {
+      const painterCount =
+        state.round?.result?.contributorCount ?? currentRoundDoc?.data.contributorIds?.length
+      return {
+        names: [] as string[],
+        fallbackText: contributorLabel(painterCount, usedPx),
+      }
+    }
+    return {
+      names: [] as string[],
+      fallbackText: 'No pixels placed this round.',
+    }
+  }, [currentRoundDoc, getName, confirmedPixelsCount, state.round?.result?.contributorCount, user])
+
+  const showOverlay =
+    state.round?.state === 'intermission' &&
+    state.round.result != null &&
+    dismissedOverlayRoundId !== state.round.id
+  const outcome = state.round?.result?.outcome
+
+  const roundPixelsUsed = currentRoundDoc?.data.pixelsUsed ?? confirmedPixelsCount
+  const roundDurationMs = useMemo(() => {
+    if (currentRoundDoc?.data.durationMs != null) return currentRoundDoc.data.durationMs
+    const round = state.round
+    if (!round) return MODES[state.mode].capMs
+    if (round.endedAt != null) return Math.max(0, round.endedAt - round.startedAt)
+    return MODES[state.mode].capMs
+  }, [currentRoundDoc?.data.durationMs, state.mode, state.round])
+
+  const baseParts = useMemo(() => {
+    if (outcome !== 'won') return { pixels: 0, time: 0, total: 0 }
+    return coopScoreParts({
+      pixelsUsed: roundPixelsUsed,
+      totalCells: state.width * state.height,
+      durationMs: roundDurationMs,
+      capMs: MODES[state.mode].capMs,
+    })
+  }, [outcome, roundPixelsUsed, roundDurationMs, state.mode, state.width, state.height])
+
+  const shownTotal =
+    outcome === 'won'
+      ? (state.round?.result?.score ?? baseParts.total)
+      : (state.round?.result?.score ?? 0)
+
+  const scoreParts = useMemo(() => {
+    if (outcome !== 'won') return { pixels: 0, time: 0, total: shownTotal }
+    if (shownTotal === baseParts.total) return baseParts
+    const pixels = Math.max(
+      Math.max(0, shownTotal - 500),
+      Math.min(500, Math.min(shownTotal, baseParts.pixels)),
+    )
+    return { pixels, time: shownTotal - pixels, total: shownTotal }
+  }, [outcome, shownTotal, baseParts])
+
+  useToolShortcuts({
+    tools: PARTY_TOOLS,
+    onSelect: setTool,
+    enabled: canDraw && !showOverlay && !showAuthModal,
+  })
+
+  useEffect(() => {
+    if (showOverlay) {
+      overlayDialogRef.current?.focus()
+    }
+  }, [showOverlay])
+
+  const navigate = useNavigate()
+  const { setBoardRect, setSummary } = world
+  // Room -> studio: the camera pulls back out of the easel with the room still registered to it, then the studio
+  // takes over. Browser back is the same move: block the pop, play it, and let it through when it lands.
+  // `exitingRef` is the exit being under way (a second Back or click during it is swallowed); `landingRef` is set only for the one
+  // navigation that finishes it, which the blocker must let through.
+  const exitingRef = useRef(false)
+  const landingRef = useRef(false)
+  const blocker = useBlocker(({ currentLocation, nextLocation }) =>
+    !landingRef.current && currentLocation.pathname.startsWith('/r/') && nextLocation.pathname === '/party')
+  const leavingUpRef = useRef(false)
+
+  const goStudio = useCallback(() => {
+    if (exitingRef.current) return
+    exitingRef.current = true
+    world.leave('/party', () => { landingRef.current = true })
+  }, [world])
+
+  useEffect(() => {
+    if (blocker.state !== 'blocked') return
+    blocker.reset()
+    goStudio()
+  }, [blocker, goStudio])
+
+  const onRoomExitClick = useCallback((event: MouseEvent<HTMLAnchorElement>) => {
+    if (!isPrimaryClick(event)) return
+    event.preventDefault()
+    goStudio()
+  }, [goStudio])
+
+  // Room -> porch / scores / gallery / settings: rise through the floor to /home first,
+  // then let the porch chain into its own zoom (no hard cut).
+  const goUpstairsFromRoom = useCallback((kind: Exclude<SceneNavKind, 'party'>, path: string) => {
+    if (leavingUpRef.current) return
+    leavingUpRef.current = true
+    const followup = kind === 'porch' ? undefined : { kind, path }
+    if (requestVerticalSceneTransition({ source: 'room', target: 'porch', direction: 'up', path: '/home', ...(followup ? { followup } : {}) })) return
+    navigate(kind === 'porch' ? path : '/home')
+  }, [navigate])
+
+  useEffect(() => {
+    const onSceneNav = (event: Event) => {
+      const detail = (event as CustomEvent<{ kind: SceneNavKind; path: string }>).detail
+      if (!detail || detail.kind === 'signin') return
+      event.preventDefault()
+      if (detail.kind === 'party') {
+        goStudio()
+        return
+      }
+      goUpstairsFromRoom(detail.kind, detail.path)
+    }
+    window.addEventListener(SCENE_NAV_EVENT, onSceneNav)
+    return () => window.removeEventListener(SCENE_NAV_EVENT, onSceneNav)
+  }, [goStudio, goUpstairsFromRoom])
+
+  // The room's board is the object the studio camera lands on. Report where it settles (layout rect, transforms
+  // ignored) and keep it current as the layout changes.
+  const registerRef = useRef<HTMLDivElement>(null)
+  const boardRef = useRef<HTMLDivElement>(null)
+  useSceneRegistration({ host: world.hostRef, root: registerRef, anchor: boardRef, focus: world.focus, active: world.phase !== 'active', panelSelector: PANEL_SELECTOR })
+  const reportBoard = useCallback(() => {
+    const board = boardRef.current
+    if (!board) return
+    // Reported without the room's own slide: the studio decides the slide from this rect.
+    const rect = untransformedRect(board)
+    setBoardRect({ ...rect, x: rect.x - shiftXRef.current, y: rect.y - shiftYRef.current })
+  }, [setBoardRect])
+  // Every commit, not only on resizes: the connecting layout turning into the lobby face moves the board without
+  // resizing it, and a stale rect leaves the studio camera (and the exit that starts from it) a few pixels off.
+  useLayoutEffect(() => { reportBoard() })
+  useLayoutEffect(() => {
+    const board = boardRef.current
+    const layout = registerRef.current
+    if (!board) return
+    const observer = new ResizeObserver(reportBoard)
+    observer.observe(board)
+    if (layout) observer.observe(layout)
+    window.addEventListener('resize', reportBoard)
+    return () => { observer.disconnect(); window.removeEventListener('resize', reportBoard) }
+  }, [reportBoard])
+  useEffect(() => () => setBoardRect(null), [setBoardRect])
+
+  // The easel's HUD and word line show these (the board itself is this page's own canvas).
+  useEffect(() => {
+    setSummary({ players: state.players, roundState: state.round?.state, word: state.round?.word })
+  }, [setSummary, state.players, state.round?.state, state.round?.word])
+  useEffect(() => () => setSummary(null), [setSummary])
+
+  const accessView = roomAccessView(state)
+  const loading = accessView === 'loading'
+  const boardPx = boardCellSize({
+    availWidth: Math.max(0, availBox.width - 20),
+    availHeight: Math.max(0, availBox.height - 20),
+    cols: state.width || 32,
+    rows: state.height || 32,
+  }) * (state.width || 32)
+
+  const customRoomName =
+    roomDoc?.data.name &&
+    roomDoc.data.name.trim() !== '' &&
+    roomDoc.data.name.trim().toLowerCase() !== 'pixel party'
+      ? roomDoc.data.name
+      : null
+
+  const hostName = (roomDoc?.data.hostId && (roomDoc.data.hostId === user?.id ? 'You' : getName(roomDoc.data.hostId))) || 'The host'
+  const effectiveCode = roomDoc?.data.joinCode ?? joinCode
+  const inviteTicket =
+    effectiveCode !== 'play' ? (
+      <InviteBadge code={effectiveCode} />
+    ) : (
+      <span
+        data-testid="room-code"
+        className="pp-chip uppercase"
+        aria-label={`Room code ${effectiveCode}`}
+      >
+        ROOM {effectiveCode}
+      </span>
+    )
+
+  const showIntermissionNext = canStart && state.round?.state === 'intermission'
+  const showPlayingSkip =
+    canStart && (state.round?.state === 'playing' || state.round?.state === 'paused')
+
+  const roomControls = (
+    <div className="flex items-center gap-2 text-base">
+      {showIntermissionNext && (
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          data-testid="host-next-button"
+          onClick={next}
+          className="pp-btn h-8 gap-1.5 px-3 text-base uppercase"
+        >
+          <FastForward className="h-3.5 w-3.5 text-[var(--sunset-1)]" aria-hidden />
+          New game
+        </Button>
+      )}
+      {isHost && (
+        <>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  data-testid="host-menu-button"
+                  className="pp-chip h-8 gap-1 px-2.5 text-base uppercase text-foreground hover:bg-secondary"
+                >
+                  Host
+                  <ChevronDown className="h-3.5 w-3.5" aria-hidden />
+                </Button>
+              }
+            />
+            <DropdownMenuContent side="bottom" align="end" sideOffset={6} className="min-w-[10.5rem]">
+              {showPlayingSkip && (
+                <>
+                  <DropdownMenuItem
+                    data-testid="host-next-button"
+                    onClick={next}
+                    className="cursor-pointer gap-2 text-base uppercase"
+                  >
+                    <FastForward className="h-3.5 w-3.5 text-[var(--sunset-1)]" aria-hidden />
+                    Skip round
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                </>
+              )}
+              <DropdownMenuItem
+                variant="destructive"
+                data-testid="delete-room-button"
+                onClick={() => setDeleteOpen(true)}
+                className="pp-danger cursor-pointer gap-2 text-base uppercase"
+              >
+                <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                Pack up
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <DeleteRoomDialog joinCode={joinCode} open={deleteOpen} onOpenChange={setDeleteOpen} />
+        </>
+      )}
+      <MuteButton muted={muted} onToggle={toggleMute} />
+    </div>
+  )
+
+
+  // --- What is on the easel when it is not (yet) a live board: connecting, a closed door, the waiting room. ---
+  const loadingFace = (
+    <p data-testid="room-loading" role="status" className="room-board__loading">
+      Setting up your easel…
+    </p>
+  )
+
+  const errorFace = state.connectError ? (
+    <>
+        {state.connectError === 'unauthorized' && (
+          <div
+            data-testid="room-error-unauthorized"
+            className="room-board__card flex flex-col items-center gap-4 text-center"
+          >
+            <div className="pp-chip flex items-center justify-center p-2">
+              <StudioSprite sprite={studioSprites.errorLocked} scale={3} />
+            </div>
+            <div className="space-y-1">
+              <h1 className="text-2xl uppercase text-[var(--sunset-2)]">
+                Private Studio Room — Sign In Required
+              </h1>
+              <p className="text-base text-muted-foreground">
+                Invite room <span className="text-[var(--sunset-1)]">{joinCode}</span> is locked behind the studio door.
+                Sign in with your account to pull up a stool.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              <Button
+                type="button"
+                data-testid="room-error-sign-in"
+                onClick={() => setShowAuthModal(true)}
+                className="pp-btn px-5 text-lg uppercase"
+              >
+                <LogIn className="mr-2 h-4 w-4" aria-hidden />
+                Sign in to join
+              </Button>
+              <Link
+                to="/party"
+                data-testid="room-exit"
+                onClick={onRoomExitClick}
+                className="pp-chip inline-flex h-10 items-center justify-center gap-1.5 px-4 text-base uppercase hover:bg-secondary"
+              >
+                <ArrowLeft className="h-4 w-4" aria-hidden />
+                Back to the studio
+              </Link>
+            </div>
+          </div>
+        )}
+
+        {state.connectError === 'not_found' && (
+          <div
+            data-testid="room-error-not-found"
+            className="room-board__card flex flex-col items-center gap-4 text-center"
+          >
+            <div className="pp-chip flex items-center justify-center p-2">
+              <StudioSprite sprite={studioSprites.errorNotFound} scale={3} />
+            </div>
+            <div className="space-y-1">
+              <h1 className="text-2xl uppercase text-[var(--sunset-2)]">
+                Easel Not Found
+              </h1>
+              <p className="text-base text-muted-foreground">
+                No studio easel exists for code <span className="text-[var(--sunset-3)]">{joinCode}</span>.
+                Check the ticket code or head back to the studio.
+              </p>
+            </div>
+            <Link
+              to="/party"
+              data-testid="room-exit"
+              onClick={onRoomExitClick}
+              className="pp-btn inline-flex h-10 items-center justify-center gap-1.5 px-5 text-lg uppercase"
+            >
+              <ArrowLeft className="h-4 w-4" aria-hidden />
+              Back to the studio
+            </Link>
+          </div>
+        )}
+
+        {state.connectError === 'closed' && (
+          <div
+            data-testid="room-error-closed"
+            className="room-board__card flex flex-col items-center gap-4 text-center"
+          >
+            <div className="pp-chip flex items-center justify-center p-2">
+              <StudioSprite sprite={studioSprites.errorClosed} scale={3} />
+            </div>
+            <div className="space-y-1">
+              <h1 className="text-2xl uppercase text-[var(--sunset-2)]">
+                {state.closedByHost ? `${hostName} packed up this room` : 'This Room Has Closed'}
+              </h1>
+              <p className="text-base text-muted-foreground">
+                Room <span className="text-[var(--sunset-1)]">{joinCode}</span> is gone. Head
+                back to the studio to join another easel or set up a new one.
+              </p>
+            </div>
+            <Link
+              to="/party"
+              data-testid="room-exit"
+              onClick={onRoomExitClick}
+              className="pp-btn inline-flex h-10 items-center justify-center gap-1.5 px-5 text-lg uppercase"
+            >
+              <ArrowLeft className="h-4 w-4" aria-hidden />
+              Back to the studio
+            </Link>
+          </div>
+        )}
+
+    </>
+  ) : null
+
+  // The ticket stub above the easel, in every state: the way back, the invite code and link, the room's name, and the
+  // host's and sound controls. The room page starts below the nav (see `.room-play`), so none of it sits under it.
+  const topBar = (
+    <div ref={headerRef} data-testid="room-top-bar" className="room-top-bar">
+      <span className="room-top-bar__pin" aria-hidden="true" />
+      <Link
+        to="/party"
+        data-testid="room-exit"
+        onClick={onRoomExitClick}
+        className="room-top-bar__exit pp-chip inline-flex items-center gap-1.5 text-base uppercase tracking-wider hover:bg-secondary"
+      >
+        <ArrowLeft className="h-4 w-4 shrink-0" aria-hidden />
+        <span><span className="room-top-bar__exit-long">Back to the </span>studio</span>
+      </Link>
+      <div className="room-top-bar__who">
+        {inviteTicket}
+        {customRoomName ? (
+          <span data-testid="room-name" className="room-top-bar__name">
+            {customRoomName}
+          </span>
+        ) : (
+          <span className="room-top-bar__name">{joinCode === 'play' ? 'Public Studio Board' : 'Studio room'}</span>
+        )}
+      </div>
+      <div className="room-top-bar__controls">{roomControls}</div>
+    </div>
+  )
+
+  const rosterRows = orderRoster(state.roster, roomDoc?.data.hostId)
+  const lobbyFace = (
+    <div data-testid="room-lobby" className="room-lobby">
+      <h1 className="room-lobby__title">{roomDoc?.data.name ?? 'Studio Waiting Area'}</h1>
+      {effectiveCode !== 'play' && <InvitePlank code={effectiveCode} />}
+      <div className="room-lobby__status">
+        <h2 data-testid="round-players" className="text-xl text-[var(--sunset-1)]">
+          {state.players} {state.players === 1 ? 'painter' : 'painters'}
+        </h2>
+        <span data-testid="round-watching" className="text-base text-muted-foreground">
+          {state.watching} watching
+        </span>
+      </div>
+
+      {canStart ? (
+        <Button
+          data-testid="host-start-button"
+          disabled={!state.connected}
+          onClick={next}
+          className="pp-btn room-lobby__start px-6 py-2 text-xl uppercase"
+        >
+          Start painting
+        </Button>
+      ) : publicSignedOut ? (
+        <div className="flex flex-col items-center gap-2">
+          <p data-testid="public-board-signed-out" className="text-base text-muted-foreground">
+            Public board is open — sign in to start a round and paint.
+          </p>
+          <Button
+            data-testid="public-board-sign-in"
+            onClick={() => setShowAuthModal(true)}
+            className="pp-btn px-6 py-2 text-xl uppercase"
+          >
+            Sign in to paint
+          </Button>
+        </div>
+      ) : (
+        <p className="text-base text-muted-foreground">
+          Waiting for the host to start.
+        </p>
+      )}
+
+      <ul className="room-lobby-stools" aria-label="Connected players">
+        {rosterRows.map((player) => (
+          <li
+            key={player.userId}
+            data-testid="lobby-stool"
+            className="room-lobby-stool"
+          >
+            <span className="room-lobby-stool__sprite" aria-hidden="true">
+              <StudioSprite sprite={studioSprites.stool} scale={3} />
+            </span>
+            <span className="room-lobby-stool__name">{player.name}</span>
+            {(player.userId === roomDoc?.data.hostId || player.userId === state.you.userId) && (
+              <span className="room-lobby-stool__tags">
+                {[player.userId === roomDoc?.data.hostId && 'host', player.userId === state.you.userId && 'you'].filter(Boolean).join(' · ')}
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+
+  const remainingMs =
+    state.round?.endsAt != null && state.round.state === 'playing'
+      ? Math.max(0, state.round.endsAt - now)
+      : 0
+
+  const topSlot = (
+    <>
+      {topBar}
+
+      {sessionExpired && (
+        <div
+          role="status"
+          data-testid="session-expired"
+          className="pp-panel px-3 py-1 text-base text-[var(--sunset-1)]"
+        >
+          Your session expired — sign in again
+        </div>
+      )}
+
+      {isSpectator && (
+        <div
+          data-testid="spectator-banner"
+          className="pp-panel flex flex-wrap items-center justify-between gap-2 px-3 py-1"
+        >
+          <div className="flex items-center gap-2 text-base">
+            <LogIn className="h-4 w-4 shrink-0 text-[var(--sunset-1)]" aria-hidden />
+            <span className="text-foreground">
+              You are watching in <span className="text-[var(--sunset-1)]">Spectator Mode</span>. Sign in to place pixels and ask Haiku!
+            </span>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            data-testid="spectator-sign-in-button"
+            onClick={() => setShowAuthModal(true)}
+            className="pp-btn h-7 px-3 text-base uppercase"
+          >
+            Sign in to play
+          </Button>
+        </div>
+      )}
+    </>
+  )
+
+  const promptSlot = (
+    <div ref={roundBarWrapRef} data-testid="round-bar" className="pp-panel play-prompt">
+      <div className="flex w-full items-center justify-between gap-2">
+        <span className="play-prompt__heading">Draw</span>
+        {!state.connected && (
+          <span
+            data-testid="round-reconnecting"
+            className="pp-chip inline-flex items-center gap-1 text-sm uppercase"
+          >
+            <WifiOff className="h-3.5 w-3.5 text-[var(--sunset-2)]" aria-hidden />
+            Reconnecting…
+          </span>
+        )}
+      </div>
+      <span
+        data-testid="round-word"
+        className="pp-word text-[30px] uppercase leading-none"
+      >
+        {state.round ? state.round.word : 'LOADING…'}
+      </span>
+      {state.round?.state === 'paused' && (
+        <p data-testid="paused-note" className="m-0 w-full text-base leading-tight text-[#614052]">
+          Paused — waiting for a painter to come back
+        </p>
+      )}
+      <div className="flex w-full items-center justify-between gap-2 border-t-2 border-[#d1b5a3] pt-1.5 text-lg leading-none text-[var(--soft-text)]">
+        {state.round?.state === 'paused' ? (
+          <span data-testid="round-timer" title="Paused — waiting for a painter to come back" className="uppercase text-[var(--sunset-1)]">
+            PAUSED
+          </span>
+        ) : state.round?.state === 'intermission' ? (
+          <span data-testid="round-timer" className="uppercase text-[var(--sunset-3)]">
+            ROUND OVER
+          </span>
+        ) : (
+          <span data-testid="round-timer" title="Time remaining in round">
+            {state.round ? formatTimer(remainingMs) : '--:--'}
+          </span>
+        )}
+        <span data-testid="round-pixels" className="uppercase">
+          {pixelsCount} PX
+        </span>
+      </div>
+    </div>
+  )
+
+  const timelineSlot = (
+    <PlayersPanel
+      players={state.players}
+      roster={state.roster}
+      watching={state.watching}
+      hostId={roomDoc?.data.hostId}
+      youId={state.you.userId}
+    />
+  )
+
+  const canvasSlot = (
+    <div ref={centerColRef} className="flex w-full min-w-0 justify-center">
+      <div ref={canvasSlotRef} className="flex items-center justify-center">
+        <div ref={boardRef} className="room-board" style={{ width: boardPx, height: boardPx }}>
+          <PixelCanvas
+            width={state.width}
+            height={state.height}
+            cells={state.cells}
+            activeColor={activeColor}
+            tool={tool}
+            canDraw={canDraw}
+            cooldownRemainingMs={cooldownRemainingMs}
+            availWidth={availBox.width}
+            availHeight={availBox.height}
+            word={state.round?.word}
+            onPlace={handlePlace}
+            onPick={handlePick}
+            onHoverCell={handleHoverCell}
+          >
+            <PlayerCursors peers={peers} width={state.width} height={state.height} />
+
+            {friendlyReject && (
+              <div
+                data-testid="reject-notice"
+                role="status"
+                className="pp-panel room-reject-float flex items-center justify-between gap-2 px-3 py-1 text-base text-[var(--sunset-1)]"
+              >
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="h-4 w-4 shrink-0 text-[var(--sunset-2)]" aria-hidden />
+                  <span>{friendlyReject}</span>
+                </div>
+                {state.lastReject?.reason === 'not_signed_in' && isSpectator && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAuthModal(true)}
+                    className="underline hover:text-foreground"
+                  >
+                    Sign in
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Win / Timeout Intermission Overlay */}
+            {showOverlay && state.round && (
+              <div
+                ref={overlayDialogRef}
+                data-testid="round-overlay"
+                role="dialog"
+                aria-modal="false"
+                aria-labelledby="overlay-heading"
+                tabIndex={-1}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape' && state.round?.id) {
+                    e.stopPropagation()
+                    setDismissedOverlayRoundId(state.round.id)
+                  }
+                }}
+                className="pp-results absolute inset-0 z-20 flex flex-col items-center overflow-hidden bg-background/90 p-3 text-center focus:outline-none"
+              >
+                <div className="pp-panel room-results-frame my-auto flex max-h-full min-h-0 w-full max-w-sm flex-col overflow-hidden">
+                  <div className="pp-results-body flex min-h-0 flex-col items-center gap-2 overflow-y-auto p-4">
+                    {outcome === 'won' ? (
+                      <>
+                        <div className="pp-results-icon pp-chip flex h-10 w-10 shrink-0 items-center justify-center">
+                          <Trophy className="h-5 w-5 text-[var(--sunset-1)]" aria-hidden />
+                        </div>
+                        <span
+                          id="overlay-heading"
+                          className="pp-chip px-2.5 py-0.5 text-sm uppercase tracking-widest"
+                        >
+                          Haiku Guessed It!
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <div className="pp-results-icon pp-chip flex h-10 w-10 shrink-0 items-center justify-center">
+                          <Clock className="h-5 w-5 text-[var(--sunset-2)]" aria-hidden />
+                        </div>
+                        <span
+                          id="overlay-heading"
+                          className="pp-chip px-2.5 py-0.5 text-sm uppercase tracking-widest"
+                        >
+                          Time&apos;s Up!
+                        </span>
+                      </>
+                    )}
+
+                    <div>
+                      <p className="room-results-label-word text-xs uppercase tracking-wider text-muted-foreground">
+                        The word was
+                      </p>
+                      <h2
+                        data-testid="overlay-word"
+                        className="pp-results-word pp-word mt-0.5 text-2xl uppercase"
+                      >
+                        {state.round.word}
+                      </h2>
+                    </div>
+
+                    <p data-testid="overlay-guess" className={`room-results-guess${outcome === 'won' ? ' room-results-guess--won' : ''}`}>
+                      {outcome === 'won' ? (
+                        <>Haiku guessed <strong>{(state.guessLog.find((e) => e.matched) ?? state.guessLog[0])?.guesses[0] ?? state.round.word}</strong></>
+                      ) : state.guessLog[0] ? (
+                        <>Haiku&apos;s closest guess: <strong>{state.guessLog[0].guesses.join(', ')}</strong></>
+                      ) : (
+                        <>Haiku never got a guess in.</>
+                      )}
+                    </p>
+
+                    <div className="room-results-main">
+                      <CanvasThumb width={state.width} height={state.height} cells={state.cells} className="room-results-thumb" />
+                      <div className={`room-results-stats text-sm${outcome === 'won' ? '' : ' room-results-stats--solo'}`}>
+                        {outcome === 'won' && (
+                          <div className="room-results-stat">
+                            <span className="text-muted-foreground">Score</span>
+                            <span
+                              data-testid="overlay-score"
+                              className="mt-0.5 flex items-center gap-1 text-lg text-[var(--sunset-1)]"
+                            >
+                              <Award className="h-4 w-4" aria-hidden />
+                              {scoreParts.total} pts
+                            </span>
+                          </div>
+                        )}
+                        <div className="room-results-stat">
+                          <span className="text-muted-foreground">Pixels used</span>
+                          <span className="mt-0.5 text-lg text-foreground">
+                            {roundPixelsUsed} px
+                          </span>
+                        </div>
+                        {outcome === 'won' && (
+                          <div
+                            title="Fewer pixels and a faster guess score higher: each bonus is out of 500"
+                            className="room-results-bonus col-span-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-0.5 border-t border-[#d1b5a3] pt-1 text-xs text-[var(--soft-text)]"
+                          >
+                            <span>Pixel bonus: {scoreParts.pixels}/500</span>
+                            <span>Speed bonus: {scoreParts.time}/500</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div
+                      data-testid="overlay-contributors"
+                      className="w-full shrink-0 border border-border bg-background/40 px-2.5 py-1.5 text-left"
+                    >
+                      <div className="mb-0.5 flex items-center gap-1.5 text-xs uppercase tracking-wider text-[var(--sunset-2)]">
+                        <Users className="h-3.5 w-3.5" aria-hidden />
+                        <span>Contributors</span>
+                      </div>
+                      {contributorInfo.names.length > 0 ? (
+                        <div className="flex flex-wrap gap-1">
+                          {contributorInfo.names.map((name, idx) => (
+                            <span
+                              key={`${name}-${idx}`}
+                              className="pp-chip px-1.5 py-0.5 text-xs"
+                            >
+                              {name}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-foreground">
+                          {contributorInfo.fallbackText}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="pp-results-footer flex w-full shrink-0 flex-col items-center gap-1.5 border-t border-border p-2.5 text-xs text-muted-foreground">
+                    <span>
+                      {canStart
+                        ? 'Ready when you are.'
+                        : publicSignedOut
+                          ? 'Public board is open — sign in to start a round and paint.'
+                          : 'Waiting for the host to start a new game.'}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      {publicSignedOut && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          data-testid="public-board-sign-in-overlay"
+                          onClick={() => setShowAuthModal(true)}
+                          className="pp-btn h-8 px-3 text-sm uppercase"
+                        >
+                          Sign in to paint
+                        </Button>
+                      )}
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        data-testid="overlay-dismiss"
+                        onClick={() =>
+                          state.round?.id && setDismissedOverlayRoundId(state.round.id)
+                        }
+                        className="pp-chip h-8 gap-1 px-2.5 text-sm uppercase hover:bg-secondary"
+                      >
+                        <Eye className="h-3.5 w-3.5" aria-hidden />
+                        View Canvas
+                      </Button>
+                      {canStart && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          data-testid="overlay-next"
+                          onClick={next}
+                          className="pp-btn h-8 px-3 text-sm uppercase"
+                        >
+                          New game
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </PixelCanvas>
+        </div>
+      </div>
+    </div>
+  )
+
+
+  const scoreSlot = (
+    <div className="flex min-w-0 flex-col">
+      <CriticBubble
+        guesses={state.guesses}
+        guessLog={state.guessLog}
+        aiResting={state.aiResting}
+        roundId={state.round?.id}
+        roundState={state.round?.state}
+        outcome={outcome}
+        asking={asking}
+        hasPixels={pixelsCount > 0}
+      />
+      <PartyScoreNote />
+    </div>
+  )
+
+  const haikuStrip = (
+    <HaikuStrip
+      guessLog={state.guessLog}
+      aiResting={state.aiResting}
+      asking={asking}
+      hasPixels={pixelsCount > 0}
+      roundState={state.round?.state}
+      outcome={outcome}
+    />
+  )
+
+  const actionsSlot = (
+    <div className="room-bell-shelf">
+      <div className="play-actions">
+        <AskAiButton
+          askAvailableAt={state.round?.askAvailableAt ?? 0}
+          now={now}
+          isSpectator={isSpectator}
+          aiResting={state.aiResting}
+          roundPlaying={Boolean(roundPlaying)}
+          roundOver={state.round?.state === 'intermission'}
+          onAsk={handleAsk}
+        />
+      </div>
+    </div>
+  )
+
+  const bottomSlot = (
+    <PainterTray
+      trayRef={paletteWrapRef}
+      activeColor={activeColor}
+      tool={tool}
+      cool={cooldownFraction}
+      tools={
+        <ToolBar
+          tools={PARTY_TOOLS}
+          active={tool}
+          onSelect={setTool}
+          disabled={isSpectator}
+          compactPick
+        />
+      }
+      palette={
+        <Palette
+          activeColor={activeColor}
+          onSelectColor={(color) => {
+            setActiveColor(color)
+            if (tool === 'erase' || tool === 'pick') setTool('paint')
+          }}
+          disabled={isSpectator}
+          cooldownRemainingMs={cooldownRemainingMs}
+          cooldownTotalMs={cooldownTotalMs}
+          sharedBrushMs={state.players > 1 && roundPlaying ? cooldownTotalMs : undefined}
+        />
+      }
+    />
+  )
+
+
+  // Connecting is laid out as the playing room (panels and tray already in place, the board a face that says so), so the
+  // layout does not change the moment the snapshot arrives: the same mount, then the board's face turns into the board.
+  const playing = !state.connectError && state.round?.state !== 'lobby'
+  const lobby = !loading && !state.connectError && state.round?.state === 'lobby'
+  const faceContent = loading ? loadingFace : state.connectError ? errorFace : lobby ? lobbyFace : null
+  const boardSlot = playing && !loading ? canvasSlot : (
+    <div ref={centerColRef} className="flex w-full min-w-0 justify-center">
+      <div ref={canvasSlotRef} className="flex items-center justify-center">
+        <div ref={boardRef} className="room-board room-board--face" style={{ width: boardPx, height: boardPx }}>
+          {faceContent}
+        </div>
+      </div>
+    </div>
+  )
+
+  return (
+    <div
+      ref={roomPageRef}
+      data-testid="room-page"
+      data-play-phase={world.phase}
+      style={{
+        // Wider than the usual 1400px when a big screen needs a bigger board (`minBoardPx`); the side panels stay beside it.
+        maxWidth: 1400 + Math.max(0, (world.minBoardPx ?? 0) - 600),
+        ...(world.roomShift.x || world.roomShift.y ? { translate: `${world.roomShift.x}px ${world.roomShift.y}px` } : {}),
+      }}
+      className={`room-play${playing ? '' : ' room-play--face'} mx-auto flex w-full flex-col px-3 py-1 sm:px-5`}
+    >
+      <div className="play-controls">
+        <div ref={registerRef} className="play-register" data-registered="">
+          <PlayLayout
+            top={playing ? topSlot : lobby ? topBar : null}
+            prompt={playing ? promptSlot : null}
+            // The roster is room data: it does not exist (not even as an empty list) until access is known.
+            timeline={playing && !loading ? timelineSlot : null}
+            exit={null}
+            mobileHaiku={playing && !loading ? haikuStrip : null}
+            canvas={boardSlot}
+            // Haiku and the bell are room data too: they appear with the snapshot, not before it.
+            score={playing && !loading ? scoreSlot : null}
+            actions={playing && !loading ? actionsSlot : null}
+            bottom={playing ? bottomSlot : null}
+            rightSummary="Haiku &amp; painters"
+          />
+        </div>
+      </div>
+
+      <RoomSignInSlip open={showAuthModal} onClose={() => setShowAuthModal(false)} />
+    </div>
+  )
+}

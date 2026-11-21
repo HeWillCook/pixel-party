@@ -13,7 +13,12 @@
  * library. It reads its colors from the active theme's CSS variables.
  */
 
+import { Component, useCallback, type ReactNode } from 'react'
 import { AlertTriangle, RefreshCw } from 'lucide-react'
+import { PixelScene } from '../scene/PixelScene'
+import { drawPorch } from '../scene/porch/drawPorch'
+import { isChunkLoadError } from '../stale-chunk-recovery'
+import './porch/porch.css'
 
 export interface DecodedReactError {
   code: number
@@ -96,7 +101,25 @@ export interface ErrorScreenProps {
   onReset?: () => void
 }
 
+/** A crash while painting the backdrop must not take the error card down with it. */
+class BackdropBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false }
+  static getDerivedStateFromError() { return { failed: true } }
+  render() { return this.state.failed ? null : this.props.children }
+}
+
+/** The porch, still: the error card stands on the same picture the rest of the site is, never a bare gradient. */
+function ErrorBackdrop() {
+  const draw = useCallback((ctx: CanvasRenderingContext2D, frame: number) => {
+    const scale = Math.max(2, Math.ceil(Math.max(window.innerWidth / ctx.canvas.width, window.innerHeight / ctx.canvas.height)))
+    const roofTop = Math.max(0, Math.floor((ctx.canvas.height - window.innerHeight / scale) / 2))
+    drawPorch(ctx, frame, { easelState: 'cover', bob: false, soundOn: false, signedIn: false, roofTop })
+  }, [])
+  return <BackdropBoundary><div className="porch-world" style={{ position: 'fixed', inset: 0, height: '100%' }} aria-hidden="true"><PixelScene draw={draw} className="porch-world__scene" paused syncScale /></div></BackdropBoundary>
+}
+
 export function ErrorScreen({ error, onReset }: ErrorScreenProps) {
+  const staleChunk = isChunkLoadError(error)
   const decoded = decodeReactError(error)
   const rawMessage = error instanceof Error ? error.message : typeof error === 'string' ? error : ''
   const stack = error instanceof Error ? error.stack : undefined
@@ -105,9 +128,10 @@ export function ErrorScreen({ error, onReset }: ErrorScreenProps) {
   return (
     <div
       data-testid="ds-error-boundary"
-      className="flex h-full min-h-[60vh] flex-col items-center justify-center px-4 py-10 text-foreground"
+      className="relative flex min-h-screen flex-col items-center justify-center px-4 py-10 text-foreground"
     >
-      <div className="pp-wood-panel w-full max-w-lg p-6 text-center">
+      <ErrorBackdrop />
+      <div className="pp-wood-panel relative w-full max-w-lg p-6 text-center">
         <div className="mb-4 flex justify-center">
           <span className="pp-chip inline-flex h-12 w-12 items-center justify-center text-destructive">
             <AlertTriangle className="h-6 w-6" aria-hidden />
@@ -115,8 +139,9 @@ export function ErrorScreen({ error, onReset }: ErrorScreenProps) {
         </div>
 
         <h1 className="text-2xl uppercase tracking-wider text-[var(--sunset-2)]">
-          {decoded?.title ?? 'Something went wrong'}
+          {staleChunk ? 'The porch just got repainted' : decoded?.title ?? 'Something went wrong'}
         </h1>
+        {staleChunk && <p className="mt-1.5 text-base text-muted-foreground">A new version went up while this tab was open. Reload to walk back onto it.</p>}
         {decoded?.explanation && (
           <p className="mt-1.5 text-base text-muted-foreground">{decoded.explanation}</p>
         )}
@@ -128,7 +153,7 @@ export function ErrorScreen({ error, onReset }: ErrorScreenProps) {
           </div>
         )}
 
-        {rawMessage && (
+        {rawMessage && !staleChunk && (
           <pre className="mt-4 overflow-x-auto border border-border bg-secondary/40 px-3 py-2 text-left text-sm text-muted-foreground">
             {rawMessage}
           </pre>

@@ -8,7 +8,7 @@ import { encodeCells } from '../game/grid'
 import { buildJudgeBody, extractText } from '../game/judge'
 import { runJudge } from '../game/judge-flow'
 import { renderZonePng, toBase64 } from '../game/png'
-import { parseClientMsg, type ServerMsg } from '../game/protocol'
+import { parseClientMsg, RECENT_JUDGEMENTS, type RecentJudgement, type ServerMsg } from '../game/protocol'
 import {
   advance, applyJudgeOutcome, applyPlacements, countPlayers, deserializeRoomState,
   newRoomState, nextAlarmAt, nextRoundRejection, serializeRoomState, startNextRound,
@@ -79,6 +79,10 @@ export class PixelRoom extends BaseRoom<Env> {
   private hostUserId = ''
   private statusWrite: Promise<void> = Promise.resolve()
   private connectingSpectator = false
+  /** Haiku's last few judgements for the current round, for late joiners. Memory only: gone with the Durable Object. */
+  private recentJudgements: { roundId: string; list: RecentJudgement[] } = { roundId: '', list: [] }
+  /** When each player first connected (memory only), so the roster keeps a stable join order across reconnects of other players. */
+  private joinedAt = new Map<string, number>()
 
   constructor(state: DurableObjectState, env: Env) {
     super(state, env)
@@ -265,9 +269,13 @@ export class PixelRoom extends BaseRoom<Env> {
     const players = new Map<string, { userId: string; name: string }>()
     for (const ws of this.liveSockets(exclude)) {
       const userId = this.socketUserId(ws)
-      if (userId) players.set(userId, { userId, name: this.getAttachment(ws)?.userName || 'Painter' })
+      if (userId) {
+        if (!this.joinedAt.has(userId)) this.joinedAt.set(userId, Date.now())
+        players.set(userId, { userId, name: this.getAttachment(ws)?.userName || 'Painter' })
+      }
     }
-    return [...players.values()]
+    for (const userId of this.joinedAt.keys()) if (!players.has(userId) && !exclude) this.joinedAt.delete(userId)
+    return [...players.values()].sort((left, right) => (this.joinedAt.get(left.userId) ?? 0) - (this.joinedAt.get(right.userId) ?? 0))
   }
 
   private sendGame(ws: WebSocket, message: ServerMsg): void {
@@ -290,7 +298,13 @@ export class PixelRoom extends BaseRoom<Env> {
       cells: encodeCells(state.grid.cells), round: state.round, players, roster: this.playerRoster(), watching: this.watcherCount(),
       you: { userId, cooldownUntil: placedAt === undefined ? 0 : placedAt + cooldownMs(players) },
       aiResting: this.restingDay === utcDay(Date.now()),
+      judgements: this.recentJudgements.roundId === state.round.id ? this.recentJudgements.list : [],
     })
+  }
+
+  private rememberJudgement(event: { zone: RecentJudgement['zone']; guesses: string[]; confidence: number; matched: boolean }, roundId: string): void {
+    const list = this.recentJudgements.roundId === roundId ? this.recentJudgements.list : []
+    this.recentJudgements = { roundId, list: [...list, { zone: event.zone, guesses: event.guesses, confidence: event.confidence, matched: event.matched, at: Date.now() }].slice(-RECENT_JUDGEMENTS) }
   }
 
   private persist(): void {
@@ -329,6 +343,7 @@ export class PixelRoom extends BaseRoom<Env> {
         case 'noop': if (sender) this.sendGame(sender, { t: 'noop', x: event.x, y: event.y, ...(event.id === undefined ? {} : { id: event.id }) }); break
         case 'reject': if (sender) this.sendGame(sender, { t: 'reject', reason: event.reason, x: event.x, y: event.y, ...(event.retryAt === undefined ? {} : { retryAt: event.retryAt }), ...(event.id === undefined ? {} : { id: event.id }) }); break
         default: {
+          if (event.type === 'judgement') this.rememberJudgement(event, transition.state.round.id)
           const { type, ...payload } = event
           this.broadcastGame({ t: type, ...payload } as ServerMsg)
         }
@@ -384,6 +399,7 @@ export class PixelRoom extends BaseRoom<Env> {
     await this.transition(transition)
     if (requester && outcome.kind === 'skipped') {
       if (outcome.why === 'unchanged') this.sendGame(requester, { t: 'reject', reason: 'canvas_unchanged' })
+      else if (outcome.why === 'canvas_blank') this.sendGame(requester, { t: 'reject', reason: 'canvas_blank' })
       else if (['too_soon', 'rate_cap', 'in_flight'].includes(outcome.why)) {
         const calls = this.game.judgeCalls.filter(time => time > Date.now() - 60000).sort((left, right) => left - right)
         const rateReady = calls.length >= JUDGE.maxPerMinute ? calls[calls.length - JUDGE.maxPerMinute] + 60000 : 0

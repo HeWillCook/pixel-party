@@ -21,6 +21,11 @@ export function memoryTools() {
     const page = matches.slice(offset, options?.limit ? offset + options.limit : undefined)
     return { success: true, data: { records: page.map(([recordId, data]) => ({ recordId, data })), count: page.length, ...(offset + page.length < matches.length ? { nextOffset: offset + page.length } : {}) } }
   })
-  const tools = { create, update, get, query, integration: vi.fn() } as unknown as ServerTools
+  const deleteWhere = vi.fn(async (collection: string, where: Record<string, unknown>) => {
+    const doomed = [...rows(collection)].filter(([, data]) => Object.entries(where).every(([key, value]) => data[key] === value))
+    for (const [recordId] of doomed) rows(collection).delete(recordId)
+    return { success: true, data: { deleted: doomed.length } }
+  })
+  const tools = { create, update, get, query, deleteWhere, integration: vi.fn() } as unknown as ServerTools
   return { tools, rows, create, update, get, query }
 }

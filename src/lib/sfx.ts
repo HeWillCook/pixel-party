@@ -1,7 +1,7 @@
 import type { SoundName } from '@/game/sound-events'
 
 export const MUTE_KEY = 'pixel-party:muted'
-export interface Sfx { play(name: SoundName): void; unlock(): Promise<boolean>; isMuted(): boolean; setMuted(m: boolean): void }
+export interface Sfx { play(name: SoundName): void; whoosh(): void; unlock(): Promise<boolean>; isMuted(): boolean; setMuted(m: boolean): void }
 
 const tones: Record<SoundName, { notes: number[]; duration: number; wave: OscillatorType }> = {
   guess: { notes: [523.25, 659.25], duration: 0.09, wave: 'square' },
@@ -49,6 +49,23 @@ export function createSfx(opts: { audioContext?: () => AudioContext; storage?: P
         oscillator.start(start)
         oscillator.stop(start + tone.duration)
       })
+    },
+    /** A soft airy sweep for a camera move: a low triangle gliding up and fading, quieter than any game sound. */
+    whoosh() {
+      if (!context || !master || muted || context.state !== 'running') return
+      const start = context.currentTime
+      const oscillator = context.createOscillator()
+      const gain = context.createGain()
+      oscillator.type = 'triangle'
+      oscillator.frequency.setValueAtTime(140, start)
+      oscillator.frequency.exponentialRampToValueAtTime(460, start + 0.5)
+      gain.gain.setValueAtTime(0.0001, start)
+      gain.gain.linearRampToValueAtTime(0.05, start + 0.18)
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.55)
+      oscillator.connect(gain)
+      gain.connect(master)
+      oscillator.start(start)
+      oscillator.stop(start + 0.55)
     },
     isMuted: () => muted,
     setMuted(value) {

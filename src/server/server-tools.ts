@@ -4,7 +4,7 @@ import type { Env } from '../../worker.js'
 
 declare const __PIXEL_PARTY_TEST__: boolean
 
-export type ServerTools = Pick<ActionTools, 'create' | 'update' | 'get'> & {
+export type ServerTools = Pick<ActionTools, 'create' | 'update' | 'get' | 'deleteWhere'> & {
   query<T extends Record<string, unknown> = Record<string, unknown>>(
     collection: string,
     options?: NonNullable<Parameters<ActionTools['query']>[1]> & { offset?: number },
@@ -94,6 +94,8 @@ export function createServerTools(env: Env): ServerTools {
     create: (collection, data, recordId) => execTool('records.create', { collection, data, recordId }),
     update: (collection, recordId, data) => execTool('records.update', { collection, recordId, data }),
     get: (collection, recordId) => execTool('records.get', { collection, recordId }),
+    // DEV ONLY (__DEBUG_TOOLS__) (used only by daily-debug.ts)
+    deleteWhere: (collection, where, limit) => execTool('records.deleteWhere', { collection, where, limit }),
     query: (collection, options) => execTool('records.query', { collection, ...options }),
     integration,
   }

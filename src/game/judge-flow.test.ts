@@ -6,6 +6,7 @@ import { advance, countPlayers, newRoomState, nextAlarmAt, shouldJudge } from '.
 function setup() {
   const state = newRoomState({ roomId: 'r', mode: 'coop', isDefaultBoard: false }, 0, () => 0)
   state.version = 1
+  state.grid.cells[0] = 1 // non-blank so runJudge proceeds past the blank-canvas gate
   let now = 15000
   const deps = { now: () => now, reserve: vi.fn(async () => ({ ok: true })), persist: vi.fn(async () => {}), render: vi.fn(async () => 'png'), callJudge: vi.fn(async (): Promise<string | null> => '{"guesses":["home"],"confidence":0.8}'), getState: () => state }
   return { state, deps, setNow: (value: number) => { now = value } }

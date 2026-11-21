@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { getAuthToken, useQuery } from 'deepspace'
 import { rankScores } from '../../game/daily/rank'
+import { useLoadTimeout, useQueryRetry } from '../../hooks/useLoadGuard'
 import { Haiku } from '../haiku/Haiku'
-import { BoosterSprite } from '../play/BoosterSprite'
+import { isPrimaryClick } from '../porch/returnFlag'
 import { Avatar, AvatarFallback, AvatarImage } from '../ui'
 import { PixelMedal, PixelTrophy } from './PixelMedals'
 import { PixelThumb } from './PixelThumb'
@@ -35,14 +36,27 @@ function truncateLabel(value: string, maxLength = 24): string {
   return `${trimmed.slice(0, maxLength - 1).trimEnd()}…`
 }
 
-export function Leaderboard({ day, ended }: { day: string; ended: boolean }) {
+export function Leaderboard({
+  day,
+  ended,
+  onPorch,
+  onSelectPainter,
+}: {
+  day: string
+  ended: boolean
+  onPorch?: () => void
+  onSelectPainter?: (href: string) => void
+}) {
   const [offset, setOffset] = useState(0)
   const [drawings, setDrawings] = useState<{ day: string; items: Drawing[] }>({ day: '', items: [] })
   const date = new Date(`${day}T00:00:00Z`)
   date.setUTCDate(date.getUTCDate() - offset)
   const selectedDay = Number.isNaN(date.getTime()) ? day : date.toISOString().slice(0, 10)
-  const { records, status } = useQuery<Score>('dailyScores', { where: { day: selectedDay }, limit: 1000 })
-  const { records: drawingRecords } = useQuery<Drawing>('dailyDrawings', { where: { day: selectedDay }, limit: 1000 })
+  const { attempt, limit, retry } = useQueryRetry()
+  const { records, status: queryStatus } = useQuery<Score>('dailyScores', { where: { day: selectedDay }, limit })
+  const { records: drawingRecords } = useQuery<Drawing>('dailyDrawings', { where: { day: selectedDay }, limit })
+  // A load that never answers falls back to the error copy (with a Retry) instead of "Loading scores…" for ever.
+  const status = useLoadTimeout(queryStatus, attempt)
 
   useEffect(() => {
     if (!ended || offset !== 0) return
@@ -111,6 +125,38 @@ export function Leaderboard({ day, ended }: { day: string; ended: boolean }) {
     rank,
   }))
 
+  // Drawn scrollbar: the slate only fits three 120 px rows, so a clipped row always shows a thumb
+  // and a bottom fade instead of looking like a layout bug. Native scrollbars are hidden because
+  // they render inconsistently in embedded/headless browsers.
+  const listRef = useRef<HTMLOListElement>(null)
+  const [bar, setBar] = useState<{ visible: boolean; top: number; height: number }>({ visible: false, top: 0, height: 0 })
+  const syncBar = useCallback(() => {
+    const list = listRef.current
+    if (!list) return
+    const track = list.clientHeight
+    const content = list.scrollHeight
+    if (track <= 0 || content <= track + 1) {
+      setBar(previous => (previous.visible ? { visible: false, top: 0, height: 0 } : previous))
+      return
+    }
+    const height = Math.max(24, Math.round((track * track) / content))
+    const maxTop = track - height
+    const top = Math.round((list.scrollTop / (content - track)) * maxTop)
+    setBar(previous => (previous.visible && previous.top === top && previous.height === height ? previous : { visible: true, top, height }))
+  }, [])
+
+  useEffect(() => {
+    syncBar()
+  }, [syncBar, sorted.length, drawings.items.length])
+
+  useEffect(() => {
+    const list = listRef.current
+    if (!list) return
+    const observer = new ResizeObserver(syncBar)
+    observer.observe(list)
+    return () => observer.disconnect()
+  }, [syncBar])
+
   const topEntry = sorted[0]
   const topName = topEntry?.score.displayName?.trim() || 'Player'
   const shortTopName = truncateLabel(topName, 24)
@@ -123,7 +169,11 @@ export function Leaderboard({ day, ended }: { day: string; ended: boolean }) {
       )
     : ''
 
-  const haikuComment = !topEntry
+  const haikuComment = status === 'loading'
+    ? 'Checking the board…'
+    : status === 'error'
+      ? "I can't read the board right now. Try again?"
+      : !topEntry
     ? 'No graded paintings yet — grab a brush on the porch!'
     : showDrawings && topGuess
       ? offset === 0
@@ -136,12 +186,23 @@ export function Leaderboard({ day, ended }: { day: string; ended: boolean }) {
   return (
     <div className="scores-board-wrap" data-testid="daily-leaderboard">
       <section className="scores-chalkboard" data-testid="scores-chalkboard" aria-labelledby="scores-heading">
+        <div className="scores-chalk-rules" aria-hidden="true" />
         <div className="scores-board-header">
           <h1 id="scores-heading" className="scores-board-title">
             <PixelTrophy scale="scene" />
             <span>Scores</span>
           </h1>
           <div className="scores-pager">
+            {onPorch && (
+              <button
+                type="button"
+                data-testid="scores-porch-button"
+                className="scores-porch-btn"
+                onClick={onPorch}
+              >
+                ← Porch
+              </button>
+            )}
             <button
               type="button"
               className="scores-arrow"
@@ -177,16 +238,21 @@ export function Leaderboard({ day, ended }: { day: string; ended: boolean }) {
         {status === 'loading' ? (
           <p className="scores-status" role="status">Loading scores…</p>
         ) : status === 'error' ? (
-          <p className="scores-status" role="alert">Couldn&apos;t load scores. Try again soon.</p>
+          <p className="scores-status" role="alert">
+            Couldn&apos;t load scores. Try again soon.
+            <button type="button" className="scores-retry" onClick={retry}>Retry</button>
+          </p>
         ) : sorted.length === 0 ? (
           <p className="scores-status">No graded scores yet.</p>
         ) : (
-          <ol className="scores-list">
-            {sorted.map(({ score, rank }) => {
+          <div className={bar.visible ? 'scores-list-wrap scores-list-wrap--scrollable' : 'scores-list-wrap'}>
+            <ol ref={listRef} className="scores-list" onScroll={syncBar}>
+              {sorted.map(({ score, rank }) => {
               const drawing = showDrawings ? drawingByUser.get(score.userId) : undefined
               const hasCells = typeof drawing?.cells === 'string' && drawing.cells.length > 0
               const medal = offset === 0 ? (rank <= 3 ? rank : 0) : (score.medal ?? 0)
               const playerName = score.displayName?.trim() || 'Player'
+              const painterHref = `/u/${encodeURIComponent(score.userId)}`
               return (
                 <li
                   key={score.userId}
@@ -194,17 +260,22 @@ export function Leaderboard({ day, ended }: { day: string; ended: boolean }) {
                 >
                   <Link
                     className="scores-row-link"
-                    to={`/u/${encodeURIComponent(score.userId)}`}
+                    to={painterHref}
+                    onClick={(event: MouseEvent<HTMLAnchorElement>) => {
+                      if (!onSelectPainter || !isPrimaryClick(event)) return
+                      event.preventDefault()
+                      onSelectPainter(painterHref)
+                    }}
                     title={playerName}
                   >
                     <span className="scores-rank">{rank}</span>
                     {hasCells && drawing?.cells ? (
-                      <PixelThumb cells={drawing.cells} scale="scene" multiplier={1} className="scores-thumb" />
+                      <PixelThumb cells={drawing.cells} size={64} className="scores-thumb" />
                     ) : null}
                     <Avatar className="scores-avatar">
                       <AvatarImage src={score.avatarUrl || undefined} />
                       <AvatarFallback className="bg-[#263451] text-[#fff0cc]">
-                        {playerName.slice(0, 1)}
+                        {Array.from(playerName)[0] ?? ''}
                       </AvatarFallback>
                     </Avatar>
                     <span className="scores-row-name">{playerName}</span>
@@ -224,7 +295,13 @@ export function Leaderboard({ day, ended }: { day: string; ended: boolean }) {
                 </li>
               )
             })}
-          </ol>
+            </ol>
+            {bar.visible && (
+              <span className="scores-scrollbar" aria-hidden="true">
+                <span style={{ top: `${bar.top}px`, height: `${bar.height}px` }} />
+              </span>
+            )}
+          </div>
         )}
       </section>
 
@@ -241,12 +318,6 @@ export function Leaderboard({ day, ended }: { day: string; ended: boolean }) {
           <span className="scores-chalk-stick scores-chalk-stick--warm" />
           <span className="scores-eraser" />
         </div>
-      </div>
-
-      <div className="scores-boosters" data-testid="scores-boosters" aria-hidden="true">
-        <BoosterSprite scale="scene" phaseOffset={0} />
-        <BoosterSprite scale="scene" phaseOffset={2} />
-        <BoosterSprite scale="scene" phaseOffset={4} />
       </div>
     </div>
   )

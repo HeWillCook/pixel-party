@@ -46,6 +46,18 @@ describe('sfx', () => {
     sfx.play('win')
     expect(audio.createOscillator).toHaveBeenCalledTimes(2)
   })
+  it('whooshes softly after unlock, and not before it or while muted', () => {
+    const audio = fakeAudio()
+    const sfx = createSfx({ audioContext: () => audio.context })
+    sfx.whoosh()
+    expect(audio.createOscillator).not.toHaveBeenCalled()
+    sfx.unlock()
+    sfx.whoosh()
+    expect(audio.createOscillator).toHaveBeenCalledTimes(1)
+    sfx.setMuted(true)
+    sfx.whoosh()
+    expect(audio.createOscillator).toHaveBeenCalledTimes(1)
+  })
   it('persists mute to storage under pixel-party:muted', () => {
     const storage = { getItem: vi.fn(() => '1'), setItem: vi.fn() }
     const sfx = createSfx({ storage })

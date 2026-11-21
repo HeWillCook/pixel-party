@@ -1,0 +1,50 @@
+/* The live page is moved into the moving stack; the outgoing room is only a snapshot, so the
+   shell's `main` is never a second visible copy while the stack is on screen. */
+
+/* Sits under the app nav (z-index 15) so the chrome stays put while the rooms travel. */
+.vertical-scene-transition {
+  position: fixed;
+  z-index: 14;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: transparent;
+}
+
+.vertical-scene-transition__track {
+  position: absolute;
+  inset: 0 auto auto 0;
+  overflow: hidden;
+  will-change: transform;
+  z-index: 0;
+}
+
+.vertical-scene-transition__snapshot,
+.vertical-scene-transition__snapshot *,
+.vertical-scene-transition__snapshot *::before,
+.vertical-scene-transition__snapshot *::after {
+  animation: none !important;
+  transition: none !important;
+}
+
+.vertical-scene-transition__panel,
+.vertical-scene-transition__floor {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.vertical-scene-transition__panel--top { top: 0; }
+.vertical-scene-transition__floor { background: #392a45; }
+
+.vertical-scene-transition__floor-art {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  display: block;
+  max-width: none;
+  transform: translateX(-50%);
+  image-rendering: pixelated;
+}

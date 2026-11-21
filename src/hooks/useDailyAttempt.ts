@@ -85,6 +85,8 @@ export function useDailyAttempt(): {
   askNow(): Promise<void>
   done(): Promise<void>
   tick(): void
+  // DEV ONLY (__DEBUG_TOOLS__)
+  reset(): Promise<boolean>
 } {
   const { isSignedIn, user } = useAuthProfileReady({ requireUser: false })
   const userId = user?.id ?? ''
@@ -549,5 +551,48 @@ export function useDailyAttempt(): {
     await finishAttempt()
   }, [finishAttempt])
 
-  return { state: isSignedIn && (!userId || loadedUserId !== userId) ? { ...state, loaded: false } : state, cells, paint, replaceCells, start, askNow, done, tick }
+  // DEV ONLY (__DEBUG_TOOLS__): POST /api/daily/reset exists only in dev and
+  // PIXEL_PARTY_TEST builds; in production this returns before the fetch.
+  const reset = useCallback(async (): Promise<boolean> => {
+    if (!__DEBUG_TOOLS__) return false
+    const prevDay = stateRef.current.day
+    mutationEpochRef.current++
+    try {
+      const headers = await authHeaders()
+      const res = await fetch('/api/daily/reset', {
+        method: 'POST',
+        headers,
+      })
+      if (!res.ok) {
+        dispatch({ type: 'error', message: 'Could not reset daily attempt.' })
+        return false
+      }
+      const serverState = (await res.json()) as DailyStateView
+      finalizingRef.current = false
+      finishPromiseRef.current = null
+      frozenFinalCellsRef.current = null
+      inFlightGradeRef.current = null
+      restoredKeyRef.current = ''
+      if (userIdRef.current) {
+        try {
+          if (prevDay) window.localStorage.removeItem(storageKey(prevDay, userIdRef.current))
+          if (serverState.day) window.localStorage.removeItem(storageKey(serverState.day, userIdRef.current))
+        } catch {
+          // Ignore storage removal errors
+        }
+      }
+      const blank = new Uint8Array(GRID_CELLS)
+      cellsRef.current = blank
+      setCells(blank)
+      dispatch({ type: 'state_loaded', state: serverState })
+      return serverState.status === 'not_started'
+    } catch {
+      dispatch({ type: 'error', message: 'Network error while resetting attempt.' })
+      return false
+    } finally {
+      mutationEpochRef.current++
+    }
+  }, [dispatch])
+
+  return { state: isSignedIn && (!userId || loadedUserId !== userId) ? { ...state, loaded: false } : state, cells, paint, replaceCells, start, askNow, done, tick, reset }
 }

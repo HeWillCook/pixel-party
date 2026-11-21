@@ -127,6 +127,47 @@
   opacity: 0.9;
 }
 
+/* The room's ticket stub, pinned above the easel rather than a full-width bar. */
+.room-play .room-top-bar {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: auto;
+  max-width: min(100%, 980px);
+  margin: 0 auto;
+  padding: 6px 12px;
+  background:
+    repeating-linear-gradient(to bottom, transparent 0 3px, rgba(142, 89, 96, 0.12) 3px 4px),
+    #fff0cc;
+  border: 3px solid #8e5960;
+  box-shadow: inset 0 0 0 2px #fff0cc, 4px 4px 0 rgba(57, 42, 69, 0.55);
+  transform: rotate(-0.5deg);
+  box-sizing: border-box;
+}
+.room-play .room-top-bar::after {
+  content: '';
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: -6px;
+  border-bottom: 2px dashed #8e5960;
+}
+.room-top-bar__pin {
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  width: 14px;
+  height: 14px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: #d86a58;
+  border: 2px solid #392a45;
+  box-shadow: inset 0 2px 0 #f0955f;
+}
+.room-play .room-top-bar :is(.room-invite-ticket, .room-name) { transform: rotate(0.4deg); }
 .room-play .room-exit {
   position: relative;
   display: inline-flex;
@@ -254,28 +295,53 @@
   color: #614052;
 }
 
-/* Chalk slate (guesses + score note) framed in warm studio wood */
+/* Haiku's speech bubble: the tail points up-left at the cat on the sill. */
+.room-play .critic-bubble__speech {
+  filter: drop-shadow(3px 3px 0 rgba(57, 42, 69, 0.4));
+}
+.room-play .critic-bubble__speech::before,
+.room-play .critic-bubble__speech::after {
+  content: '';
+  position: absolute;
+  left: 24px;
+  width: 0;
+  height: 0;
+  border-left: 9px solid transparent;
+  border-right: 9px solid transparent;
+  z-index: 2;
+}
+.room-play .critic-bubble__speech::before {
+  top: -15px;
+  border-bottom: 15px solid #8e5960;
+}
+.room-play .critic-bubble__speech::after {
+  top: -10px;
+  left: 26px;
+  border-left-width: 7px;
+  border-right-width: 7px;
+  border-bottom: 12px solid #fff0cc;
+}
 .room-play .critic-bubble__speech [data-testid="guess-feed"] {
-  background: #2f233b;
-  color: #fff0cc;
-  border: 4px solid #c57d63;
-  border-bottom: 0;
-  box-shadow: inset 0 0 0 2px #614052;
-  padding: 8px 10px;
+  background: #fff0cc;
+  color: #392a45;
+  border: 3px solid #8e5960;
+  border-radius: 10px;
+  box-shadow: inset 0 0 0 2px #fff0cc;
+  padding: 9px 11px;
 }
 
 .room-play .critic-bubble__speech [data-testid="guess-feed"] h4 {
-  color: #ffe29a;
+  color: #614052;
 }
 
 .room-play .critic-bubble__speech [data-testid="guess-confidence"] {
-  background: #392a45;
-  color: #ffe29a;
-  border-color: #ecae7d;
+  background: #ecd4b0;
+  color: #392a45;
+  border-color: #8e5960;
 }
 
 .room-play .critic-bubble__speech [data-testid="guess-feed"] .text-muted-foreground {
-  color: #ecd4b0;
+  color: #614052;
 }
 
 .room-play .critic-bubble__speech [data-testid="guess-list"] {
@@ -283,15 +349,21 @@
 }
 
 .room-play .critic-bubble__speech [data-testid="guess-list"] p {
-  color: #fff0cc;
+  color: #392a45;
 }
 
 .room-play .critic-bubble__speech [data-testid="guess-list"] p > span:first-child {
-  color: #ecae7d;
+  color: #8e5960;
+}
+
+.room-play .critic-bubble__speech [data-testid="guess-list"] p.border {
+  background: #ffe29a;
+  border-color: #8e5960;
+  color: #614052;
 }
 
 .room-play .critic-bubble__speech [data-testid="ai-resting-banner"] {
-  color: #ffe29a;
+  color: #985c5a;
 }
 
 .room-play [data-testid="party-score-note"] {
@@ -307,26 +379,50 @@
 
 /* Ask Haiku gleaming brass counter bell on wooden shelf */
 .room-play .room-bell-shelf {
-  margin-top: 6px;
-  padding: 6px;
-  background: #985c5a;
+  position: relative;
+  margin-top: 8px;
+  padding: 8px 10px 10px;
+  background: linear-gradient(#c57d63, #985c5a 70%, #8e5960);
   border: 3px solid #392a45;
+  border-radius: 0 0 8px 8px;
   box-shadow:
     inset 0 2px 0 #ecae7d,
-    inset 0 -2px 0 #614052,
     0 3px 0 #392a45;
 }
-
+.room-play .room-bell-shelf::before {
+  /* The bell's little wooden base plate. */
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -5px;
+  width: 64%;
+  height: 6px;
+  transform: translateX(-50%);
+  background: #392a45;
+  border-radius: 0 0 6px 6px;
+}
 .room-play .room-bell-btn {
-  background: linear-gradient(180deg, #ffe29a 0%, #f0955f 100%);
+  position: relative;
+  background: radial-gradient(ellipse at 50% 18%, #fff0cc 0 26%, #ffe29a 42%, #ecae7d 62%, #c57d63 100%);
   color: #392a45;
   border: 3px solid #392a45;
+  border-radius: 999px 999px 8px 8px;
   box-shadow:
-    inset 0 2px 0 #fff0cc,
-    inset 0 -2px 0 #c57d63,
-    0 2px 0 #392a45;
+    inset 0 3px 0 #fff0cc,
+    0 3px 0 #392a45;
   font-size: 20px;
   text-shadow: none;
+}
+.room-play .room-bell-btn::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 14%;
+  width: 22%;
+  height: 30%;
+  border-radius: 50%;
+  background: rgba(255, 240, 204, 0.55);
+  pointer-events: none;
 }
 
 .room-play .room-bell-btn:hover:not(:disabled) {
@@ -372,11 +468,22 @@
     font-size: 20px;
   }
 
-  .room-play [data-testid="round-bar"] > div:last-child {
-    width: 100%;
-    padding-top: 4px;
-    font-size: 15px;
+  /* One band: "Draw FISH" on the left, the clock and the pixel count stacked on the right. */
+  .room-play [data-testid="round-bar"] {
+    flex-wrap: nowrap;
   }
+  .room-play [data-testid="round-bar"] > div:last-child {
+    width: auto;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+    margin-left: auto;
+    padding-top: 0;
+    border-top: 0;
+    font-size: 15px;
+    line-height: 1;
+  }
+  .room-play [data-testid="paused-note"] { order: 5; flex-basis: 100%; }
 
   .room-play .room-exit--full {
     width: auto;
@@ -414,3 +521,321 @@
     font-size: 17px;
   }
 }
+
+.room-play .room-exit,
+.room-play .room-bell-btn {
+  transition: background-color 120ms ease, transform 120ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* What sits on the easel when it is not a live board yet: connecting, a closed door, the waiting room. It is the
+   board's own size, so the camera lands on the same rect whatever the room is doing. */
+.room-board {
+  position: relative;
+  flex: none;
+}
+.room-board .pp-frame {
+  border: 0;
+  outline: 0;
+  box-shadow: none;
+  padding: 0;
+  background: transparent;
+}
+.room-board--face {
+  box-sizing: border-box;
+  display: flex;
+  overflow: auto;
+  padding: 12px;
+  background: #fff0cc;
+  color: #392a45;
+  text-align: center;
+}
+.room-board--face > * {
+  max-width: 100%;
+  /* `margin: auto` centres what fits and lets what does not fit scroll from its top (justify-content: center would clip it). */
+  margin: auto;
+}
+.room-board__loading {
+  font-size: 24px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.room-play--face .play-layout__right {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .room-play .room-exit,
+  .room-play .room-bell-btn {
+    transition: none;
+  }
+}
+
+/* Phones: the easel's own header (code, painters, round state) sits just above its board. Leave it clear, so the
+   prompt card and the back plaque stack above it instead of covering it. */
+@media (max-width: 767px) {
+  .room-play .play-layout__canvas {
+    margin-top: 34px;
+  }
+}
+
+/* ---- Below the nav ------------------------------------------------------------------------------------------------
+   The nav is an overlay on scene pages, so the room starts below it: nothing here sits under the nav or its logo link
+   (on phones the logo link is 68px tall). The room's nav is always the compact one (52px; 44px on a phone), so this is a constant:
+   following the live bar (108px -> 52px over 360ms as the room opens) moved the room's top, and so its board, during the zoom
+   and snapped it back when the bar settled. */
+.room-play[data-testid="room-page"] {
+  --room-top-clear: 52px;
+  padding-top: calc(var(--room-top-clear) + 4px);
+}
+/* Short desktop windows (1280x720): the room is below the nav now, so Haiku's perch gives back some height. */
+@media (min-width: 768px) and (max-height: 800px) {
+  .critic-bubble__perch { min-height: 108px; padding-bottom: 10px; }
+  .room-play .room-bell-shelf { margin-top: 4px; padding: 6px 8px 8px; }
+  .room-play .room-top-bar { padding-top: 3px; padding-bottom: 3px; }
+}
+@media (max-width: 767px) {
+  .room-play[data-testid="room-page"] {
+    --room-top-clear: 68px;
+    padding-top: calc(var(--room-top-clear) + 4px);
+  }
+}
+
+/* A little air between the stub and the board under it. */
+.room-play .play-layout__top { padding-bottom: 6px; }
+@media (max-width: 767px) { .room-play .play-layout__top { padding-bottom: 0; } }
+
+/* ---- The ticket stub: way back, invite, name, host and sound -------------------------------------------------------- */
+.room-top-bar__who {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 4px 14px;
+  min-width: 0;
+}
+.room-top-bar__name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 20px;
+  line-height: 1.1;
+  text-transform: uppercase;
+  color: var(--soft-text);
+}
+.room-top-bar__exit {
+  min-height: 34px;
+  white-space: nowrap;
+}
+.room-top-bar__controls {
+  display: flex;
+  align-items: center;
+}
+@media (max-width: 767px) {
+  .room-top-bar__exit-long { display: none; }
+  .room-top-bar__exit { order: 1; }
+  .room-top-bar__controls { order: 2; margin-left: auto; }
+  .room-top-bar__who { order: 3; flex: 1 1 100%; flex-wrap: nowrap; justify-content: space-between; gap: 8px; }
+  .room-top-bar__name { flex: 1 1 0; min-width: 0; text-align: right; font-size: 16px; }
+}
+
+/* ---- The room lobby ------------------------------------------------------------------------------------------------ */
+.room-lobby {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: center;
+}
+.room-lobby__title {
+  margin: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font-size: 26px;
+  line-height: 1.05;
+  text-transform: uppercase;
+  color: var(--sunset-2);
+}
+.room-lobby__status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  gap: 2px 12px;
+}
+.room-lobby-stools {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.room-lobby-stool {
+  display: flex;
+  flex: 0 1 132px;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 8px 8px 6px;
+  background: #ecd4b0;
+  border: 2px solid #8e5960;
+  box-shadow: inset 0 0 0 2px #fff0cc, 2px 2px #614052;
+}
+.room-lobby-stool__tags {
+  font-size: 13px;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #985c5a;
+}
+.room-lobby-stool__name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 17px;
+  line-height: 1.1;
+  color: #392a45;
+}
+@media (max-width: 767px) {
+  .room-lobby { gap: 6px; }
+  .room-lobby__title { font-size: 21px; }
+  .room-lobby-stool { flex: 0 1 auto; flex-direction: row; gap: 6px; padding: 1px 8px; box-shadow: none; }
+  .room-lobby-stool__sprite { display: none; }
+  .room-lobby-stool__name { font-size: 15px; }
+}
+
+/* "Invite friends": the four letters, large, on a plank. */
+.invite-plank {
+  width: 100%;
+  max-width: 380px;
+  box-sizing: border-box;
+  padding: 8px 12px 10px;
+  background: linear-gradient(#c57d63, #985c5a 80%, #8e5960);
+  border: 3px solid #392a45;
+  box-shadow: inset 0 2px #ecae7d, 0 3px #392a45;
+}
+.invite-plank__label {
+  margin: 0 0 4px;
+  font-size: 16px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #fff0cc;
+  text-shadow: 1px 1px #392a45;
+}
+.invite-plank__code {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin: 0 0 8px;
+}
+.invite-plank__tile {
+  display: inline-flex;
+  width: 44px;
+  height: 52px;
+  align-items: center;
+  justify-content: center;
+  background: #fff0cc;
+  color: #392a45;
+  border: 3px solid #392a45;
+  box-shadow: inset 0 0 0 2px #ecd4b0, 0 2px #392a45;
+  font-size: 38px;
+  line-height: 1;
+}
+.invite-plank__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+.invite-plank__btn {
+  display: inline-flex;
+  height: 36px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  background: #ecd4b0;
+  color: #392a45;
+  border: 3px solid #392a45;
+  box-shadow: inset 0 2px #fff0cc;
+  font-size: 18px;
+  line-height: 1;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.invite-plank__btn:hover { background: #ecae7d; }
+@media (max-width: 767px) {
+  .invite-plank { max-width: none; padding: 5px 8px 7px; }
+  .invite-plank__label { margin-bottom: 2px; font-size: 14px; }
+  .invite-plank__code { gap: 5px; margin-bottom: 5px; }
+  .invite-plank__tile { width: 34px; height: 38px; font-size: 28px; }
+  .invite-plank__btn { height: 34px; padding: 0 10px; font-size: 16px; }
+}
+
+/* Roster tags ("host", "you"). */
+.roster-tag {
+  flex: none;
+  padding: 0 4px;
+  background: #ecd4b0;
+  color: #614052;
+  border: 2px solid #8e5960;
+  font-size: 13px;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+.roster-tag--you { background: #ffe29a; color: #392a45; }
+.roster-tags { display: inline-flex; flex: none; gap: 4px; }
+
+/* ---- Round over: what the word was, what Haiku guessed, the picture ----------------------------------------------- */
+.room-results-guess {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.1;
+  color: #392a45;
+}
+.room-results-guess strong { color: #985c5a; text-transform: uppercase; }
+.room-results-main {
+  display: flex;
+  width: 100%;
+  align-items: stretch;
+  justify-content: center;
+  gap: 10px;
+}
+.room-results-frame .pp-results-icon { display: none; }
+.room-results-thumb {
+  flex: none;
+  width: 92px;
+  height: 92px;
+  border: 3px solid #8e5960;
+  image-rendering: pixelated;
+}
+.room-results-main .room-results-stats { flex: 1 1 auto; min-width: 0; align-content: center; }
+.room-results-stats--solo { grid-template-columns: minmax(0, 1fr); }
+.room-results-frame .pp-results-body > * { flex-shrink: 0; }
+@container (max-width: 460px) {
+  .room-results-thumb { display: none; }
+  .room-results-guess { font-size: 15px; }
+  /* A small board: the word is the headline and Haiku's bubble above already says what it guessed; skip the arithmetic. */
+  .room-results-guess--won, .room-results-bonus { display: none; }
+  .room-results-frame .pp-results-word { text-shadow: none; }
+}
+
+/* The toast lives on the board's foot (not over the controls), and never takes a tap. */
+.room-board .room-reject-float {
+  top: auto;
+  bottom: 8px;
+  max-width: calc(100% - 16px);
+  white-space: normal;
+  text-align: center;
+  pointer-events: none;
+}
+.room-board .room-reject-float button { pointer-events: auto; }
+
+.room-play [data-testid="roster-row"] { flex-wrap: wrap; }
+.room-play [data-testid="roster-row"] > span:nth-child(2) { flex: 1 1 auto; min-width: 0; }
