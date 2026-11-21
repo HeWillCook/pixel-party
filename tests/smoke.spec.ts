@@ -66,6 +66,7 @@ test.describe('Smoke tests', () => {
   test('unknown route shows 404', async ({ page }) => {
     await page.goto('/nonexistent-page-xyz')
     await waitForApp(page)
-    await expect(page.locator('text=404')).toBeVisible()
+    await expect(page.getByTestId('not-found-page')).toBeVisible()
+    await expect(page.getByRole('heading', { name: /this page doesn.t exist/i })).toBeVisible()
   })
 })
