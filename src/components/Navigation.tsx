@@ -199,10 +199,35 @@ function SpriteImage({ sprite, className = '' }: { sprite: Sprite; className?: s
   return <canvas ref={ref} className={`porch-sprite ${className}`} width={sprite.w} height={sprite.h} style={{ width: `calc(var(--px) * ${sprite.w})`, height: `calc(var(--px) * ${sprite.h})` }} aria-hidden="true" />
 }
 
+/** Publishes the bar's live height as `--porch-nav-height` on the shell, so scene overlays can sit below it without measuring. */
+function useNavHeightVar() {
+  const ref = useRef<HTMLElement>(null)
+  useEffect(() => {
+    const nav = ref.current
+    const shell = nav?.closest<HTMLElement>('.porch-shell')
+    // The bar itself, not the phone menu that drops below it when open.
+    const row = nav?.querySelector<HTMLElement>('.porch-nav__row')
+    if (!nav || !shell || !row) return
+    let last = ''
+    const publish = () => {
+      const value = `${Math.round(row.getBoundingClientRect().height)}px`
+      if (value === last) return
+      last = value
+      shell.style.setProperty('--porch-nav-height', value)
+    }
+    const observer = new ResizeObserver(publish)
+    observer.observe(row)
+    publish()
+    return () => { observer.disconnect(); shell.style.removeProperty('--porch-nav-height') }
+  }, [])
+  return ref
+}
+
 const staticNavItems = nav.filter((item) => !item.devOnly && !item.roles)
 
 export function StaticPorchNav() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const navRef = useNavHeightVar()
   const navLink = (item: (typeof nav)[number]) => {
     const to = item.label === 'Gallery' ? '/home' : item.path
     const onClick = (event: MouseEvent<HTMLElement>) => {
@@ -218,7 +243,7 @@ export function StaticPorchNav() {
     )
   }
   return (
-    <nav data-testid="app-navigation" className="porch-nav">
+    <nav ref={navRef} data-testid="app-navigation" className="porch-nav">
       <PorchNavRoof pathname="/" />
       <div className="porch-nav__row">
         <Link to="/" aria-label="Pixel Party, home" className="porch-nav__logo"><SpriteImage sprite={logoSign} className="porch-nav__logo-full" /><SpriteImage sprite={compactLogoSign} className="porch-nav__logo-compact" /></Link>
@@ -250,6 +275,7 @@ export default function Navigation() {
   const locked = useDailyLock()
   const location = useLocation()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const navRef = useNavHeightVar()
   const navigate = useNavigate()
   // Sign-in is a form on a scene object (the mailbox on the porch, the ticket board below): the scene on screen takes the request.
   const openSignIn = () => { if (!requestSignIn()) navigate('/settings') }
@@ -298,7 +324,7 @@ export default function Navigation() {
     </Link>
   }
   return <>
-    <nav data-testid="app-navigation" className="porch-nav">
+    <nav ref={navRef} data-testid="app-navigation" className="porch-nav">
       <PorchNavRoof pathname={location.pathname} />
       <CompactRoof />
       <div className="porch-nav__row">

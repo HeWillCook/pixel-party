@@ -28,6 +28,7 @@ import { schemas } from '../../schemas'
 import { DailyAttemptProvider } from '../../hooks/DailyAttemptProvider'
 import { useDailyLock } from '../../hooks/useDailyLock'
 import { VerticalSceneTransition } from '../../components/porch/VerticalSceneTransition'
+import { usePopMoves } from '../../components/porch/popMoves'
 import { prefetchAllRoutes } from '../../prefetch-routes'
 import { warmSceneArt } from '../../scene/warm-art'
 // The scores page's stylesheet (and the porch's `--to-scores` backdrop it owns) is needed on the porch before the first Scores visit.
@@ -45,6 +46,7 @@ export default function AppLayout() {
           <Navigation />
           <main className="flex-1 overflow-y-auto min-h-0">
             <DailyLockGuard />
+            <PopMoves />
             <Suspense fallback={<RouteCurtain />}>
               <Outlet />
             </Suspense>
@@ -77,6 +79,12 @@ function DailyLockGuard() {
   const locked = useDailyLock()
   const { pathname } = useLocation()
   return locked && pathname !== '/home' ? <Navigate to="/home" replace /> : null
+}
+
+/** Browser Back/Forward play the camera move (see popMoves.ts). */
+function PopMoves() {
+  usePopMoves()
+  return null
 }
 
 /**
