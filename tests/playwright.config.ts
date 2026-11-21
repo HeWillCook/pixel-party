@@ -29,11 +29,11 @@ export default defineConfig({
     launchOptions: chromiumLaunchOptions(),
   },
   webServer: {
-    env: { PIXEL_PARTY_TEST: '1' },
+    env: { PIXLE_TEST: '1' },
     // Bind the local test server directly. A bare `--host` asks Vite to
     // enumerate every interface, which fails in restricted containers before
     // the app can start (`uv_interface_addresses`).
-    command: `node -e "if (process.env.PIXEL_PARTY_TEST !== '1') { console.error('PIXEL_PARTY_TEST must be 1'); process.exit(1) }" && npx vite --port ${PORT} --strictPort --host 127.0.0.1`,
+    command: `node -e "if (process.env.PIXLE_TEST !== '1') { console.error('PIXLE_TEST must be 1'); process.exit(1) }" && npx vite --port ${PORT} --strictPort --host 127.0.0.1`,
     cwd: '..',
     // The worker verifies both the integration guard and auth readiness before tests start.
     url: `${BASE_URL}/api/__test/ready`,

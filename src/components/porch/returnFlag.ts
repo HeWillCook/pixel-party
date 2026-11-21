@@ -1,7 +1,7 @@
 /**
  * Spatial transition handoff flags and navigation event helpers.
  *
- * Pixel Party has two physical spaces:
+ * Pixle has two physical spaces:
  * - Upstairs (Porch): `/home` (`/`), `/scores`, `/u/:userId`, `/settings`
  * - Downstairs (Basement Studio): `/party`, `/r/:code`
  *

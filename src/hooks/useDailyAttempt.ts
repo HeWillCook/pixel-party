@@ -552,7 +552,7 @@ export function useDailyAttempt(): {
   }, [finishAttempt])
 
   // DEV ONLY (__DEBUG_TOOLS__): POST /api/daily/reset exists only in dev and
-  // PIXEL_PARTY_TEST builds; in production this returns before the fetch.
+  // PIXLE_TEST builds; in production this returns before the fetch.
   const reset = useCallback(async (): Promise<boolean> => {
     if (!__DEBUG_TOOLS__) return false
     const prevDay = stateRef.current.day

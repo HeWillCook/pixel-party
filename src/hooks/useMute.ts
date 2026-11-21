@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react'
 import { MUTE_KEY } from '../lib/sfx'
 
-const changeEvent = 'pixel-party:mute-change'
+const changeEvent = 'pixle:mute-change'
 let fallback = false
 
 function readMute() {

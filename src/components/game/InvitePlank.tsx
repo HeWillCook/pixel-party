@@ -33,7 +33,7 @@ export function InvitePlank({ code }: { code: string }) {
   const { label, copy } = useCopyLink(code)
   const share = useCallback(async () => {
     try {
-      await navigator.share({ title: 'Pixel Party', text: `Come paint with me in room ${code}!`, url: roomInviteUrl(code) })
+      await navigator.share({ title: 'Pixle', text: `Come paint with me in room ${code}!`, url: roomInviteUrl(code) })
     } catch {
       // Dismissing the share sheet is not an error.
     }

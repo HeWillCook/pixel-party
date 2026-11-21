@@ -190,7 +190,7 @@ describe('durable room boundaries', () => {
     vi.mocked(configuredJudgeMode).mockReturnValue('fake')
     vi.useFakeTimers()
     vi.setSystemTime(10_000)
-    vi.stubGlobal('__PIXEL_PARTY_TEST__', false)
+    vi.stubGlobal('__PIXLE_TEST__', false)
     const harness = roomHarness()
     try {
       const owner = await harness.connect('owner')

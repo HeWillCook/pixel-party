@@ -2,7 +2,7 @@ import { apiWorkerFetch, normalizeApiError, splitIntegrationEndpoint } from 'dee
 import type { ActionResult, ActionTools } from 'deepspace/worker'
 import type { Env } from '../../worker.js'
 
-declare const __PIXEL_PARTY_TEST__: boolean
+declare const __PIXLE_TEST__: boolean
 
 export type ServerTools = Pick<ActionTools, 'create' | 'update' | 'get' | 'deleteWhere'> & {
   query<T extends Record<string, unknown> = Record<string, unknown>>(
@@ -61,7 +61,7 @@ export function createServerTools(env: Env): ServerTools {
   async function integration<T>(endpoint: string, body: unknown): Promise<ActionResult<T>> {
     try {
       // Vite defines this as false in production, preserving normal integrations there.
-      if (typeof __PIXEL_PARTY_TEST__ !== 'undefined' && __PIXEL_PARTY_TEST__) {
+      if (typeof __PIXLE_TEST__ !== 'undefined' && __PIXLE_TEST__) {
         return { success: false, code: 'test_integration_disabled', error: 'External integrations disabled in tests' }
       }
       // Validate before attaching the owner credential: never allow arbitrary API paths.

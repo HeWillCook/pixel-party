@@ -594,7 +594,7 @@ export default function RoomPage() {
   const customRoomName =
     roomDoc?.data.name &&
     roomDoc.data.name.trim() !== '' &&
-    roomDoc.data.name.trim().toLowerCase() !== 'pixel party'
+    roomDoc.data.name.trim().toLowerCase() !== 'pixle'
       ? roomDoc.data.name
       : null
 

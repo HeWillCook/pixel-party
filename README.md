@@ -1,8 +1,8 @@
 <img src="assets/icon.svg" width="64" height="64" alt="">
 
-# Pixel Party
+# Pixle
 
-Pixel Party is a daily solo pixel-art challenge, with the original live multiplayer party canvas available as a
+Pixle is a daily solo pixel-art challenge, with the original live multiplayer party canvas available as a
 second mode.
 
 ## Daily mode

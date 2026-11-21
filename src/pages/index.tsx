@@ -20,7 +20,7 @@ export default function Landing() {
           easelTestId="landing-play-now"
           easelText={
             <>
-              <strong>Pixel Party</strong>
+              <strong>Pixle</strong>
               <span>Daily prompt &amp; live studio</span>
               <span className="porch-easel-action">Play now</span>
             </>
@@ -33,7 +33,7 @@ export default function Landing() {
           onToggleMute={toggle}
         />
         <section className="sr-only">
-          <h1>Draw together at Pixel Party</h1>
+          <h1>Draw together at Pixle</h1>
           <p>Paint a daily prompt in five minutes, or join friends on a shared pixel canvas. Haiku the cat guesses your art and scores your best drawing.</p>
         </section>
       </main>

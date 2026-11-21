@@ -7,7 +7,7 @@
  * - 'user': The calling user pays.
  *
  * Client calls are denied unless an entry explicitly sets `client: true`.
- * Pixel Party enables none: AI runs server-side in PixelRoom via server-tools,
+ * Pixle enables none: AI runs server-side in PixelRoom via server-tools,
  * where game budgets must be enforced before spending developer credits.
  *
  * Opted-in client integrations require sign-in by default. `anonymous: true`
