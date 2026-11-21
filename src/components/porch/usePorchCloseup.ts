@@ -10,7 +10,9 @@ import { handoffProgress, lerpCamera, REST_CAMERA, SCENE_ZOOM_CHAIN_MS, SCENE_ZO
 import {
   consumeZoomHandoff,
   enableNavMotion,
+  markSceneMove,
   peekZoomHandoff,
+  queueSceneNavigation,
   SCENE_NAV_EVENT,
   setPorchChain,
   setZoomHandoff,
@@ -118,8 +120,9 @@ export function usePorchCloseup({ pose, focus = NO_FOCUS, anchorSelector = '[dat
    * 55% so the next page keeps the same curve moving.
    */
   const startExit = useCallback((to: PorchPose, path: string, chain?: PorchChainDest) => {
-    if (timerRef.current) return
+    if (timerRef.current) { queueSceneNavigation(chain?.path ?? path); return }
     enableNavMotion()
+    markSceneMove()
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       if (chain) setPorchChain(chain)
       navigate(path)

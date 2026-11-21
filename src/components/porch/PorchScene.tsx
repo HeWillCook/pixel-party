@@ -33,7 +33,10 @@ import {
   PORCH_RETURN_KEY,
   SCENE_NAV_EVENT,
   setSettingsArrival,
+  clearQueuedSceneNavigation,
   isPrimaryClick,
+  markSceneMove,
+  queueSceneNavigation,
   setZoomHandoff,
   type PorchChainDest,
   type SceneNavKind,
@@ -231,8 +234,9 @@ export function PorchScene(props: PorchSceneProps) {
   }, [returnFrom])
 
   const startTransition = useCallback((path: string, spec: NonNullable<PorchTransition>) => {
-    if (timer.current) return
+    if (timer.current) { queueSceneNavigation(path); return }
     enableNavMotion()
+    markSceneMove()
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       if (spec.kind === 'settings') setSettingsArrival()
       navigate(path)
@@ -254,7 +258,7 @@ export function PorchScene(props: PorchSceneProps) {
   }, [navigate])
 
   const goParty = useCallback(() => {
-    if (timer.current) return
+    if (timer.current) { queueSceneNavigation('/party'); return }
     enableNavMotion()
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       navigate('/party')
@@ -318,6 +322,7 @@ export function PorchScene(props: PorchSceneProps) {
 
   useEffect(() => {
     const cancelPending = () => {
+      clearQueuedSceneNavigation()
       if (chainTimer.current) {
         clearTimeout(chainTimer.current)
         chainTimer.current = null

@@ -19,7 +19,9 @@ import {
   consumeSettingsArrival,
   consumeZoomHandoff,
   enableNavMotion,
+  markSceneMove,
   peekZoomHandoff,
+  queueSceneNavigation,
   SCENE_NAV_EVENT,
   setPorchChain,
   setZoomHandoff,
@@ -148,8 +150,9 @@ export default function SettingsPage() {
 
   // The letter slides back into the mailbox while the camera flies: to the porch, or straight to the next close-up.
   const startExit = useCallback((kind: SceneNavKind, path: string) => {
-    if (zoomTimer.current) return
+    if (zoomTimer.current) { queueSceneNavigation(path); return }
     enableNavMotion()
+    markSceneMove()
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     const toPorch = kind === 'porch'
     if (reduced) {

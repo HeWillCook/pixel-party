@@ -6,7 +6,7 @@ import { DETAIL } from '../../scene/detail'
 import { paintFloorSection } from '../../scene/porch/floorArt'
 import { porchHatch } from '../../scene/porch/layout'
 import { runningZoomCamera, SCENE_ZOOM_EASING, sceneEase } from '../../scene/zoom'
-import { enableNavMotion, SCENE_NAV_EVENT, type SceneNavKind } from './returnFlag'
+import { enableNavMotion, markSceneMove, queueSceneNavigation, SCENE_NAV_EVENT, type SceneNavKind } from './returnFlag'
 import { routeReady } from '../../prefetch-routes'
 import './vertical-scene-transition.css'
 
@@ -229,7 +229,7 @@ export function VerticalSceneTransition() {
     const handle = (event: Event) => {
       const request = (event as CustomEvent<SceneTransitionRequest>).detail
       if (!request || activeRef.current) {
-        if (request) event.preventDefault()
+        if (request) { event.preventDefault(); queueSceneNavigation(request.followup?.path ?? request.path) }
         return
       }
       if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
@@ -259,6 +259,7 @@ export function VerticalSceneTransition() {
         sourceTop,
       }
       document.documentElement.setAttribute('data-scene-moving', '')
+      markSceneMove(TRANSITION_MS + 400)
       event.preventDefault()
       activeRef.current = transition
       setActive(transition)
