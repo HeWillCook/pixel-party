@@ -9,6 +9,7 @@ import { AttemptEndTooEarly, dailyState, endDaily, gradeDaily, InvalidAttemptDay
 import type { DailyDeps, DailyUser } from './daily-service'
 import { resolveAuth } from './http-routes'
 import { createServerTools } from './server-tools'
+import { getUsername } from './usernames'
 
 function dependencies(env: Env): DailyDeps {
   return {
@@ -34,7 +35,9 @@ export function registerDailyRoutes(app: Hono<AppContext>): void {
   daily.use('*', async (c, next) => {
     const auth = await resolveAuth(c.req.raw, c.env)
     if (!auth) return c.json({ error: 'sign_in_required' }, 401)
-    c.set('dailyUser', { userId: auth.userId, name: auth.claims.name ?? 'Player', image: auth.claims.image ?? '' })
+    // Scores and the gallery show the player's chosen username; the sign-in name is only a fallback.
+    const name = (await getUsername(c.env, auth.userId)) ?? auth.claims.name ?? 'Player'
+    c.set('dailyUser', { userId: auth.userId, name, image: auth.claims.image ?? '' })
     await next()
   })
 

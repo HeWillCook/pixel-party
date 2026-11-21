@@ -17,7 +17,7 @@ interface Score {
   displayName?: string
   avatarUrl?: string
   score: number
-  bestElapsedMs: number | null
+  startedAt?: number
   medal?: number
   guess?: string
 }
