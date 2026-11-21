@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { Outlet, useBlocker, useLocation, useMatch, useNavigate } from 'react-router-dom'
+import { Outlet, useLocation, useMatch, useNavigate } from 'react-router-dom'
 import {
   getAuthToken,
   useAuthProfileReady,
@@ -229,16 +229,8 @@ export default function StudioLayout() {
     }, SCENE_ZOOM_MS)
   }, [finishLeave])
 
-  // Browser Back from the studio to the porch is the same move as the Upstairs sign: the floor pans up. The pop is held for
-  // the instant the pan takes its snapshot of the studio, then let through, so the porch is swapped in under it (and the
-  // history stays honest: Forward walks back down).
-  const upstairsBlocker = useBlocker(({ currentLocation, nextLocation, historyAction }) =>
-    historyAction === 'POP' && currentLocation.pathname === '/party' && nextLocation.pathname === '/home')
-  useEffect(() => {
-    if (upstairsBlocker.state !== 'blocked') return
-    requestVerticalSceneTransition({ source: 'studio', target: 'porch', direction: 'up', path: '/home', navigate: false })
-    upstairsBlocker.proceed()
-  }, [upstairsBlocker])
+  // Browser Back from the studio to the porch pans the floor up: usePopMoves (components/porch/popMoves.ts) requests
+  // it before the router swaps the route. No blocker here: a data router honours one blocker at a time, and rooms own one.
 
   const phase: RoomPhase = leaving ? 'leaving' : entering ? 'entering' : 'active'
   const setBoardRect = useCallback((rect: Rect | null) => {
