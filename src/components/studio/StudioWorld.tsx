@@ -32,7 +32,7 @@ export interface StudioWorldValue {
   signInOpen: boolean
   setSignInOpen: (open: boolean) => void
   /** Zooms back out of the easel, then lands on `path` (the studio). */
-  leave: (path?: string) => void
+  leave: (path?: string, beforeFinish?: () => void) => void
 }
 
 export const StudioWorldContext = createContext<StudioWorldValue | null>(null)

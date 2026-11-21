@@ -194,6 +194,8 @@ export default function StudioLayout() {
   useEffect(() => {
     if (!inRoom) {
       sawParty.current = true
+      // The route left the room by itself (a pop that got through, a link): an exit still counting down must not fire a second move.
+      if (leaveTimer.current) { clearTimeout(leaveTimer.current); leaveTimer.current = null }
       setBoardRectState(null)
       setSummaryState(null)
       setLeaving(false)
@@ -211,20 +213,25 @@ export default function StudioLayout() {
   // walks in again and Back from the studio goes on to the porch). A room opened cold (reload, shared link) has no
   // studio entry behind it, so there the room's entry is replaced instead of piling a second /party on the stack.
   const finishLeave = useCallback((path: string) => {
+    // Idempotent: if the router already landed on the target (a pop that got through mid-exit), popping again would walk past the studio to the porch.
+    if (window.location.pathname === path) { setLeaving(false); return }
     const hasStudioBehind = sawParty.current && path === '/party' && ((window.history.state as { idx?: number } | null)?.idx ?? 0) > 0
     if (hasStudioBehind) navigate(-1)
     else navigate(path, { replace: true })
   }, [navigate])
-  const leave = useCallback((path = '/party') => {
+  // `beforeFinish` runs right before the route changes, so the room's own Back blocker can step aside for this one move only.
+  const leave = useCallback((path = '/party', beforeFinish?: () => void) => {
     if (leaveTimer.current) return
     enableNavMotion()
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      beforeFinish?.()
       finishLeave(path)
       return
     }
     setLeaving(true)
     leaveTimer.current = setTimeout(() => {
       leaveTimer.current = null
+      beforeFinish?.()
       finishLeave(path)
     }, SCENE_ZOOM_MS)
   }, [finishLeave])

@@ -1497,3 +1497,50 @@ test('browser Back from a room returns to the studio in one press, and Forward w
   await page.goBack()
   await expect(page).toHaveURL(`${origin}/home`)
 })
+
+// Review finding: Back (or a second click) during the ~520 ms room exit used to pop to /party, and the exit's own timer then
+// popped again, landing on the porch and skipping the studio.
+for (const how of ['exit link then Back', 'Back twice']) {
+  test(`${how} during a room exit lands on the studio once, never the porch`, async ({ page }) => {
+    await clientFixture(page, { signedIn: true })
+    await page.routeWebSocket('**/api/pixel/**', socket => socket.send(JSON.stringify(snapshot('lobby'))))
+    await page.goto(`${origin}/home`)
+    await page.locator('a[href="/party"]').first().click()
+    await expect(page).toHaveURL(`${origin}/party`)
+    await page.getByTestId('room-card-AB2Z').click()
+    await page.getByTestId('magic-easel-step-in').click()
+    await expect(page).toHaveURL(`${origin}/r/AB2Z`)
+    await expect(page.getByTestId('room-lobby')).toBeVisible()
+    await expect(page.getByTestId('room-page')).toHaveAttribute('data-play-phase', 'active')
+    if (how === 'exit link then Back') await page.getByTestId('room-exit').click()
+    else await page.evaluate(() => history.back())
+    await expect(page.getByTestId('room-page')).toHaveAttribute('data-play-phase', 'leaving')
+    await page.evaluate(() => history.back())
+    // The exit's own timer fires well inside this wait.
+    await page.waitForTimeout(1200)
+    await expect(page).toHaveURL(`${origin}/party`)
+    await expect(page.getByTestId('lobby-page')).toBeVisible()
+    await expect(page.getByTestId('room-page')).toHaveCount(0)
+    // One entry (the room) was popped: Back from the studio is the porch, Forward walks to the studio again.
+    await page.goBack()
+    await expect(page).toHaveURL(`${origin}/home`)
+  })
+}
+
+test('after a round the ask button says "Round over" and the brush note is only shown while painting', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await clientFixture(page, { signedIn: true })
+  let server!: WebSocketRoute
+  const state = snapshot('playing')
+  await page.routeWebSocket('**/api/pixel/**', socket => {
+    server = socket
+    socket.send(JSON.stringify({ ...state, players: 2, roster: [{ userId: 'host', name: 'Offline host' }, { userId: 'pal', name: 'Pal' }] }))
+  })
+  await page.goto(`${origin}/r/AB2Z`)
+  await expect(page.getByTestId('shared-brush-note')).toBeVisible()
+  await expect(page.getByTestId('ask-ai-button')).toContainText('Ask Haiku')
+  server.send(JSON.stringify({ t: 'round', round: { ...state.round, state: 'intermission', endsAt: null, endedAt: Date.now(), result: { outcome: 'timeout' } } }))
+  await expect(page.getByTestId('ask-ai-button')).toContainText('Round over')
+  await expect(page.getByTestId('ask-ai-button')).not.toContainText('Waiting for active round')
+  await expect(page.getByTestId('shared-brush-note')).toHaveCount(0)
+})
