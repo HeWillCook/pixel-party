@@ -2,7 +2,7 @@ import { JUDGE, MODES, ROOMS, type Mode, type ZoneId } from './config'
 import { contributors, createGrid, decodeCells, encodeCells, pixelsUsed, setPixel, type Grid } from './grid'
 import type { JudgeOutcome } from './judge-flow'
 import type { Placement, RoundView } from './protocol'
-import { consumeSoloToken, validatePlacement, type SoloBucket, type RejectReason } from './rules'
+import { consumePaintToken, paintRate, validatePlacement, type RejectReason, type TokenBucket } from './rules'
 import { coopScore } from './scoring'
 import { pickWord, type WordEntry } from './words'
 
@@ -17,8 +17,8 @@ export interface RoomState {
   recentWords: string[]
   lastGuesses: string[]
   roundCounter: number
-  lastPlacedAt: Record<string, number>
-  soloBuckets: Record<string, SoloBucket>
+  /** Per-painter token buckets: the only pace limit on painting, in every mode. */
+  paintBuckets: Record<string, TokenBucket>
   judgeCalls: number[]
   lastJudgedVersion: number
   lastJudgedAt: number
@@ -59,7 +59,7 @@ export function newRoomState(init: { roomId: string; mode: Mode; isDefaultBoard:
   return {
     roomId: init.roomId, mode: init.mode, isDefaultBoard: init.isDefaultBoard, grid: createGrid(config.width, config.height), version: 0,
     round: { id: `${now}-0`, word: lobby ? '' : wordEntry.word, state: lobby ? 'lobby' : 'playing', startedAt: lobby ? 0 : now, endsAt: lobby ? null : now + config.capMs, askAvailableAt: now + JUDGE.askMinMs },
-    wordEntry, recentWords: lobby ? [] : [wordEntry.word], lastGuesses: [], roundCounter: 0, lastPlacedAt: {}, soloBuckets: {}, judgeCalls: [],
+    wordEntry, recentWords: lobby ? [] : [wordEntry.word], lastGuesses: [], roundCounter: 0, paintBuckets: {}, judgeCalls: [],
     lastJudgedVersion: 0, lastJudgedAt: now, judgeInFlight: false, emptySince: lobby ? now : null,
     intermissionEndsAt: null, pausedAt: null, pausedFrom: null, status: lobby ? 'lobby' : 'playing',
   }
@@ -71,17 +71,16 @@ export function applyPlacement(s: RoomState, p: { x: number; y: number; c: numbe
   if (p.userId && roundPlaying && inBounds && p.c === 0 && s.grid.cells[p.y * s.grid.width + p.x] === 0) {
     return { state: s, events: [{ type: 'noop', x: p.x, y: p.y, ...(p.id === undefined ? {} : { id: p.id }) }] }
   }
-  const valid = validatePlacement({ width: s.grid.width, height: s.grid.height, x: p.x, y: p.y, color: p.c, userId: p.userId, roundPlaying, lastPlacedAt: p.userId === null ? undefined : s.lastPlacedAt[p.userId], now, playersConnected })
-  if (!valid.ok) return { state: s, events: [{ type: 'reject', x: p.x, y: p.y, reason: valid.reason, ...(valid.retryAt === undefined ? {} : { retryAt: valid.retryAt }), ...(p.id === undefined ? {} : { id: p.id }) }] }
-  const token = playersConnected <= 1 ? consumeSoloToken(s.soloBuckets[p.userId!], now) : null
-  if (token && !token.ok) return { state: s, events: [{ type: 'reject', reason: 'rate_limited', retryAt: token.retryAt, x: p.x, y: p.y, ...(p.id === undefined ? {} : { id: p.id }) }] }
-  const soloBuckets = Object.fromEntries(Object.entries(s.soloBuckets).filter(([, bucket]) => bucket.updatedAt >= now - 1000))
-  if (token?.ok) soloBuckets[p.userId!] = token.bucket
+  const valid = validatePlacement({ width: s.grid.width, height: s.grid.height, x: p.x, y: p.y, color: p.c, userId: p.userId, roundPlaying })
+  if (!valid.ok) return { state: s, events: [{ type: 'reject', x: p.x, y: p.y, reason: valid.reason, ...(p.id === undefined ? {} : { id: p.id }) }] }
+  const token = consumePaintToken(s.paintBuckets[p.userId!], now, paintRate(playersConnected))
+  if (!token.ok) return { state: s, events: [{ type: 'reject', reason: 'rate_limited', retryAt: token.retryAt, x: p.x, y: p.y, ...(p.id === undefined ? {} : { id: p.id }) }] }
+  const paintBuckets = Object.fromEntries(Object.entries(s.paintBuckets).filter(([, bucket]) => bucket.updatedAt >= now - 1000))
+  paintBuckets[p.userId!] = token.bucket
   const grid = { ...s.grid, cells: s.grid.cells.slice(), placedBy: [...s.grid.placedBy] }
   const userId = p.userId!
   setPixel(grid, p.x, p.y, p.c, userId)
-  const lastPlacedAt = Object.fromEntries(Object.entries(s.lastPlacedAt).filter(([, time]) => time >= now - 10000))
-  return { state: { ...s, grid, soloBuckets, version: s.version + 1, lastPlacedAt: { ...lastPlacedAt, [userId]: now } }, events: [{ type: 'pixel', x: p.x, y: p.y, c: p.c, by: userId }] }
+  return { state: { ...s, grid, paintBuckets, version: s.version + 1 }, events: [{ type: 'pixel', x: p.x, y: p.y, c: p.c, by: userId }] }
 }
 
 export function shouldJudge(s: RoomState, now: number, signedInConnected: number, reason: 'tick' | 'ask'): { ok: true } | { ok: false; why: 'not_playing' | 'unchanged' | 'no_players' | 'too_soon' | 'rate_cap' | 'canvas_blank' } {
@@ -99,7 +98,9 @@ export function shouldJudge(s: RoomState, now: number, signedInConnected: number
 function endRound(s: RoomState, now: number, outcome: 'won' | 'timeout', guesses: string[]): RoomTransition {
   const used = pixelsUsed(s.grid)
   const durationMs = now - s.round.startedAt
-  const score = outcome === 'won' ? coopScore({ pixelsUsed: used, totalCells: s.grid.width * s.grid.height, durationMs, capMs: MODES[s.mode].capMs }) : undefined
+  const score = outcome === 'won'
+    ? coopScore({ cells: s.grid.cells, width: s.grid.width, height: s.grid.height, durationMs, capMs: MODES[s.mode].capMs })
+    : undefined
   const contributorCount = contributors(s.grid).length
   const result: RoundView['result'] = score === undefined ? { outcome, contributorCount } : { outcome, score, contributorCount }
   const round: RoundView = { ...s.round, state: 'intermission', endedAt: now, result }

@@ -36,6 +36,7 @@ import { useGameSounds } from '../../../../components/game/useGameSounds'
 import { CriticBubble } from '../../../../components/play/CriticBubble'
 import { HaikuStrip } from '../../../../components/play/HaikuStrip'
 import { PartyScoreNote } from '../../../../components/play/PartyScoreNote'
+import { PartySizeMeter } from '../../../../components/play/PartySizeMeter'
 import { PlayLayout } from '../../../../components/play/PlayLayout'
 import '../../../../components/play/room-play.css'
 import { StudioSprite } from '../../../../components/play/StudioSprite'
@@ -55,10 +56,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../../../../components/ui'
-import { effectiveCooldownUntil, roomAccessView, type RejectMsg } from '../../../../game/client-state'
+import { roomAccessView, type RejectMsg } from '../../../../game/client-state'
 import { MODES } from '../../../../game/config'
 import { contributorLabel } from '../../../../game/contributor-label'
-import { cooldownMs } from '../../../../game/rules'
 import { coopScoreParts } from '../../../../game/scoring'
 import { PARTY_TOOLS, pickAt, type Tool } from '../../../../game/tools'
 import { boardCellSize } from '../../../../game/board-size'
@@ -111,11 +111,7 @@ function rejectMessage(reject: RejectMsg | null, now: number): string | null {
     case 'not_signed_in':
       return 'Sign in to place pixels or ask Haiku.'
     case 'rate_limited':
-      return 'Painting too quickly — try again in a moment.'
-    case 'cooldown': {
-      const wait = reject.retryAt ? Math.max(0.1, (reject.retryAt - now) / 1000) : 0.2
-      return `Brush cooling down — ready in ${wait.toFixed(1)}s`
-    }
+      return null
     case 'ask_too_soon': {
       const wait = reject.retryAt ? Math.max(1, Math.ceil((reject.retryAt - now) / 1000)) : 5
       return `Hold on! You can ask Haiku again in ${wait}s.`
@@ -276,10 +272,7 @@ export default function RoomPage() {
   const isSpectator = state.snapshotLoaded ? !state.you.userId : !isSignedIn
   const roundPlaying = state.round?.state === 'playing'
   const canDraw = Boolean(state.you.userId) && Boolean(roundPlaying)
-  const cooldownTotalMs = cooldownMs(Math.max(1, state.players))
-  const cooldownRemainingMs = Math.max(0, effectiveCooldownUntil(state) - now)
   const friendlyReject = rejectMessage(state.lastReject, now)
-  const cooldownFraction = cooldownRemainingMs > 0 && cooldownTotalMs > 0 ? Math.min(1, cooldownRemainingMs / cooldownTotalMs) : 0
 
   useLayoutEffect(() => {
     const measure = () => {
@@ -375,6 +368,14 @@ export default function RoomPage() {
     return count
   }, [state.cells, state.pending])
 
+  // Scoring reads the confirmed canvas: a pixel still in flight must not inflate the result overlay.
+  const confirmedCells = useMemo(() => {
+    if (state.pending.size === 0) return state.cells
+    const cells = state.cells.slice()
+    for (const [idx, previous] of state.pending) cells[idx] = previous
+    return cells
+  }, [state.cells, state.pending])
+
   const isHost =
     Boolean(user?.id) &&
     Boolean(roomDoc?.data.hostId) &&
@@ -458,14 +459,15 @@ export default function RoomPage() {
   }, [currentRoundDoc?.data.durationMs, state.mode, state.round])
 
   const baseParts = useMemo(() => {
-    if (outcome !== 'won') return { pixels: 0, time: 0, total: 0 }
+    if (outcome !== 'won') return { size: 0, time: 0, total: 0 }
     return coopScoreParts({
-      pixelsUsed: roundPixelsUsed,
-      totalCells: state.width * state.height,
+      cells: confirmedCells,
+      width: state.width,
+      height: state.height,
       durationMs: roundDurationMs,
       capMs: MODES[state.mode].capMs,
     })
-  }, [outcome, roundPixelsUsed, roundDurationMs, state.mode, state.width, state.height])
+  }, [outcome, confirmedCells, state.width, state.height, roundDurationMs, state.mode])
 
   const shownTotal =
     outcome === 'won'
@@ -473,13 +475,14 @@ export default function RoomPage() {
       : (state.round?.result?.score ?? 0)
 
   const scoreParts = useMemo(() => {
-    if (outcome !== 'won') return { pixels: 0, time: 0, total: shownTotal }
+    if (outcome !== 'won') return { size: 0, time: 0, total: shownTotal }
     if (shownTotal === baseParts.total) return baseParts
-    const pixels = Math.max(
-      Math.max(0, shownTotal - 500),
-      Math.min(500, Math.min(shownTotal, baseParts.pixels)),
+    // The server's total came from the final grid; the local canvas may lag by a pending pixel.
+    const size = Math.max(
+      Math.max(0, shownTotal - 400),
+      Math.min(600, Math.min(shownTotal, baseParts.size)),
     )
-    return { pixels, time: shownTotal - pixels, total: shownTotal }
+    return { size, time: shownTotal - size, total: shownTotal }
   }, [outcome, shownTotal, baseParts])
 
   useToolShortcuts({
@@ -995,7 +998,6 @@ export default function RoomPage() {
             activeColor={activeColor}
             tool={tool}
             canDraw={canDraw}
-            cooldownRemainingMs={cooldownRemainingMs}
             availWidth={availBox.width}
             availHeight={availBox.height}
             word={state.round?.word}
@@ -1117,11 +1119,11 @@ export default function RoomPage() {
                         </div>
                         {outcome === 'won' && (
                           <div
-                            title="Fewer pixels and a faster guess score higher: each bonus is out of 500"
+                            title="Bigger drawings and a faster guess score higher: size is out of 600, speed out of 400"
                             className="room-results-bonus col-span-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-0.5 border-t border-[#d1b5a3] pt-1 text-xs text-[var(--soft-text)]"
                           >
-                            <span>Pixel bonus: {scoreParts.pixels}/500</span>
-                            <span>Speed bonus: {scoreParts.time}/500</span>
+                            <span>Size bonus: {scoreParts.size}/600</span>
+                            <span>Speed bonus: {scoreParts.time}/400</span>
                           </div>
                         )}
                       </div>
@@ -1257,7 +1259,6 @@ export default function RoomPage() {
       trayRef={paletteWrapRef}
       activeColor={activeColor}
       tool={tool}
-      cool={cooldownFraction}
       tools={
         <ToolBar
           tools={PARTY_TOOLS}
@@ -1275,10 +1276,12 @@ export default function RoomPage() {
             if (tool === 'erase' || tool === 'pick') setTool('paint')
           }}
           disabled={isSpectator}
-          cooldownRemainingMs={cooldownRemainingMs}
-          cooldownTotalMs={cooldownTotalMs}
-          sharedBrushMs={state.players > 1 && roundPlaying ? cooldownTotalMs : undefined}
         />
+      }
+      meter={
+        roundPlaying
+          ? <PartySizeMeter cells={state.cells} width={state.width} height={state.height} />
+          : undefined
       }
     />
   )

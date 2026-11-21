@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { consumeSoloToken, cooldownMs, validatePlacement } from './rules'
+import {
+  PARTY_PAINT_RATE,
+  SOLO_PAINT_RATE,
+  consumePaintToken,
+  paintRate,
+  validatePlacement,
+} from './rules'
 
 const base = {
   width: 32,
@@ -9,28 +15,10 @@ const base = {
   color: 4,
   userId: 'user-1',
   roundPlaying: true,
-  lastPlacedAt: undefined as number | undefined,
-  now: 5000,
-  playersConnected: 1,
 }
 
-describe('cooldownMs', () => {
-  it('returns zero when 0 or 1 players are connected', () => {
-    expect(cooldownMs(1)).toBe(0)
-    expect(cooldownMs(0)).toBe(0)
-  })
-
-  it('scales by 250ms per painter, capped at 1500ms', () => {
-    expect(cooldownMs(2)).toBe(500)
-    expect(cooldownMs(3)).toBe(750)
-    expect(cooldownMs(4)).toBe(1000)
-    expect(cooldownMs(6)).toBe(1500)
-    expect(cooldownMs(25)).toBe(1500)
-  })
-})
-
 describe('validatePlacement', () => {
-  it('accepts valid placement', () => {
+  it('accepts a valid placement', () => {
     expect(validatePlacement(base)).toEqual({ ok: true })
   })
 
@@ -44,7 +32,7 @@ describe('validatePlacement', () => {
     ).toEqual({ ok: false, reason: 'not_signed_in' })
   })
 
-  it('rejects when round is inactive before bounds/color/cooldown', () => {
+  it('rejects when the round is inactive before bounds/color', () => {
     expect(
       validatePlacement({ ...base, roundPlaying: false, x: -1, color: 0 }),
     ).toEqual({ ok: false, reason: 'round_inactive' })
@@ -68,23 +56,30 @@ describe('validatePlacement', () => {
     expect(validatePlacement({ ...base, color: -1 })).toMatchObject({ ok: false, reason: 'bad_color' })
     expect(validatePlacement({ ...base, color: 2.5 })).toMatchObject({ ok: false, reason: 'bad_color' })
   })
-
-  it('rejects placements within cooldown and includes retryAt', () => {
-    expect(
-      validatePlacement({ ...base, playersConnected: 3, lastPlacedAt: 1000, now: 1500 }),
-    ).toEqual({ ok: false, reason: 'cooldown', retryAt: 1750 })
-  })
-
-  it('allows placement exactly when cooldown expires', () => {
-    expect(
-      validatePlacement({ ...base, playersConnected: 3, lastPlacedAt: 1000, now: 1750 }),
-    ).toEqual({ ok: true })
-  })
 })
 
-it('refills the solo bucket at 60/s, bounds bursts and handles backwards time', () => {
-  expect(consumeSoloToken({ tokens: 0, updatedAt: 1000 }, 1000)).toEqual({ ok: false, retryAt: 1017 })
-  expect(consumeSoloToken({ tokens: 0, updatedAt: 1000 }, 1017)).toMatchObject({ ok: true })
-  expect(consumeSoloToken({ tokens: 0, updatedAt: 1000 }, 2000)).toEqual({ ok: true, bucket: { tokens: 59, updatedAt: 2000 } })
-  expect(consumeSoloToken({ tokens: 0, updatedAt: 1000 }, 900).ok).toBe(false)
+describe('paint pace', () => {
+  it('uses a 60/s solo bucket and a 40/s per-painter party bucket', () => {
+    expect(SOLO_PAINT_RATE).toEqual({ cellsPerSecond: 60, burst: 60 })
+    expect(PARTY_PAINT_RATE).toEqual({ cellsPerSecond: 40, burst: 40 })
+    expect(paintRate(0)).toBe(SOLO_PAINT_RATE)
+    expect(paintRate(1)).toBe(SOLO_PAINT_RATE)
+    expect(paintRate(2)).toBe(PARTY_PAINT_RATE)
+    expect(paintRate(12)).toBe(PARTY_PAINT_RATE)
+  })
+
+  it('refills the solo bucket at 60/s, bounds bursts and handles backwards time', () => {
+    expect(consumePaintToken({ tokens: 0, updatedAt: 1000 }, 1000, SOLO_PAINT_RATE)).toEqual({ ok: false, retryAt: 1017 })
+    expect(consumePaintToken({ tokens: 0, updatedAt: 1000 }, 1017, SOLO_PAINT_RATE)).toMatchObject({ ok: true })
+    expect(consumePaintToken({ tokens: 0, updatedAt: 1000 }, 2000, SOLO_PAINT_RATE)).toEqual({ ok: true, bucket: { tokens: 59, updatedAt: 2000 } })
+    expect(consumePaintToken({ tokens: 0, updatedAt: 1000 }, 900, SOLO_PAINT_RATE).ok).toBe(false)
+  })
+
+  it('gives a fresh party painter a one-second burst and refills at 40/s', () => {
+    const first = consumePaintToken(undefined, 5000, PARTY_PAINT_RATE)
+    expect(first).toEqual({ ok: true, bucket: { tokens: 39, updatedAt: 5000 } })
+    expect(consumePaintToken({ tokens: 0, updatedAt: 5000 }, 5024, PARTY_PAINT_RATE)).toMatchObject({ ok: false })
+    expect(consumePaintToken({ tokens: 0, updatedAt: 5000 }, 5025, PARTY_PAINT_RATE)).toMatchObject({ ok: true })
+    expect(consumePaintToken({ tokens: 0, updatedAt: 5000 }, 5100, PARTY_PAINT_RATE)).toMatchObject({ ok: true })
+  })
 })

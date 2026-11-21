@@ -7,7 +7,6 @@ import {
   applyOptimisticPlace,
   applyServerMsg,
   clearLastReject,
-  effectiveCooldownUntil,
   initialClientState,
   statusToConnectError,
 } from './client-state'
@@ -51,7 +50,7 @@ describe('client-state', () => {
 
   it('clears the log on a new round id and keeps it on a same-round snapshot (reconnect)', () => {
     const round = makeRound('r1')
-    const snapshot = { t: 'snapshot' as const, mode: 'coop' as const, width: 32, height: 32, cells: encodeCells(new Uint8Array(32 * 32)), round, you: { userId: null, cooldownUntil: 0 }, players: 1, aiResting: false }
+    const snapshot = { t: 'snapshot' as const, mode: 'coop' as const, width: 32, height: 32, cells: encodeCells(new Uint8Array(32 * 32)), round, you: { userId: null }, players: 1, aiResting: false }
     let state = applyServerMsg(initialClientState(), { t: 'round', round })
     state = applyServerMsg(state, { t: 'judgement', zone: 'all', guesses: ['tower'], confidence: 0.5, matched: false })
     state = applyServerMsg(state, { t: 'round', round })
@@ -70,7 +69,7 @@ describe('client-state', () => {
   })
 
   it('seeds the feed and latest guess from the snapshot a late joiner receives', () => {
-    const snapshot = { t: 'snapshot' as const, mode: 'coop' as const, width: 32, height: 32, cells: encodeCells(new Uint8Array(32 * 32)), round: makeRound('r1'), you: { userId: null, cooldownUntil: 0 }, players: 2, aiResting: false }
+    const snapshot = { t: 'snapshot' as const, mode: 'coop' as const, width: 32, height: 32, cells: encodeCells(new Uint8Array(32 * 32)), round: makeRound('r1'), you: { userId: null }, players: 2, aiResting: false }
     const judgements = [
       { zone: 'all' as const, guesses: ['bird', 'moth'], confidence: 0.4, matched: false, at: 31000 },
       { zone: 'all' as const, guesses: ['dragon'], confidence: 0.6, matched: false, at: 61000 },
@@ -88,7 +87,7 @@ describe('client-state', () => {
   })
 
   it('increments snapshotSeq for each snapshot', () => {
-    const snapshot = { t: 'snapshot' as const, mode: 'coop' as const, width: 32, height: 32, cells: encodeCells(new Uint8Array(32 * 32)), round: makeRound('r1'), you: { userId: null, cooldownUntil: 0 }, players: 1, aiResting: false }
+    const snapshot = { t: 'snapshot' as const, mode: 'coop' as const, width: 32, height: 32, cells: encodeCells(new Uint8Array(32 * 32)), round: makeRound('r1'), you: { userId: null }, players: 1, aiResting: false }
     let state = initialClientState()
     expect(state.snapshotSeq).toBe(0)
     state = applyServerMsg(state, snapshot)
@@ -118,7 +117,7 @@ describe('client-state', () => {
     const snapshot = {
       t: 'snapshot' as const, mode: 'coop' as const, width: 32, height: 32,
       cells: encodeCells(new Uint8Array(32 * 32)), round: makeRound('r1'),
-      you: { userId: null, cooldownUntil: 0 }, players: 1, aiResting: false,
+      you: { userId: null }, players: 1, aiResting: false,
     }
     state = applyServerMsg(state, { ...snapshot, watching: 3 })
     expect(state.watching).toBe(3)
@@ -138,7 +137,7 @@ describe('client-state', () => {
     expect(s.pending.size).toBe(0)
     expect(s.round).toBeNull()
     expect(s.players).toBe(0)
-    expect(s.you).toEqual({ userId: null, cooldownUntil: 0 })
+    expect(s.you).toEqual({ userId: null })
     expect(s.aiResting).toBe(false)
     expect(s.lastReject).toBeNull()
   })
@@ -172,7 +171,7 @@ describe('client-state', () => {
       height: 32,
       cells: encodeCells(rawCells),
       round: makeRound('r1'),
-      you: { userId: 'user-1', cooldownUntil: 1500 },
+      you: { userId: 'user-1' },
       players: 3,
       aiResting: false,
     }
@@ -183,7 +182,7 @@ describe('client-state', () => {
     expect(next.pending.size).toBe(0)
     expect(next.cells[0]).toBe(9)
     expect(next.cells[3 * 32 + 2]).toBe(1)
-    expect(next.you).toEqual({ userId: 'user-1', cooldownUntil: 1500 })
+    expect(next.you).toEqual({ userId: 'user-1' })
     expect(next.players).toBe(3)
     expect(next.round?.id).toBe('r1')
   })
@@ -198,7 +197,7 @@ describe('client-state', () => {
       height: 32,
       cells: encodeCells(rawCells),
       round: makeRound('r1'),
-      you: { userId: 'user-1', cooldownUntil: 0 },
+      you: { userId: 'user-1' },
       players: 1,
       aiResting: false,
     })
@@ -226,7 +225,7 @@ describe('client-state', () => {
     expect(s.pending.has(idx1)).toBe(false)
   })
 
-  it('reject restores only the rejected pending cell in FIFO order and records lastReject (M4)', () => {
+  it('reject restores only the rejected pending cell in FIFO order and keeps rate limits silent', () => {
     let s = initialClientState()
     const rawCells = new Uint8Array(32 * 32)
     rawCells[2 * 32 + 1] = 8 // existing dark green pixel at (1, 2)
@@ -238,7 +237,7 @@ describe('client-state', () => {
       height: 32,
       cells: encodeCells(rawCells),
       round: makeRound('r1'),
-      you: { userId: 'user-1', cooldownUntil: 0 },
+      you: { userId: 'user-1' },
       players: 1,
       aiResting: false,
     })
@@ -251,19 +250,20 @@ describe('client-state', () => {
     expect(s.cells[idxB]).toBe(9)
     expect(s.pending.size).toBe(2)
 
-    // First reject rolls back only the first pending cell (idxA), leaving idxB pending
-    s = applyServerMsg(s, { t: 'reject', reason: 'cooldown', retryAt: 2500 })
+    // First reject rolls back only the first pending cell (idxA), leaving idxB pending.
+    // A pace limit is part of a drag: the cell goes back, but no error banner appears.
+    s = applyServerMsg(s, { t: 'reject', reason: 'rate_limited', retryAt: 2500 })
     expect(s.cells[idxA]).toBe(8)
     expect(s.cells[idxB]).toBe(9)
     expect(s.pending.size).toBe(1)
     expect(s.pending.has(idxB)).toBe(true)
-    expect(s.lastReject).toEqual({ t: 'reject', reason: 'cooldown', retryAt: 2500 })
-    expect(s.you.cooldownUntil).toBe(2500)
+    expect(s.lastReject).toBeNull()
 
-    // Second reject rolls back idxB
-    s = applyServerMsg(s, { t: 'reject', reason: 'cooldown', retryAt: 2600 })
+    // A real rejection still rolls back and is surfaced.
+    s = applyServerMsg(s, { t: 'reject', reason: 'round_inactive' })
     expect(s.cells[idxB]).toBe(6)
     expect(s.pending.size).toBe(0)
+    expect(s.lastReject).toEqual({ t: 'reject', reason: 'round_inactive' })
 
     // clearLastReject clears lastReject
     s = clearLastReject(s)
@@ -347,6 +347,7 @@ it('hides all room content until an authorized snapshot and prioritizes terminal
     expect(roomAccessView({ ...initial, snapshotLoaded: true, connectError })).toBe(connectError)
   }
 })
+
 it('rolls back only the rejected batch cell, keeping accepted and later optimistic cells', () => {
   let state = applyOptimisticPlace(initialClientState(), 0, 0, 4)
   state = applyOptimisticPlace(state, 1, 0, 4)
@@ -355,9 +356,9 @@ it('rolls back only the rejected batch cell, keeping accepted and later optimist
   state = applyServerMsg(state, { t: 'reject', reason: 'rate_limited', retryAt: 1017, x: 1, y: 0 })
   expect([...state.cells.slice(0, 3)]).toEqual([4, 0, 4])
   expect([...state.pending.keys()]).toEqual([2])
-  expect(state.you.cooldownUntil).toBe(1017)
+  // A pace limit never becomes a visible error mid-drag.
+  expect(state.lastReject).toBeNull()
 })
-
 
 it('host closure clears authorized board state and uses the terminal screen', () => {
   const state = { ...initialClientState(), snapshotLoaded: true, connected: true }
@@ -367,7 +368,7 @@ it('host closure clears authorized board state and uses the terminal screen', ()
   expect(roomAccessView(closed)).toBe('closed')
 })
 
-it('noop clears pending empty erase and resets provisional cooldown without touching authoritative cooldown', () => {
+it('matching noop clears the pending empty erase and leaves the canvas alone', () => {
   const rawCells = new Uint8Array(32 * 32)
   const idx = 5 * 32 + 4
   rawCells[idx] = 6
@@ -378,47 +379,27 @@ it('noop clears pending empty erase and resets provisional cooldown without touc
     height: 32,
     cells: encodeCells(rawCells),
     round: makeRound('r1'),
-    you: { userId: 'user-a', cooldownUntil: 1500 },
+    you: { userId: 'user-a' },
     players: 2,
     aiResting: false,
   })
 
-  // Case 1: optimistic erase starts provisional cooldown, then matching noop clears only provisional cooldown
-  s = applyOptimisticPlace(s, 4, 5, 0, { id: 1, provisionalCooldownUntil: 9_999_999 })
+  // Optimistic erase of an already-empty cell, then the server says nothing changed.
+  s = applyOptimisticPlace(s, 4, 5, 0, { id: 1 })
   expect(s.pending.has(idx)).toBe(true)
-  expect(s.you.cooldownUntil).toBe(1500)
-  expect(effectiveCooldownUntil(s)).toBe(9_999_999)
   s = applyServerMsg(s, { t: 'noop', x: 4, y: 5, id: 1 })
   expect(s.pending.has(idx)).toBe(false)
   expect(s.cells[idx]).toBe(0)
-  expect(s.provisionalCooldown).toBeNull()
-  expect(s.you.cooldownUntil).toBe(1500)
-  expect(effectiveCooldownUntil(s)).toBe(1500)
 
-  // Case 2: peer's erase pixel arrives first (clearing pending), then sender's noop arrives
-  rawCells[idx] = 8
-  s = applyServerMsg(s, {
-    t: 'snapshot',
-    mode: 'coop',
-    width: 32,
-    height: 32,
-    cells: encodeCells(rawCells),
-    round: makeRound('r1'),
-    you: { userId: 'user-a', cooldownUntil: 0 },
-    players: 2,
-    aiResting: false,
-  })
-  s = applyOptimisticPlace(s, 4, 5, 0, { id: 2, provisionalCooldownUntil: 9_999_999 })
+  // A peer's pixel resolves the pending entry first; a later noop changes nothing.
+  s = applyOptimisticPlace(s, 4, 5, 0, { id: 2 })
   s = applyServerMsg(s, { t: 'pixel', x: 4, y: 5, c: 0, by: 'user-b' })
   expect(s.pending.has(idx)).toBe(false)
-  expect(s.provisionalCooldown?.until).toBe(9_999_999)
   s = applyServerMsg(s, { t: 'noop', x: 4, y: 5, id: 2 })
   expect(s.cells[idx]).toBe(0)
-  expect(s.provisionalCooldown).toBeNull()
-  expect(effectiveCooldownUntil(s)).toBe(0)
 })
 
-it('stale noop does not clear newer cooldown', () => {
+it('stale noops never touch a newer pending placement', () => {
   const rawCells = new Uint8Array(32 * 32)
   rawCells[5 * 32 + 4] = 6
   let s = applyServerMsg(initialClientState(), {
@@ -428,31 +409,19 @@ it('stale noop does not clear newer cooldown', () => {
     height: 32,
     cells: encodeCells(rawCells),
     round: makeRound('r1'),
-    you: { userId: 'user-a', cooldownUntil: 1200 },
+    you: { userId: 'user-a' },
     players: 2,
     aiResting: false,
   })
 
-  // Placement id=1 (erase at 4,5) starts provisional cooldown until 3000
-  s = applyOptimisticPlace(s, 4, 5, 0, { id: 1, provisionalCooldownUntil: 3000 })
-  // Provisional window expires, client sends placement id=2 (paint at 6,6) with cooldown until 5500
-  s = applyOptimisticPlace(s, 6, 6, 4, { id: 2, provisionalCooldownUntil: 5500 })
-
-  // Stale noop for id=1 arrives (even out-of-bounds or old coords) -> newer cooldown & authoritative cooldown stay intact
+  s = applyOptimisticPlace(s, 4, 5, 0, { id: 1 })
+  s = applyOptimisticPlace(s, 6, 6, 4, { id: 2 })
   s = applyServerMsg(s, { t: 'noop', x: -1, y: -1, id: 1 })
-  expect(s.provisionalCooldown).toEqual({ id: 2, idx: 6 * 32 + 6, until: 5500 })
-  expect(s.you.cooldownUntil).toBe(1200)
-  expect(effectiveCooldownUntil(s)).toBe(5500)
-
   s = applyServerMsg(s, { t: 'noop', x: 4, y: 5, id: 1 })
-  expect(s.provisionalCooldown).toEqual({ id: 2, idx: 6 * 32 + 6, until: 5500 })
-  expect(s.you.cooldownUntil).toBe(1200)
-  expect(effectiveCooldownUntil(s)).toBe(5500)
   expect(s.pending.has(6 * 32 + 6)).toBe(true)
-
-  // Untagged stale noop also does not clear id-correlated newer cooldown
+  // The untagged noop is not ours: it must not settle the newer pending cell either.
   s = applyServerMsg(s, { t: 'noop', x: 6, y: 6 })
-  expect(s.provisionalCooldown).toEqual({ id: 2, idx: 6 * 32 + 6, until: 5500 })
+  expect(s.pending.has(6 * 32 + 6)).toBe(true)
 })
 
 it('noop clears only its own pending entry', () => {
@@ -466,44 +435,41 @@ it('noop clears only its own pending entry', () => {
     height: 32,
     cells: encodeCells(rawCells),
     round: makeRound('r1'),
-    you: { userId: 'user-a', cooldownUntil: 0 },
+    you: { userId: 'user-a' },
     players: 2,
     aiResting: false,
   })
 
-  // Placement id=1 erases (4,5); peer resolves or client paints newer placement id=2 on the same cell (4,5)
-  s = applyOptimisticPlace(s, 4, 5, 0, { id: 1, provisionalCooldownUntil: 3000 })
-  s = applyOptimisticPlace(s, 4, 5, 9, { id: 2, provisionalCooldownUntil: 5500 })
+  // Placement id=1 erases (4,5); a newer placement id=2 paints the same cell.
+  s = applyOptimisticPlace(s, 4, 5, 0, { id: 1 })
+  s = applyOptimisticPlace(s, 4, 5, 9, { id: 2 })
   expect(s.pending.get(idx)).toBe(6)
   expect(s.pendingIds.get(idx)).toBe(2)
   expect(s.cells[idx]).toBe(9)
 
-  // Stale noop for id=1 arrives on the SAME cell (4,5) -> must preserve newer pending entry, cell colour, and cooldown
+  // A stale noop for id=1 must preserve the newer pending entry and colour.
   s = applyServerMsg(s, { t: 'noop', x: 4, y: 5, id: 1 })
   expect(s.pending.has(idx)).toBe(true)
   expect(s.pendingIds.get(idx)).toBe(2)
   expect(s.cells[idx]).toBe(9)
-  expect(s.provisionalCooldown).toEqual({ id: 2, idx, until: 5500 })
 
-  // Even after peer overwrites (4,5) to colour 5 (clearing pending), stale noop(id=1) must not zero cells[idx]
+  // Even after a peer overwrites (4,5), a stale noop must not zero the cell.
   s = applyServerMsg(s, { t: 'pixel', x: 4, y: 5, c: 5, by: 'user-b' })
   expect(s.pending.has(idx)).toBe(false)
   expect(s.cells[idx]).toBe(5)
   s = applyServerMsg(s, { t: 'noop', x: 4, y: 5, id: 1 })
   expect(s.cells[idx]).toBe(5)
-  expect(s.provisionalCooldown).toEqual({ id: 2, idx, until: 5500 })
 
-  // Exact matching noop for an id-2 erase clears only its own pending entry
+  // A matching noop settles only its own pending entry.
   const idx2 = 7 * 32 + 7
-  s = applyOptimisticPlace(s, 7, 7, 0, { id: 3, provisionalCooldownUntil: 6000 })
-  s = applyOptimisticPlace(s, 8, 8, 4, { id: 4, provisionalCooldownUntil: 7000 })
+  s = applyOptimisticPlace(s, 7, 7, 0, { id: 3 })
+  s = applyOptimisticPlace(s, 8, 8, 4, { id: 4 })
   s = applyServerMsg(s, { t: 'noop', x: 7, y: 7, id: 3 })
   expect(s.pending.has(idx2)).toBe(false)
   expect(s.pending.has(8 * 32 + 8)).toBe(true)
-  expect(s.provisionalCooldown).toEqual({ id: 4, idx: 8 * 32 + 8, until: 7000 })
 })
 
-it('reject settles provisional cooldown by id after a peer pixel supersedes the cell and respects retryAt', () => {
+it('a paced rejection after a peer pixel keeps the peer pixel and never rolls back a newer cell', () => {
   const rawCells = new Uint8Array(32 * 32)
   const idx = 4 * 32 + 3
   let s = applyServerMsg(initialClientState(), {
@@ -513,44 +479,29 @@ it('reject settles provisional cooldown by id after a peer pixel supersedes the 
     height: 32,
     cells: encodeCells(rawCells),
     round: makeRound('r1'),
-    you: { userId: 'user-a', cooldownUntil: 0 },
+    you: { userId: 'user-a' },
     players: 2,
     aiResting: false,
   })
 
-  // Placement id=1 starts provisional cooldown until 5000 on (3,4)
-  s = applyOptimisticPlace(s, 3, 4, 4, { id: 1, provisionalCooldownUntil: 5000 })
+  s = applyOptimisticPlace(s, 3, 4, 4, { id: 1 })
   expect(s.pending.has(idx)).toBe(true)
   expect(s.pendingIds.get(idx)).toBe(1)
-  expect(effectiveCooldownUntil(s)).toBe(5000)
 
-  // Peer pixel on the same cell clears pending and pendingIds before reject arrives
+  // A peer's pixel supersedes the cell before the pace rejection arrives.
   s = applyServerMsg(s, { t: 'pixel', x: 3, y: 4, c: 9, by: 'user-b' })
   expect(s.cells[idx]).toBe(9)
   expect(s.pending.has(idx)).toBe(false)
-  expect(s.pendingIds.has(idx)).toBe(false)
-  expect(s.provisionalCooldown).toEqual({ id: 1, idx, until: 5000 })
 
-  // Cooldown reject arrives with id=1 and earlier retryAt=3500 -> provisional cleared, retryAt respected, peer pixel kept
-  s = applyServerMsg(s, { t: 'reject', reason: 'cooldown', x: 3, y: 4, retryAt: 3500, id: 1 })
+  s = applyServerMsg(s, { t: 'reject', reason: 'rate_limited', x: 3, y: 4, retryAt: 3500, id: 1 })
   expect(s.cells[idx]).toBe(9)
-  expect(s.provisionalCooldown).toBeNull()
-  expect(s.you.cooldownUntil).toBe(3500)
-  expect(effectiveCooldownUntil(s)).toBe(3500)
+  expect(s.lastReject).toBeNull()
 
-  // Reject without retryAt after peer supersedes cell also clears provisional cooldown and restores prior authoritative cooldown
-  s = applyOptimisticPlace(s, 5, 5, 6, { id: 2, provisionalCooldownUntil: 8000 })
-  s = applyServerMsg(s, { t: 'pixel', x: 5, y: 5, c: 7, by: 'user-b' })
-  s = applyServerMsg(s, { t: 'reject', reason: 'round_inactive', x: 5, y: 5, id: 2 })
-  expect(s.provisionalCooldown).toBeNull()
-  expect(effectiveCooldownUntil(s)).toBe(3500)
-
-  // Stale reject with old id=1 must not roll back newer pending cell or clear newer provisional cooldown on same cell
+  // A stale rejection for an older id must not roll back a newer pending cell.
   const idx3 = 6 * 32 + 6
-  s = applyOptimisticPlace(s, 6, 6, 4, { id: 3, provisionalCooldownUntil: 9000 })
+  s = applyOptimisticPlace(s, 6, 6, 4, { id: 3 })
   s = applyServerMsg(s, { t: 'reject', reason: 'round_inactive', x: 6, y: 6, id: 1 })
   expect(s.cells[idx3]).toBe(4)
   expect(s.pending.has(idx3)).toBe(true)
   expect(s.pendingIds.get(idx3)).toBe(3)
-  expect(s.provisionalCooldown).toEqual({ id: 3, idx: idx3, until: 9000 })
 })

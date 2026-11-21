@@ -24,31 +24,19 @@ export interface PaletteProps {
   activeColor: number
   onSelectColor: (color: number) => void
   disabled?: boolean
-  cooldownRemainingMs?: number
-  cooldownTotalMs?: number
-  /** More than one painter: explain the pacing once, here (e.g. 500 means "one pixel every 0.5s each"). */
-  sharedBrushMs?: number
 }
 
 export function Palette({
   activeColor,
   onSelectColor,
   disabled = false,
-  cooldownRemainingMs = 0,
-  cooldownTotalMs,
-  sharedBrushMs,
 }: PaletteProps) {
   const colorIndices = [1, 16, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
-  const isCoolingDown = cooldownRemainingMs > 0
-  const reserveCooldownSlot = cooldownTotalMs !== undefined || isCoolingDown
-  // 1 right after a pixel, draining to 0 when the brush is ready again: the active swatch and the bar show it.
-  const cool = isCoolingDown && cooldownTotalMs ? Math.min(1, cooldownRemainingMs / cooldownTotalMs) : 0
 
   return (
     <div
       data-testid="palette"
       className="mx-auto flex flex-col items-center gap-1"
-      style={{ '--cool': cool } as React.CSSProperties}
     >
       <div className="palette-swatches flex flex-wrap items-center justify-center gap-1.5">
         {colorIndices.map((colorIdx) => {
@@ -81,25 +69,6 @@ export function Palette({
           )
         })}
       </div>
-
-      {sharedBrushMs !== undefined && sharedBrushMs > 0 && (
-        <p data-testid="shared-brush-note" className="palette-note">
-          Sharing the brush: one pixel every {Number((sharedBrushMs / 1000).toFixed(2))}s each
-        </p>
-      )}
-
-      {reserveCooldownSlot && (
-        <div className="palette-cooldown-slot">
-          {isCoolingDown && (
-            <>
-              <span className="palette-cooldown-bar" aria-hidden="true"><span style={{ transform: `scaleX(${1 - cool})` }} /></span>
-              <span data-testid="palette-cooldown" className="palette-cooldown-label">
-                Wait {(cooldownRemainingMs / 1000).toFixed(1)}s
-              </span>
-            </>
-          )}
-        </div>
-      )}
     </div>
   )
 }

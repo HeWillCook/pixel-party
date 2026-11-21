@@ -5,13 +5,12 @@ import {
   applyOptimisticPlace,
   applyServerMsg,
   clearLastReject,
-  effectiveCooldownUntil,
   initialClientState,
   type ClientState,
 } from '../game/client-state'
 import { MAX_COLOR } from '../game/config'
 import { MAX_PLACE_BATCH, parseServerMsg, type Placement, type ClientMsg } from '../game/protocol'
-import { cooldownMs } from '../game/rules'
+import { consumePaintToken, paintRate, type TokenBucket } from '../game/rules'
 import { pixelPreflight } from './pixelPreflight'
 
 export interface UsePixelRoomResult {
@@ -40,9 +39,9 @@ export function usePixelRoom(joinCode: string, options?: UsePixelRoomOptions): U
   const stateRef = useRef<ClientState>(state)
   const queuedRef = useRef<Placement[]>([])
   const frameRef = useRef<number | null>(null)
-  const lastSendAtRef = useRef<number>(0)
   const seqRef = useRef<number>(0)
-  const provisionalRef = useRef<{ id: number; prevLastSendAt: number } | null>(null)
+  /** Mirror of this painter's server-side token bucket, so a drag never draws cells the server will drop. */
+  const paintBucketRef = useRef<TokenBucket | undefined>(undefined)
 
   useEffect(() => {
     stateRef.current = state
@@ -73,8 +72,7 @@ export function usePixelRoom(joinCode: string, options?: UsePixelRoomOptions): U
     if (frameRef.current !== null) cancelAnimationFrame(frameRef.current)
     frameRef.current = null
     setSessionExpired(false)
-    lastSendAtRef.current = 0
-    provisionalRef.current = null
+    paintBucketRef.current = undefined
     if (!joinCode || typeof window === 'undefined') return
 
     let ws: WebSocket | null = null
@@ -172,19 +170,9 @@ export function usePixelRoom(joinCode: string, options?: UsePixelRoomOptions): U
           if (frameRef.current !== null) cancelAnimationFrame(frameRef.current)
           frameRef.current = null
         }
-        if (msg.t === 'closed' || msg.t === 'snapshot') {
-          provisionalRef.current = null
-        } else if (msg.t === 'noop') {
-          if (provisionalRef.current && msg.id !== undefined && provisionalRef.current.id === msg.id) {
-            lastSendAtRef.current = provisionalRef.current.prevLastSendAt
-            provisionalRef.current = null
-          }
-        } else if (msg.t === 'reject') {
-          if (provisionalRef.current && msg.id !== undefined && provisionalRef.current.id === msg.id) {
-            lastSendAtRef.current =
-              msg.retryAt !== undefined ? -Infinity : provisionalRef.current.prevLastSendAt
-            provisionalRef.current = null
-          }
+        if (msg.t === 'reject' && msg.reason === 'rate_limited' && msg.retryAt !== undefined) {
+          // The server's bucket is the authority: re-sync our mirror from its next-token time.
+          paintBucketRef.current = { tokens: 0, updatedAt: msg.retryAt }
         }
         setState((prev) => {
           const updated = applyServerMsg(prev, msg)
@@ -264,22 +252,18 @@ export function usePixelRoom(joinCode: string, options?: UsePixelRoomOptions): U
       // M3: Gate placement on active playing state and signed-in snapshot identity
       if (!current.connected || !current.you.userId || current.round?.state !== 'playing') return
 
-      const now = Date.now()
-      const cd = cooldownMs(Math.max(1, current.players))
-
-      if (now < effectiveCooldownUntil(current)) return
-      if (now - lastSendAtRef.current < cd) return
-
       const idx = y * current.width + x
       if (current.cells[idx] === c || current.pending.has(idx)) return
       if (wsRef.current?.readyState !== WebSocket.OPEN) return
+
+      const now = Date.now()
+      const token = consumePaintToken(paintBucketRef.current, now, paintRate(Math.max(1, current.players)))
+      // Over the pace: drop the cell silently. The stroke continues on the next frame; no error banner mid-drag.
+      if (!token.ok) return
+      paintBucketRef.current = token.bucket
+
       const id = ++seqRef.current
-      provisionalRef.current = { id, prevLastSendAt: lastSendAtRef.current }
-      lastSendAtRef.current = now
-      const updated = applyOptimisticPlace(current, x, y, c, {
-        id,
-        ...(cd > 0 ? { provisionalCooldownUntil: now + cd } : {}),
-      })
+      const updated = applyOptimisticPlace(current, x, y, c, { id })
       stateRef.current = updated
       setState(updated)
       queuedRef.current.push({ x, y, c, id })
@@ -291,10 +275,6 @@ export function usePixelRoom(joinCode: string, options?: UsePixelRoomOptions): U
           for (let i = 0; i < queued.length; i += MAX_PLACE_BATCH) {
             const cells = queued.slice(i, i + MAX_PLACE_BATCH)
             if (!sendMsg({ t: 'place', cells })) {
-              if (provisionalRef.current && cells.some(cell => cell.id === provisionalRef.current?.id)) {
-                lastSendAtRef.current = provisionalRef.current.prevLastSendAt
-                provisionalRef.current = null
-              }
               setState(prev => {
                 let updated = prev
                 for (const cell of cells) {
