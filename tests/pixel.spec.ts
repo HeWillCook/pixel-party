@@ -44,11 +44,13 @@ test('two painters sync, respect cooldown, and allow spectators', async ({ users
   await expect(page.getByTestId('spectator-banner')).toBeVisible()
   const red = [239, 68, 68, 255]
   await clickCell(a.page, 4, 4)
-  await firstConfirmed
-  const synced = expect.poll(() => color(b.page, 4, 4), { timeout: 2000 }).toEqual(red)
-  // Simulate a fast client clock to exercise authoritative rejection and rollback.
+  // Simulate a fast client clock to exercise authoritative rejection and rollback. The server's window with two painters is only
+  // 500 ms, so the second click follows the first at once (it must not wait for the confirmation: on a slow machine that wait
+  // outlasts the window and the server would accept the second pixel).
   await a.page.evaluate(() => sessionStorage.setItem('clockOffset', '5000'))
   await clickCell(a.page, 6, 6)
+  await firstConfirmed
+  const synced = expect.poll(() => color(b.page, 4, 4), { timeout: 2000 }).toEqual(red)
   await expect(a.page.getByTestId('reject-notice')).toContainText('Brush cooling down')
   await synced
   await expect.poll(() => color(page, 4, 4), { timeout: 2000 }).toEqual(red)

@@ -15,8 +15,15 @@ function shared(): Sfx {
   return (sfx ??= createSfx())
 }
 
+/** One move is one whoosh: a click can reach this from the nav, the scene's handler and the floor pan within the same frame. */
+const WHOOSH_DEBOUNCE_MS = 300
+let lastWhoosh = -Infinity
+
 export function playWhoosh(): void {
   if (typeof window === 'undefined') return
+  const now = performance.now()
+  if (now - lastWhoosh < WHOOSH_DEBOUNCE_MS) return
+  lastWhoosh = now
   if (typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
   let muted = false
   try { muted = window.localStorage.getItem(MUTE_KEY) === '1' } catch { /* storage blocked: unmuted */ }
