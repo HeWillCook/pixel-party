@@ -20,13 +20,13 @@ export function signCopyStyle(composition: Composition): CSSProperties {
  * (the gallery wall, Haiku's corner) carries them, so the camera flying back finds each word where it belongs the moment the porch
  * takes over, instead of every label popping in at the swap.
  */
-export function PorchLabels({ easel, best, board }: { easel: EaselFaceMode; best: number; /** The chalkboard's writing: the inert board unless the page has the live one. */ board?: ReactNode }) {
+export function PorchLabels({ easel, best, board, easelAway = false }: { easel: EaselFaceMode; best: number; /** The chalkboard's writing: the inert board unless the page has the live one. */ board?: ReactNode; /** Put the easel's card away while the camera rests where only a sliver of the easel shows. */ easelAway?: boolean }) {
   const composition = useContext(SceneComposition)
   const rect = porchLayout[composition]
   const portrait = composition === 'portrait'
   return (
     <>
-      <EaselFaceObject mode={easel} best={best} />
+      <EaselFaceObject mode={easel} best={best} away={easelAway} />
       {board ?? <ChalkboardBoard />}
       <div aria-hidden="true" style={{ position: 'absolute', pointerEvents: 'none', ...rectToPercent(rect.basement, composition) }}>
         <span className="porch-basement-sign-copy" style={signCopyStyle(composition)}>Basement studio ↓</span>

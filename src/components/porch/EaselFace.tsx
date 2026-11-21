@@ -16,10 +16,10 @@ export function EaselFaceText({ mode, best }: { mode: EaselFaceMode; best: numbe
  * The same easel face as a plain, non-interactive object of the porch scene. Close-ups that keep the porch art
  * under them (scores, gallery) carry it so the card is already on the easel when the camera comes back.
  */
-export function EaselFaceObject({ mode, best }: { mode: EaselFaceMode; best: number }) {
+export function EaselFaceObject({ mode, best, away = false }: { mode: EaselFaceMode; best: number; /** The camera is somewhere the easel is only a sliver at the edge (the Scores board): its card steps out of view. */ away?: boolean }) {
   const composition = useContext(SceneComposition)
   return (
-    <div aria-hidden="true" className="porch-easel-object" style={{ position: 'absolute', pointerEvents: 'none', ...rectToPercent(porchLayout[composition].easel, composition) }}>
+    <div aria-hidden="true" className={away ? 'porch-easel-object porch-easel-object--away' : 'porch-easel-object'} style={{ position: 'absolute', pointerEvents: 'none', ...rectToPercent(porchLayout[composition].easel, composition) }}>
       <span className={mode === 'finished' ? 'porch-easel-copy porch-easel-copy--tag' : 'porch-easel-copy'}>
         <EaselFaceText mode={mode} best={best} />
       </span>

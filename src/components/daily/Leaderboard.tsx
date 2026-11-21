@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react
 import { Link } from 'react-router-dom'
 import { getAuthToken, useQuery } from 'deepspace'
 import { rankScores } from '../../game/daily/rank'
+import { useLoadTimeout, useQueryRetry } from '../../hooks/useLoadGuard'
 import { Haiku } from '../haiku/Haiku'
 import { isPrimaryClick } from '../porch/returnFlag'
 import { Avatar, AvatarFallback, AvatarImage } from '../ui'
@@ -51,8 +52,11 @@ export function Leaderboard({
   const date = new Date(`${day}T00:00:00Z`)
   date.setUTCDate(date.getUTCDate() - offset)
   const selectedDay = Number.isNaN(date.getTime()) ? day : date.toISOString().slice(0, 10)
-  const { records, status } = useQuery<Score>('dailyScores', { where: { day: selectedDay }, limit: 1000 })
-  const { records: drawingRecords } = useQuery<Drawing>('dailyDrawings', { where: { day: selectedDay }, limit: 1000 })
+  const { attempt, limit, retry } = useQueryRetry()
+  const { records, status: queryStatus } = useQuery<Score>('dailyScores', { where: { day: selectedDay }, limit })
+  const { records: drawingRecords } = useQuery<Drawing>('dailyDrawings', { where: { day: selectedDay }, limit })
+  // A load that never answers falls back to the error copy (with a Retry) instead of "Loading scores…" for ever.
+  const status = useLoadTimeout(queryStatus, attempt)
 
   useEffect(() => {
     if (!ended || offset !== 0) return
@@ -165,7 +169,11 @@ export function Leaderboard({
       )
     : ''
 
-  const haikuComment = !topEntry
+  const haikuComment = status === 'loading'
+    ? 'Checking the board…'
+    : status === 'error'
+      ? "I can't read the board right now. Try again?"
+      : !topEntry
     ? 'No graded paintings yet — grab a brush on the porch!'
     : showDrawings && topGuess
       ? offset === 0
@@ -230,7 +238,10 @@ export function Leaderboard({
         {status === 'loading' ? (
           <p className="scores-status" role="status">Loading scores…</p>
         ) : status === 'error' ? (
-          <p className="scores-status" role="alert">Couldn&apos;t load scores. Try again soon.</p>
+          <p className="scores-status" role="alert">
+            Couldn&apos;t load scores. Try again soon.
+            <button type="button" className="scores-retry" onClick={retry}>Retry</button>
+          </p>
         ) : sorted.length === 0 ? (
           <p className="scores-status">No graded scores yet.</p>
         ) : (
@@ -259,7 +270,7 @@ export function Leaderboard({
                   >
                     <span className="scores-rank">{rank}</span>
                     {hasCells && drawing?.cells ? (
-                      <PixelThumb cells={drawing.cells} scale="scene" multiplier={1} className="scores-thumb" />
+                      <PixelThumb cells={drawing.cells} size={64} className="scores-thumb" />
                     ) : null}
                     <Avatar className="scores-avatar">
                       <AvatarImage src={score.avatarUrl || undefined} />

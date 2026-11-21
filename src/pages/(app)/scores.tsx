@@ -103,6 +103,8 @@ export default function ScoresPage() {
           <PorchLabels
             easel={easelState}
             best={easelBest}
+            // At rest on the board the easel is a sliver at the left edge: its card (a giant clipped fragment) steps away until the camera leaves.
+            easelAway={!leaving && !closeup.continuing}
             board={<ChalkboardBoard live onPorch={toPorch} onSelectPainter={visit} />}
           />
         </PixelScene>

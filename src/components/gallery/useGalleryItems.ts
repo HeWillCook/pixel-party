@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { useQuery } from 'deepspace'
+import { useLoadTimeout, useQueryRetry } from '../../hooks/useLoadGuard'
 
 export interface WallItem {
   day: string
@@ -21,8 +22,12 @@ interface Score { day: string; userId: string; displayName?: string; medal?: num
  */
 export function useGalleryItems(userId: string, enabled = true) {
   const who = enabled && userId ? userId : '__none__'
-  const { records: drawings, status } = useQuery<Drawing>('dailyDrawings', { where: { userId: who }, orderBy: 'day', orderDir: 'desc', limit: 1000 })
-  const { records: scores } = useQuery<Score>('dailyScores', { where: { userId: who }, limit: 1000 })
+  const { attempt, limit, retry } = useQueryRetry()
+  const { records: drawings, status: queryStatus } = useQuery<Drawing>('dailyDrawings', { where: { userId: who }, orderBy: 'day', orderDir: 'desc', limit })
+  const { records: scores } = useQuery<Score>('dailyScores', { where: { userId: who }, limit })
+  // A wall that never answers becomes the error card (with a Retry) rather than "Hanging paintings…" for ever; a wall not asked for just waits.
+  const guarded = useLoadTimeout(enabled ? queryStatus : 'ready', attempt)
+  const status = enabled ? guarded : 'loading'
   return useMemo(() => {
     const byDay = new Map<string, Drawing>()
     for (const record of drawings) {
@@ -44,6 +49,6 @@ export function useGalleryItems(userId: string, enabled = true) {
       day: item.day, prompt: item.prompt?.trim() || 'Daily painting', cells: item.cells, score: item.score, guess: item.guess, medal: medals.get(item.day) ?? 0,
     }))
     const name = drawings.find((record) => record.data?.displayName)?.data.displayName || scores.find((record) => record.data?.displayName)?.data.displayName
-    return { items, status: enabled ? status : 'loading', name }
-  }, [drawings, scores, status, userId, enabled])
+    return { items, status, name, retry }
+  }, [drawings, scores, status, userId, retry])
 }

@@ -36,7 +36,7 @@ export default function ProfilePage() {
   const { state: daily } = useDaily()
   const ownPath = `/u/${encodeURIComponent(userId)}`
   const isSelf = useCallback((path: string) => path === ownPath, [ownPath])
-  const { items, status, name } = useGalleryItems(userId)
+  const { items, status, name, retry } = useGalleryItems(userId)
   const closeup = usePorchCloseup({ pose: 'gallery', kind: 'gallery', isSelf })
   const { backdropRef, viewport, composition, navHeight, leaving, startExit } = closeup
   const toPorch = useCallback(() => startExit('rest', '/home'), [startExit])
@@ -154,6 +154,7 @@ export default function ProfilePage() {
             onGo={go}
             loading={status === 'loading'}
             failed={status === 'error'}
+            onRetry={retry}
             empty={<WallEmpty onPaint={onPorchLink} />}
           />
         </PixelScene>

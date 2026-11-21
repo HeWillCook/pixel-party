@@ -90,7 +90,7 @@ function WallPage({ items, layout, border, mat, cell, scale, refEl }: { items: W
  * rail: transforms only, at the zoom's curve, and only the page and the incoming page are in the DOM. With nothing painted yet there
  * is a single card, never empty frames. `inert` is the porch's own copy of the wall, in place for the pan to it (no pointer, no focus).
  */
-export function GalleryWall({ items, page = 0, turn = null, onTurn, onGo, inert = false, empty, loading, failed }: {
+export function GalleryWall({ items, page = 0, turn = null, onTurn, onGo, inert = false, empty, loading, failed, onRetry }: {
   items: WallItem[]
   page?: number
   turn?: WallTurn | null
@@ -100,6 +100,7 @@ export function GalleryWall({ items, page = 0, turn = null, onTurn, onGo, inert 
   empty?: ReactNode
   loading?: boolean
   failed?: boolean
+  onRetry?: () => void
 }) {
   const composition = useContext(SceneComposition)
   const ref = useRef<HTMLDivElement>(null)
@@ -162,7 +163,7 @@ export function GalleryWall({ items, page = 0, turn = null, onTurn, onGo, inert 
         data-rows={layout.rows}
       >
         {inert && (loading || failed) ? null : loading ? note(<p role="status">Hanging paintings…</p>, 'gallery-loading', 14)
-          : failed ? note(<p role="alert">Couldn&apos;t load the gallery. Try again soon.</p>, 'gallery-error', 18)
+          : failed ? note(<><p role="alert">Couldn&apos;t load the gallery. Try again soon.</p>{onRetry && <button type="button" className="pp-btn wall-note__retry" onClick={onRetry}>Retry</button>}</>, 'gallery-error', 26)
           : items.length === 0 ? note(empty, 'gallery-empty', 28)
           : (
             <>

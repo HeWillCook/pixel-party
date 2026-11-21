@@ -202,3 +202,5 @@
 .wall-ghosts { position: absolute; inset: 0; pointer-events: none; }
 .wall-ghost { position: absolute; box-sizing: border-box; border: calc(var(--px) * 0.5) dashed rgba(236, 212, 176, 0.38); background: rgba(57, 42, 69, 0.07); box-shadow: calc(var(--px) * 1.2) calc(var(--px) * 1.2) 0 rgba(57, 42, 69, 0.14); }
 .wall-ghost::before { content: ''; position: absolute; left: 50%; top: calc(var(--px) * -2.2); width: calc(var(--px) * 0.9); height: calc(var(--px) * 0.9); transform: translateX(-50%); background: #ecd4b0; box-shadow: 0 var(--px) 0 rgba(57, 42, 69, 0.4); }
+
+.wall-note__retry { min-height: 44px; padding: 0 16px; font-size: 18px; justify-self: center; }
