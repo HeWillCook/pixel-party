@@ -468,7 +468,7 @@ test('host deletion asks for confirmation, closes the board, and never reconnect
   await expect(page.getByRole('dialog')).toContainText('This ends the room for everyone.')
   await expect(page.getByRole('dialog')).toHaveClass(/pp-panel/)
   await expect(page.getByRole('dialog')).toHaveCSS('border-radius', '0px')
-  const confirm = page.getByRole('button', { name: 'End room', exact: true })
+  const confirm = page.getByRole('dialog').getByRole('button', { name: 'Pack up', exact: true })
   await expect(confirm).toHaveCSS('background-image', 'none')
   await expect(confirm).toHaveCSS('background-color', 'rgb(169, 73, 88)')
   await expect(confirm).toHaveCSS('color', 'rgb(255, 240, 204)')
@@ -477,8 +477,8 @@ test('host deletion asks for confirmation, closes the board, and never reconnect
   expect(deletes).toBe(0)
   await page.getByTestId('host-menu-button').click()
   await page.getByTestId('delete-room-button').click()
-  await page.getByRole('button', { name: 'End room', exact: true }).click()
-  await expect(page.getByTestId('room-error-closed')).toContainText('This room was closed by the host')
+  await page.getByRole('dialog').getByRole('button', { name: 'Pack up', exact: true }).click()
+  await expect(page.getByTestId('room-error-closed')).toContainText('packed up this room')
   await expect(page.getByTestId('pixel-canvas')).toHaveCount(0)
   await page.clock.fastForward(30000)
   expect(deletes).toBe(1)
@@ -1174,8 +1174,8 @@ test('results show pixels and time saved and exclude unconfirmed pending pixels'
   const overlay = page.getByTestId('round-overlay')
   await expect(overlay).toBeVisible()
   await expect(overlay).toContainText('256 px')
-  await expect(overlay).toContainText('Pixels saved: 375/500')
-  await expect(overlay).toContainText('Time saved: 400/500')
+  await expect(overlay).toContainText('Pixel bonus: 375/500')
+  await expect(overlay).toContainText('Speed bonus: 400/500')
   await expect(page.getByTestId('overlay-score')).toContainText('775')
   await expect(page.locator('#overlay-heading')).toHaveText('Haiku Guessed It!')
   expect(errors).toEqual([])
@@ -1347,4 +1347,151 @@ test('narrow landscape studio lobby fits corkboard without left cutoff', async (
   const fitted = await page.locator('.studio-world').getAttribute('data-fitted')
   expect(fitted).toBe('1')
   expect(errors).toEqual([])
+})
+
+// ---- Party wave B: controls below the nav, invite, Haiku on phones, pacing, history ----
+
+const wavePhone = { width: 375, height: 812 }
+const waveViewports = [{ width: 1980, height: 1240 }, { width: 1440, height: 900 }, wavePhone]
+
+for (const viewport of waveViewports) {
+  for (const state of ['lobby', 'playing'] as const) {
+    test(`room controls are visible and clear of the nav and logo (${state}, ${viewport.width}x${viewport.height})`, async ({ page }) => {
+      await page.setViewportSize(viewport)
+      await clientFixture(page, { signedIn: true })
+      await page.routeWebSocket('**/api/pixel/**', socket => socket.send(JSON.stringify(snapshot(state))))
+      await page.goto(`${origin}/r/AB2Z`)
+      await expect(page.getByTestId(state === 'lobby' ? 'room-lobby' : 'pixel-canvas')).toBeVisible()
+      // What the nav (and, on phones, the 68px logo link) covers: nothing tappable may sit under it.
+      const covered = await page.evaluate(() => {
+        const nav = document.querySelector('[data-testid="app-navigation"]')!.getBoundingClientRect()
+        const logo = document.querySelector('.porch-nav__logo')?.getBoundingClientRect()
+        return Math.max(nav.bottom, logo?.bottom ?? 0)
+      })
+      for (const id of ['room-exit', 'room-code', 'copy-room-link', 'room-name', 'host-menu-button']) {
+        const box = await page.getByTestId(id).boundingBox()
+        expect(box, id).not.toBeNull()
+        expect(box!.y, `${id} below the nav`).toBeGreaterThanOrEqual(covered - 1)
+        expect(box!.y + box!.height, `${id} on screen`).toBeLessThanOrEqual(viewport.height)
+        expect(box!.x + box!.width, `${id} inside the width`).toBeLessThanOrEqual(viewport.width)
+      }
+      // The host's menu opens right under its button.
+      await page.getByTestId('host-menu-button').click()
+      const button = (await page.getByTestId('host-menu-button').boundingBox())!
+      const menu = (await page.getByRole('menu').boundingBox())!
+      expect(Math.abs(menu.y - (button.y + button.height))).toBeLessThan(24)
+    })
+  }
+}
+
+test('the lobby invites friends with the code large, a copy button, and Share where the browser has it', async ({ page }) => {
+  await page.addInitScript(() => {
+    ;(window as unknown as { shared: unknown[] }).shared = []
+    Object.defineProperty(navigator, 'share', { value: (data: unknown) => { (window as unknown as { shared: unknown[] }).shared.push(data); return Promise.resolve() } })
+  })
+  await clientFixture(page, { signedIn: true })
+  await page.routeWebSocket('**/api/pixel/**', socket => socket.send(JSON.stringify(snapshot('lobby'))))
+  await page.goto(`${origin}/r/AB2Z`)
+  await expect(page.getByTestId('invite-plank-code')).toHaveAttribute('aria-label', 'Room code AB2Z')
+  await page.getByTestId('invite-plank-share').click()
+  const shared = await page.evaluate(() => (window as unknown as { shared: { url: string }[] }).shared)
+  expect(shared).toHaveLength(1)
+  expect(shared[0].url).toBe(`${origin}/r/AB2Z`)
+})
+
+test('phones always show Haiku\'s latest guess, and a late joiner sees the recent guesses', async ({ page }) => {
+  await page.setViewportSize(wavePhone)
+  await clientFixture(page, { signedIn: true })
+  let server!: WebSocketRoute
+  const state = snapshot('playing')
+  const startedAt = state.round.startedAt
+  await page.routeWebSocket('**/api/pixel/**', socket => {
+    server = socket
+    socket.send(JSON.stringify({ ...state, judgements: [
+      { zone: 'all', guesses: ['bird', 'moth'], confidence: 0.4, matched: false, at: startedAt + 30000 },
+      { zone: 'all', guesses: ['dragon'], confidence: 0.6, matched: false, at: startedAt + 60000 },
+    ] }))
+  })
+  await page.goto(`${origin}/r/AB2Z`)
+  const bubble = page.getByTestId('haiku-strip-bubble')
+  await expect(bubble).toContainText('dragon')
+  await expect(bubble).toBeInViewport()
+  // The disclosure below is closed; the bubble is the always-visible part. The feed behind it agrees.
+  await expect(page.locator('details.play-layout__right')).not.toHaveAttribute('open', '')
+  server.send(JSON.stringify({ t: 'judgement', zone: 'all', guesses: ['castle'], confidence: 0.7, matched: false }))
+  await expect(bubble).toContainText('castle')
+  await page.locator('details.play-layout__right summary').click()
+  await expect(page.getByTestId('guess-list')).toContainText('bird, moth')
+  await expect(page.getByTestId('guess-empty')).toHaveCount(0)
+})
+
+test('with friends the brush is shared: one explanation, and the wait stays on one readable line', async ({ page }) => {
+  await clientFixture(page, { signedIn: true })
+  const state = snapshot('playing')
+  await page.routeWebSocket('**/api/pixel/**', socket => socket.send(JSON.stringify({
+    ...state, players: 2, roster: [{ userId: 'host', name: 'Offline host' }, { userId: 'pal', name: 'Pal' }], you: { userId: 'host', cooldownUntil: Date.now() + 60_000 },
+  })))
+  await page.goto(`${origin}/r/AB2Z`)
+  await expect(page.getByTestId('shared-brush-note')).toHaveText('Sharing the brush: one pixel every 0.5s each')
+  const wait = page.getByTestId('palette-cooldown')
+  await expect(wait).toHaveText(/^Wait \d+\.\ds$/)
+  const box = (await wait.boundingBox())!
+  expect(box.height).toBeLessThan(24)
+  const roster = page.getByTestId('roster-row')
+  await expect(roster.first()).toContainText('Offline host')
+  await expect(roster.first()).toContainText('host')
+  await expect(roster.first()).toContainText('you')
+})
+
+test('studio lobby: short codes are named, Conjure says why it waits, private rooms stay listed, first-timers get the how-to', async ({ page }) => {
+  await clientFixture(page, { signedIn: true, rooms: [
+    { recordId: 'mine', data: { name: 'Secret club', mode: 'coop', visibility: 'private', joinCode: 'PRV8', hostId: 'host', status: 'lobby', isDefaultBoard: false, playerCount: 0 } },
+    { recordId: 'open', data: { name: 'Open house', mode: 'coop', visibility: 'public', joinCode: 'PUB4', hostId: 'someone', status: 'lobby', isDefaultBoard: false, playerCount: 2 } },
+  ] })
+  await page.goto(`${origin}/party`)
+  await expect(page.getByTestId('studio-howto')).toContainText('One secret word, everyone paints, Haiku guesses.')
+  await expect(page.getByTestId('create-room-hint')).toHaveText('Name your room to conjure it')
+  await expect(page.getByTestId('your-rooms-heading')).toBeVisible()
+  await expect(page.getByTestId('room-card-PRV8')).toBeVisible()
+  await expect(page.getByTestId('room-card-PUB4')).toBeVisible()
+  await page.getByTestId('join-code-input').fill('ab')
+  await page.getByTestId('join-code-submit').click()
+  await expect(page.getByTestId('hat-error')).toHaveText('Room codes are 4 letters')
+})
+
+test('a spectator\'s click on the canvas opens the sign-in slip and places nothing', async ({ page }) => {
+  await clientFixture(page)
+  const sent: string[] = []
+  await page.routeWebSocket('**/api/pixel/**', socket => {
+    socket.send(JSON.stringify({ ...snapshot('playing'), you: { userId: null, cooldownUntil: 0 } }))
+    socket.onMessage(raw => sent.push(String(raw)))
+  })
+  await page.goto(`${origin}/r/AB2Z`)
+  const canvas = page.getByTestId('pixel-canvas')
+  await expect(canvas).toBeVisible()
+  await canvas.click({ position: { x: 40, y: 40 } })
+  await expect(page.getByRole('dialog', { name: 'Sign in' })).toBeVisible()
+  expect(sent.filter(raw => JSON.parse(raw).t === 'place')).toEqual([])
+})
+
+test('browser Back from a room returns to the studio in one press, and Forward walks back in', async ({ page }) => {
+  await clientFixture(page, { signedIn: true })
+  await page.routeWebSocket('**/api/pixel/**', socket => socket.send(JSON.stringify(snapshot('lobby'))))
+  await page.goto(`${origin}/home`)
+  await page.locator('a[href="/party"]').first().click()
+  await expect(page).toHaveURL(`${origin}/party`)
+  await page.getByTestId('room-card-AB2Z').click()
+  await page.getByTestId('magic-easel-step-in').click()
+  await expect(page).toHaveURL(`${origin}/r/AB2Z`)
+  await expect(page.getByTestId('room-lobby')).toBeVisible()
+  await page.goBack()
+  await expect(page).toHaveURL(`${origin}/party`)
+  await expect(page.getByTestId('room-lobby')).toHaveCount(0)
+  await page.goForward()
+  await expect(page).toHaveURL(`${origin}/r/AB2Z`)
+  await expect(page.getByTestId('room-lobby')).toBeVisible()
+  await page.goBack()
+  await expect(page).toHaveURL(`${origin}/party`)
+  await page.goBack()
+  await expect(page).toHaveURL(`${origin}/home`)
 })

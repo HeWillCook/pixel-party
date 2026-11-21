@@ -1125,7 +1125,8 @@
   grid-template-areas: 'top top top' 'left canvas right' 'bottom bottom bottom';
   gap: 4px 12px;
   height: auto;
-  min-height: calc(100dvh - 64px);
+  /* The room page starts below the nav (`--room-top-clear`, see room-play.css) and keeps a little air at the foot. */
+  min-height: calc(100dvh - var(--room-top-clear, 52px) - 24px);
 }
 .play-layout__top {
   position: relative;

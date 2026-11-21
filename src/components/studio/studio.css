@@ -819,6 +819,14 @@
   color: #985c5a;
 }
 
+.studio-magic-easel__howto {
+  position: relative;
+  margin: 0;
+  max-width: 92%;
+  font-size: clamp(14px, calc(var(--px) * 3), 19px);
+  line-height: 1.2;
+  color: #392a45;
+}
 .studio-magic-easel__idle-text {
   position: relative;
   margin: 0;
@@ -1347,4 +1355,67 @@
   .studio-corkboard,
   .studio-booth-slot,
   .studio-workbench-slot { transition: none; }
+}
+
+/* "Your rooms": private rooms the player hosts or has joined stay on the corkboard. */
+.studio-corkboard__rail {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+.studio-corkboard__sub {
+  margin: 0;
+  padding: 0 calc(var(--px) * 0.5);
+  font-size: calc(var(--px) * 2.6);
+  line-height: 1;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #fff0cc;
+  text-shadow: 1px 1px 0 #392a45;
+  white-space: nowrap;
+}
+.studio-corkboard--strip .studio-corkboard__sub {
+  align-self: center;
+  font-size: clamp(13px, calc(var(--px) * 2.6), 17px);
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+}
+
+/* The phone's ticket rail scrolls sideways: a visible rail, snapping tickets, and a chevron while more are off the edge. */
+.studio-corkboard--strip .studio-corkboard__tickets {
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin;
+  scrollbar-color: #ecae7d #614052;
+}
+.studio-corkboard--strip .studio-ticket { scroll-snap-align: start; }
+.studio-corkboard__more {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  width: 40px;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 4px;
+  background: linear-gradient(90deg, transparent, rgba(97, 64, 82, 0.95) 70%);
+  color: #fff0cc;
+  font-size: 34px;
+  line-height: 1;
+  text-shadow: 2px 2px #392a45;
+  pointer-events: none;
+  animation: studio-rail-nudge 1.2s steps(4) infinite;
+}
+@keyframes studio-rail-nudge { 50% { transform: translateX(-4px); } }
+@media (prefers-reduced-motion: reduce) { .studio-corkboard__more { animation: none; } }
+
+.studio-order-form__hint {
+  margin: 0;
+  font-size: calc(var(--px) * 2.3);
+  line-height: 1.05;
+  color: #985c5a;
+  text-align: center;
 }

@@ -81,6 +81,8 @@ export class PixelRoom extends BaseRoom<Env> {
   private connectingSpectator = false
   /** Haiku's last few judgements for the current round, for late joiners. Memory only: gone with the Durable Object. */
   private recentJudgements: { roundId: string; list: RecentJudgement[] } = { roundId: '', list: [] }
+  /** When each player first connected (memory only), so the roster keeps a stable join order across reconnects of other players. */
+  private joinedAt = new Map<string, number>()
 
   constructor(state: DurableObjectState, env: Env) {
     super(state, env)
@@ -267,9 +269,13 @@ export class PixelRoom extends BaseRoom<Env> {
     const players = new Map<string, { userId: string; name: string }>()
     for (const ws of this.liveSockets(exclude)) {
       const userId = this.socketUserId(ws)
-      if (userId) players.set(userId, { userId, name: this.getAttachment(ws)?.userName || 'Painter' })
+      if (userId) {
+        if (!this.joinedAt.has(userId)) this.joinedAt.set(userId, Date.now())
+        players.set(userId, { userId, name: this.getAttachment(ws)?.userName || 'Painter' })
+      }
     }
-    return [...players.values()]
+    for (const userId of this.joinedAt.keys()) if (!players.has(userId) && !exclude) this.joinedAt.delete(userId)
+    return [...players.values()].sort((left, right) => (this.joinedAt.get(left.userId) ?? 0) - (this.joinedAt.get(right.userId) ?? 0))
   }
 
   private sendGame(ws: WebSocket, message: ServerMsg): void {

@@ -69,6 +69,7 @@ export interface StudioRoomItem {
   hostId: string
   status: 'lobby' | 'playing' | 'intermission' | 'paused' | 'closed'
   playerCount: number
+  visibility: 'public' | 'private'
 }
 
 export interface StudioLobbyProps {
@@ -157,7 +158,7 @@ function CreateEaselForm({
         <Input
           id={compact ? 'room-name-board' : 'room-name'}
           data-testid="create-room-name"
-          placeholder="e.g. Midnight Pixel Club"
+          placeholder="Name your room"
           maxLength={40}
           value={roomName}
           onChange={(e) => onRoomNameChange(e.target.value)}
@@ -202,6 +203,11 @@ function CreateEaselForm({
         </div>
       </div>
 
+      {signedIn && !roomName.trim() && (
+        <p data-testid="create-room-hint" className={compact ? 'studio-order-form__hint' : 'text-sm text-[var(--soft-text)]'}>
+          Name your room to conjure it
+        </p>
+      )}
       {signedIn ? (
         <Button
           type="submit"
@@ -380,6 +386,52 @@ function CorkboardTickets({
   strip?: boolean
   style?: CSSProperties
 }) {
+  // The phone's ticket rail scrolls sideways: say so (a fade and chevron at the edge that still has tickets behind it).
+  const rail = useRef<HTMLDivElement>(null)
+  const [more, setMore] = useState(false)
+  useEffect(() => {
+    const element = rail.current
+    if (!strip || !element) return
+    const update = () => setMore(element.scrollWidth - element.clientWidth - element.scrollLeft > 6)
+    update()
+    element.addEventListener('scroll', update, { passive: true })
+    const observer = new ResizeObserver(update)
+    observer.observe(element)
+    return () => { element.removeEventListener('scroll', update); observer.disconnect() }
+  }, [strip, rooms.length])
+
+  const publicRooms = rooms.filter((room) => room.visibility !== 'private')
+  const yourRooms = rooms.filter((room) => room.visibility === 'private')
+  const ticket = (room: StudioRoomItem) => (
+    <div
+      key={room.recordId}
+      className={`studio-ticket ${selectedCode === room.joinCode ? 'studio-ticket--selected' : ''}`}
+    >
+      <button
+        type="button"
+        data-testid={`room-card-${room.joinCode}`}
+        aria-pressed={selectedCode === room.joinCode}
+        onClick={() => onSelectTicket(room.joinCode)}
+        className="studio-ticket__main"
+      >
+        <span className="truncate studio-ticket__name">{room.name}</span>
+        <span className="studio-ticket__meta">
+          <span className="inline-flex items-center gap-0.5">
+            {room.visibility === 'private' && <Lock className="studio-ticket__user-icon shrink-0" aria-label="Private" />}
+            {room.joinCode}
+          </span>
+          <span className="inline-flex items-center gap-0.5">
+            <Users className="studio-ticket__user-icon shrink-0" aria-hidden />
+            {room.playerCount}
+          </span>
+        </span>
+      </button>
+      {currentUserId === room.hostId && (
+        <div className="studio-pack-wrap">{renderPackUp(room)}</div>
+      )}
+    </div>
+  )
+
   return (
     <div
       data-testid="public-rooms-list"
@@ -391,7 +443,8 @@ function CorkboardTickets({
         <span className="studio-corkboard__count">{rooms.length + 1}</span>
       </div>
 
-      <div className="studio-corkboard__tickets">
+      <div className="studio-corkboard__rail">
+      <div ref={rail} className="studio-corkboard__tickets">
         {/* Gold Public board ticket pinned first */}
         <div
           className={`studio-ticket studio-ticket--gold ${
@@ -430,35 +483,18 @@ function CorkboardTickets({
             {roomsLoading ? 'Looking around…' : 'No custom tickets yet'}
           </p>
         ) : (
-          rooms.map((room) => (
-            <div
-              key={room.recordId}
-              className={`studio-ticket ${
-                selectedCode === room.joinCode ? 'studio-ticket--selected' : ''
-              }`}
-            >
-              <button
-                type="button"
-                data-testid={`room-card-${room.joinCode}`}
-                aria-pressed={selectedCode === room.joinCode}
-                onClick={() => onSelectTicket(room.joinCode)}
-                className="studio-ticket__main"
-              >
-                <span className="truncate studio-ticket__name">{room.name}</span>
-                <span className="studio-ticket__meta">
-                  <span>{room.joinCode}</span>
-                  <span className="inline-flex items-center gap-0.5">
-                    <Users className="studio-ticket__user-icon shrink-0" aria-hidden />
-                    {room.playerCount}
-                  </span>
-                </span>
-              </button>
-              {currentUserId === room.hostId && (
-                <div className="studio-pack-wrap">{renderPackUp(room)}</div>
-              )}
-            </div>
-          ))
+          <>
+            {publicRooms.map(ticket)}
+            {yourRooms.length > 0 && (
+              <>
+                <h3 data-testid="your-rooms-heading" className="studio-corkboard__sub">Your rooms</h3>
+                {yourRooms.map(ticket)}
+              </>
+            )}
+          </>
         )}
+      </div>
+      {strip && more && <span data-testid="ticket-rail-more" className="studio-corkboard__more" aria-hidden="true">›</span>}
       </div>
     </div>
   )
@@ -795,6 +831,13 @@ export function StudioLobby(props: StudioLobbyProps) {
       e.preventDefault()
       const trimmed = props.joinCodeInput.trim()
       if (!trimmed) return
+      if (trimmed.toLowerCase() !== 'play' && !/^[A-Za-z0-9]{4}$/.test(trimmed)) {
+        // Say what is wrong with the code rather than pretending to look for an easel that cannot exist.
+        setHatEffect('idle')
+        setEaselSmoke(null)
+        setHatError('Room codes are 4 letters')
+        return
+      }
       if (hatTimer.current) {
         clearTimeout(hatTimer.current)
         hatTimer.current = null

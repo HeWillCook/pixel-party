@@ -52,12 +52,14 @@ export default function StudioLayout() {
   const [signInOpen, setSignInOpen] = useState(false)
   const [deletedRooms, setDeletedRooms] = useState<string[]>([])
 
-  const livePublicRooms: StudioRoomItem[] = rooms
+  // Public rooms for everyone, plus the private rooms this player hosts or has joined (the rooms query only returns
+  // private rooms to their host and members, so any private room that arrives here is "yours").
+  const listedRooms: StudioRoomItem[] = rooms
     .filter(
       (room) =>
         room.data.status !== 'closed' &&
         !deletedRooms.includes(room.recordId) &&
-        room.data.visibility === 'public' &&
+        (room.data.visibility === 'public' || (isSignedIn && room.data.visibility === 'private')) &&
         !room.data.isDefaultBoard &&
         room.data.joinCode !== 'play',
     )
@@ -68,6 +70,7 @@ export default function StudioLayout() {
       hostId: room.data.hostId,
       status: room.data.status,
       playerCount: room.data.playerCount ?? 0,
+      visibility: room.data.visibility,
     }))
 
   const defaultBoardRoom = rooms.find(
@@ -203,19 +206,27 @@ export default function StudioLayout() {
 
   useEffect(() => () => { if (leaveTimer.current) clearTimeout(leaveTimer.current) }, [])
 
+  // Stepping back out of a room we walked into from the studio is a real Back (the room's entry is popped, so Forward
+  // walks in again and Back from the studio goes on to the porch). A room opened cold (reload, shared link) has no
+  // studio entry behind it, so there the room's entry is replaced instead of piling a second /party on the stack.
+  const finishLeave = useCallback((path: string) => {
+    const hasStudioBehind = sawParty.current && path === '/party' && ((window.history.state as { idx?: number } | null)?.idx ?? 0) > 0
+    if (hasStudioBehind) navigate(-1)
+    else navigate(path, { replace: true })
+  }, [navigate])
   const leave = useCallback((path = '/party') => {
     if (leaveTimer.current) return
     enableNavMotion()
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      navigate(path, { replace: true })
+      finishLeave(path)
       return
     }
     setLeaving(true)
     leaveTimer.current = setTimeout(() => {
       leaveTimer.current = null
-      navigate(path, { replace: true })
+      finishLeave(path)
     }, SCENE_ZOOM_MS)
-  }, [navigate])
+  }, [finishLeave])
 
   const phase: RoomPhase = leaving ? 'leaving' : entering ? 'entering' : 'active'
   const setBoardRect = useCallback((rect: Rect | null) => {
@@ -253,7 +264,7 @@ export default function StudioLayout() {
         onFocus={onFocus}
         onMinBoard={setMinBoardPx}
         onRoomShift={setRoomShift}
-        rooms={livePublicRooms}
+        rooms={listedRooms}
         roomsLoading={roomsStatus === 'loading'}
         defaultBoardPlayers={defaultBoardRoom?.data.playerCount ?? 0}
         signedIn={!!isSignedIn}

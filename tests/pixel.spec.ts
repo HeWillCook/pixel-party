@@ -59,7 +59,8 @@ test('two painters sync, respect cooldown, and allow spectators', async ({ users
   expect(painterBefore).toEqual(spectatorBefore)
   await clickCell(page, 5, 5)
   await expect(page.getByTestId('spectator-banner')).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'Sign in to DeepSpace' })).toBeVisible()
+  // A spectator's click places nothing and opens the same sign-in slip as the banner's "Sign in to play".
+  await expect(page.getByRole('dialog', { name: 'Sign in' })).toBeVisible()
   expect(spectatorPlacements).toEqual([])
   await expect.poll(() => color(a.page, 5, 5)).toEqual(painterBefore)
   await expect.poll(() => color(page, 5, 5)).toEqual(spectatorBefore)
