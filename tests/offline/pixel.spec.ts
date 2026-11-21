@@ -964,10 +964,19 @@ test('upstairs stairs return home with pan transition and reduced motion is inst
 
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await page.goto(`${origin}/party`)
+  // Instant means the floor pan never mounts (and the swap lands well inside its 1000 ms run). Watching the DOM rather than
+  // timing alone keeps this from depending on how fast the CI runner clicks.
+  await page.evaluate(() => {
+    const w = window as unknown as { __panMounted?: boolean }
+    w.__panMounted = false
+    new MutationObserver(() => { if (document.querySelector('[data-testid="vertical-scene-transition"]')) w.__panMounted = true })
+      .observe(document.body, { childList: true, subtree: true })
+  })
   const start = Date.now()
   await page.locator('.studio-world').getByRole('link', { name: 'Upstairs', exact: true }).click()
   await expect(page).toHaveURL(`${origin}/home`)
-  expect(Date.now() - start).toBeLessThan(300)
+  expect(Date.now() - start).toBeLessThan(800)
+  expect(await page.evaluate(() => (window as unknown as { __panMounted?: boolean }).__panMounted)).toBe(false)
 })
 
 test('375 lobby no horizontal scroll and primary controls stay reachable', async ({ page }) => {

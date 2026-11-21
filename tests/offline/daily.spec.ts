@@ -380,10 +380,11 @@ test('reduced motion: clicking the scene around a graded result returns to the p
   await page.setViewportSize({ width: 1440, height: 900 })
   await endedFixture(page)
   await page.goto(`${origin}/home`)
+  // "At once" = well inside the 800 ms camera move (SCENE_ZOOM_MS); a tighter bound measures the CI runner, not the app.
   await page.getByRole('button', { name: 'View result' }).click()
-  await expect(page.getByTestId('daily-ended-porch-button')).toBeVisible({ timeout: 100 })
+  await expect(page.getByTestId('daily-ended-porch-button')).toBeVisible({ timeout: 400 })
   await page.getByTestId('scene-dismiss').click({ position: { x: 60, y: 820 } })
-  await expect(page.getByRole('button', { name: 'View result' })).toBeVisible({ timeout: 100 })
+  await expect(page.getByRole('button', { name: 'View result' })).toBeVisible({ timeout: 400 })
 })
 
 for (const askFirst of [false, true]) test(askFirst ? 'auto-grade fires at 1:00 after an ask at 0:30' : 'auto-grade fires at 1:00 without asks', async ({ page }) => {
