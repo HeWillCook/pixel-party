@@ -496,15 +496,18 @@ export default function RoomPage() {
   const { setBoardRect, setSummary } = world
   // Room -> studio: the camera pulls back out of the easel with the room still registered to it, then the studio
   // takes over. Browser back is the same move: block the pop, play it, and let it through when it lands.
+  // `exitingRef` is the exit being under way (a second Back or click during it is swallowed); `landingRef` is set only for the one
+  // navigation that finishes it, which the blocker must let through.
   const exitingRef = useRef(false)
+  const landingRef = useRef(false)
   const blocker = useBlocker(({ currentLocation, nextLocation }) =>
-    !exitingRef.current && currentLocation.pathname.startsWith('/r/') && nextLocation.pathname === '/party')
+    !landingRef.current && currentLocation.pathname.startsWith('/r/') && nextLocation.pathname === '/party')
   const leavingUpRef = useRef(false)
 
   const goStudio = useCallback(() => {
     if (exitingRef.current) return
     exitingRef.current = true
-    world.leave('/party')
+    world.leave('/party', () => { landingRef.current = true })
   }, [world])
 
   useEffect(() => {
@@ -1240,6 +1243,7 @@ export default function RoomPage() {
           isSpectator={isSpectator}
           aiResting={state.aiResting}
           roundPlaying={Boolean(roundPlaying)}
+          roundOver={state.round?.state === 'intermission'}
           onAsk={handleAsk}
         />
       </div>
@@ -1271,7 +1275,7 @@ export default function RoomPage() {
           disabled={isSpectator}
           cooldownRemainingMs={cooldownRemainingMs}
           cooldownTotalMs={cooldownTotalMs}
-          sharedBrushMs={state.players > 1 ? cooldownTotalMs : undefined}
+          sharedBrushMs={state.players > 1 && roundPlaying ? cooldownTotalMs : undefined}
         />
       }
     />
