@@ -80,7 +80,8 @@ for (const viewport of [{ width: 375, height: 812 }, { width: 640, height: 360 }
     await page.keyboard.press('Escape')
     await expect(dialog).toBeHidden()
     await expect(more).toBeFocused()
-    await account.click()
+    await more.click()
+    await menu.getByRole('button', { name: 'Account' }).click()
     await page.mouse.click(4, 4)
     await expect(dialog).toBeHidden()
     await expect(more).toBeFocused()
@@ -136,14 +137,19 @@ test('porch keyboard tour reaches objects with labels and focus rings', async ({
   await setup(page)
   await page.goto(`${origin}/home`)
   const scene = page.locator('.porch-world')
-  const names = ['Start Daily Challenge', "Today's scores", 'Basement studio', 'Account menu', 'Your gallery', 'Mute sounds', 'Scoring rules']
-  await scene.getByRole('button', { name: names[0] }).focus()
-  for (const [index, name] of names.entries()) {
+  // The tab order is the scene's reading order: the house on the left, the cat, the easel (and the tally on its crossbar), the board, the radio, the hatch.
+  const stops: { name: string | RegExp; chip: boolean }[] = [
+    { name: 'Scoring rules', chip: true }, { name: 'Account menu', chip: true }, { name: 'Your gallery', chip: true },
+    { name: /^Haiku, the cat/, chip: false }, { name: /on the porch/, chip: false }, { name: 'Start Daily Challenge', chip: true },
+    { name: "Today's scores", chip: true }, { name: 'Mute sounds', chip: true }, { name: 'Basement studio', chip: true },
+  ]
+  await scene.getByRole('button', { name: 'Scoring rules' }).focus()
+  for (const [index, stop] of stops.entries()) {
     const focused = scene.locator(':focus')
-    await expect(focused).toHaveAttribute('aria-label', name)
-    await expect(focused.locator('.pixel-hotspot__label')).toBeVisible()
+    await expect(focused).toHaveAttribute('aria-label', stop.name)
+    if (stop.chip) await expect(focused.locator('.pixel-hotspot__label')).toBeVisible()
     expect(await focused.evaluate(element => getComputedStyle(element).outlineStyle)).not.toBe('none')
-    if (index < names.length - 1) await page.keyboard.press('Tab')
+    if (index < stops.length - 1) await page.keyboard.press('Tab')
   }
   await scene.getByRole('link', { name: 'Basement studio' }).focus()
   await page.keyboard.press('Enter')
@@ -303,7 +309,7 @@ test('portrait porch keeps every object in view and tappable', async ({ page }) 
   await setup(page)
   await page.goto(`${origin}/home`)
   const hotspots = page.locator('.porch-world .pixel-hotspot')
-  await expect(hotspots).toHaveCount(5)
+  await expect(hotspots).toHaveCount(6) // the four porch objects, the gallery sign, and Haiku
   for (const hotspot of await hotspots.all()) {
     await expect(hotspot.locator('.pixel-hotspot__label')).toBeHidden()
     const box = await hotspot.boundingBox()
@@ -1020,7 +1026,7 @@ test('scores page lists today', async ({ page }) => {
     }
   })
   expect(scoreScaleMetrics.px).toBe(3)
-  expect(scoreScaleMetrics.thumbRatio).toBe(3)
+  expect(scoreScaleMetrics.thumbRatio).toBe(2) // two screen pixels per cell: tight rows (six fit at 1980x1240) and still crisp
   expect(scoreScaleMetrics.trophyRatio).toBe(1.5) // medals and the trophy hold 2x detail
   expect(scoreScaleMetrics.medalRatio).toBe(1.5)
   expect(scoreScaleMetrics.haikuRatio).toBe(1.5) // Haiku holds 2x detail too: 3px per scene unit is 1.5px per canvas pixel
@@ -1048,7 +1054,7 @@ test('scores page lists today', async ({ page }) => {
   expect(mobileMetrics.docScrollW).toBeLessThanOrEqual(375)
   expect(mobileMetrics.mainScrollW).toBeLessThanOrEqual(mobileMetrics.mainClientW)
   expect(mobileMetrics.px).toBe(2)
-  expect(mobileMetrics.thumbRatio).toBe(2)
+  expect(mobileMetrics.thumbRatio).toBe(1.5) // a phone's thumbnails are 48px: the name beside them gets two lines
   // The board re-frames on the resize (its scene and camera each measure the window), so it lands inside the phone's width.
   await expect.poll(async () => { const bounds = (await board.boundingBox())!; return bounds.x >= 0 && bounds.x + bounds.width <= 375 }).toBe(true)
 
@@ -1480,6 +1486,9 @@ test('empty gallery shows the empty rack with its first-painting card and a Pain
   const empty = page.getByTestId('gallery-empty')
   await expect(empty).toBeVisible()
   await expect(empty).toContainText('Your first painting hangs here')
+  // The wall reads as a place waiting to be filled: faint frame outlines round the card, decoration only.
+  await expect(page.locator('.wall-ghosts .wall-ghost').first()).toBeAttached()
+  await expect(page.locator('.wall-ghosts')).toHaveAttribute('aria-hidden', 'true')
   const cta = empty.getByRole('link', { name: "Paint today's prompt" })
   await expect(cta).toHaveAttribute('href', '/home')
   await cta.click()
@@ -1862,4 +1871,170 @@ test('the 404 is the porch camera on Haiku, sad among his spilled paint: it flie
   await expect(page).toHaveURL(`${origin}/home`)
   // The beach notice board is gone from the porch.
   await expect(page.getByTestId('not-found-board')).toHaveCount(0)
+})
+
+/** Distinct camera transforms the scene shows, frame by frame, while `run` plays: a move has many, a cut has two. */
+async function cameraFrames(page: Page, run: () => Promise<unknown>, ms = 1500) {
+  await page.evaluate(() => {
+    const frames = new Set<string>()
+    ;(window as unknown as { __cam: Set<string> }).__cam = frames
+    const tick = () => { const camera = document.querySelector('.pixel-scene__camera'); if (camera) frames.add(getComputedStyle(camera).transform); requestAnimationFrame(tick) }
+    tick()
+  })
+  await run()
+  await page.waitForTimeout(ms)
+  return page.evaluate(() => (window as unknown as { __cam: Set<string> }).__cam.size)
+}
+
+test('every app route has its own tab title', async ({ page }) => {
+  await setup(page)
+  for (const [path, title] of [['/home', "Today's Daily · Pixel Party"], ['/scores', 'Scores · Pixel Party'], ['/settings', 'Settings · Pixel Party'], ['/party', 'Party · Pixel Party'], ['/u/host', 'Your gallery · Pixel Party'], ['/nope', 'Not found · Pixel Party']]) {
+    await page.goto(`${origin}${path}`)
+    await expect(page, path).toHaveTitle(title)
+  }
+})
+
+test('the nav sits in the same place on every route', async ({ page }) => {
+  await page.setViewportSize({ width: 1980, height: 1240 })
+  await setup(page)
+  const logoX = async (path: string) => {
+    await page.goto(`${origin}${path}`)
+    await expect(page.getByTestId('app-navigation')).toBeVisible()
+    return page.getByRole('link', { name: 'Pixel Party, home' }).evaluate((element) => Math.round(element.getBoundingClientRect().x))
+  }
+  const xs = [await logoX('/home'), await logoX('/scores'), await logoX('/u/host'), await logoX('/settings'), await logoX('/nope')]
+  expect(new Set(xs).size, `logo x per route: ${xs}`).toBe(1)
+  // The bar publishes its height for scene overlays that sit under it.
+  expect(await page.locator('.porch-shell').evaluate((shell) => parseInt(getComputedStyle(shell).getPropertyValue('--porch-nav-height')))).toBeGreaterThan(40)
+})
+
+test('browser Back and Forward play the camera move, not a cut', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await setup(page)
+  await page.goto(`${origin}/home`)
+  await expect(page.getByTestId('daily-start-button')).toBeVisible()
+  await page.getByRole('link', { name: "Today's scores" }).click()
+  await expect(page).toHaveURL(`${origin}/scores`)
+  await page.waitForTimeout(1200)
+  expect(await cameraFrames(page, () => page.goBack()), 'Back').toBeGreaterThan(12)
+  await expect(page).toHaveURL(`${origin}/home`)
+  expect(await cameraFrames(page, () => page.goForward()), 'Forward').toBeGreaterThan(12)
+  await expect(page).toHaveURL(`${origin}/scores`)
+})
+
+test('browser Back from the studio plays the floor pan', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await setup(page)
+  await page.goto(`${origin}/home`)
+  await page.getByRole('link', { name: 'Basement studio' }).click()
+  await expect(page).toHaveURL(`${origin}/party`)
+  await page.waitForTimeout(1600)
+  await page.evaluate(() => { (window as unknown as { __pan: boolean }).__pan = false; const tick = () => { if (document.querySelector('[data-testid="vertical-scene-transition"]')) (window as unknown as { __pan: boolean }).__pan = true; requestAnimationFrame(tick) }; tick() })
+  await page.goBack()
+  await expect(page).toHaveURL(`${origin}/home`)
+  await page.waitForTimeout(300)
+  expect(await page.evaluate(() => (window as unknown as { __pan: boolean }).__pan)).toBe(true)
+  await expect(page.getByTestId('vertical-scene-transition')).toHaveCount(0, { timeout: 4000 })
+})
+
+test('reduced motion keeps Back instant', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await setup(page)
+  await page.goto(`${origin}/home`)
+  await page.getByRole('link', { name: "Today's scores" }).click()
+  await expect(page).toHaveURL(`${origin}/scores`)
+  await page.goBack()
+  await expect(page).toHaveURL(`${origin}/home`)
+  await expect(page.getByTestId('vertical-scene-transition')).toHaveCount(0)
+})
+
+test('Escape returns to the porch from the scores board', async ({ page }) => {
+  await setup(page)
+  await page.goto(`${origin}/scores`)
+  await expect(page.getByTestId('scores-chalkboard')).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page).toHaveURL(`${origin}/home`)
+})
+
+test('a click during a camera move waits and runs when it lands', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await setup(page)
+  await page.goto(`${origin}/home`)
+  const nav = page.getByTestId('app-navigation')
+  await nav.getByRole('link', { name: 'Scores', exact: true }).click()
+  await page.waitForTimeout(200)
+  await nav.getByRole('link', { name: 'Gallery', exact: true }).click()
+  await expect(page).toHaveURL(`${origin}/u/host`, { timeout: 6000 })
+})
+
+test('Haiku introduces himself, then has something else to say', async ({ page }) => {
+  await setup(page)
+  await page.goto(`${origin}/home`)
+  const cat = page.getByRole('button', { name: /Haiku, the cat/ })
+  await cat.hover({ force: true })
+  await expect(page.getByRole('status').filter({ hasText: "Hi, I'm Haiku. I judge the Daily." })).toBeVisible()
+  await page.reload()
+  await page.getByRole('button', { name: /Haiku, the cat/ }).hover({ force: true })
+  await expect(page.locator('.porch-haiku__bubble')).toBeVisible()
+  await expect(page.locator('.porch-haiku__bubble')).not.toContainText("I'm Haiku")
+})
+
+test('Haiku answers a keyboard focus and a tap', async ({ page }) => {
+  await setup(page)
+  await page.goto(`${origin}/home`)
+  const cat = page.getByRole('button', { name: /Haiku, the cat/ })
+  await cat.click({ force: true })
+  await expect(page.locator('.porch-haiku__bubble')).toContainText("I'm Haiku")
+})
+
+test('settings has the sound toggle the radio uses', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await setup(page)
+  await page.goto(`${origin}/settings`)
+  const sound = page.getByRole('switch', { name: 'Sound' })
+  await expect(sound).toHaveAttribute('aria-checked', 'true')
+  await sound.click()
+  await expect(sound).toHaveAttribute('aria-checked', 'false')
+  await page.goto(`${origin}/home`)
+  await expect(page.locator('.porch-world').getByRole('button', { name: 'Unmute sounds' })).toBeVisible()
+})
+
+test('the landing is exactly one viewport', async ({ page }) => {
+  for (const size of [{ width: 1980, height: 1240 }, { width: 375, height: 812 }]) {
+    await page.setViewportSize(size)
+    await setup(page, true)
+    await page.goto(`${origin}/`)
+    await expect(page.getByTestId('static-landing')).toBeVisible()
+    const heights = await page.evaluate(() => ({ page: document.documentElement.scrollHeight, view: window.innerHeight }))
+    expect(heights.page).toBeLessThanOrEqual(heights.view)
+    // The copy for search and screen readers is still in the page.
+    await expect(page.getByRole('heading', { name: 'Draw together at Pixel Party' })).toBeAttached()
+  }
+})
+
+test('the porch sign counts who is on the porch from the presence room', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await setup(page)
+  const published: string[] = []
+  const peers = [
+    { userId: 'u-ada', userName: 'Ada', joinedAt: new Date().toISOString(), state: { name: 'Ada', painting: true } },
+    { userId: 'anon-1', userName: 'Anonymous', joinedAt: new Date().toISOString(), state: {} },
+  ]
+  await page.routeWebSocket('**/ws/presence/**', (socket) => {
+    expect(socket.url()).toMatch(/\/ws\/presence\/porch%3A\d{4}-\d{2}-\d{2}/)
+    socket.onMessage((message) => published.push(String(message)))
+    socket.send(JSON.stringify({ type: 'presence.sync', payload: { peers } }))
+  })
+  await page.goto(`${origin}/home`)
+  const sign = page.getByTestId('porch-presence')
+  await expect(sign).toContainText('3 on the porch')
+  await expect(sign).toContainText('1 painting now')
+  await sign.hover()
+  await expect(sign).toContainText('Ada')
+  await expect(sign).toContainText('A visitor')
+  await expect(sign).not.toContainText('Offline host')
+  // Only { name, painting } is published, and only when it changes.
+  await page.waitForTimeout(500)
+  expect(published.length).toBeGreaterThan(0)
+  for (const message of published) expect(JSON.parse(message).payload).toEqual({ name: 'Offline host', painting: false })
 })

@@ -15,10 +15,13 @@ export function HaikuHello({ rect, facts }: { rect: Rect; facts?: HaikuFacts }) 
   const [tapped, setTapped] = useState(false)
   // Chosen the first time the bubble opens on this visit; it holds for the rest of it.
   const [line, setLine] = useState<string | null>(null)
+  // Hover, focus and click arrive in one tick, before a re-render: a ref (not `line`) says it has been chosen, so it is chosen once.
+  const chosen = useRef(false)
   const tapTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => () => { if (tapTimer.current) clearTimeout(tapTimer.current) }, [])
   const reveal = () => {
-    if (line !== null) return
+    if (chosen.current) return
+    chosen.current = true
     setLine(haikuGreeting(facts ?? {}, readHaikuVisits()))
     countHaikuVisit()
   }

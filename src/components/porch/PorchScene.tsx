@@ -113,8 +113,8 @@ function Objects({
       <span className="porch-gallery-sign-copy" aria-hidden="true">Gallery</span>
     </Hotspot>
     <HaikuHello rect={rect.cat} facts={props.haikuFacts} />
-    <Hotspot rect={rect.easel} label={props.easelLabel} href={props.landing ? '/home' : undefined} onClick={props.landing ? undefined : props.onEasel} testId={props.easelTestId} disabled={props.easelDisabled}><span className={props.easelState === 'finished' ? 'porch-easel-copy porch-easel-copy--tag' : 'porch-easel-copy'}>{props.easelText}</span></Hotspot>
     {!props.landing && <PorchPresenceSign />}
+    <Hotspot rect={rect.easel} label={props.easelLabel} href={props.landing ? '/home' : undefined} onClick={props.landing ? undefined : props.onEasel} testId={props.easelTestId} disabled={props.easelDisabled}><span className={props.easelState === 'finished' ? 'porch-easel-copy porch-easel-copy--tag' : 'porch-easel-copy'}>{props.easelText}</span></Hotspot>
     <Hotspot rect={rect.chalkboard} label="Today's scores" href="/scores" onClick={onScores} />
     {!props.landing && <ChalkboardBoard />}
     {composition === 'landscape' && <Hotspot rect={rect.radio} label={props.muted ? 'Unmute sounds' : 'Mute sounds'} pressed={props.muted} onClick={props.onToggleMute} />}

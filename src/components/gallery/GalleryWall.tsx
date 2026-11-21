@@ -88,7 +88,7 @@ function WallPage({ items, layout, border, mat, cell, scale, refEl }: { items: W
  * their captions between two arrow signs, a plank saying "3 / 12" under them. It is a child of a porch `PixelScene`, so it pans with
  * the camera exactly. A page turn slides the page off along the wall and the next one in from the other side, as if hung on a looping
  * rail: transforms only, at the zoom's curve, and only the page and the incoming page are in the DOM. With nothing painted yet there
- * is a single card, never empty frames. `inert` is the porch's own copy of the wall, in place for the pan to it (no pointer, no focus).
+ * is a single card, with the faint outlines of frames waiting round it (decoration, never real empty frames). `inert` is the porch's own copy of the wall, in place for the pan to it (no pointer, no focus).
  */
 export function GalleryWall({ items, page = 0, turn = null, onTurn, onGo, inert = false, empty, loading, failed, onRetry }: {
   items: WallItem[]
