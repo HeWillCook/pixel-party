@@ -12,14 +12,25 @@ import {
   authWorkerFetch,
   CanvasRoom,
   CronRoom,
+  isAnonymousUserId,
   JobRoom,
   PresenceRoom,
   RecordRoom,
+  registerAgentToolRoutes,
+  resolveAppMembership,
   resolveAppRole,
   workerErrorHandler,
   YjsRoom,
 } from 'deepspace/worker'
-import type { DOBindings, DOManifest, Job, JobContext } from 'deepspace/worker'
+import type {
+  AgentToolAccessResult,
+  DOBindings,
+  DOManifest,
+  Job,
+  JobContext,
+  VerifyResult,
+} from 'deepspace/worker'
+import { buildTools } from './src/ai/tools.js'
 import { tasks as cronTasks, runTask as runCronTask } from './src/cron.js'
 import { runJob } from './src/jobs.js'
 import { schemas } from './src/schemas.js'
@@ -30,6 +41,7 @@ import {
   registerAuthAndIntegrationRoutes,
   registerPlatformProxyRoutes,
   registerStaticRoutes,
+  resolveAgentAuth,
   resolveAuth,
 } from './src/server/http-routes.js'
 import { registerRealtimeRoutes } from './src/server/realtime-routes.js'
@@ -129,6 +141,32 @@ export interface Env extends DOBindings<typeof __DO_MANIFEST__> {
 
 export type AppContext = { Bindings: Env }
 
+type AgentIdentity = (request: Request, env: Env) => Promise<VerifyResult | null>
+
+/**
+ * The SDK's local-agent route and the browser tool surface share this rule:
+ * a verified caller who is the app owner or already has a user row may read.
+ * A failed membership read is a 503, never a quiet "not a member", and an
+ * anonymous identity is refused before any tool can run.
+ */
+function agentAccess(identity: AgentIdentity) {
+  return async (request: Request, env: Env): Promise<AgentToolAccessResult> => {
+    let auth: VerifyResult | null
+    try {
+      auth = await identity(request, env)
+    } catch {
+      // A malformed or unverifiable credential fails closed as no identity.
+      return { ok: false, status: 401 }
+    }
+    if (!auth) return { ok: false, status: 401 }
+    if (isAnonymousUserId(auth.userId)) return { ok: false, status: 403 }
+    if (auth.userId === env.OWNER_USER_ID) return { ok: true, auth }
+    const membership = await resolveAppMembership(env, auth.userId, request.signal)
+    if (membership === null) return { ok: false, status: 503 }
+    return membership.member ? { ok: true, auth } : { ok: false, status: 403 }
+  }
+}
+
 declare const __PIXEL_PARTY_TEST__: boolean
 
 const app = new Hono<AppContext>()
@@ -158,7 +196,13 @@ registerAuthAndIntegrationRoutes(app)
 registerRealtimeRoutes(app)
 registerActionRoutes(app, resolveAuth)
 registerDailyRoutes(app)
-// Pixel Party has no website chat or local/browser agent surface.
+// Read-only tools for the local agent (`deepspace agent tools/invoke`) and the
+// browser surface the app's <AgentTools /> mounts. There is no website chat.
+registerAgentToolRoutes(app, {
+  buildTools,
+  resolveAccess: agentAccess(resolveAgentAuth),
+  resolveBrowserAccess: agentAccess(resolveAuth),
+})
 registerPlatformProxyRoutes(app)
 registerStaticRoutes(app)
 
