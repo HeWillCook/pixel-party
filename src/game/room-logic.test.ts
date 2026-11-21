@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { JUDGE, MODES, ROOMS } from './config'
 import { applyPlacements, applyJudgeOutcome, applyPlacement, advance, countPlayers, deserializeRoomState, newRoomState, nextAlarmAt, nextRoundRejection, serializeRoomState, shouldJudge, startNextRound } from './room-logic'
 import { WORDS } from './words'
-import { createGrid } from './grid'
+import { createGrid, pixelsUsed } from './grid'
 
 const room = () => newRoomState({ roomId: 'room', mode: 'coop', isDefaultBoard: false }, 1000, () => 0)
 const judged = { kind: 'judged' as const, zone: 'all' as const, result: { guesses: ['house'], confidence: 0.9 }, matched: true }
@@ -26,6 +26,7 @@ describe('room logic', () => {
     const s = room()
     expect(shouldJudge(s, 20000, 1, 'tick')).toEqual({ ok: false, why: 'unchanged' })
     s.version++
+    s.grid.cells[0] = 1 // non-blank so the blank-canvas gate doesn't mask the timing gates below
     expect(shouldJudge(s, 20000, 0, 'tick')).toEqual({ ok: false, why: 'no_players' })
     expect(shouldJudge(s, 6000, 1, 'ask')).toEqual({ ok: false, why: 'too_soon' })
     expect(shouldJudge(s, 16000, 1, 'tick')).toEqual({ ok: true })
@@ -33,6 +34,26 @@ describe('room logic', () => {
     expect(shouldJudge(s, 20000, 1, 'tick')).toEqual({ ok: false, why: 'rate_cap' })
     s.status = 'intermission'
     expect(shouldJudge(s, 20000, 1, 'tick')).toEqual({ ok: false, why: 'not_playing' })
+  })
+  it('refuses to judge a blank canvas even after paint-then-erase', () => {
+    const s = room()
+    const painted = applyPlacement(s, { x: 1, y: 1, c: 4, userId: 'a' }, 2000, 1).state
+    const erased = applyPlacement(painted, { x: 1, y: 1, c: 0, userId: 'a' }, 2001, 1).state
+    expect(erased.grid.cells.every(cell => cell === 0)).toBe(true)
+    expect(erased.version).toBeGreaterThan(erased.lastJudgedVersion)
+    expect(shouldJudge(erased, 20000, 1, 'ask')).toEqual({ ok: false, why: 'canvas_blank' })
+    const repainted = applyPlacement(erased, { x: 2, y: 2, c: 5, userId: 'a' }, 2002, 1).state
+    expect(shouldJudge(repainted, 20000, 1, 'tick')).toEqual({ ok: true })
+  })
+  it('does not re-arm an overdue judge tick after paint-then-erase', () => {
+    const painted = applyPlacement(room(), { x: 1, y: 1, c: 4, userId: 'a' }, 2000, 1).state
+    const erased = applyPlacement(painted, { x: 1, y: 1, c: 0, userId: 'a' }, 2001, 1).state
+    expect(pixelsUsed(erased.grid)).toBe(0)
+    expect(erased.version).toBeGreaterThan(erased.lastJudgedVersion)
+    // runJudge skips `canvas_blank` without advancing lastJudgedVersion/lastJudgedAt, so only the
+    // round cap may stay scheduled; anything sooner would fire the alarm in a tight loop.
+    expect(nextAlarmAt(erased, 20000)).toBe(erased.round.startedAt + MODES.coop.capMs)
+    expect(nextAlarmAt(erased, 2000)).toBeGreaterThan(2000 + JUDGE.tickMs)
   })
   it('round-trips grid, authors, cooldowns, calls and word entry, clearing in-flight', () => {
     const s = applyPlacement(room(), { x: 3, y: 2, c: 4, userId: 'a' }, 2000, 1).state
@@ -95,7 +116,7 @@ describe('room logic', () => {
     expect(s.status).toBe('playing')
   })
   it('schedules the earliest pending deadline', () => {
-    const s = room(); s.version++
+    const s = applyPlacement(room(), { x: 0, y: 0, c: 4, userId: 'a' }, 1000, 1).state
     expect(nextAlarmAt(s, 2000)).toBe(1000 + JUDGE.tickMs)
     expect(nextAlarmAt(s, 20000)).toBe(20000)
   })
@@ -113,7 +134,7 @@ describe('room logic', () => {
     expect(resumed.state.round.id).toBe(paused.round.id)
   })
   it('expires calls exactly at the 60 second window boundary', () => {
-    const state = room(); state.version = 1; state.judgeCalls = [10000, 10001, 10002, 10003, 10004, 10005]
+    const state = room(); state.version = 1; state.grid.cells[0] = 1; state.judgeCalls = [10000, 10001, 10002, 10003, 10004, 10005]
     expect(shouldJudge(state, 69999, 1, 'tick')).toEqual({ ok: false, why: 'rate_cap' })
     expect(nextAlarmAt(state, 69999)).toBe(70000)
     expect(shouldJudge(state, 70000, 1, 'tick')).toEqual({ ok: true })

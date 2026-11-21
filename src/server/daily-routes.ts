@@ -3,8 +3,9 @@ import { DAILY } from '../game/config'
 import type { AppContext, Env } from '../../worker.js'
 import { reserveBudget } from './budget'
 import { createDailyJudge, renderCellsPng } from './daily-judge'
+import { addDebugPaintings, clearDebugPaintings } from './daily-debug'
 import { doAttemptStore } from './daily-room'
-import { dailyState, endDaily, gradeDaily, InvalidAttemptDay, startDaily, todaysDrawings } from './daily-service'
+import { dailyState, endDaily, gradeDaily, InvalidAttemptDay, resetDaily, startDaily, todaysDrawings } from './daily-service'
 import type { DailyDeps, DailyUser } from './daily-service'
 import { resolveAuth } from './http-routes'
 import { createServerTools } from './server-tools'
@@ -38,6 +39,17 @@ export function registerDailyRoutes(app: Hono<AppContext>): void {
   })
 
   daily.post('/start', async c => c.json(await startDaily(dependencies(c.env), c.get('dailyUser'))))
+  // TEMP DEBUG: remove before launch
+  daily.post('/reset', async c => c.json(await resetDaily(dependencies(c.env), c.get('dailyUser').userId)))
+  // TEMP DEBUG: remove before launch
+  daily.post('/debug-paintings', async c => {
+    const body: unknown = await c.req.json().catch(() => null)
+    const user = c.get('dailyUser')
+    const tools = createServerTools(c.env)
+    if (objectBody(body) && body.clear === true) return c.json({ removed: await clearDebugPaintings(tools, user.userId) })
+    if (!objectBody(body) || !Number.isInteger(body.add) || (body.add as number) < 1) return c.json({ error: 'bad_request' }, 400)
+    return c.json({ added: await addDebugPaintings(tools, user, body.add as number, Date.now()) })
+  })
   daily.post('/grade', async c => {
     const body: unknown = await c.req.json().catch(() => null)
     if (!objectBody(body) || !dayBody(body.day) || (body.kind !== 'auto' && body.kind !== 'ask' && body.kind !== 'final') || typeof body.cells !== 'string' || (body.kind === 'auto' && (!Number.isInteger(body.window) || (body.window as number) < 0 || (body.window as number) >= DAILY.autoWindowsMs.length))) {

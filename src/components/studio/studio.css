@@ -13,33 +13,31 @@
   background: #392a45;
 }
 
+.studio-world[data-fitted="1"] .studio-world__stage {
+  background-color: #985c5a;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    #392a45 0 3px,
+    #c57d63 3px 7px,
+    #985c5a 7px var(--studio-plank-h, 28px)
+  );
+  background-position: 0 var(--studio-plank-y, 0px);
+}
+
 .studio-world__scene {
   position: absolute;
   inset: 0;
 }
 
-/* Match porch nav sign & username sizing */
-html:has(.studio-world) .porch-nav__row {
-  gap: var(--px);
+/* The stage stays dark until the first measurement lands, so a 0x0 pose is never visible. */
+.studio-world:not([data-measured]) .studio-world__stage {
+  opacity: 0;
 }
 
-html:has(.studio-world) .porch-nav__logo {
-  margin-right: 0;
-}
+/* The timber arrow is the visible, keyboard-operable way back to the porch. */
+.studio-upstairs-sign-copy { position: absolute; inset: 0 4% 44% 32%; display: flex; align-items: center; justify-content: center; color: #392a45; font-size: calc(var(--px) * 4.6); line-height: 1; white-space: nowrap; text-shadow: 1px 1px #fff0cc; }
 
-html:has(.studio-world) .porch-nav__links {
-  gap: var(--px);
-}
-
-html:has(.studio-world) .porch-nav__sign {
-  font-size: calc(var(--px) * 5.5);
-}
-
-html:has(.studio-world) .porch-nav__username {
-  font-size: clamp(16px, calc(var(--px) * 4.5), 18px);
-  max-width: clamp(120px, 16vw, 180px);
-  flex-shrink: 0;
-}
+/* Navbar uses the shared porch scale so top navigation stays identical across Porch, Studio, Scores, and Gallery. */
 
 .studio-world .pixel-hotspot__label {
   z-index: 6;
@@ -54,46 +52,56 @@ html:has(.studio-world) .porch-nav__username {
 /* Corkboard room tickets on left wall */
 .studio-corkboard {
   position: absolute;
-  z-index: 5;
+  /* Above the join booth (6) and the sign-in slip (7): the slip slides out from behind the board. */
+  z-index: 8;
   display: flex;
   flex-direction: column;
-  gap: calc(var(--px) * 1);
-  padding: calc(var(--px) * 2);
+  gap: calc(var(--px) * 0.8);
+  padding: calc(var(--px) * 1.5);
   background:
     radial-gradient(#8e5960 1px, transparent 1px) 0 0 / calc(var(--px) * 2) calc(var(--px) * 2),
+    radial-gradient(ellipse at 30% 10%, #c68a5f, transparent 60%),
     #b87c56;
-  border: var(--px) solid #392a45;
-  box-shadow: inset 0 0 0 var(--px) #ecae7d, var(--px) var(--px) #392a45;
+  border: calc(var(--px) * 1.4) solid #614052;
+  box-shadow:
+    inset 0 0 0 var(--px) #ecae7d,
+    inset 0 0 0 calc(var(--px) * 2.2) #985c5a,
+    calc(var(--px) * 1.5) calc(var(--px) * 1.5) 0 rgba(57, 42, 69, 0.65);
   box-sizing: border-box;
   overflow: hidden;
 }
 
 .studio-corkboard__header {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--px);
-  padding: calc(var(--px) * 0.5) calc(var(--px) * 1.25);
-  background: #fff0cc;
-  border: var(--px) solid #8e5960;
-  box-shadow: 0 calc(var(--px) * 0.5) #392a45;
+  padding: calc(var(--px) * 0.55) calc(var(--px) * 1.2);
+  background:
+    repeating-linear-gradient(to bottom, #c57d63 0 calc(var(--px) * 1.4), #b87c56 calc(var(--px) * 1.4) calc(var(--px) * 2.8));
+  border: var(--px) solid #392a45;
+  box-shadow: inset 0 var(--px) 0 #ecae7d, inset 0 calc(var(--px) * -1) 0 #985c5a, 0 var(--px) 0 #392a45;
   flex-shrink: 0;
 }
 
 .studio-corkboard__title {
   margin: 0;
-  font-size: calc(var(--px) * 3.4);
+  font-size: calc(var(--px) * 3.2);
   line-height: 1;
-  color: #392a45;
+  color: #fff0cc;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
+  text-shadow: 1px 1px 0 #392a45;
 }
 
 .studio-corkboard__count {
   padding: 0 calc(var(--px) * 0.8);
-  background: #614052;
-  color: #fff0cc;
+  background: #392a45;
+  color: #ffe29a;
   font-size: calc(var(--px) * 2.8);
   line-height: 1.2;
+  box-shadow: inset 0 1px 0 #614052;
 }
 
 .studio-corkboard__tickets {
@@ -123,12 +131,19 @@ html:has(.studio-world) .porch-nav__username {
   position: relative;
   display: flex;
   align-items: stretch;
-  gap: calc(var(--px) * 0.75);
-  background: #fff0cc;
+  gap: 0;
+  background:
+    repeating-linear-gradient(to bottom, transparent 0 calc(var(--px) * 3.6), rgba(142, 89, 96, 0.15) calc(var(--px) * 3.6) calc(var(--px) * 3.75)),
+    #fff0cc;
   border: var(--px) solid #8e5960;
-  box-shadow: inset 0 0 0 calc(var(--px) * 0.5) #d1b5a3, 0 var(--px) 0 #392a45;
-  padding: calc(var(--px) * 0.8) calc(var(--px) * 1);
+  box-shadow: inset 0 0 0 calc(var(--px) * 0.5) #fff0cc, calc(var(--px) * 0.8) calc(var(--px) * 0.8) 0 rgba(57, 42, 69, 0.4);
+  padding: calc(var(--px) * 0.8) calc(var(--px) * 0) calc(var(--px) * 0.8) calc(var(--px) * 1);
   flex-shrink: 0;
+  transition: transform 140ms cubic-bezier(0.22, 1, 0.36, 1), background-color 120ms ease;
+}
+
+.studio-ticket:hover {
+  transform: translateY(-1px);
 }
 
 .studio-ticket::before {
@@ -182,6 +197,9 @@ html:has(.studio-world) .porch-nav__username {
 
 .studio-ticket__name {
   display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   max-width: 100%;
   font-size: calc(var(--px) * 3.3);
   line-height: 1.05;
@@ -205,21 +223,40 @@ html:has(.studio-world) .porch-nav__username {
 }
 
 .studio-ticket__go {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  align-self: center;
+  align-self: stretch;
   min-height: 28px;
-  padding: calc(var(--px) * 0.5) calc(var(--px) * 1.25);
-  background: #614052;
+  margin-left: calc(var(--px) * 0.9);
+  padding: calc(var(--px) * 0.5) calc(var(--px) * 1.1);
+  background: linear-gradient(#8e5960, #614052);
   color: #fff0cc;
-  border: calc(var(--px) * 0.5) solid #392a45;
-  font-size: calc(var(--px) * 3);
+  border: 0;
+  border-left: calc(var(--px) * 0.6) dashed #985c5a;
+  box-shadow: inset 0 var(--px) 0 #d1b5a3;
+  font-size: calc(var(--px) * 2.9);
+  letter-spacing: 0.05em;
   line-height: 1;
   text-transform: uppercase;
   text-decoration: none;
   flex-shrink: 0;
 }
+/* Punched holes either side of the perforation. */
+.studio-ticket__go::before,
+.studio-ticket__go::after {
+  content: '';
+  position: absolute;
+  left: calc(var(--px) * -1.4);
+  width: calc(var(--px) * 2);
+  height: calc(var(--px) * 2);
+  border-radius: 50%;
+  background: #b87c56;
+  box-shadow: inset 0 1px 0 #8e5960;
+}
+.studio-ticket__go::before { top: calc(var(--px) * -1); }
+.studio-ticket__go::after { bottom: calc(var(--px) * -1); }
 
 .studio-ticket__go:hover {
   background: #392a45;
@@ -391,16 +428,20 @@ html:has(.studio-world) .porch-nav__username {
   pointer-events: auto;
   width: calc(var(--px) * 45);
   max-width: 60%;
-  padding: calc(var(--px) * 1) calc(var(--px) * 1.2);
+  padding: calc(var(--px) * 1.1) calc(var(--px) * 1.2);
   display: flex;
   flex-direction: column;
   gap: calc(var(--px) * 0.6);
-  box-shadow: inset 0 0 0 calc(var(--px) * 0.4) #d1b5a3, var(--px) var(--px) #392a45;
-  transition: box-shadow 140ms ease;
+  background: #fff0cc;
+  border-top: var(--px) dashed #8e5960;
+  box-shadow: inset 0 0 0 calc(var(--px) * 0.4) #fff0cc, calc(var(--px) * 1.1) calc(var(--px) * 1.1) 0 rgba(57, 42, 69, 0.45);
+  transform: rotate(1.6deg);
+  transition: box-shadow 140ms ease, transform 140ms ease;
 }
+.studio-hat-card:focus-within { transform: rotate(0deg); }
 
 .studio-hat-card:focus-within {
-  box-shadow: inset 0 0 0 calc(var(--px) * 0.4) #d1b5a3, calc(var(--px) * 2) calc(var(--px) * 2) #392a45;
+  box-shadow: inset 0 0 0 calc(var(--px) * 0.4) #fff0cc, calc(var(--px) * 2) calc(var(--px) * 2) 0 #392a45;
   z-index: 8;
 }
 
@@ -482,15 +523,51 @@ html:has(.studio-world) .porch-nav__username {
   z-index: 9;
 }
 
-.studio-order-form::before {
+/* On the workbench the order pad is a clipboard hanging from a hook, with its clip at the top. */
+.studio-workbench-slot .studio-order-form {
+  height: calc(100% - calc(var(--px) * 2.4));
+  margin-top: calc(var(--px) * 2.4);
+  padding: calc(var(--px) * 1.5) calc(var(--px) * 1.15) calc(var(--px) * 1.1);
+  background:
+    repeating-linear-gradient(to bottom, transparent 0 calc(var(--px) * 4), rgba(142, 89, 96, 0.18) calc(var(--px) * 4) calc(var(--px) * 4.4)),
+    #fff0cc;
+  box-shadow: inset 0 0 0 calc(var(--px) * 0.6) #fff0cc, calc(var(--px) * 1.2) calc(var(--px) * 1.2) 0 rgba(57, 42, 69, 0.45);
+  transform: rotate(-0.8deg);
+  transform-origin: top center;
+}
+
+.studio-workbench-slot .studio-order-form:focus-within {
+  transform: rotate(-0.8deg) scale(1.035);
+  box-shadow: inset 0 0 0 calc(var(--px) * 0.6) #fff0cc, calc(var(--px) * 1.6) calc(var(--px) * 1.6) 0 #392a45;
+}
+
+.studio-workbench-slot .studio-order-form::before {
+  /* Clipboard clip, bolted through the paper. */
   content: '';
   position: absolute;
-  top: calc(var(--px) * -0.9);
+  top: calc(var(--px) * -1.7);
   left: 50%;
-  width: calc(var(--px) * 1.8);
-  height: calc(var(--px) * 1.8);
+  width: calc(var(--px) * 11);
+  height: calc(var(--px) * 3.4);
   transform: translateX(-50%);
-  background: #d86a58;
+  background: linear-gradient(#d1b5a3, #8e5960 60%, #614052);
+  border: var(--px) solid #392a45;
+  box-shadow: inset 0 var(--px) 0 #fff0cc, 0 calc(var(--px) * 0.6) 0 rgba(57, 42, 69, 0.45);
+}
+
+.studio-workbench-slot .studio-order-form::after {
+  /* Hook on the desk side the clipboard hangs from. */
+  content: '';
+  position: absolute;
+  top: calc(var(--px) * -5.4);
+  left: 50%;
+  width: calc(var(--px) * 3.2);
+  height: calc(var(--px) * 4);
+  transform: translateX(-50%);
+  border: var(--px) solid #614052;
+  border-bottom: 0;
+  border-radius: calc(var(--px) * 2) calc(var(--px) * 2) 0 0;
+  box-shadow: inset 0 var(--px) 0 #ecae7d;
 }
 
 .studio-order-form__head {
@@ -976,56 +1053,20 @@ html:has(.studio-world) .porch-nav__username {
   background: #fff0bb;
 }
 
-/* Slim splayed legs with gold filigree + 3 porch-matched pixel boosters */
+/* Three porch-matched thrusters bolted under the tray */
 .studio-magic-easel__base {
   position: relative;
   z-index: 1;
   display: flex;
-  justify-content: space-around;
-  align-items: flex-start;
-  width: 82%;
-  height: calc(var(--px) * 13);
-}
-
-.studio-magic-easel__leg {
-  position: absolute;
-  top: 0;
-  width: calc(var(--px) * 4.5);
-  height: calc(var(--px) * 8);
-  background: linear-gradient(180deg, #c57d63 0%, #985c5a 65%, #614052 100%);
-  border-left: calc(var(--px) * 0.7) solid #392a45;
-  box-shadow: inset calc(var(--px) * 0.6) 0 #ffe29a;
-  clip-path: polygon(68% 0,100% 0,100% 25%,82% 25%,82% 50%,64% 50%,64% 75%,44% 75%,44% 100%,4% 100%,4% 75%,24% 75%,24% 50%,44% 50%,44% 25%,64% 25%);
-}
-
-.studio-magic-easel__leg::after {
-  content: '';
-  position: absolute;
-  left: calc(var(--px) * 0.9);
-  top: calc(var(--px) * 2.2);
-  width: calc(var(--px) * 0.9);
-  height: calc(var(--px) * 0.9);
-  background: #ffe29a;
-  box-shadow: calc(var(--px) * -0.5) calc(var(--px) * 3.2) 0 #ffe29a;
-}
-
-.studio-magic-easel__leg--left { left: 12%; }
-.studio-magic-easel__leg--right { right: 12%; transform: scaleX(-1); }
-
-.studio-magic-easel__booster {
-  position: relative;
-  display: block;
-  margin-top: calc(var(--px) * -0.6);
+  justify-content: center;
   line-height: 0;
+  width: 100%;
 }
 
-.studio-magic-easel__shadow {
-  width: 72%;
-  height: calc(var(--px) * 1.5);
-  margin-top: calc(var(--px) * 0.4);
-  background: repeating-linear-gradient(90deg, #614052 0 4px, transparent 4px 8px);
-  opacity: 0.55;
-}
+
+
+
+
 
 @keyframes studio-easel-hover {
   0%, 100% { transform: translateY(0); }
@@ -1085,6 +1126,21 @@ html:has(.studio-world) .porch-nav__username {
   display: none;
 }
 
+/* TEMP DEBUG: remove before launch */
+.studio-debug-room {
+  position: absolute;
+  z-index: 8;
+  right: 12px;
+  bottom: 12px;
+  min-height: 36px;
+  padding: 0 12px;
+  font-size: 15px;
+  text-transform: uppercase;
+}
+.studio-world[data-composition="portrait"] .studio-debug-room {
+  bottom: 76px;
+}
+
 @media (min-width: 641px) {
   .studio-world [data-testid^="visibility-"]:focus-visible,
   .porch-shell:has(.studio-world) .porch-nav :is(a, button):focus-visible {
@@ -1093,88 +1149,11 @@ html:has(.studio-world) .porch-nav__username {
   }
 }
 
-@media (max-width: 767px) {
-  html:has(.studio-world[data-composition="portrait"]) .porch-nav {
-    --px: 2px;
-  }
-
-  html:has(.studio-world[data-composition="portrait"]) .porch-nav__row {
-    min-height: 52px;
-    height: 52px;
-  }
-
-  html:has(.studio-world[data-composition="portrait"]) .porch-nav__roof {
-    height: 52px;
-    overflow: hidden;
-  }
-
-  html:has(.studio-world[data-composition="portrait"]) .porch-nav__logo {
-    display: flex;
-    align-items: center;
-    margin-top: 0;
-  }
-
-  html:has(.studio-world[data-composition="portrait"]) .porch-nav__logo-full {
-    display: none;
-  }
-
-  html:has(.studio-world[data-composition="portrait"]) .porch-nav__logo-compact {
-    display: block;
-  }
-}
-
-@media (max-width: 640px) {
-  html:has(.studio-world) .porch-nav__toggle {
-    --px: 2px;
-  }
-}
-
 @media (min-width: 768px) {
   .studio-world[data-composition="portrait"] .studio-mobile-shelf > * {
     max-width: 640px;
     width: 100%;
     margin-inline: auto;
-  }
-}
-
-@media (min-width: 960px) {
-  html:has(.studio-world[data-composition="portrait"]) .porch-nav {
-    --px: 3px;
-  }
-
-  html:has(.studio-world[data-composition="portrait"]) .porch-nav__sign {
-    font-size: 21px;
-  }
-
-  html:has(.studio-world[data-composition="portrait"]) .porch-nav__username {
-    font-size: 18px;
-  }
-}
-
-@media (min-width: 768px) and (max-width: 959px) {
-  html:has(.studio-world) .porch-nav {
-    --px: 2px;
-  }
-
-  html:has(.studio-world) .porch-nav__sign {
-    font-size: 16px;
-  }
-
-  html:has(.studio-world) .porch-nav__username {
-    font-size: 16px;
-    max-width: 108px;
-  }
-}
-
-@media (min-width: 960px) and (max-width: 1199px) {
-  html:has(.studio-world[data-composition="landscape"]) .porch-nav {
-    --px: 3px;
-  }
-}
-
-@media (min-width: 1200px) and (max-width: 1439px) {
-  html:has(.studio-world[data-composition="landscape"]) .porch-nav {
-    --px: 4px;
   }
 }
 
@@ -1190,6 +1169,10 @@ html:has(.studio-world) .porch-nav__username {
 }
 
 .studio-world[data-composition="portrait"] .pixel-hotspot__label {
+  display: none;
+}
+
+.studio-world[data-composition="portrait"] .pixel-hotspot[aria-label="Upstairs"] {
   display: none;
 }
 
@@ -1307,4 +1290,49 @@ html:has(.studio-world) .porch-nav__username {
   .studio-magic-easel--transforming .studio-magic-easel__surface {
     animation: studio-easel-crossfade 220ms linear 1;
   }
+
+  .studio-ticket {
+    transition: none;
+    transform: none;
+  }
+}
+
+/* A room open on the easel: the same studio scene, camera pushed in, filling the frame under the room's foreground.
+   The easel stops bobbing so the room's registered board stays on its surface. */
+.studio-world--room {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  height: auto;
+}
+.studio-world--room .studio-magic-easel {
+  animation-play-state: paused;
+}
+.studio-world.studio-world--room[data-composition] .studio-dock,
+.studio-world.studio-world--room[data-composition] .studio-mobile-shelf {
+  display: none;
+}
+
+.studio-root {
+  position: relative;
+  height: 100%;
+}
+
+/* The lobby's cards step aside, sideways and off the frame, while a room is open, and come back as the camera pulls
+   out. They ride the same duration and curve as the camera, so they move with it rather than after it. */
+.studio-corkboard,
+.studio-booth-slot,
+.studio-workbench-slot,
+.studio-world .pixel-hotspot[aria-label="Upstairs"] {
+  transition: transform var(--scene-zoom-ms, 800ms) var(--scene-zoom-easing, cubic-bezier(0.6, 0, 0.2, 1));
+}
+.studio-world--room-open .studio-corkboard { transform: translateX(calc(var(--px) * -120)); }
+.studio-world--room-open .studio-booth-slot,
+.studio-world--room-open .studio-workbench-slot { transform: translateX(calc(var(--px) * -240)); }
+.studio-world--room-open .pixel-hotspot[aria-label="Upstairs"] { transform: translateX(calc(var(--px) * 120)); }
+@media (prefers-reduced-motion: reduce) {
+  .studio-corkboard,
+  .studio-booth-slot,
+  .studio-workbench-slot,
+  .studio-world .pixel-hotspot[aria-label="Upstairs"] { transition: none; }
 }

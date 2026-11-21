@@ -8,5 +8,9 @@ export const P = {
   stone: ['#343447', '#555266', '#7b7880', '#a8a49a', '#d7c9ae'],
   flame: ['#a94958', '#d86a58', '#f0955f', '#ffbd70', '#ffe29a'],
   fur: ['#47314c', '#75505d', '#a47470', '#d1a286', '#f0cfaa'],
+  // Half-steps between the wood ramp stops, for material detail (plank tone variation, lap shadows, rim falloff).
+  woodMid: ['#4d364b', '#7c4e56', '#ae6d5e', '#d89570'],
+  // Slate tones just above the chalkboard's base, for faint erased writing and smears.
+  slate: ['#222f3d', '#2f4553', '#385a5e'],
   ui: ['#382b4b', '#67435d', '#ad5364', '#e9856f', '#ffcf9a'],
 } as const

@@ -43,11 +43,14 @@ test('porch objects are present and labelled', async ({ page }) => {
   await setup(page)
   await page.goto(`${origin}/home`)
   const scene = page.locator('.porch-world')
-  for (const name of ['Start Daily Challenge', "Today's scores", 'Party studio', 'Public board', 'Account menu', 'Your gallery', 'Mute sounds', 'Scoring rules']) {
-    await expect(scene.getByRole(name === "Today's scores" || name === 'Party studio' || name === 'Public board' || name === 'Your gallery' ? 'link' : 'button', { name, exact: true })).toBeVisible()
+  for (const name of ['Start Daily Challenge', "Today's scores", 'Basement studio', 'Account menu', 'Your gallery', 'Mute sounds', 'Scoring rules']) {
+    await expect(scene.getByRole(name === "Today's scores" || name === 'Basement studio' || name === 'Your gallery' ? 'link' : 'button', { name, exact: true })).toBeVisible()
   }
-  await expect(scene.getByText("Today's top five")).toBeVisible()
-  await expect(scene.getByText('See all scores')).toBeVisible()
+  // The chalkboard carries the real Scores board, small and inert: the same object the Scores close-up zooms onto.
+  const board = scene.locator('.board-face [data-testid="scores-chalkboard"]')
+  await expect(board).toBeVisible()
+  await expect(board).toContainText('Scores')
+  await expect(scene.locator('.board-face')).toHaveAttribute('inert', '')
 })
 
 for (const viewport of [{ width: 375, height: 812 }, { width: 640, height: 360 }]) {
@@ -118,7 +121,7 @@ test('daily cover and account name remain legible', async ({ page }) => {
   await page.goto(`${origin}/home`)
   const cover = page.getByTestId('daily-start-button')
   await expect(cover).toContainText('Today’s prompt')
-  await expect(cover).toContainText('10 minutes · your best grade counts')
+  await expect(cover).toContainText('5 minutes · your best grade counts')
   await expect(cover).toContainText('Start painting')
   const name = page.getByTestId('nav-user-name')
   await expect(name).toHaveText('Offline host')
@@ -130,7 +133,7 @@ test('porch keyboard tour reaches objects with labels and focus rings', async ({
   await setup(page)
   await page.goto(`${origin}/home`)
   const scene = page.locator('.porch-world')
-  const names = ['Start Daily Challenge', "Today's scores", 'Party studio', 'Public board', 'Account menu', 'Your gallery', 'Mute sounds', 'Scoring rules']
+  const names = ['Start Daily Challenge', "Today's scores", 'Basement studio', 'Account menu', 'Your gallery', 'Mute sounds', 'Scoring rules']
   await scene.getByRole('button', { name: names[0] }).focus()
   for (const [index, name] of names.entries()) {
     const focused = scene.locator(':focus')
@@ -139,8 +142,9 @@ test('porch keyboard tour reaches objects with labels and focus rings', async ({
     expect(await focused.evaluate(element => getComputedStyle(element).outlineStyle)).not.toBe('none')
     if (index < names.length - 1) await page.keyboard.press('Tab')
   }
-  await scene.getByRole('link', { name: 'Party studio' }).focus()
+  await scene.getByRole('link', { name: 'Basement studio' }).focus()
   await page.keyboard.press('Enter')
+  await expect(page.getByTestId('vertical-scene-transition')).toBeVisible()
   await expect(page).toHaveURL(`${origin}/party`)
 })
 
@@ -152,13 +156,100 @@ test('signed-out porch offers sign-in on easel and mailbox', async ({ page }) =>
   await expect(scene.getByRole('button', { name: 'Sign in', exact: true })).toBeVisible()
 })
 
-test('party hatch pans down before navigating', async ({ page }) => {
+test('basement sign runs a vertical floor transition before navigating', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 })
   await setup(page)
   await page.goto(`${origin}/home`)
-  await page.getByRole('link', { name: 'Party studio' }).click()
-  await expect(page.locator('.pixel-scene__camera')).not.toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, 0)')
+  const startedAt = Date.now()
+  await page.getByRole('link', { name: 'Basement studio' }).click()
+  await expect(page.getByTestId('vertical-scene-transition')).toBeVisible()
+  await expect(page.locator('.vertical-scene-transition__floor-art')).toBeVisible()
   await expect(page).toHaveURL(`${origin}/party`)
+  await expect(page.getByTestId('vertical-scene-transition')).toHaveCount(0)
+  expect(Date.now() - startedAt).toBeGreaterThanOrEqual(950)
+})
+
+/**
+ * The stair is one column from the deck hatch, through the floor cutaway, to the basement stair. Measured on screen, frame by
+ * frame, from the camera each section is really painted with (not from the layout rects, which agreed all along while the studio
+ * sat at a fitted camera and the stair jogged): left edge and width of the stair in the porch, the cutaway and the basement.
+ */
+for (const [viewport, dsf] of [[{ width: 1980, height: 1240 }, 2], [{ width: 1440, height: 900 }, 2], [{ width: 375, height: 812 }, 3]] as const) {
+  for (const direction of ['down', 'up'] as const) {
+    test(`the hatch, the cutaway stair and the basement stair are one column through the floor pan ${direction} at ${viewport.width}x${viewport.height}@${dsf}x`, async ({ browser }) => {
+      const context = await browser.newContext({ viewport, deviceScaleFactor: dsf })
+      const page = await context.newPage()
+      await setup(page)
+      await page.goto(`${origin}/${direction === 'down' ? 'home' : 'party'}`)
+      await expect(page.locator(direction === 'down' ? '.porch-world .pixel-scene__canvas' : '.studio-world .pixel-scene__canvas')).toBeVisible()
+      await page.waitForTimeout(500)
+      await page.evaluate(() => {
+        const opening = innerWidth >= innerHeight ? { x: 252, w: 40 } : { x: 108, w: 40 }
+        const samples: { left: number; width: number; what: string }[][] = []
+        const sample = () => {
+          const frame: { left: number; width: number; what: string }[] = []
+          for (const camera of Array.from(document.querySelectorAll<HTMLElement>('.pixel-scene__camera'))) {
+            const scene = camera.closest<HTMLElement>('.pixel-scene')!
+            const scale = parseFloat(scene.style.getPropertyValue('--px'))
+            const box = camera.getBoundingClientRect() // the scene block, after the camera's own pan and zoom
+            const zoom = new DOMMatrix(getComputedStyle(camera).transform).a
+            frame.push({ left: box.left + opening.x * scale * zoom, width: opening.w * scale * zoom, what: scene.closest('.studio-world') ? 'basement' : 'porch' })
+          }
+          const floor = document.querySelector<HTMLElement>('.vertical-scene-transition__floor-art')
+          if (floor) { const box = floor.getBoundingClientRect(); const scale = box.width / (innerWidth >= innerHeight ? 320 : 180); frame.push({ left: box.left + opening.x * scale, width: opening.w * scale, what: 'cutaway' }) }
+          samples.push(frame)
+          ;(window as unknown as { __stairSamples: typeof samples }).__stairSamples = samples
+          requestAnimationFrame(sample)
+        }
+        sample()
+      })
+      if (direction === 'down') await page.getByRole('link', { name: 'Basement studio' }).click()
+      else await page.getByRole('link', { name: 'Upstairs' }).first().click()
+      await expect(page).toHaveURL(`${origin}/${direction === 'down' ? 'party' : 'home'}`)
+      await page.waitForTimeout(400)
+      const frames = await page.evaluate(() => (window as unknown as { __stairSamples: { left: number; width: number; what: string }[][] }).__stairSamples)
+      // Frames where the floor cutaway is on screen: the move itself. Every section painted in it shares the stair's column.
+      const moving = frames.filter((frame) => frame.some((entry) => entry.what === 'cutaway'))
+      expect(moving.length).toBeGreaterThan(20)
+      const sections = new Set(moving.flat().map((entry) => entry.what))
+      expect([...sections].sort()).toEqual(['basement', 'cutaway', 'porch'])
+      const all = moving.flat()
+      const left = all[0].left, width = all[0].width
+      for (const entry of all) {
+        expect(Math.abs(entry.left - left), `${entry.what} left`).toBeLessThan(0.75)
+        expect(Math.abs(entry.width - width), `${entry.what} width`).toBeLessThan(0.75)
+      }
+      await context.close()
+    })
+  }
+}
+
+test('a stale route chunk reloads the tab once, then a scene-native card (not a bare screen) offers Reload', async ({ page }) => {
+  await page.setViewportSize({ width: 1980, height: 1240 })
+  await setup(page)
+  let aborted = 0
+  let loads = 0
+  page.on('load', () => { loads += 1 })
+  // The settings chunk is gone, as after a deploy: its idle prefetch fails quietly, the route import rejects.
+  await page.route('**/assets/settings-*.js', (route) => { aborted += 1; return route.abort() })
+  await page.goto(`${origin}/home`)
+  await expect(page.getByTestId('daily-start-button')).toBeVisible()
+  await page.evaluate(() => { history.pushState({ usr: null, key: 'stale', idx: 1 }, '', '/settings'); dispatchEvent(new PopStateEvent('popstate')) })
+  const card = page.getByTestId('ds-error-boundary')
+  await expect(card).toBeVisible({ timeout: 10_000 })
+  expect(loads).toBe(2) // one reload, never a loop
+  // The failing module is remembered for the tab session, so another failure of it cannot reload again.
+  expect(await page.evaluate(() => sessionStorage.getItem('deepspace:stale-chunk-failed'))).toContain('/assets/settings-')
+  await expect(card).toContainText('The porch just got repainted')
+  // The card stands on the porch picture: a painted scene fills the screen behind it.
+  const scene = await page.evaluate(() => { const el = document.querySelector('[data-testid="ds-error-boundary"] .pixel-scene')!.getBoundingClientRect(); return { w: el.width, h: el.height } })
+  expect(scene.w).toBeGreaterThanOrEqual(1979)
+  expect(scene.h).toBeGreaterThanOrEqual(1239)
+  expect(aborted).toBeGreaterThan(0)
+  // The chunk comes back: Reload walks onto the page.
+  await page.unroute('**/assets/settings-*.js')
+  await card.getByRole('button', { name: 'Reload' }).click()
+  await expect(page.getByTestId('settings-letter')).toBeVisible({ timeout: 10_000 })
 })
 
 test('reduced motion enters party without waiting for the pan', async ({ page }) => {
@@ -166,7 +257,7 @@ test('reduced motion enters party without waiting for the pan', async ({ page })
   await setup(page)
   await page.goto(`${origin}/home`)
   const start = Date.now()
-  await page.getByRole('link', { name: 'Party studio' }).click()
+  await page.getByRole('link', { name: 'Basement studio' }).click()
   await expect(page).toHaveURL(`${origin}/party`)
   expect(Date.now() - start).toBeLessThan(500)
 })
@@ -222,7 +313,7 @@ test('portrait porch keeps every object in view and tappable', async ({ page }) 
     expect(hit, await hotspot.getAttribute('aria-label') ?? '').toBe(true)
   }
   const dock = page.getByRole('navigation', { name: 'Porch shortcuts' })
-  await expect(page.getByText("Today's top three")).toBeVisible()
+  await expect(page.locator('.board-face [data-testid="scores-chalkboard"]')).toBeVisible()
   for (const name of ['Scores', 'Gallery', 'Party', 'Account', 'More']) await expect(dock.getByRole(name === 'Account' || name === 'More' ? 'button' : 'link', { name, exact: true })).toBeVisible()
   const more = page.getByRole('button', { name: 'More', exact: true })
   const moreBox = (await more.boundingBox())!
@@ -249,8 +340,15 @@ test('porch and navigation share the scene pixel scale', async ({ page }) => {
   await page.goto(`${origin}/home`)
   await expect(page.getByTestId('daily-start-button')).toBeVisible()
   await expect.poll(() => page.evaluate(() => [getComputedStyle(document.documentElement).getPropertyValue('--px'), getComputedStyle(document.querySelector('.pixel-scene')!).getPropertyValue('--px')])).toEqual(['5px', '5px'])
-  await page.locator('.porch-world').getByRole('link', { name: 'Party studio' }).click()
-  await expect.poll(() => page.evaluate(() => document.documentElement.style.getPropertyValue('--px'))).toBe('')
+  await page.locator('.porch-world').getByRole('link', { name: 'Basement studio' }).click()
+  // The basement scene keeps the same integer scene scale as the porch (no document-wide
+  // --px reset mid-move), so the nav and the arriving room agree on pixel size.
+  await expect.poll(() => page.evaluate(() => {
+    const scene = document.querySelector('.studio-world .pixel-scene')
+    const pagePx = getComputedStyle(document.documentElement).getPropertyValue('--px').trim()
+    const scenePx = scene ? getComputedStyle(scene).getPropertyValue('--px').trim() : ''
+    return [pagePx, scenePx]
+  })).toEqual(['5px', '5px'])
 })
 
 for (const viewport of [{ width: 1280, height: 720 }, { width: 375, height: 812 }]) {
@@ -260,7 +358,8 @@ for (const viewport of [{ width: 1280, height: 720 }, { width: 375, height: 812 
     await page.goto(`${origin}/party`)
     if (viewport.width < 768) await page.getByRole('button', { name: 'Toggle menu' }).click()
     const nav = page.getByTestId('app-navigation')
-    for (const label of ['Daily', 'Party', 'Scores', 'Gallery']) {
+    await expect(nav.locator('.porch-nav__sign:visible')).toHaveText(['Daily', 'Scores', 'Party', 'Gallery'])
+    for (const label of ['Daily', 'Scores', 'Party', 'Gallery']) {
       const sign = nav.getByRole('link', { name: label, exact: true })
       await expect(sign).toBeVisible()
       const bounds = await sign.boundingBox()
@@ -303,9 +402,11 @@ test('sunset backdrop uses hard bands and a dithered seam', async ({ page }) => 
 test('signed-out mailbox raises its flag', async ({ page }) => {
   await setup(page, true)
   await page.goto(`${origin}/party`)
-  const flag = page.getByTestId('nav-sign-in-button').locator('.porch-nav__flag')
-  await expect(flag).toHaveAttribute('width', '5')
-  await expect(flag).toHaveAttribute('height', '7')
+  // The letterbox is a canvas: its standing red flag paints detail pixels above the box, which a lowered flag leaves clear.
+  const mailbox = page.getByTestId('nav-sign-in-button').locator('canvas.porch-sprite')
+  await expect(mailbox).toBeVisible()
+  const flagPixel = () => mailbox.evaluate((canvas: HTMLCanvasElement) => Array.from(canvas.getContext('2d')!.getImageData(51, 8, 1, 1).data))
+  await expect.poll(async () => (await flagPixel())[3]).toBe(255)
 })
 
 test('signed-out Gallery closes the mobile drawer before opening sign-in', async ({ page }) => {
@@ -446,14 +547,24 @@ test('ended porch easel shows the player painting and score tag, and opens resul
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await setup(page)
   const cells = samplePaintingBase64()
-  await page.route('**/api/daily/me', route => route.fulfill({ json: { day: '2026-11-17', status: 'ended', prompt: 'A lighthouse', startedAt: Date.now() - 600_000, endsAt: Date.now(), autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: true, best: 740, windows: [], nextAutoAt: null, serverNow: Date.now(), lastCells: cells } }))
+  await page.route('**/api/daily/me', route => route.fulfill({ json: { day: '2026-11-17', status: 'ended', prompt: 'A lighthouse', startedAt: Date.now() - 300_000, endsAt: Date.now(), autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: true, best: 740, windows: [], nextAutoAt: null, serverNow: Date.now(), lastCells: cells } }))
   await page.goto(`${origin}/home`)
   await expect(page.getByTestId('daily-ended')).toBeVisible()
   await expect(page.getByTestId('porch-easel-tag')).toHaveText("Today's painting · 740/1000")
   const centerPixel = await page.locator('.pixel-scene__canvas').evaluate((el) => {
-    const ctx = (el as HTMLCanvasElement).getContext('2d')!
+    const canvas = el as HTMLCanvasElement
+    const ctx = canvas.getContext('2d')!
     // Easel at (138, 40), painting at (138 + 18, 40 + 25) = (156, 65), lighthouse tower at (15, 10) -> (171, 75)
-    return Array.from(ctx.getImageData(138 + 18 + 15, 40 + 25 + 10, 1, 1).data)
+    // The backing store now renders at CSS size x DPR from a 640x360 buffer, so map the
+    // scene-space sample point into the canvas's own pixel grid.
+    const scaleX = canvas.width / 320
+    const scaleY = canvas.height / 180
+    return Array.from(ctx.getImageData(
+      Math.round((138 + 18 + 15) * scaleX),
+      Math.round((40 + 25 + 10) * scaleY),
+      1,
+      1,
+    ).data)
   })
   // Color 4 (#ef4444 = 239,68,68) or 16 (#ffffff = 255,255,255)
   expect([[239, 68, 68, 255], [255, 255, 255, 255]]).toContainEqual(centerPixel)
@@ -595,7 +706,24 @@ test('studio mailbox tag fits username and order form submit uses readable butto
   expect(submitStyle.height).toBeGreaterThanOrEqual(32)
 })
 
-test('remaining screens use porch-wood panels, letter settings, and empty beach 404', async ({ page }) => {
+// TEMP DEBUG: remove with the debug-room button before launch
+test('the debug-room button creates a generated room through the normal path and walks in, or opens the sign-in slip when signed out', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await setup(page, true)
+  await page.goto(`${origin}/party`)
+  await page.getByTestId('temp-debug-room').click()
+  await expect(page.getByRole('dialog', { name: 'Sign in' })).toBeVisible()
+
+  await setup(page)
+  await page.route('**/api/actions/createRoom', route => route.fulfill({ json: { success: true, data: { roomId: 'r1', joinCode: 'ABCD' } } }))
+  await page.goto(`${origin}/party`)
+  const request = page.waitForRequest('**/api/actions/createRoom')
+  await page.getByTestId('temp-debug-room').click()
+  expect((await request).postDataJSON()).toMatchObject({ name: expect.stringMatching(/^Debug room [A-Z0-9]{4}$/), mode: 'coop', visibility: 'public' })
+  await expect(page).toHaveURL(`${origin}/r/ABCD`)
+})
+
+test('remaining screens use porch-wood panels, letter settings, and Haiku\'s 404', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 })
   await setup(page)
   await page.goto(`${origin}/settings`)
@@ -603,12 +731,16 @@ test('remaining screens use porch-wood panels, letter settings, and empty beach 
   await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible()
 
   await page.goto(`${origin}/does-not-exist`)
-  await expect(page.getByTestId('not-found-page')).toContainText('You wandered off the porch')
-  await expect(page.getByTestId('not-found-home')).toHaveAttribute('href', '/home')
+  await expect(page.getByTestId('not-found-bubble')).toContainText("Oops — this page doesn't exist.")
+  await expect(page.getByTestId('not-found-bubble')).toContainText('I may have spilled it.')
+  await expect(page.getByTestId('not-found-porch-sign')).toHaveAttribute('href', '/home')
+  await expect(page.getByTestId('not-found-porch-sign')).toHaveText('← Back to the porch')
   await expect(page.locator('.pixel-scene__canvas')).toBeVisible()
 
   await setup(page, true)
   await page.goto(`${origin}/settings`)
+  await expect(page.getByTestId('settings-letter').getByTestId('sign-in-card')).toBeVisible()
+  await page.goto(`${origin}/api-status`)
   await expect(page.getByRole('heading', { name: 'Sign in to continue' })).toBeVisible()
   await expect(page.locator('.pp-wood-panel')).toBeVisible()
 })
@@ -627,16 +759,17 @@ test('non-scene pages render porch roof overhang immediately without flat dark s
     const metrics = await roofCanvas.evaluate((el) => {
       const canvas = el as HTMLCanvasElement
       const ctx = canvas.getContext('2d')!
-      const beamHighlight = ctx.getImageData(0, 12, 1, 1).data
-      const belowBeam = ctx.getImageData(0, 18, 1, 1).data
+      // The roof canvas is backed at 2x detail, so scene row N is canvas row N * 2.
+      const beamHighlight = ctx.getImageData(0, 12 * 2, 1, 1).data
+      const belowBeam = ctx.getImageData(0, 18 * 2, 1, 1).data
       return {
         height: canvas.height,
         beamHighlight: Array.from(beamHighlight),
         belowBeamAlpha: belowBeam[3],
       }
     })
-    // Row 12 in drawPorchRoof is P.wood[4] (#ecae7d = 236,174,125,255); rows >= 18 are transparent
-    expect(metrics.height).toBeGreaterThanOrEqual(18)
+    // Scene row 12 in drawPorchRoof is P.wood[4] (#ecae7d = 236,174,125,255); rows >= 18 are transparent
+    expect(metrics.height).toBeGreaterThanOrEqual(18 * 2)
     expect(metrics.beamHighlight).toEqual([236, 174, 125, 255])
     expect(metrics.belowBeamAlpha).toBe(0)
   }
@@ -648,7 +781,7 @@ test('capture Task 6 remaining screens across viewports', async ({ page }) => {
   await mkdir(dir, { recursive: true })
   const viewports = [{ width: 1440, height: 900 }, { width: 1280, height: 720 }, { width: 375, height: 812 }]
 
-  // 404 empty beach at dusk
+  // 404: Haiku among the paint he spilled
   await setup(page)
   for (const vp of viewports) {
     await page.setViewportSize(vp)
@@ -733,7 +866,7 @@ test('capture Task 6 remaining screens across viewports', async ({ page }) => {
   // Protected signed-out panel (porch-wood panel)
   await setup(page, true)
   await page.setViewportSize({ width: 1280, height: 720 })
-  await page.goto(`${origin}/settings`)
+  await page.goto(`${origin}/api-status`)
   await expect(page.getByRole('heading', { name: 'Sign in to continue' })).toBeVisible()
   await page.evaluate(() => document.fonts.ready)
   await page.screenshot({ path: resolve(dir, 'signed-out-1280x720.png') })
@@ -756,7 +889,7 @@ test('StaticPorchNav renders landing signs without false aria-current and fits t
   await page.goto(`${origin}/`)
   const landingNav = page.getByTestId('app-navigation')
   await expect(landingNav.locator('.porch-nav__sign[aria-current="page"]')).toHaveCount(0)
-  for (const label of ['Daily', 'Party', 'Scores', 'Gallery']) {
+  for (const label of ['Daily', 'Scores', 'Party', 'Gallery']) {
     await expect(landingNav.getByRole('link', { name: label, exact: true })).toBeVisible()
   }
 
@@ -787,7 +920,7 @@ test('play pages show CompactRoof with integer-scaled compact logo and clean 375
         status: 'playing',
         prompt: 'A lighthouse',
         startedAt: Date.now() - 30_000,
-        endsAt: Date.now() + 570_000,
+        endsAt: Date.now() + 270_000,
         autoUsed: 0,
         asksUsed: 0,
         asksLeft: 3,
@@ -866,7 +999,14 @@ test('scores page lists today', async ({ page }) => {
   await expect(page.getByTestId('scores-chalkboard')).toBeVisible()
   await expect(page.getByTestId('scores-ledge')).toBeVisible()
   await expect(page.getByTestId('scores-haiku')).toBeVisible()
-  await expect(page.getByTestId('scores-boosters').locator('canvas')).toHaveCount(3)
+  // No dark deck band: the real porch (the whole chalkboard, thrusters included) shows under the board at the same scale.
+  await expect(page.getByTestId('scores-deck')).toHaveCount(0)
+  const boardBox = (await page.getByTestId('scores-chalkboard').boundingBox())!
+  const sceneBox = (await page.locator('.scores-backdrop .pixel-scene__canvas').boundingBox())!
+  expect(sceneBox.y + sceneBox.height).toBeGreaterThan(boardBox.y + boardBox.height + 40)
+  expect(boardBox.y + boardBox.height).toBeLessThan(720 - 40)
+  // The chalkboard's thrusters are the porch canvas's own, registered to this board, so no DOM copies are drawn here.
+  await expect(page.getByTestId('scores-boosters')).toHaveCount(0)
 
   const board = page.getByTestId('scores-chalkboard')
   await expect(board.getByRole('link', { name: 'Alice' })).toHaveAttribute('href', '/u/u1')
@@ -882,7 +1022,6 @@ test('scores page lists today', async ({ page }) => {
     const thumb = el.querySelector('.scores-thumb') as HTMLCanvasElement
     const trophy = el.querySelector('.scores-board-title canvas') as HTMLCanvasElement
     const medal = el.querySelector('.scores-medal') as HTMLCanvasElement
-    const booster = el.parentElement?.querySelector('.scores-boosters canvas') as HTMLCanvasElement
     const haiku = el.parentElement?.querySelector('.haiku__canvas') as HTMLCanvasElement
     const rowLink = el.querySelector('.scores-row-link') as HTMLElement
     return {
@@ -890,17 +1029,15 @@ test('scores page lists today', async ({ page }) => {
       thumbRatio: thumb.clientWidth / thumb.width,
       trophyRatio: trophy.clientWidth / trophy.width,
       medalRatio: medal.clientWidth / medal.width,
-      boosterRatio: booster.clientWidth / booster.width,
       haikuRatio: haiku.clientWidth / haiku.width,
       rowLinkHeight: rowLink.getBoundingClientRect().height,
     }
   })
   expect(scoreScaleMetrics.px).toBe(3)
   expect(scoreScaleMetrics.thumbRatio).toBe(3)
-  expect(scoreScaleMetrics.trophyRatio).toBe(3)
-  expect(scoreScaleMetrics.medalRatio).toBe(3)
-  expect(scoreScaleMetrics.boosterRatio).toBe(3)
-  expect(scoreScaleMetrics.haikuRatio).toBe(3)
+  expect(scoreScaleMetrics.trophyRatio).toBe(1.5) // medals and the trophy hold 2x detail
+  expect(scoreScaleMetrics.medalRatio).toBe(1.5)
+  expect(scoreScaleMetrics.haikuRatio).toBe(1.5) // Haiku holds 2x detail too: 3px per scene unit is 1.5px per canvas pixel
   expect(scoreScaleMetrics.rowLinkHeight).toBeGreaterThanOrEqual(44)
   await expect(page.getByTestId('haiku-bubble')).toContainText("Haiku's favourite today:")
   await expect(page.getByTestId('haiku-bubble')).toContainText('lighthouse')
@@ -926,9 +1063,8 @@ test('scores page lists today', async ({ page }) => {
   expect(mobileMetrics.mainScrollW).toBeLessThanOrEqual(mobileMetrics.mainClientW)
   expect(mobileMetrics.px).toBe(2)
   expect(mobileMetrics.thumbRatio).toBe(2)
-  const bounds = (await board.boundingBox())!
-  expect(bounds.x).toBeGreaterThanOrEqual(0)
-  expect(bounds.x + bounds.width).toBeLessThanOrEqual(375)
+  // The board re-frames on the resize (its scene and camera each measure the window), so it lands inside the phone's width.
+  await expect.poll(async () => { const bounds = (await board.boundingBox())!; return bounds.x >= 0 && bounds.x + bounds.width <= 375 }).toBe(true)
 
   // Clicking anywhere on a row (even on the rank badge) navigates via stretched row link
   await board.locator('ol > li').first().locator('.scores-rank').click()
@@ -1115,7 +1251,7 @@ test('gallery shows framed dailies newest first with scene-scaled art and multi-
   await page.setViewportSize({ width: 1280, height: 720 })
   await page.goto(`${origin}/u/alice`)
   await expect(page.getByTestId('gallery-page')).toBeVisible()
-  await expect(page.getByTestId('gallery-wall')).toBeVisible()
+  await expect(page.getByTestId('gallery-wall')).toBeAttached()
   await expect(page.getByRole('heading', { name: "Alice's gallery" })).toBeVisible()
 
   const frames = page.locator('[data-testid^="gallery-frame-"]')
@@ -1123,27 +1259,23 @@ test('gallery shows framed dailies newest first with scene-scaled art and multi-
   await expect(frames.nth(0)).toHaveAttribute('data-testid', 'gallery-frame-2026-11-17')
   await expect(frames.nth(0)).toHaveAttribute('data-frame-kind', 'gilt')
   await expect(frames.nth(0)).toContainText('A lighthouse')
-  await expect(frames.nth(0)).toContainText('2026-11-17')
+  await expect(frames.nth(0)).toContainText('Nov 17, 2026')
   await expect(frames.nth(0)).toContainText('912 / 1000')
-  await expect(frames.nth(0)).toContainText('Haiku guessed: lighthouse')
-  await expect(frames.nth(0)).toContainText('#1 Gold')
   await expect(frames.nth(0).getByLabel('Gold medal')).toBeVisible()
   const galleryMetrics = await frames.nth(0).evaluate((el) => {
-    const thumb = el.querySelector('.gallery-frame__thumb') as HTMLCanvasElement
-    const medal = el.querySelector('.gallery-plaque__medal') as HTMLCanvasElement
-    const px = parseFloat(getComputedStyle(thumb).getPropertyValue('--px')) || 3
-    return {
-      px,
-      thumbRatio: thumb.clientWidth / thumb.width,
-      medalRatio: medal.clientWidth / medal.width,
-    }
+    const thumb = el.querySelector('.wall-frame__thumb') as HTMLCanvasElement
+    const medal = el.querySelector('.wall-card__medal') as HTMLCanvasElement
+    const px = parseFloat(getComputedStyle(thumb).getPropertyValue('--px'))
+    return { px, thumbRatio: thumb.clientWidth / thumb.width, medalRatio: medal.clientWidth / medal.width }
   })
-  expect(galleryMetrics).toEqual({ px: 3, thumbRatio: 6, medalRatio: 3 })
+  expect(Number.isInteger(galleryMetrics.thumbRatio)).toBe(true) // every painting cell is a whole number of pixels
+  expect(galleryMetrics.thumbRatio).toBeGreaterThanOrEqual(2)
+  expect(galleryMetrics.medalRatio).toBe(galleryMetrics.px / 2) // medals hold 2x detail
 
   await expect(frames.nth(1)).toHaveAttribute('data-testid', 'gallery-frame-2026-11-15')
   await expect(frames.nth(1)).toHaveAttribute('data-frame-kind', 'wood')
   await expect(frames.nth(1)).toContainText('An anchor')
-  await expect(page.getByText('A windmill')).toHaveCount(0)
+  await expect(page.getByText('A windmill')).toHaveCount(0) // an ungraded, unguessed day never hangs
 
   for (const vp of [
     { width: 1366, height: 768 },
@@ -1153,33 +1285,177 @@ test('gallery shows framed dailies newest first with scene-scaled art and multi-
     { width: 375, height: 667 },
   ]) {
     await page.setViewportSize(vp)
-    await expect.poll(async () => {
-      const layout = await page.evaluate(() => {
-        const main = document.querySelector('main')!
-        const pageEl = document.querySelector('.gallery-page') as HTMLElement
-        const backdropCanvas = document.querySelector('.gallery-backdrop__canvas') as HTMLElement
-        return {
-          docScrollW: document.documentElement.scrollWidth,
-          mainScrollW: main.scrollWidth,
-          mainClientW: main.clientWidth,
-          pageH: pageEl.getBoundingClientRect().height,
-          canvasH: backdropCanvas.getBoundingClientRect().height,
-        }
-      })
-      return layout.docScrollW <= vp.width
-        && layout.mainScrollW <= layout.mainClientW
-        && layout.canvasH >= Math.floor(layout.pageH)
-    }).toBe(true)
+    // The newest painting is wholly in view below the nav, and the page itself never scrolls sideways.
+    await expect.poll(async () => page.evaluate(() => {
+      const frame = document.querySelector('[data-testid="gallery-frame-2026-11-17"] .wall-frame')!.getBoundingClientRect()
+      const nav = document.querySelector('[data-testid="app-navigation"]')?.getBoundingClientRect().bottom ?? 0
+      return document.documentElement.scrollWidth <= window.innerWidth && frame.left >= 0 && frame.right <= window.innerWidth && frame.top >= nav - 1 && frame.bottom <= window.innerHeight && frame.width > 60
+    })).toBe(true)
   }
 
-  // Mobile 375x812: single column stacking check
+  // Phone: two columns, so the next painting hangs beside the first and the third under it.
   await page.setViewportSize({ width: 375, height: 812 })
-  const firstBox = (await frames.nth(0).boundingBox())!
-  const secondBox = (await frames.nth(1).boundingBox())!
-  expect(secondBox.y).toBeGreaterThanOrEqual(firstBox.y + firstBox.height)
+  const box = async (index: number) => (await frames.nth(index).locator('.wall-frame').boundingBox())!
+  const [first, second, third] = [await box(0), await box(1), await box(2)]
+  expect(second.x).toBeGreaterThanOrEqual(first.x + first.width)
+  expect(second.y).toBe(first.y)
+  expect(third.y).toBeGreaterThanOrEqual(first.y + first.height)
 })
 
-test('empty gallery shows single empty frame and Paint today prompt link to /home', async ({ page }) => {
+const framesOn = (page: Page) => page.locator('[data-testid^="gallery-frame-"]')
+const wallOf = (page: Page) => page.getByTestId('gallery-wall')
+const settled = (page: Page) => expect(wallOf(page)).not.toHaveAttribute('data-turning', 'true')
+const dayOf = (index: number) => new Date(Date.UTC(2026, 10, 17 - index)).toISOString().slice(0, 10)
+async function setupWall(page: Page, count: number, viewport = { width: 1440, height: 900 }) {
+  const cells = samplePaintingBase64()
+  await setup(page, false, (query) => query.collection === 'dailyDrawings' && query.where?.userId === 'host'
+    ? Array.from({ length: count }, (_, index) => ({ recordId: `d${index}`, data: { day: dayOf(index), userId: 'host', displayName: 'Offline host', prompt: `Painting ${index}`, cells, score: 300 + index, guess: 'thing' } }))
+    : [])
+  await page.setViewportSize(viewport)
+  await page.goto(`${origin}/u/host`)
+  await expect(framesOn(page).first()).toBeVisible()
+}
+
+test('the wall is a wheel of pages: arrows, keys, swipe and one wheel gesture each turn one page, round and round', async ({ page }) => {
+  test.setTimeout(60_000)
+  await setupWall(page, 47)
+  const wall = wallOf(page)
+  const plank = page.getByTestId('gallery-plank')
+  const perPage = Number(await wall.getAttribute('data-per-page'))
+  const pages = Math.ceil(47 / perPage)
+  expect(perPage).toBeGreaterThanOrEqual(8)
+  await expect(wall).toHaveAttribute('data-pages', String(pages))
+  await expect(plank).toHaveText(`1 / ${pages}`)
+  // Page 1 holds the newest paintings, newest first, and only that page is in the DOM.
+  await expect(framesOn(page)).toHaveCount(perPage)
+  await expect(framesOn(page).first()).toHaveAttribute('data-testid', `gallery-frame-${dayOf(0)}`)
+  // Right goes older, page by page, to the last (a short page), then wraps to page 1.
+  for (let next = 2; next <= pages; next++) {
+    await page.getByTestId('gallery-next').click()
+    await settled(page)
+    await expect(plank).toHaveText(`${next} / ${pages}`)
+    await expect(framesOn(page).first()).toHaveAttribute('data-testid', `gallery-frame-${dayOf((next - 1) * perPage)}`)
+  }
+  await expect(framesOn(page)).toHaveCount(47 - (pages - 1) * perPage)
+  await page.getByTestId('gallery-next').click()
+  await settled(page)
+  await expect(plank).toHaveText(`1 / ${pages}`)
+  // Left from page 1 wraps to the last page.
+  await page.getByTestId('gallery-prev').click()
+  await settled(page)
+  await expect(plank).toHaveText(`${pages} / ${pages}`)
+  // The keys.
+  await page.keyboard.press('ArrowRight')
+  await settled(page)
+  await expect(plank).toHaveText(`1 / ${pages}`)
+  await page.keyboard.press('ArrowLeft')
+  await settled(page)
+  await expect(plank).toHaveText(`${pages} / ${pages}`)
+  await page.keyboard.press('ArrowRight')
+  await settled(page)
+  // One wheel gesture made of many small deltas (an inertial flick) turns exactly one page.
+  await page.mouse.move(700, 450)
+  for (let step = 0; step < 40; step++) await page.mouse.wheel(step % 2 ? 3 : 0, step % 2 ? 0 : 4)
+  await page.waitForTimeout(900)
+  await settled(page)
+  await expect(plank).toHaveText(`2 / ${pages}`)
+  // The next gesture, after it ended, turns one more (a horizontal one the other way).
+  for (let step = 0; step < 30; step++) await page.mouse.wheel(-5, 0)
+  await page.waitForTimeout(900)
+  await settled(page)
+  await expect(plank).toHaveText(`1 / ${pages}`)
+  // A touch swipe: left turns to the next page, right to the previous.
+  const swipe = (dx: number) => page.getByTestId('scene-dismiss').evaluate((el, delta) => {
+    const fire = (type: string, x: number) => el.dispatchEvent(new PointerEvent(type, { pointerType: 'touch', clientX: x, clientY: 400, bubbles: true }))
+    fire('pointerdown', 700); fire('pointermove', 700 + delta / 2); fire('pointerup', 700 + delta)
+  }, dx)
+  await swipe(-150)
+  await settled(page)
+  await expect(plank).toHaveText(`2 / ${pages}`)
+  await swipe(150)
+  await settled(page)
+  await expect(plank).toHaveText(`1 / ${pages}`)
+  await expect(page).toHaveURL(`${origin}/u/host`) // a swipe is never a click on the wall
+  // Input during a turn queues at most one further turn: three quick presses are two pages.
+  await page.keyboard.press('ArrowRight')
+  await page.keyboard.press('ArrowRight')
+  await page.keyboard.press('ArrowRight')
+  await page.waitForTimeout(1500)
+  await settled(page)
+  await expect(plank).toHaveText(`3 / ${pages}`)
+  // Mid-turn the incoming page is in the DOM beside the outgoing one, and nothing else.
+  await page.keyboard.press('ArrowRight')
+  await expect(wall).toHaveAttribute('data-turning', 'true')
+  expect(await framesOn(page).count()).toBeLessThanOrEqual(2 * perPage)
+  await settled(page)
+  await expect(framesOn(page)).toHaveCount(47 - (pages - 1) * perPage)
+  // Escape is still the way back.
+  await page.keyboard.press('Escape')
+  await expect(page).toHaveURL(`${origin}/home`)
+})
+
+test('reduced motion swaps pages at once; a wall of one page has no arrows and no plank', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await setupWall(page, 30)
+  const wall = wallOf(page)
+  await page.keyboard.press('ArrowRight')
+  await expect(wall).toHaveAttribute('data-page', '2')
+  await expect(wall).not.toHaveAttribute('data-turning', 'true')
+  const second = await framesOn(page).first().getAttribute('data-testid')
+  expect(second).toBe(`gallery-frame-${dayOf(Number(await wall.getAttribute('data-per-page')))}`)
+  await setupWall(page, 3)
+  await expect(framesOn(page)).toHaveCount(3)
+  await expect(page.getByTestId('gallery-plank')).toHaveCount(0)
+  await expect(page.getByTestId('gallery-next')).toHaveCount(0)
+  await page.keyboard.press('ArrowRight')
+  await expect(wall).toHaveAttribute('data-page', '1')
+})
+
+test.describe('captions never clip', () => {
+  const viewports = [{ width: 1980, height: 1240 }, { width: 1440, height: 900 }, { width: 375, height: 812 }]
+  for (const viewport of viewports) {
+    test(`every caption holds its longest prompt, date and grade at ${viewport.width}x${viewport.height}`, async ({ page }) => {
+      test.setTimeout(60_000)
+      const cells = samplePaintingBase64()
+      // Every real prompt, longest first, each on the widest dates and a four-digit grade; one gold medal.
+      const { DAILY_PROMPTS } = await import('../../src/game/daily/prompts')
+      const prompts = [...DAILY_PROMPTS].map((entry) => entry.prompt).sort((a, b) => b.length - a.length)
+      const days = ['2026-09-28', '2026-05-30', '2026-11-30', '2026-08-29']
+      const day = (index: number) => { const base = new Date(`${days[index % days.length]}T00:00:00Z`); base.setUTCFullYear(2026 - Math.floor(index / days.length)); return base.toISOString().slice(0, 10) }
+      await page.emulateMedia({ reducedMotion: 'reduce' })
+      await setup(page, false, (query) => query.collection === 'dailyDrawings' && query.where?.userId === 'host'
+        ? prompts.map((prompt, index) => ({ recordId: `d${index}`, data: { day: day(index), userId: 'host', displayName: 'Offline host', prompt, cells, score: 1000, guess: 'thing' } }))
+        : query.collection === 'dailyScores' && query.where?.userId === 'host' ? [{ recordId: 's0', data: { day: day(0), userId: 'host', medal: 1 } }] : [])
+      await page.setViewportSize(viewport)
+      await page.goto(`${origin}/u/host`)
+      await expect(framesOn(page).first()).toBeVisible()
+      await page.evaluate(() => document.fonts.ready)
+      const wall = wallOf(page)
+      const pages = Number(await wall.getAttribute('data-pages'))
+      for (let current = 1; current <= pages; current++) {
+        await expect(wall).toHaveAttribute('data-page', String(current))
+        const bad = await page.evaluate(() => {
+          const problems: string[] = []
+          const captions = document.querySelectorAll('[data-testid="gallery-caption"]')
+          for (const card of captions) {
+            const box = card.getBoundingClientRect()
+            for (const el of [card, ...card.querySelectorAll('*')]) {
+              if (el.scrollWidth > el.clientWidth || el.scrollHeight > el.clientHeight) problems.push(`${el.className} scroll ${el.scrollWidth}x${el.scrollHeight} > client ${el.clientWidth}x${el.clientHeight}: ${card.textContent}`)
+              const inner = el.getBoundingClientRect()
+              if (inner.right > box.right + 0.5 || inner.bottom > box.bottom + 0.5 || inner.left < box.left - 0.5 || inner.top < box.top - 0.5) problems.push(`${el.className} outside its card: ${card.textContent}`)
+            }
+          }
+          return { count: captions.length, problems }
+        })
+        expect(bad.count).toBeGreaterThan(0)
+        expect(bad.problems).toEqual([])
+        await page.keyboard.press('ArrowRight')
+      }
+    })
+  }
+})
+
+test('empty gallery shows the empty rack with its first-painting card and a Paint today prompt link to /home', async ({ page }) => {
   const cells = samplePaintingBase64()
   await setup(page, false, (query) => {
     if (query.collection === 'dailyDrawings' && query.where?.userId === 'host') {
@@ -1192,7 +1468,7 @@ test('empty gallery shows single empty frame and Paint today prompt link to /hom
   await expect(page.getByRole('heading', { name: 'Your gallery' })).toBeVisible()
   const empty = page.getByTestId('gallery-empty')
   await expect(empty).toBeVisible()
-  await expect(empty).toContainText('No drawings to show yet.')
+  await expect(empty).toContainText('Your first painting hangs here')
   const cta = empty.getByRole('link', { name: "Paint today's prompt" })
   await expect(cta).toHaveAttribute('href', '/home')
   await cta.click()
@@ -1267,4 +1543,312 @@ test('capture Task 8 gallery wall across viewports', async ({ page }) => {
     await page.waitForTimeout(120)
     await page.screenshot({ path: resolve(dir, `gallery-empty-${vp.width}x${vp.height}.png`), fullPage: true })
   }
+})
+
+test('porch zooms and pans smoothly when navigating to scores and gallery', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await setup(page)
+  await page.goto(`${origin}/home`)
+
+  const camera = page.locator('.porch-world .pixel-scene__camera')
+  await expect(camera).toBeVisible()
+  const initialTransform = await camera.evaluate(el => getComputedStyle(el).transform)
+
+  await page.getByTestId('app-navigation').getByRole('link', { name: 'Scores', exact: true }).click()
+  await expect(page.locator('.porch-world')).toHaveClass(/porch-world--transitioning/)
+  await expect.poll(() => camera.evaluate(el => getComputedStyle(el).transform)).not.toBe(initialTransform)
+  await expect(page).toHaveURL(`${origin}/scores`)
+  await expect(page.getByTestId('scores-page')).toBeVisible()
+
+  await page.goto(`${origin}/home`)
+  await page.locator('.porch-world').getByRole('link', { name: 'Your gallery' }).click()
+  await expect(page.locator('.porch-world')).toHaveClass(/porch-world--transitioning/)
+  await expect(page).toHaveURL(`${origin}/u/host`)
+  await expect(page.getByTestId('gallery-page')).toBeVisible()
+})
+
+test('porch to scores maps chalkboard frame 1:1 without size jump and returns smoothly', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await setup(page)
+  await page.goto(`${origin}/home`)
+
+  const homeNavBox = await page.getByTestId('app-navigation').boundingBox()
+  expect(homeNavBox).not.toBeNull()
+
+  await page.getByTestId('app-navigation').getByRole('link', { name: 'Scores', exact: true }).click()
+  await expect(page.locator('.porch-world')).toHaveClass(/porch-world--to-scores/)
+  // Nothing covers the Porch sunset/sea during the direct chalkboard zoom: no veil, no dissolve.
+  const veil = await page.locator('.porch-world').evaluate(el => getComputedStyle(el, '::after').content)
+  expect(['none', 'normal']).toContain(veil)
+
+  await expect(page).toHaveURL(`${origin}/scores`)
+  const scoresNavBox = await page.getByTestId('app-navigation').boundingBox()
+  expect(scoresNavBox!.height).toBe(homeNavBox!.height)
+
+  const board = page.getByTestId('scores-chalkboard')
+  await expect(board).toBeVisible()
+  const boardBox = await board.boundingBox()
+  expect(boardBox).not.toBeNull()
+  // Porch chalkboard slate proportion is 50:35 (~1.428)
+  const ratio = boardBox!.width / boardBox!.height
+  expect(ratio).toBeGreaterThan(1.38)
+  expect(ratio).toBeLessThan(1.48)
+
+  // Backdrop camera on /scores matches the zoomed Porch chalkboard 1:1
+  const backdropScale = await page.locator('.scores-backdrop .pixel-scene__camera').evaluate((el) => {
+    const m = new DOMMatrix(getComputedStyle(el).transform)
+    return m.a
+  })
+  expect(backdropScale).toBeGreaterThan(2)
+  // 50 scene px * scale 4 * backdropScale === boardBox.width
+  expect(Math.abs(50 * 4 * backdropScale - boardBox!.width)).toBeLessThanOrEqual(4)
+
+  // Returning via ← Porch zooms back out to /home cleanly
+  await page.getByTestId('scores-porch-button').click()
+  await expect(page.getByTestId('scores-page')).toHaveClass(/scores-page--leaving/)
+  await expect(page).toHaveURL(`${origin}/home`)
+  await expect(page.locator('.porch-world')).toBeVisible()
+})
+
+test('switching to scores from basement (/party) pans up through the floor before zooming into the board', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await page.addInitScript(() => {
+    const win = window as unknown as { __spaRoutes?: string[] }
+    win.__spaRoutes = []
+    const orig = history.pushState.bind(history)
+    history.pushState = (...args) => {
+      orig(...args)
+      win.__spaRoutes!.push(location.pathname)
+    }
+  })
+  await setup(page)
+  await page.goto(`${origin}/party`)
+  await expect(page.getByTestId('lobby-page')).toBeVisible()
+
+  await page.getByTestId('app-navigation').getByRole('link', { name: 'Scores', exact: true }).click()
+  await expect(page.getByTestId('vertical-scene-transition')).toBeVisible()
+  // First pans up to /home, then uses the porch's existing chalkboard zoom into /scores.
+  await expect(page).toHaveURL(`${origin}/scores`, { timeout: 6000 })
+  await expect(page.getByTestId('scores-chalkboard')).toBeVisible()
+  const routes = await page.evaluate(() => (window as unknown as { __spaRoutes: string[] }).__spaRoutes)
+  expect(routes).toEqual(['/home', '/scores'])
+})
+
+test('switching from a graded result zooms back out to the porch first before entering party', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await setup(page)
+  await page.route('**/api/daily/me', (route) => route.fulfill({
+    json: {
+      day: '2026-11-17',
+      status: 'ended',
+      prompt: 'rocket',
+      startedAt: Date.now() - 300_000,
+      endsAt: Date.now() - 5_000,
+      autoUsed: 0,
+      asksUsed: 1,
+      asksLeft: 2,
+      finalUsed: true,
+      best: 640,
+      windows: [],
+      nextAutoAt: null,
+      serverNow: Date.now(),
+    },
+  }))
+  await page.goto(`${origin}/home`)
+  await page.getByRole('button', { name: 'View result' }).click()
+  await expect(page.getByTestId('daily-ended')).toBeVisible()
+
+  await page.getByRole('button', { name: /Account menu:/ }).click()
+  await page.getByRole('menuitem', { name: 'Party' }).click()
+  await expect(page.locator('[data-camera="easel"]')).toHaveAttribute('data-phase', 'leaving')
+  await expect(page).toHaveURL(`${origin}/party`, { timeout: 8000 })
+  await expect(page.locator('main').getByTestId('lobby-page')).toBeVisible()
+})
+
+test('party room exits upstairs through stairwell to porch and scores', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await page.addInitScript(() => {
+    const win = window as unknown as { __spaRoutes?: string[] }
+    win.__spaRoutes = []
+    const orig = history.pushState.bind(history)
+    history.pushState = (...args) => {
+      orig(...args)
+      win.__spaRoutes!.push(location.pathname)
+    }
+  })
+  await setup(page)
+  await page.route('**/api/pixel/AB2Z', (route) => route.fulfill({ json: { ok: true, joinCode: 'AB2Z', name: 'Offline party' } }))
+  await page.routeWebSocket('**/api/pixel/**', (socket) => {
+    socket.send(JSON.stringify({
+      t: 'snapshot',
+      mode: 'coop',
+      width: 32,
+      height: 32,
+      cells: Buffer.alloc(1024).toString('base64'),
+      players: 1,
+      watching: 0,
+      roster: [{ userId: 'host', name: 'Offline host' }],
+      you: { userId: 'host', cooldownUntil: 0 },
+      round: { id: 'playing', state: 'playing', word: 'cat', startedAt: Date.now() - 1000, endsAt: Date.now() + 60_000, askAvailableAt: 0 },
+      aiResting: false,
+    }))
+  })
+  await page.goto(`${origin}/r/AB2Z`)
+  await expect(page.getByTestId('pixel-canvas')).toBeVisible()
+
+  await page.getByRole('button', { name: /Account menu:/ }).click()
+  await page.getByRole('menuitem', { name: 'Scores' }).click()
+  await expect(page).toHaveURL(`${origin}/scores`, { timeout: 6000 })
+  const routes = await page.evaluate(() => (window as unknown as { __spaRoutes: string[] }).__spaRoutes)
+  expect(routes).toEqual(['/home', '/scores'])
+})
+
+test('the scene around a close-up is the way back out: scores, gallery, settings, rules and the mailbox', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await setup(page)
+  // Scores: a click on the board is not a background click; a click on the porch around it zooms out.
+  await page.goto(`${origin}/scores`)
+  await expect(page.getByTestId('scores-chalkboard')).toBeVisible()
+  await page.getByTestId('scores-chalkboard').click({ position: { x: 20, y: 20 } })
+  await expect(page).toHaveURL(`${origin}/scores`)
+  await page.getByTestId('scene-dismiss').click({ position: { x: 40, y: 500 } })
+  await expect(page).toHaveURL(`${origin}/home`)
+  // Gallery: the wall of the house, not a room of its own; the wall around the paintings pans back.
+  await page.goto(`${origin}/u/host`)
+  await expect(page.getByTestId('gallery-empty')).toBeVisible()
+  await expect(page.locator('.gallery-backdrop .pixel-scene__canvas')).toHaveCount(1)
+  await page.getByTestId('gallery-empty').click({ position: { x: 20, y: 20 } })
+  await expect(page).toHaveURL(`${origin}/u/host`)
+  await page.getByTestId('scene-dismiss').click({ position: { x: 600, y: 700 } })
+  await expect(page).toHaveURL(`${origin}/home`)
+  // Settings: the porch around the mailbox.
+  await page.goto(`${origin}/settings`)
+  await expect(page.getByTestId('settings-letter')).toBeVisible()
+  await page.getByTestId('scene-dismiss').click({ position: { x: 700, y: 820 } })
+  await expect(page).toHaveURL(`${origin}/home`)
+  // Rules: the camera goes onto the note itself (no modal), and the scene around it puts it away.
+  await page.getByRole('button', { name: 'Scoring rules' }).click()
+  const paper = page.getByRole('dialog', { name: 'Daily scoring rules' })
+  await expect(paper).toBeVisible()
+  await expect(paper).not.toHaveAttribute('aria-modal', 'true')
+  await expect.poll(() => page.locator('.porch-world .pixel-scene__camera').evaluate(el => new DOMMatrix(getComputedStyle(el).transform).a)).toBeGreaterThan(3)
+  await page.getByTestId('scene-dismiss').click({ position: { x: 700, y: 840 } })
+  await expect(paper).toHaveCount(0)
+  // Mailbox: the account menu is a card that comes out of the mailbox; Settings flies on to the mailbox close-up.
+  await page.locator('.porch-world').getByRole('button', { name: 'Account menu', exact: true }).click()
+  const menu = page.getByRole('dialog', { name: 'Account menu' })
+  for (const name of ['My gallery', 'Settings']) await expect(menu.getByRole('link', { name })).toBeVisible()
+  await expect(menu.getByRole('button', { name: 'Sign out' })).toBeVisible()
+  await menu.getByRole('link', { name: 'Settings' }).click()
+  await expect(page).toHaveURL(`${origin}/settings`)
+  await expect(page.getByTestId('settings-letter')).toBeVisible()
+})
+
+test('the gallery is a pan along the porch onto the house wall: wall sign, one scene, paintings hung on the siding', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const cells = samplePaintingBase64()
+  await setup(page, false, (query) => {
+    if (query.collection === 'dailyDrawings' && query.where?.userId === 'host') {
+      return [{ recordId: 'd1', data: { day: '2026-11-17', userId: 'host', displayName: 'Offline host', prompt: 'A lighthouse', cells, score: 912, guess: 'lighthouse' } }]
+    }
+    return []
+  })
+  await page.goto(`${origin}/home`)
+  // At rest the wall (and the painting already hung on it) is off-screen, left of the porch.
+  await expect(page.getByTestId('gallery-frame-2026-11-17')).toBeAttached()
+  const offscreen = await page.evaluate(() => {
+    const frame = document.querySelector('[data-testid="gallery-frame-2026-11-17"] .wall-frame')!.getBoundingClientRect()
+    const wall = document.querySelector('[data-testid="porch-wall"]')!.getBoundingClientRect()
+    return { frameRight: frame.right, wallRight: wall.right }
+  })
+  expect(offscreen.frameRight).toBeLessThanOrEqual(0)
+  expect(offscreen.wallRight).toBeLessThanOrEqual(0.5)
+  await page.locator('.porch-world').getByRole('link', { name: 'Your gallery' }).click()
+  await expect(page).toHaveURL(`${origin}/u/host`)
+  await expect(page.getByTestId('gallery-frame-2026-11-17')).toBeVisible()
+  await expect(page.getByTestId('vertical-scene-transition')).toHaveCount(0)
+  // Once landed it is a pure pan: the rest zoom, the camera moved sideways only, and the frame is exactly on its wall slot.
+  await expect.poll(async () => page.evaluate(() => {
+    const m = new DOMMatrix(getComputedStyle(document.querySelector('.gallery-backdrop .pixel-scene__camera')!).transform)
+    return [m.a, m.d, m.f].join()
+  })).toBe('1,1,0')
+  const error = await page.evaluate(() => {
+    const m = new DOMMatrix(getComputedStyle(document.querySelector('.gallery-backdrop .pixel-scene__camera')!).transform)
+    const scale = Math.ceil(Math.max(innerWidth / 320, innerHeight / 180))
+    const ox = (innerWidth - 320 * scale) / 2, oy = (innerHeight - 180 * scale) / 2
+    // The one painting hangs on the scene's whole-unit grid, in a whole number of units, below the nav.
+    const frame = document.querySelector('[data-testid="gallery-frame-2026-11-17"] .wall-frame')!.getBoundingClientRect()
+    const nav = document.querySelector('[data-testid="app-navigation"]')!.getBoundingClientRect().bottom
+    const frac = (value: number) => { const part = Math.abs(value) % 1; return Math.min(part, 1 - part) }
+    return { x: frac((frame.x - ox - m.e) / scale), y: frac((frame.y - oy) / scale), below: frame.y >= nav, w: frac(frame.width / scale), inside: frame.left >= 0 && frame.right <= innerWidth, pan: m.e }
+  })
+  expect(error.x).toBeLessThan(0.02)
+  expect(error.inside).toBe(true)
+  expect(error.y).toBeLessThan(0.02)
+  expect(error.below).toBe(true)
+  expect(error.w).toBeLessThan(0.02)
+  expect(error.pan).toBeGreaterThan(900)
+})
+
+const zoomOf = (page: Page, selector: string) => page.locator(`${selector} .pixel-scene__camera`).evaluate(el => new DOMMatrix(getComputedStyle(el).transform).a)
+
+test('sign-in is the SDK form on the mailbox letter: no pop-up, Escape and the porch around it reverse the zoom', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await setup(page, true)
+  await page.goto(`${origin}/home`)
+  await page.getByTestId('nav-sign-in-button').click()
+  const letter = page.getByRole('dialog', { name: 'Account menu' })
+  await expect(letter.getByTestId('sign-in-card')).toBeVisible()
+  await expect(letter.getByRole('button', { name: 'Continue with GitHub' })).toBeVisible()
+  // The SDK wrapper is not a full-screen layer (no backdrop, no dim), and the camera is on the mailbox.
+  expect(await letter.getByTestId('auth-overlay').evaluate(el => getComputedStyle(el).position)).not.toBe('fixed')
+  await expect.poll(() => zoomOf(page, '.porch-world')).toBeGreaterThan(2)
+  await page.keyboard.press('Escape')
+  await expect(letter).toHaveCount(0)
+  await expect.poll(() => zoomOf(page, '.porch-world')).toBeLessThan(1.05)
+  // The scene around the letter puts it away too.
+  await page.getByTestId('nav-sign-in-button').click()
+  await expect(letter).toBeVisible()
+  await page.getByTestId('scene-dismiss').click({ position: { x: 700, y: 840 } })
+  await expect(letter).toHaveCount(0)
+})
+
+test('signing in from another porch scene flies to the mailbox letter', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await setup(page, true)
+  await page.goto(`${origin}/scores`)
+  await page.getByTestId('nav-sign-in-button').click()
+  await expect(page).toHaveURL(`${origin}/settings`)
+  await expect(page.getByTestId('settings-letter').getByTestId('sign-in-card')).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page).toHaveURL(`${origin}/home`)
+})
+
+test('the 404 is the porch camera on Haiku, sad among his spilled paint: it flies there, and every way out flies back', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await setup(page)
+  await page.goto(`${origin}/home`)
+  await expect(page.getByTestId('daily-start-button')).toBeVisible()
+  // An unknown path reached from inside the app: the camera moves, it does not cut.
+  await page.evaluate(() => { history.pushState({ usr: null, key: 'in-app', idx: 1 }, '', '/no-such-place'); dispatchEvent(new PopStateEvent('popstate')) })
+  await expect(page.getByTestId('not-found-bubble')).toContainText("Oops — this page doesn't exist.")
+  const early = await zoomOf(page, '.lost-backdrop')
+  expect(early).toBeLessThan(1.3)
+  await expect.poll(() => zoomOf(page, '.lost-backdrop'), { timeout: 3000 }).toBeGreaterThan(1.5)
+  // The button is the way back.
+  await page.getByTestId('not-found-porch-sign').click()
+  await expect(page).toHaveURL(`${origin}/home`)
+  await expect(page.getByTestId('daily-start-button')).toBeVisible()
+  // A cold load is simply there; the porch around Haiku (and Escape) zooms back out.
+  await page.goto(`${origin}/no-such-place`)
+  await expect(page.getByTestId('not-found-bubble')).toBeVisible()
+  expect(await zoomOf(page, '.lost-backdrop')).toBeGreaterThan(1.5)
+  await page.getByTestId('scene-dismiss').click({ position: { x: 700, y: 860 } })
+  await expect(page).toHaveURL(`${origin}/home`)
+  await page.goto(`${origin}/no-such-place`)
+  await expect(page.getByTestId('not-found-bubble')).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page).toHaveURL(`${origin}/home`)
+  // The beach notice board is gone from the porch.
+  await expect(page.getByTestId('not-found-board')).toHaveCount(0)
 })

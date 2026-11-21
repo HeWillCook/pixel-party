@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
+import { Link, useBlocker, useNavigate, useParams } from 'react-router-dom'
 import {
-  AuthOverlay,
   useAuthProfileReady,
   usePresenceRoom,
   useQuery,
@@ -22,24 +21,29 @@ import {
   Users,
   WifiOff,
 } from 'lucide-react'
-import { AskAiButton } from '../../../components/game/AskAiButton'
-import { DeleteRoomDialog } from '../../../components/game/DeleteRoomButton'
-import { MuteButton } from '../../../components/game/MuteButton'
-import { PainterTray } from '../../../components/game/PainterTray'
-import { Palette } from '../../../components/game/Palette'
-import { PixelCanvas } from '../../../components/game/PixelCanvas'
-import { PlayerCursors } from '../../../components/game/PlayerCursors'
-import { PlayersPanel } from '../../../components/game/PlayersPanel'
-import { ToolBar } from '../../../components/game/ToolBar'
-import { useGameSounds } from '../../../components/game/useGameSounds'
-import { CriticBubble } from '../../../components/play/CriticBubble'
-import { HoverEasel } from '../../../components/play/HoverEasel'
-import { PartyScoreNote } from '../../../components/play/PartyScoreNote'
-import { PlayLayout } from '../../../components/play/PlayLayout'
-import '../../../components/play/room-play.css'
-import { StudioBackdrop } from '../../../components/play/StudioBackdrop'
-import { StudioSprite } from '../../../components/play/StudioSprite'
-import { NeutralPorchLoading } from '../../../components/porch/PorchScene'
+import { AskAiButton } from '../../../../components/game/AskAiButton'
+import { DeleteRoomDialog } from '../../../../components/game/DeleteRoomButton'
+import { MuteButton } from '../../../../components/game/MuteButton'
+import { PainterTray } from '../../../../components/game/PainterTray'
+import { Palette } from '../../../../components/game/Palette'
+import { PixelCanvas } from '../../../../components/game/PixelCanvas'
+import { PlayerCursors } from '../../../../components/game/PlayerCursors'
+import { PlayersPanel } from '../../../../components/game/PlayersPanel'
+import { ToolBar } from '../../../../components/game/ToolBar'
+import { useGameSounds } from '../../../../components/game/useGameSounds'
+import { CriticBubble } from '../../../../components/play/CriticBubble'
+import { PartyScoreNote } from '../../../../components/play/PartyScoreNote'
+import { PlayLayout } from '../../../../components/play/PlayLayout'
+import '../../../../components/play/room-play.css'
+import { StudioSprite } from '../../../../components/play/StudioSprite'
+import { RoomSignInSlip } from '../../../../components/studio/RoomSignInSlip'
+import { useStudioWorld } from '../../../../components/studio/StudioWorld'
+import { requestVerticalSceneTransition } from '../../../../components/porch/VerticalSceneTransition'
+import {
+  isPrimaryClick,
+  SCENE_NAV_EVENT,
+  type SceneNavKind,
+} from '../../../../components/porch/returnFlag'
 import {
   Button,
   DropdownMenu,
@@ -47,16 +51,18 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '../../../components/ui'
-import { effectiveCooldownUntil, roomAccessView, type RejectMsg } from '../../../game/client-state'
-import { MODES } from '../../../game/config'
-import { contributorLabel } from '../../../game/contributor-label'
-import { cooldownMs } from '../../../game/rules'
-import { coopScoreParts } from '../../../game/scoring'
-import { PARTY_TOOLS, pickAt, type Tool } from '../../../game/tools'
-import { usePixelRoom } from '../../../hooks/usePixelRoom'
-import { useToolShortcuts } from '../../../hooks/useToolShortcuts'
-import { studioSprites } from '../../../scene/studio/sprites'
+} from '../../../../components/ui'
+import { effectiveCooldownUntil, roomAccessView, type RejectMsg } from '../../../../game/client-state'
+import { MODES } from '../../../../game/config'
+import { contributorLabel } from '../../../../game/contributor-label'
+import { cooldownMs } from '../../../../game/rules'
+import { coopScoreParts } from '../../../../game/scoring'
+import { PARTY_TOOLS, pickAt, type Tool } from '../../../../game/tools'
+import { boardCellSize } from '../../../../game/board-size'
+import { usePixelRoom } from '../../../../hooks/usePixelRoom'
+import { useToolShortcuts } from '../../../../hooks/useToolShortcuts'
+import { untransformedRect, useSceneRegistration } from '../../../../scene/registration'
+import { studioSprites } from '../../../../scene/studio/sprites'
 
 interface RoomRecord {
   name: string
@@ -80,7 +86,10 @@ interface RoundRecord {
   finalGuesses?: string[]
 }
 
-// Vertical chrome inside HoverEasel + grid gap + bottom margin (already excluding PixelCanvas's own 20px inset).
+// The panels around the board that slide out from behind it as the camera lands (and back in as it leaves).
+const PANEL_SELECTOR = '.play-layout__top > *, .play-layout__left > *, .play-layout__right > *, .play-layout__bottom > *'
+
+// Vertical chrome around the board + grid gap + bottom margin (already excluding PixelCanvas's own 20px inset).
 const EASEL_AND_TRAY_GAP_PX = 60
 const EASEL_HORIZONTAL_CHROME_PX = 40
 
@@ -108,6 +117,8 @@ function rejectMessage(reject: RejectMsg | null, now: number): string | null {
     }
     case 'canvas_unchanged':
       return 'Draw something new first!'
+    case 'canvas_blank':
+      return 'Draw something first!'
     case 'round_inactive':
       return 'Round is not currently active.'
     case 'not_host':
@@ -184,7 +195,9 @@ export default function RoomPage() {
   const [activeColor, setActiveColor] = useState<number>(4) // Default red
   const [tool, setTool] = useState<Tool>('paint')
   const [now, setNow] = useState<number>(() => Date.now())
-  const [showAuthModal, setShowAuthModal] = useState(false)
+  const world = useStudioWorld()
+  // Signing in is a slip pinned to the room's ticket on the easel (the studio layout owns whether it is open).
+  const { signInOpen: showAuthModal, setSignInOpen: setShowAuthModal } = world
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [dismissedOverlayRoundId, setDismissedOverlayRoundId] = useState<string | null>(null)
   const [asking, setAsking] = useState(false)
@@ -264,7 +277,7 @@ export default function RoomPage() {
   const cooldownRemainingMs = Math.max(0, effectiveCooldownUntil(state) - now)
   const friendlyReject = rejectMessage(state.lastReject, now)
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const measure = () => {
       const col = centerColRef.current
       if (!col) return
@@ -272,15 +285,17 @@ export default function RoomPage() {
       const availWidth = Math.max(200, colWidth - EASEL_HORIZONTAL_CHROME_PX)
       const slot = canvasSlotRef.current
       // The app shell locks document scrolling; main is the sole scroll container.
+      // Measured with the registration's transform lifted: mid-move the room is scaled onto the easel, and a
+      // scaled rect would shrink the board (and re-scale the whole assembly) in the middle of the camera move.
       const topOffset = slot
-        ? slot.getBoundingClientRect().top + (slot.closest('main')?.scrollTop ?? 0)
+        ? untransformedRect(slot).y + (slot.closest('main')?.scrollTop ?? 0)
         : 120
       const paletteH = paletteWrapRef.current
-        ? paletteWrapRef.current.getBoundingClientRect().height
+        ? untransformedRect(paletteWrapRef.current).h
         : 104
       const wide = window.innerWidth >= 768
       const availHeight = wide
-        ? Math.max(200, window.innerHeight - topOffset - paletteH - EASEL_AND_TRAY_GAP_PX)
+        ? Math.min(596, Math.max(200, window.innerHeight - topOffset - paletteH - EASEL_AND_TRAY_GAP_PX))
         : Math.max(288, availWidth)
       setAvailBox((prev) =>
         prev.width === availWidth && prev.height === availHeight
@@ -294,7 +309,6 @@ export default function RoomPage() {
     if (roomPageRef.current) ro.observe(roomPageRef.current)
     if (centerColRef.current) ro.observe(centerColRef.current)
     if (headerRef.current) ro.observe(headerRef.current)
-    if (roundBarWrapRef.current) ro.observe(roundBarWrapRef.current)
     if (paletteWrapRef.current) ro.observe(paletteWrapRef.current)
     window.addEventListener('resize', measure)
     return () => {
@@ -304,12 +318,9 @@ export default function RoomPage() {
   }, [
     state.snapshotLoaded,
     state.round?.state,
-    state.connected,
     isSpectator,
-    Boolean(friendlyReject),
     sessionExpired,
     roomDoc?.data.name,
-    cooldownRemainingMs > 0,
   ])
 
   const handleHoverCell = useCallback(
@@ -367,6 +378,9 @@ export default function RoomPage() {
   const canStart =
     Boolean(state.connected && state.you.userId) &&
     (joinCode === 'play' || isHost || (Boolean(roomDoc?.data.hostId) && !hostConnected))
+  // The public board has no host, so a signed-out visitor must be offered sign-in
+  // instead of a permanently disabled "waiting for the host" message.
+  const publicSignedOut = joinCode === 'play' && !state.you.userId
 
   const handlePlace = useCallback(
     (x: number, y: number, color: number) => {
@@ -472,132 +486,96 @@ export default function RoomPage() {
     }
   }, [showOverlay])
 
+  const navigate = useNavigate()
+  const { setBoardRect, setSummary } = world
+  // Room -> studio: the camera pulls back out of the easel with the room still registered to it, then the studio
+  // takes over. Browser back is the same move: block the pop, play it, and let it through when it lands.
+  const exitingRef = useRef(false)
+  const blocker = useBlocker(({ currentLocation, nextLocation }) =>
+    !exitingRef.current && currentLocation.pathname.startsWith('/r/') && nextLocation.pathname === '/party')
+  const leavingUpRef = useRef(false)
+
+  const goStudio = useCallback(() => {
+    if (exitingRef.current) return
+    exitingRef.current = true
+    world.leave('/party')
+  }, [world])
+
+  useEffect(() => {
+    if (blocker.state !== 'blocked') return
+    blocker.reset()
+    goStudio()
+  }, [blocker, goStudio])
+
+  const onRoomExitClick = useCallback((event: MouseEvent<HTMLAnchorElement>) => {
+    if (!isPrimaryClick(event)) return
+    event.preventDefault()
+    goStudio()
+  }, [goStudio])
+
+  // Room -> porch / scores / gallery / settings: rise through the floor to /home first,
+  // then let the porch chain into its own zoom (no hard cut).
+  const goUpstairsFromRoom = useCallback((kind: Exclude<SceneNavKind, 'party'>, path: string) => {
+    if (leavingUpRef.current) return
+    leavingUpRef.current = true
+    const followup = kind === 'porch' ? undefined : { kind, path }
+    if (requestVerticalSceneTransition({ source: 'room', target: 'porch', direction: 'up', path: '/home', ...(followup ? { followup } : {}) })) return
+    navigate(kind === 'porch' ? path : '/home')
+  }, [navigate])
+
+  useEffect(() => {
+    const onSceneNav = (event: Event) => {
+      const detail = (event as CustomEvent<{ kind: SceneNavKind; path: string }>).detail
+      if (!detail || detail.kind === 'signin') return
+      event.preventDefault()
+      if (detail.kind === 'party') {
+        goStudio()
+        return
+      }
+      goUpstairsFromRoom(detail.kind, detail.path)
+    }
+    window.addEventListener(SCENE_NAV_EVENT, onSceneNav)
+    return () => window.removeEventListener(SCENE_NAV_EVENT, onSceneNav)
+  }, [goStudio, goUpstairsFromRoom])
+
+  // The room's board is the object the studio camera lands on. Report where it settles (layout rect, transforms
+  // ignored) and keep it current as the layout changes.
+  const registerRef = useRef<HTMLDivElement>(null)
+  const boardRef = useRef<HTMLDivElement>(null)
+  useSceneRegistration({ host: world.hostRef, root: registerRef, anchor: boardRef, focus: world.focus, active: world.phase !== 'active', panelSelector: PANEL_SELECTOR })
+  const reportBoard = useCallback(() => {
+    const board = boardRef.current
+    if (board) setBoardRect(untransformedRect(board))
+  }, [setBoardRect])
+  // Every commit, not only on resizes: the connecting layout turning into the lobby face moves the board without
+  // resizing it, and a stale rect leaves the studio camera (and the exit that starts from it) a few pixels off.
+  useLayoutEffect(() => { reportBoard() })
+  useLayoutEffect(() => {
+    const board = boardRef.current
+    const layout = registerRef.current
+    if (!board) return
+    const observer = new ResizeObserver(reportBoard)
+    observer.observe(board)
+    if (layout) observer.observe(layout)
+    window.addEventListener('resize', reportBoard)
+    return () => { observer.disconnect(); window.removeEventListener('resize', reportBoard) }
+  }, [reportBoard])
+  useEffect(() => () => setBoardRect(null), [setBoardRect])
+
+  // The easel's HUD and word line show these (the board itself is this page's own canvas).
+  useEffect(() => {
+    setSummary({ players: state.players, roundState: state.round?.state, word: state.round?.word })
+  }, [setSummary, state.players, state.round?.state, state.round?.word])
+  useEffect(() => () => setSummary(null), [setSummary])
+
   const accessView = roomAccessView(state)
-  if (accessView === 'loading') {
-    return (
-      <div className="porch-home">
-        <NeutralPorchLoading testId="room-loading" />
-      </div>
-    )
-  }
-
-  // Terminal connection states (401 private room, 404 unknown room, 410 closed room)
-  if (state.connectError) {
-    return (
-      <div
-        data-testid="room-page"
-        className="mx-auto flex w-full max-w-2xl flex-col gap-4 px-4 py-10 sm:px-6"
-      >
-        <div className="flex items-center justify-between gap-2">
-          <Link
-            to="/party"
-            className="pp-chip inline-flex items-center gap-1.5 text-base uppercase tracking-wider hover:bg-secondary"
-          >
-            <ArrowLeft className="h-4 w-4" aria-hidden />
-            Studio
-          </Link>
-          <MuteButton muted={muted} onToggle={toggleMute} />
-        </div>
-
-        {state.connectError === 'unauthorized' && (
-          <div
-            data-testid="room-error-unauthorized"
-            className="pp-panel flex flex-col items-center gap-4 p-6 text-center"
-          >
-            <div className="pp-chip flex items-center justify-center p-2">
-              <StudioSprite sprite={studioSprites.errorLocked} scale={3} />
-            </div>
-            <div className="space-y-1">
-              <h1 className="text-2xl uppercase text-[var(--sunset-2)]">
-                Private Studio Room — Sign In Required
-              </h1>
-              <p className="text-base text-muted-foreground">
-                Invite room <span className="text-[var(--sunset-1)]">{joinCode}</span> is locked behind the studio door.
-                Sign in with your account to pull up a stool.
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center justify-center gap-3">
-              <Button
-                type="button"
-                data-testid="room-error-sign-in"
-                onClick={() => setShowAuthModal(true)}
-                className="pp-btn px-5 text-lg uppercase"
-              >
-                <LogIn className="mr-2 h-4 w-4" aria-hidden />
-                Sign in to join
-              </Button>
-              <Link
-                to="/party"
-                data-testid="room-exit"
-                className="pp-chip inline-flex h-10 items-center justify-center gap-1.5 px-4 text-base uppercase hover:bg-secondary"
-              >
-                <ArrowLeft className="h-4 w-4" aria-hidden />
-                Back downstairs to the studio
-              </Link>
-            </div>
-          </div>
-        )}
-
-        {state.connectError === 'not_found' && (
-          <div
-            data-testid="room-error-not-found"
-            className="pp-panel flex flex-col items-center gap-4 p-6 text-center"
-          >
-            <div className="pp-chip flex items-center justify-center p-2">
-              <StudioSprite sprite={studioSprites.errorNotFound} scale={3} />
-            </div>
-            <div className="space-y-1">
-              <h1 className="text-2xl uppercase text-[var(--sunset-2)]">
-                Easel Not Found
-              </h1>
-              <p className="text-base text-muted-foreground">
-                No studio easel exists for code <span className="text-[var(--sunset-3)]">{joinCode}</span>.
-                Check the ticket code or head back downstairs to the studio.
-              </p>
-            </div>
-            <Link
-              to="/party"
-              data-testid="room-exit"
-              className="pp-btn inline-flex h-10 items-center justify-center gap-1.5 px-5 text-lg uppercase"
-            >
-              <ArrowLeft className="h-4 w-4" aria-hidden />
-              Back downstairs to the studio
-            </Link>
-          </div>
-        )}
-
-        {state.connectError === 'closed' && (
-          <div
-            data-testid="room-error-closed"
-            className="pp-panel flex flex-col items-center gap-4 p-6 text-center"
-          >
-            <div className="pp-chip flex items-center justify-center p-2">
-              <StudioSprite sprite={studioSprites.errorClosed} scale={3} />
-            </div>
-            <div className="space-y-1">
-              <h1 className="text-2xl uppercase text-[var(--sunset-2)]">
-                {state.closedByHost ? 'This room was closed by the host' : 'This Room Has Closed'}
-              </h1>
-              <p className="text-base text-muted-foreground">
-                Room <span className="text-[var(--sunset-1)]">{joinCode}</span> has been packed up. Head
-                back downstairs to the studio to join another easel or set up a new one.
-              </p>
-            </div>
-            <Link
-              to="/party"
-              data-testid="room-exit"
-              className="pp-btn inline-flex h-10 items-center justify-center gap-1.5 px-5 text-lg uppercase"
-            >
-              <ArrowLeft className="h-4 w-4" aria-hidden />
-              Back downstairs to the studio
-            </Link>
-          </div>
-        )}
-
-        {showAuthModal && <AuthOverlay onClose={() => setShowAuthModal(false)} />}
-      </div>
-    )
-  }
+  const loading = accessView === 'loading'
+  const boardPx = boardCellSize({
+    availWidth: Math.max(0, availBox.width - 20),
+    availHeight: Math.max(0, availBox.height - 20),
+    cols: state.width || 32,
+    rows: state.height || 32,
+  }) * (state.width || 32)
 
   const customRoomName =
     roomDoc?.data.name &&
@@ -688,21 +666,129 @@ export default function RoomPage() {
     </div>
   )
 
-  if (state.round?.state === 'lobby') {
-    return (
-      <div
-        data-testid="room-page"
-        className="mx-auto flex w-full max-w-4xl flex-col gap-4 px-4 py-6"
-      >
-        <div className="pp-panel room-top-bar">
+
+  // --- What is on the easel when it is not (yet) a live board: connecting, a closed door, the waiting room. ---
+  const loadingFace = (
+    <p data-testid="room-loading" role="status" className="room-board__loading">
+      Setting up your easel…
+    </p>
+  )
+
+  const errorFace = state.connectError ? (
+    <>
+        {state.connectError === 'unauthorized' && (
+          <div
+            data-testid="room-error-unauthorized"
+            className="room-board__card flex flex-col items-center gap-4 text-center"
+          >
+            <div className="pp-chip flex items-center justify-center p-2">
+              <StudioSprite sprite={studioSprites.errorLocked} scale={3} />
+            </div>
+            <div className="space-y-1">
+              <h1 className="text-2xl uppercase text-[var(--sunset-2)]">
+                Private Studio Room — Sign In Required
+              </h1>
+              <p className="text-base text-muted-foreground">
+                Invite room <span className="text-[var(--sunset-1)]">{joinCode}</span> is locked behind the studio door.
+                Sign in with your account to pull up a stool.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              <Button
+                type="button"
+                data-testid="room-error-sign-in"
+                onClick={() => setShowAuthModal(true)}
+                className="pp-btn px-5 text-lg uppercase"
+              >
+                <LogIn className="mr-2 h-4 w-4" aria-hidden />
+                Sign in to join
+              </Button>
+              <Link
+                to="/party"
+                data-testid="room-exit"
+                onClick={onRoomExitClick}
+                className="pp-chip inline-flex h-10 items-center justify-center gap-1.5 px-4 text-base uppercase hover:bg-secondary"
+              >
+                <ArrowLeft className="h-4 w-4" aria-hidden />
+                Back to the studio
+              </Link>
+            </div>
+          </div>
+        )}
+
+        {state.connectError === 'not_found' && (
+          <div
+            data-testid="room-error-not-found"
+            className="room-board__card flex flex-col items-center gap-4 text-center"
+          >
+            <div className="pp-chip flex items-center justify-center p-2">
+              <StudioSprite sprite={studioSprites.errorNotFound} scale={3} />
+            </div>
+            <div className="space-y-1">
+              <h1 className="text-2xl uppercase text-[var(--sunset-2)]">
+                Easel Not Found
+              </h1>
+              <p className="text-base text-muted-foreground">
+                No studio easel exists for code <span className="text-[var(--sunset-3)]">{joinCode}</span>.
+                Check the ticket code or head back to the studio.
+              </p>
+            </div>
+            <Link
+              to="/party"
+              data-testid="room-exit"
+              onClick={onRoomExitClick}
+              className="pp-btn inline-flex h-10 items-center justify-center gap-1.5 px-5 text-lg uppercase"
+            >
+              <ArrowLeft className="h-4 w-4" aria-hidden />
+              Back to the studio
+            </Link>
+          </div>
+        )}
+
+        {state.connectError === 'closed' && (
+          <div
+            data-testid="room-error-closed"
+            className="room-board__card flex flex-col items-center gap-4 text-center"
+          >
+            <div className="pp-chip flex items-center justify-center p-2">
+              <StudioSprite sprite={studioSprites.errorClosed} scale={3} />
+            </div>
+            <div className="space-y-1">
+              <h1 className="text-2xl uppercase text-[var(--sunset-2)]">
+                {state.closedByHost ? 'This room was closed by the host' : 'This Room Has Closed'}
+              </h1>
+              <p className="text-base text-muted-foreground">
+                Room <span className="text-[var(--sunset-1)]">{joinCode}</span> has been packed up. Head
+                back to the studio to join another easel or set up a new one.
+              </p>
+            </div>
+            <Link
+              to="/party"
+              data-testid="room-exit"
+              onClick={onRoomExitClick}
+              className="pp-btn inline-flex h-10 items-center justify-center gap-1.5 px-5 text-lg uppercase"
+            >
+              <ArrowLeft className="h-4 w-4" aria-hidden />
+              Back to the studio
+            </Link>
+          </div>
+        )}
+
+    </>
+  ) : null
+
+  const lobbyTop = (
+        <div className="room-top-bar">
+          <span className="room-top-bar__pin" aria-hidden="true" />
           <div className="flex flex-wrap items-center gap-3">
             <Link
               to="/party"
               data-testid="room-exit"
+              onClick={onRoomExitClick}
               className="pp-chip inline-flex items-center gap-1.5 text-base uppercase tracking-wider hover:bg-secondary"
             >
               <ArrowLeft className="h-4 w-4" aria-hidden />
-              Back downstairs to the studio
+              Back to the studio
             </Link>
             {inviteTicket}
             {customRoomName && (
@@ -713,7 +799,9 @@ export default function RoomPage() {
           </div>
           {roomControls}
         </div>
+  )
 
+  const lobbyFace = (
         <div data-testid="room-lobby" className="pp-panel room-lobby-card space-y-4 p-5">
           <div className="room-lobby-stage">
             <div className="room-lobby-easel">
@@ -745,6 +833,19 @@ export default function RoomPage() {
               >
                 Start painting
               </Button>
+            ) : publicSignedOut ? (
+              <div className="flex flex-col items-start gap-2">
+                <p data-testid="public-board-signed-out" className="text-base text-muted-foreground">
+                  Public board is open — sign in to start a round and paint.
+                </p>
+                <Button
+                  data-testid="public-board-sign-in"
+                  onClick={() => setShowAuthModal(true)}
+                  className="pp-btn px-6 py-2 text-xl uppercase"
+                >
+                  Sign in to paint
+                </Button>
+              </div>
             ) : (
               <p className="text-base text-muted-foreground">
                 Waiting for the host to start.
@@ -768,9 +869,7 @@ export default function RoomPage() {
             ))}
           </ul>
         </div>
-      </div>
-    )
-  }
+  )
 
   const remainingMs =
     state.round?.endsAt != null && state.round.state === 'playing'
@@ -779,7 +878,8 @@ export default function RoomPage() {
 
   const topSlot = (
     <>
-      <div ref={headerRef} className="pp-panel room-top-bar">
+      <div ref={headerRef} className="room-top-bar">
+        <span className="room-top-bar__pin" aria-hidden="true" />
         <div className="flex flex-wrap items-center gap-2.5">
           {inviteTicket}
           {customRoomName ? (
@@ -830,7 +930,7 @@ export default function RoomPage() {
         <div
           data-testid="reject-notice"
           role="status"
-          className="pp-panel flex items-center justify-between gap-2 px-3 py-1 text-base text-[var(--sunset-1)]"
+          className="pp-panel room-reject-float flex items-center justify-between gap-2 px-3 py-1 text-base text-[var(--sunset-1)]"
         >
           <div className="flex items-center gap-2">
             <AlertCircle className="h-4 w-4 shrink-0 text-[var(--sunset-2)]" aria-hidden />
@@ -903,17 +1003,18 @@ export default function RoomPage() {
     <Link
       to="/party"
       data-testid="room-exit"
+      onClick={onRoomExitClick}
       className="room-exit room-exit--full"
     >
       <ArrowLeft className="h-4 w-4 shrink-0" aria-hidden />
-      <span>Back downstairs to the studio</span>
+      <span>Back to the studio</span>
     </Link>
   )
 
   const canvasSlot = (
     <div ref={centerColRef} className="flex w-full min-w-0 justify-center">
       <div ref={canvasSlotRef} className="flex items-center justify-center">
-        <HoverEasel boosterScale={2}>
+        <div ref={boardRef} className="room-board" style={{ width: boardPx, height: boardPx }}>
           <PixelCanvas
             width={state.width}
             height={state.height}
@@ -1039,9 +1140,24 @@ export default function RoomPage() {
                   </div>
                   <div className="pp-results-footer flex w-full shrink-0 flex-col items-center gap-1.5 border-t border-border p-2.5 text-xs text-muted-foreground">
                     <span>
-                      {canStart ? 'Ready when you are.' : 'Waiting for the host to start a new game.'}
+                      {canStart
+                        ? 'Ready when you are.'
+                        : publicSignedOut
+                          ? 'Public board is open — sign in to start a round and paint.'
+                          : 'Waiting for the host to start a new game.'}
                     </span>
                     <div className="flex items-center gap-2">
+                      {publicSignedOut && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          data-testid="public-board-sign-in-overlay"
+                          onClick={() => setShowAuthModal(true)}
+                          className="pp-btn h-8 px-3 text-sm uppercase"
+                        >
+                          Sign in to paint
+                        </Button>
+                      )}
                       <Button
                         type="button"
                         variant="secondary"
@@ -1072,10 +1188,11 @@ export default function RoomPage() {
               </div>
             )}
           </PixelCanvas>
-        </HoverEasel>
+        </div>
       </div>
     </div>
   )
+
 
   const scoreSlot = (
     <div className="flex min-w-0 flex-col">
@@ -1136,28 +1253,48 @@ export default function RoomPage() {
     />
   )
 
+
+  // Connecting is laid out as the playing room (panels and tray already in place, the board a face that says so), so the
+  // layout does not change the moment the snapshot arrives: the same mount, then the board's face turns into the board.
+  const playing = !state.connectError && state.round?.state !== 'lobby'
+  const lobby = !loading && !state.connectError && state.round?.state === 'lobby'
+  const faceContent = loading ? loadingFace : state.connectError ? errorFace : lobby ? lobbyFace : null
+  const boardSlot = playing && !loading ? canvasSlot : (
+    <div ref={centerColRef} className="flex w-full min-w-0 justify-center">
+      <div ref={canvasSlotRef} className="flex items-center justify-center">
+        <div ref={boardRef} className="room-board room-board--face" style={{ width: boardPx, height: boardPx }}>
+          {faceContent}
+        </div>
+      </div>
+    </div>
+  )
+
   return (
     <div
       ref={roomPageRef}
       data-testid="room-page"
-      className="room-play mx-auto flex w-full max-w-[1400px] flex-col px-3 py-1 sm:px-5"
+      data-play-phase={world.phase}
+      className={`room-play${playing ? '' : ' room-play--face'} mx-auto flex w-full max-w-[1400px] flex-col px-3 py-1 sm:px-5`}
     >
-      <StudioBackdrop />
       <div className="play-controls">
-        <PlayLayout
-          top={topSlot}
-          prompt={promptSlot}
-          timeline={timelineSlot}
-          exit={exitSlot}
-          canvas={canvasSlot}
-          score={scoreSlot}
-          actions={actionsSlot}
-          bottom={bottomSlot}
-          rightSummary="Haiku &amp; painters"
-        />
+        <div ref={registerRef} className="play-register" data-registered="">
+          <PlayLayout
+            top={playing ? topSlot : lobby ? lobbyTop : null}
+            prompt={playing ? promptSlot : null}
+            // The roster is room data: it does not exist (not even as an empty list) until access is known.
+            timeline={playing && !loading ? timelineSlot : null}
+            exit={playing ? exitSlot : null}
+            canvas={boardSlot}
+            // Haiku and the bell are room data too: they appear with the snapshot, not before it.
+            score={playing && !loading ? scoreSlot : null}
+            actions={playing && !loading ? actionsSlot : null}
+            bottom={playing ? bottomSlot : null}
+            rightSummary="Haiku &amp; painters"
+          />
+        </div>
       </div>
 
-      {showAuthModal && <AuthOverlay onClose={() => setShowAuthModal(false)} />}
+      <RoomSignInSlip open={showAuthModal} onClose={() => setShowAuthModal(false)} />
     </div>
   )
 }

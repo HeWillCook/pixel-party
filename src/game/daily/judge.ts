@@ -1,8 +1,9 @@
-import { JUDGE } from '../config'
+import { DAILY, JUDGE } from '../config'
 
 export interface DailyJudgeBody {
   model: string
   max_tokens: number
+  temperature: number
   system: string
   messages: [
     {
@@ -16,21 +17,36 @@ export interface DailyJudgeBody {
 }
 
 export const BLIND_SYSTEM =
-  'You are guessing a 32x32 pixel-art drawing made by one person for a guessing game. Ignore isolated stray pixels; they may be noise. Reply with raw JSON only, no markdown fences: {"guess": "short phrase"}.'
+  'You are guessing a 32x32 pixel-art drawing made by one person for a guessing game. Ignore isolated stray pixels; they may be noise. If the image is entirely blank (no colored pixels drawn), reply with {"guess": ""}. Reply with raw JSON only, no markdown fences: {"guess": "short phrase"}.'
 
 export const BLIND_USER_TEXT =
   'What is this a drawing of? Reply with raw JSON only: {"guess": "short phrase"}.'
 
 export const SCORE_SYSTEM =
-  'You judge a 32x32 pixel-art drawing for a daily challenge. Score two things from 0 to 100:\n' +
-  '- fit: how well the drawing shows the whole prompt (subject plus detail).\n' +
-  '- recognition: how close the blind guess is to the target subject (exact or synonym ~ 100, related ~ 50, wrong = 0).\n' +
-  'Reply with raw JSON only, no markdown fences: {"fit": number, "recognition": number, "reason": "one short sentence addressed to the player"}.'
+  'You judge a 32x32 pixel-art drawing for a daily challenge. Score strictly against the rubric; never inflate.\n' +
+  '\n' +
+  'fit (0-100): how much of the prompt (subject plus the detail it asks for) is actually drawn.\n' +
+  '- 0-15: scribbles, unrelated marks, or nearly blank.\n' +
+  '- 20-40: crude or minimal, missing the key details, only loosely readable.\n' +
+  '- 45-65: clearly recognizable subject with basic detail.\n' +
+  '- 70-85: strong detail and a clear match to the prompt.\n' +
+  '- 86-100: standout composition and pixel craft; reserve for excellent work only.\n' +
+  '\n' +
+  'recognition (0-100): how close the blind guess is to the target subject.\n' +
+  '- 0: the blind guess missed the subject completely; a wrong guess must never score above 0 here.\n' +
+  '- 35-60: only a closely related subject or visual cousin of the target.\n' +
+  '- 75-100: exact subject or a clear synonym.\n' +
+  '\n' +
+  'If recognition is 0, the drawing is unrecognizable, so fit must stay low (at most 55).\n' +
+  'If the image is entirely blank (no colored pixels drawn), reply with {"fit": 0, "recognition": 0, "reason": "Nothing is drawn yet"}.\n' +
+  `The reason is ONE sentence addressed to the player, at most ${DAILY.reasonMaxChars} characters including spaces; it is shown in a small box, so shorter is better.\n` +
+  `Reply with raw JSON only, no markdown fences: {"fit": number, "recognition": number, "reason": "one sentence, at most ${DAILY.reasonMaxChars} characters"}.`
 
 export function buildBlindBody(pngBase64: string): DailyJudgeBody {
   return {
     model: JUDGE.model,
     max_tokens: JUDGE.maxTokens,
+    temperature: 0,
     system: BLIND_SYSTEM,
     messages: [
       {
@@ -49,11 +65,12 @@ export function buildScoreBody(pngBase64: string, prompt: string, subject: strin
     `Prompt: ${prompt}\n` +
     `Subject: ${subject}\n` +
     `Blind guess: ${guess}\n` +
-    'Reply with raw JSON only: {"fit": number, "recognition": number, "reason": "one short sentence addressed to the player"}.'
+    `Reply with raw JSON only: {"fit": number, "recognition": number, "reason": "one sentence, at most ${DAILY.reasonMaxChars} characters"}.`
 
   return {
     model: JUDGE.model,
     max_tokens: JUDGE.maxTokens,
+    temperature: 0,
     system: SCORE_SYSTEM,
     messages: [
       {
@@ -94,6 +111,19 @@ export function parseBlind(text: string): { guess: string } | null {
   return guess.length > 0 ? { guess } : null
 }
 
+/** Fit a judge reason into `max` characters without cutting a word: keep whole sentences, else cut at a word and add "…". */
+export function clampReason(text: string, max: number = DAILY.reasonMaxChars): string {
+  const clean = text.replace(/\s+/g, ' ').trim()
+  if (clean.length <= max) return clean
+  const head = clean.slice(0, max)
+  const stop = Math.max(head.lastIndexOf('. '), head.lastIndexOf('! '), head.lastIndexOf('? '))
+  if (stop >= max * 0.4) return head.slice(0, stop + 1)
+  const room = clean.slice(0, max - 1)
+  const space = room.lastIndexOf(' ')
+  const words = space > 0 && clean[max - 1] !== ' ' ? room.slice(0, space) : room
+  return `${words.replace(/[\s,;:\-–—]+$/, '')}…`
+}
+
 export function parseScore(text: string): { fit: number; recognition: number; reason: string } | null {
   const parsed = extractJsonObject(text)
   if (!parsed) return null
@@ -101,7 +131,7 @@ export function parseScore(text: string): { fit: number; recognition: number; re
   const recognition = parseClampedPercent(parsed.recognition)
   if (fit === null || recognition === null) return null
   if (typeof parsed.reason !== 'string') return null
-  const reason = parsed.reason.trim().slice(0, 140)
+  const reason = clampReason(parsed.reason)
   if (reason.length === 0) return null
   return { fit, recognition, reason }
 }

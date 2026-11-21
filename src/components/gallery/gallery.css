@@ -1,277 +1,198 @@
 .porch-shell:has(.gallery-page) > .porch-nav {
-  z-index: 2;
-  background-color: #985c5a;
-  background-image: repeating-linear-gradient(
-    to right,
-    #614052 0 var(--px, 3px),
-    #c57d63 var(--px, 3px) calc(var(--px, 3px) * 2),
-    #985c5a calc(var(--px, 3px) * 2) calc(var(--px, 3px) * 14)
-  );
+  z-index: 15;
 }
 
+/* A player's gallery is the wall of the house, to the left of the porch: the camera pans along it at the porch's own zoom, and the
+   paintings, arrow signs and page plank are HTML in scene units, children of the scene, so they travel with the siding exactly. */
 .gallery-page {
+  --px: 3px;
   position: relative;
   min-height: 100%;
-  padding: calc(var(--px, 3px) * 8) calc(var(--px, 3px) * 5) calc(var(--px, 3px) * 38);
-}
-
-@media (min-width: 768px) {
-  .gallery-page {
-    padding-right: calc(var(--px, 3px) * 80);
-  }
+  overflow-x: clip;
 }
 
 .gallery-backdrop {
-  position: absolute;
+  position: fixed;
   inset: 0;
   z-index: 0;
-  overflow: hidden;
+  pointer-events: none;
+  touch-action: none;
+}
+
+.gallery-backdrop__scene {
+  position: absolute;
+  inset: 0;
+}
+
+/* The wall outside a painting is a way back out: click it to pan back along the porch. */
+.gallery-backdrop--dismiss {
+  pointer-events: auto;
+  cursor: zoom-out;
+}
+
+/* The house's wall: one painted tile of siding repeated leftwards from the porch's edge (scene x = 0), one camera view long. */
+.porch-wall {
+  position: absolute;
+  right: 100%;
+  top: 0;
+  height: 100%;
+  background-repeat: repeat-x;
+  background-position: right top;
+  image-rendering: pixelated;
   pointer-events: none;
 }
 
-.gallery-backdrop__canvas {
+/* Origin of the paintings: the porch's edge. Everything is placed in scene units from here (negative left). */
+.wall-paintings {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  color: #392a45;
+}
+.wall-paintings[inert] { pointer-events: none; }
+
+.wall-painting {
+  position: absolute;
+}
+/* The rail the pages hang on: a window between the arrow signs. A page turn slides one page out of it and the next in. */
+.wall-rail { position: absolute; overflow: hidden; }
+.wall-page { position: absolute; inset: 0; }
+
+.wall-frame {
+  position: absolute;
+  box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  border-style: solid;
+  border-color: #392a45;
+  background: #c57d63;
+  box-shadow:
+    inset 0 0 0 calc(var(--px) * 0.7) #ecae7d,
+    inset 0 0 0 calc(var(--px) * 1.4) #985c5a,
+    calc(var(--px) * 1.4) calc(var(--px) * 1.4) 0 rgba(57, 42, 69, 0.5);
+}
+.wall-frame--gilt {
+  background: #f5a267;
+  box-shadow:
+    inset 0 0 0 calc(var(--px) * 0.7) #fff0bb,
+    inset 0 0 0 calc(var(--px) * 1.4) #ffcf84,
+    calc(var(--px) * 1.4) calc(var(--px) * 1.4) 0 rgba(57, 42, 69, 0.5);
+}
+.wall-frame__thumb {
   display: block;
-  image-rendering: pixelated;
+  border: 0 !important;
+  background: #fff0cc;
 }
 
-.gallery-stage {
-  position: relative;
-  z-index: 1;
-  width: 100%;
-  max-width: 920px;
-  margin: 0 auto;
+.wall-card,
+.wall-note {
+  position: absolute;
+  box-sizing: border-box;
+  overflow: hidden;
+  display: grid;
+  align-content: start;
+  gap: calc(var(--px) * 0.4);
+  padding: calc(var(--px) * 0.8) calc(var(--px) * 1.4);
+  background: #fff0cc;
+  color: #392a45;
+  border: calc(var(--px) * 0.7) solid #985c5a;
+  box-shadow: inset 0 0 0 calc(var(--px) * 0.5) #ecd4b0, calc(var(--px) * 1) calc(var(--px) * 1) 0 rgba(57, 42, 69, 0.5);
+}
+.wall-card__prompt {
+  margin: 0;
+  font-size: var(--wall-prompt);
+  font-weight: 700;
+  line-height: 1.05;
+}
+.wall-card__meta {
+  margin: 0;
   display: flex;
-  flex-direction: column;
-  gap: calc(var(--px, 3px) * 8);
-}
-
-.gallery-header {
-  display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  align-self: flex-start;
-  gap: calc(var(--px, 3px) * 6);
-  max-width: 100%;
-  padding: calc(var(--px, 3px) * 4) calc(var(--px, 3px) * 6);
-  background: #fff0cc;
-  border: calc(var(--px, 3px) * 2) solid #985c5a;
-  outline: var(--px, 3px) solid #392a45;
-  box-shadow:
-    inset 0 0 0 var(--px, 3px) #ecae7d,
-    0 calc(var(--px, 3px) * 2) 0 #392a45;
+  column-gap: calc(var(--px) * 1.6);
+  font-size: var(--wall-meta);
+  line-height: 1.1;
 }
-
-.gallery-title {
-  margin: 0;
-  font-size: 34px;
-  line-height: 1;
-  color: #392a45;
-  text-shadow: var(--px, 3px) var(--px, 3px) #ecae7d;
-}
-
-.gallery-wall {
+.wall-card__meta span { white-space: nowrap; }
+/* The medal is pinned to the frame's top corner, so the caption holds words only. */
+.wall-painting .wall-card__medal { position: absolute; z-index: 2; right: calc(var(--px) * -3); top: calc(var(--px) * -4); }
+.wall-arrow {
+  position: absolute;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: calc(var(--px, 3px) * 8) calc(var(--px, 3px) * 7);
-  align-items: start;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  min-width: 44px;
+  min-height: 44px;
+  touch-action: manipulation;
 }
-
-@media (max-width: 1199px) {
-  .gallery-wall {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 959px) {
-  .gallery-wall {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-@media (max-width: 640px) {
-  .gallery-page {
-    padding: calc(var(--px, 2px) * 8) calc(var(--px, 2px) * 6) calc(var(--px, 2px) * 44);
-  }
-
-  .gallery-header {
-    width: auto;
-    gap: calc(var(--px, 2px) * 4);
-    padding: calc(var(--px, 2px) * 4) calc(var(--px, 2px) * 5);
-  }
-
-  .gallery-title {
-    font-size: 26px;
-  }
-}
-
-.gallery-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: calc(var(--px, 3px) * 4);
-}
-
-.gallery-hanger {
-  position: relative;
-  z-index: 0;
-  width: calc(var(--px, 3px) * 24);
-  height: calc(var(--px, 3px) * 6);
-  margin-bottom: calc(var(--px, 3px) * -5);
-  pointer-events: none;
-}
-
-.gallery-hanger::before {
-  content: '';
+.wall-arrow--left .wall-arrow__art { transform: scaleX(-1); }
+.wall-arrow:hover .wall-arrow__art { filter: brightness(1.12); }
+.wall-arrow:active .wall-arrow__art { translate: 0 var(--px); }
+.wall-arrow:focus-visible { outline: max(2px, var(--px)) solid #fff0cc; outline-offset: var(--px); }
+.wall-plank {
   position: absolute;
-  left: 50%;
-  top: 0;
-  width: calc(var(--px, 3px) * 2);
-  height: calc(var(--px, 3px) * 2);
-  transform: translateX(-50%);
-  background: #ffcf84;
-  border: var(--px, 3px) solid #392a45;
-  box-sizing: content-box;
-}
-
-.gallery-hanger::after {
-  content: '';
-  position: absolute;
-  left: calc(var(--px, 3px) * 3);
-  right: calc(var(--px, 3px) * 3);
-  top: calc(var(--px, 3px) * 2);
-  height: calc(var(--px, 3px) * 4);
-  border-top: var(--px, 3px) solid #d1b5a3;
-  border-left: var(--px, 3px) solid #d1b5a3;
-  border-right: var(--px, 3px) solid #d1b5a3;
-}
-
-.gallery-frame {
-  position: relative;
-  z-index: 1;
-  padding: calc(var(--px, 3px) * 5);
-  background: #fff0cc;
-  border: calc(var(--px, 3px) * 2) solid #614052;
-  outline: var(--px, 3px) solid #392a45;
-  box-shadow:
-    inset 0 0 0 var(--px, 3px) #392a45,
-    inset 0 0 0 calc(var(--px, 3px) * 3) #ecd4b0,
-    0 calc(var(--px, 3px) * 2) 0 #392a45;
-}
-
-.gallery-frame--wood {
-  border-color: #614052;
-  box-shadow:
-    inset 0 0 0 var(--px, 3px) #985c5a,
-    inset 0 0 0 calc(var(--px, 3px) * 2) #392a45,
-    inset 0 0 0 calc(var(--px, 3px) * 4) #ecd4b0,
-    0 calc(var(--px, 3px) * 2) 0 #392a45;
-}
-
-.gallery-frame--gilt {
-  border-color: #ffcf84;
-  box-shadow:
-    inset 0 0 0 var(--px, 3px) #fff0bb,
-    inset 0 0 0 calc(var(--px, 3px) * 2) #f5a267,
-    inset 0 0 0 calc(var(--px, 3px) * 3) #392a45,
-    inset 0 0 0 calc(var(--px, 3px) * 4) #fff0cc,
-    0 calc(var(--px, 3px) * 2) 0 #392a45;
-}
-
-.gallery-frame__thumb {
-  display: block;
-  border: var(--px, 3px) solid #392a45;
-}
-
-.gallery-plaque {
-  width: 100%;
-  max-width: 280px;
-  padding: calc(var(--px, 3px) * 3) calc(var(--px, 3px) * 4);
-  background: linear-gradient(to bottom, #fff0bb 0 40%, #ecd4b0 40% 100%);
-  color: #392a45;
-  border: var(--px, 3px) solid #985c5a;
-  outline: var(--px, 3px) solid #392a45;
-  box-shadow:
-    inset 0 0 0 var(--px, 3px) #ffcf84,
-    0 var(--px, 3px) 0 #392a45;
-  display: flex;
-  flex-direction: column;
-  gap: calc(var(--px, 3px) * 1);
-}
-
-.gallery-plaque__top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: calc(var(--px, 3px) * 2);
-}
-
-.gallery-plaque__prompt {
+  box-sizing: border-box;
   margin: 0;
-  font-size: 22px;
-  line-height: 1.1;
-  color: #392a45;
-  min-width: 0;
-  overflow-wrap: anywhere;
+  display: grid;
+  place-items: center;
+  background: #c57d63;
+  color: #fff0cc;
+  border: calc(var(--px) * 0.7) solid #392a45;
+  box-shadow: inset 0 0 0 calc(var(--px) * 0.5) #985c5a, calc(var(--px) * 1) calc(var(--px) * 1) 0 rgba(57, 42, 69, 0.5);
+  font-size: max(12px, calc(var(--px) * 3.4));
+  line-height: 1;
+  white-space: nowrap;
 }
-
-.gallery-plaque__medal-wrap {
-  display: inline-flex;
-  align-items: center;
-  gap: calc(var(--px, 3px) * 2);
-  flex: none;
+.wall-note {
+  align-content: center;
+  gap: calc(var(--px) * 1.2);
+  text-align: center;
+  justify-items: center;
 }
-
-.gallery-plaque__medal {
-  display: inline-flex;
-  align-items: center;
-  flex: none;
+.wall-note p {
+  margin: 0;
+  font-size: max(11px, calc(var(--px) * 3.4));
+  font-weight: 700;
+  line-height: 1.05;
 }
-
-.gallery-plaque__rank {
-  padding: 0 var(--px, 3px);
-  background: #fff0cc;
-  border: var(--px, 3px) solid #985c5a;
-  color: #392a45;
-  font-size: 16px;
-  line-height: 1.1;
+.wall-note .pp-btn {
+  min-height: 44px;
+  padding: 0 calc(var(--px) * 2);
+  font-size: max(11px, calc(var(--px) * 2.8));
   white-space: nowrap;
 }
 
-.gallery-plaque__meta {
-  margin: 0;
-  font-size: 18px;
-  line-height: 1.2;
-  color: #614052;
-}
-
-.gallery-plaque__guess {
-  margin: 0;
-  font-size: 19px;
-  line-height: 1.2;
-  color: #392a45;
-  overflow-wrap: anywhere;
-}
-
-.gallery-empty-wrap {
+/* A small plaque under the nav: whose wall it is, and the way back. It stays put while the wall slides. */
+.gallery-hud {
+  position: fixed;
+  z-index: 3;
+  left: 16px;
+  top: calc(var(--gallery-nav, 76px) + 8px);
   display: flex;
-  justify-content: center;
-  padding-top: calc(var(--px, 3px) * 2);
-}
-
-.gallery-empty-canvas {
-  width: calc(var(--px, 3px) * 64);
-  height: calc(var(--px, 3px) * 64);
-  box-sizing: content-box;
-  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: center;
-  padding: calc(var(--px, 3px) * 4);
-  text-align: center;
-  background: #ecd4b0;
-  border: var(--px, 3px) solid #985c5a;
-  box-shadow: inset 0 0 0 var(--px, 3px) #fff0cc;
-  color: #614052;
-  font-size: 20px;
-  line-height: 1.2;
+  gap: 8px 12px;
+  max-width: calc(100vw - 32px);
+  padding: 6px 10px;
+  background: #fff0cc;
+  color: #392a45;
+  border: 3px solid #985c5a;
+  box-shadow: inset 0 0 0 2px #ecd4b0, 3px 3px 0 rgba(57, 42, 69, 0.55);
 }
+.gallery-hud__title { margin: 0; font-size: 22px; line-height: 1; }
+.gallery-hud .pp-chip { min-height: 44px; display: inline-flex; align-items: center; padding: 0 12px; font-size: 18px; }
+@media (max-width: 640px) {
+  .gallery-hud { left: 8px; gap: 4px 8px; padding: 4px 8px; }
+  .gallery-hud__title { font-size: 18px; }
+}
+/* TEMP DEBUG: remove before launch. Down on the deck boards, clear of the paintings. */
+.gallery-debug { position: fixed; z-index: 3; left: 8px; bottom: 8px; max-width: calc(100vw - 16px); display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 4px 8px; font-size: 15px; line-height: 1; background: #fff0cc; color: #392a45; border: 3px solid #985c5a; box-shadow: inset 0 0 0 2px #ecd4b0, 3px 3px 0 rgba(57, 42, 69, 0.55); }
+.gallery-debug__label { opacity: 0.7; }
+.gallery-debug .gallery-debug__button { min-height: 32px; padding: 0 10px; font-size: 15px; }
+.gallery-debug__note { opacity: 0.8; }
+.gallery-page--leaving .gallery-hud, .gallery-page--leaving .gallery-debug { pointer-events: none; }

@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Sparkles, Users } from 'lucide-react'
 import { EMPTY_CANVAS, PALETTE } from '../../game/config'
 import { usePixelRoom } from '../../hooks/usePixelRoom'
+import type { RoomSummary } from './StudioWorld'
 import { studioSprites } from '../../scene/studio/sprites'
-import { BoosterSprite } from '../play/BoosterSprite'
+import { EaselBase } from '../play/EaselBase'
 import { StudioSprite } from '../play/StudioSprite'
 
 export interface MagicEaselRoomInfo {
@@ -19,6 +20,9 @@ export interface MagicEaselProps {
   fallbackRoom: MagicEaselRoomInfo | null
   smokeMessage: string | null
   transformSeq: number
+  onStepIn?: (path: string, event?: MouseEvent) => void
+  /** Set while a room is open on the easel: the room's own board stands on the surface, so no preview connection is made. */
+  roomView?: { summary: RoomSummary | null }
 }
 
 interface MagicSparkSpec {
@@ -123,9 +127,11 @@ export function MagicEasel({
   fallbackRoom,
   smokeMessage,
   transformSeq,
+  onStepIn,
+  roomView,
 }: MagicEaselProps) {
   const navigate = useNavigate()
-  const { state } = usePixelRoom(selectedCode ?? '', { spectator: true })
+  const { state } = usePixelRoom(roomView ? '' : selectedCode ?? '', { spectator: true })
   const [transforming, setTransforming] = useState(false)
   const prevSeqRef = useRef<number>(transformSeq)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -160,11 +166,15 @@ export function MagicEasel({
     return fallbackRoom?.name ?? `Room ${selectedCode}`
   }, [fallbackRoom?.name, selectedCode])
 
-  const painters = state.snapshotLoaded
-    ? state.players
-    : (fallbackRoom?.playerCount ?? 0)
-  const roundLabel = roundStateLabel(state.round?.state ?? fallbackRoom?.status)
-  const hiddenWord = maskWord(state.round?.word)
+  const painters = roomView
+    ? (roomView.summary?.players ?? 0)
+    : state.snapshotLoaded
+      ? state.players
+      : (fallbackRoom?.playerCount ?? 0)
+  const roundLabel = roomView
+    ? roundStateLabel(roomView.summary?.roundState)
+    : roundStateLabel(state.round?.state ?? fallbackRoom?.status)
+  const hiddenWord = maskWord(roomView ? roomView.summary?.word : state.round?.word)
 
   const effectiveSmoke =
     smokeMessage ??
@@ -176,7 +186,9 @@ export function MagicEasel({
     if (e.key === 'Enter' && selectedCode && !effectiveSmoke) {
       if (e.target instanceof HTMLElement && e.target.closest('a, button')) return
       e.preventDefault()
-      navigate(`/r/${encodeURIComponent(selectedCode)}`)
+      const path = `/r/${encodeURIComponent(selectedCode)}`
+      if (onStepIn) onStepIn(path)
+      else navigate(path)
     }
   }
 
@@ -253,13 +265,13 @@ export function MagicEasel({
               </div>
 
               <div className="studio-magic-easel__board-wrap">
-                <LiveBoardPreview
+                {roomView ? null : <LiveBoardPreview
                   width={state.width}
                   height={state.height}
                   cells={state.cells}
                   snapshotLoaded={state.snapshotLoaded}
                   connectError={state.connectError}
-                />
+                />}
               </div>
 
               <div data-testid="magic-easel-word" className="studio-magic-easel__word" aria-label="Word hidden">
@@ -291,6 +303,7 @@ export function MagicEasel({
           <Link
             to={`/r/${encodeURIComponent(selectedCode)}`}
             data-testid="magic-easel-step-in"
+            onClick={(event) => onStepIn?.(`/r/${encodeURIComponent(selectedCode)}`, event)}
             className="studio-magic-easel__stepin"
           >
             Step in
@@ -305,19 +318,8 @@ export function MagicEasel({
       </div>
 
       <div className="studio-magic-easel__base" aria-hidden="true">
-        <span className="studio-magic-easel__leg studio-magic-easel__leg--left" />
-        <span className="studio-magic-easel__leg studio-magic-easel__leg--right" />
-        <span className="studio-magic-easel__booster">
-          <BoosterSprite scale="scene" phaseOffset={0} className="studio-magic-easel__booster-sprite" />
-        </span>
-        <span className="studio-magic-easel__booster">
-          <BoosterSprite scale="scene" phaseOffset={2} className="studio-magic-easel__booster-sprite" />
-        </span>
-        <span className="studio-magic-easel__booster">
-          <BoosterSprite scale="scene" phaseOffset={4} className="studio-magic-easel__booster-sprite" />
-        </span>
+        <EaselBase legs={12} />
       </div>
-      <div className="studio-magic-easel__shadow" aria-hidden="true" />
     </div>
   )
 }

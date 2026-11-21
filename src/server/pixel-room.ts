@@ -384,6 +384,7 @@ export class PixelRoom extends BaseRoom<Env> {
     await this.transition(transition)
     if (requester && outcome.kind === 'skipped') {
       if (outcome.why === 'unchanged') this.sendGame(requester, { t: 'reject', reason: 'canvas_unchanged' })
+      else if (outcome.why === 'canvas_blank') this.sendGame(requester, { t: 'reject', reason: 'canvas_blank' })
       else if (['too_soon', 'rate_cap', 'in_flight'].includes(outcome.why)) {
         const calls = this.game.judgeCalls.filter(time => time > Date.now() - 60000).sort((left, right) => left - right)
         const rateReady = calls.length >= JUDGE.maxPerMinute ? calls[calls.length - JUDGE.maxPerMinute] + 60000 : 0

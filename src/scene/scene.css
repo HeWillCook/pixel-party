@@ -1,6 +1,9 @@
-.pixel-scene { position: relative; overflow: hidden; }
+/* Zero specificity: a page's own `.x__scene { position: absolute; inset: 0 }` must win whatever order the stylesheets were injected in
+   (dev injects per module, so an eagerly imported page's CSS can land first; the scene then collapsed to height 0 over a bare backdrop). */
+:where(.pixel-scene) { position: relative; overflow: hidden; }
 .pixel-scene__center { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); }
-.pixel-scene__camera { position: absolute; inset: 0; transform-origin: 0 0; transition: transform var(--scene-zoom-ms) ease-in-out; }
+.pixel-scene__camera { position: absolute; inset: 0; transform-origin: 0 0; transition: transform var(--scene-zoom-ms) var(--scene-zoom-easing, cubic-bezier(0.6, 0, 0.2, 1)); will-change: transform; backface-visibility: hidden; }
+.pixel-scene--instant > .pixel-scene__center > .pixel-scene__camera { transition: none; }
 .pixel-scene__canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
 .pixel-hotspot { position: absolute; display: block; min-width: 44px; min-height: 44px; padding: 0; border: 0; background: transparent; cursor: pointer; }
 .pixel-hotspot:focus-visible { outline: max(2px, var(--px)) solid #fff0cc; outline-offset: var(--px); }

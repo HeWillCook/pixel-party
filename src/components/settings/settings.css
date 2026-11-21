@@ -1,0 +1,138 @@
+/* Settings is an opened mailbox letter: the porch mailbox close-up stays behind it, the mailbox
+   itself stays clear of the letter, and the letter rises during the last ~30% of the inbound zoom. */
+/* The page paints a fixed porch backdrop inside <main>; the nav must sit above it so the signs and
+   the account button stay visible and clickable, exactly as on /scores. */
+.porch-shell:has(.settings-page) > .porch-nav {
+  z-index: 15;
+}
+
+.settings-page {
+  position: relative;
+  min-height: 100%;
+}
+
+.settings-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* The porch around the mailbox is a way back out: click it to zoom out to the porch. */
+.settings-backdrop--dismiss {
+  pointer-events: auto;
+  cursor: zoom-out;
+}
+
+.settings-backdrop__scene {
+  position: absolute;
+  inset: 0;
+}
+
+/* Slight dusk scrim so the letter reads over the busy wall art. */
+.settings-backdrop::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(57, 42, 69, 0.2) 0%, rgba(57, 42, 69, 0.34) 100%);
+}
+
+.settings-stage {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  min-height: 100%;
+}
+
+.settings-gutter {
+  display: none;
+  flex: none;
+  width: var(--settings-mailbox-space, 0px);
+}
+
+.settings-column {
+  flex: 1;
+  min-width: 0;
+  max-width: 624px;
+  padding: 32px 24px 48px;
+}
+
+/* Mailbox in the left third, letter in the centre-right. */
+.settings-stage--side .settings-gutter {
+  display: block;
+}
+
+.settings-stage--side .settings-column {
+  margin-left: 0;
+}
+
+/* Narrow screens: the mailbox is pinned low, so the letter keeps clear of it above. */
+.settings-stage--below {
+  padding-bottom: var(--settings-mailbox-reserve, 0px);
+}
+
+.settings-stage--below .settings-column {
+  padding: 16px 16px 8px;
+  margin: 0 auto;
+}
+
+/* The letter is slid out of the mailbox and back into it: the stage is clipped at the mailbox's edge, so it
+   emerges from behind the mailbox instead of fading in. Nothing here changes opacity. */
+.settings-stage--side { clip-path: inset(0 0 0 var(--settings-mailbox-space, 0px)); }
+.settings-stage--below { clip-path: inset(0 0 var(--settings-mailbox-reserve, 0px) 0); }
+
+.settings-page--arriving .settings-stage--side .settings-column { animation: settings-letter-out-side 260ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+.settings-page--arriving .settings-stage--below .settings-column { animation: settings-letter-out-below 260ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+.settings-page--leaving .settings-column {
+  pointer-events: none;
+  transition: transform 300ms cubic-bezier(0.6, 0, 0.2, 1);
+}
+.settings-page--leaving .settings-stage--side .settings-column { transform: translate3d(-110%, 0, 0); }
+.settings-page--leaving .settings-stage--below .settings-column { transform: translate3d(0, 110%, 0); }
+
+@keyframes settings-letter-out-side {
+  0% { transform: translate3d(-110%, 0, 0); }
+  100% { transform: none; }
+}
+@keyframes settings-letter-out-below {
+  0% { transform: translate3d(0, 110%, 0); }
+  100% { transform: none; }
+}
+
+/* Keep the letter compact enough that the whole composition (letter + mailbox) fits a phone. */
+@media (max-width: 640px) {
+  .settings-head {
+    margin-bottom: 8px;
+  }
+
+  .settings-column .settings-letter__body {
+    padding: 14px 14px 12px;
+  }
+
+  .settings-column .settings-letter__head {
+    gap: 8px;
+    padding-bottom: 8px;
+  }
+
+  .settings-column .settings-letter__fields {
+    margin-top: 10px;
+    gap: 8px;
+  }
+
+  .settings-column .settings-letter__footer {
+    margin-top: 12px;
+    gap: 8px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-page--arriving .settings-column {
+    animation: none;
+  }
+
+  .settings-page--leaving .settings-column {
+    transition: none;
+  }
+}

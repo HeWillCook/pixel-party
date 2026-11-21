@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { JUDGE } from '../config'
-import { buildBlindBody, buildScoreBody, parseBlind, parseScore } from './judge'
+import { DAILY, JUDGE } from '../config'
+import { buildBlindBody, buildScoreBody, clampReason, parseBlind, parseScore } from './judge'
 import { DAILY_PROMPTS } from './prompts'
 
 describe('daily judge bodies', () => {
@@ -60,7 +60,7 @@ describe('parseBlind', () => {
 })
 
 describe('parseScore', () => {
-  it('parses numbers and numeric strings, clamps to 0-100, and trims reason to <= 140 chars', () => {
+  it('parses numbers and numeric strings, clamps to 0-100, and clamps the reason to the box limit', () => {
     expect(parseScore('{"fit":"72","recognition":40,"reason":"ok"}')).toEqual({
       fit: 72,
       recognition: 40,
@@ -75,8 +75,14 @@ describe('parseScore', () => {
     const longReason = `  ${'a'.repeat(200)}  `
     const parsedLong = parseScore(JSON.stringify({ fit: 50, recognition: 50, reason: longReason }))
     expect(parsedLong).not.toBeNull()
-    expect(parsedLong!.reason).toHaveLength(140)
-    expect(parsedLong!.reason).toBe('a'.repeat(140))
+    expect(parsedLong!.reason).toBe(`${'a'.repeat(DAILY.reasonMaxChars - 1)}…`)
+  })
+
+  it('asks the judge for at most the box limit, in the system and the user prompt', () => {
+    const limit = `at most ${DAILY.reasonMaxChars} characters`
+    const body = buildScoreBody('x', 'A tree', 'tree', 'bush') as { system: string; messages: Array<{ content: Array<{ text?: string }> }> }
+    expect(body.system).toContain(limit)
+    expect(body.messages[0].content[1].text).toContain(limit)
   })
 
   it('returns null if fields are missing or non-finite', () => {
@@ -94,5 +100,30 @@ describe('parseScore', () => {
     ]) {
       expect(parseScore(bad)).toBeNull()
     }
+  })
+})
+
+describe('clampReason', () => {
+  const max = DAILY.reasonMaxChars
+  it('leaves a reason that fits untouched (whitespace collapsed)', () => {
+    expect(clampReason('  A clear   tower.  ')).toBe('A clear tower.')
+    expect(clampReason('x'.repeat(max))).toHaveLength(max)
+  })
+  it('keeps whole sentences when a later one overflows, with no ellipsis', () => {
+    const text = 'The tower and beam read clearly against the sea. The waves could use a little more variety in colour and shape overall.'
+    expect(clampReason(text)).toBe('The tower and beam read clearly against the sea.')
+  })
+  it('cuts one long sentence at a word boundary and marks the cut with an ellipsis', () => {
+    const text = 'This lovely lighthouse has a strong tower and a bright beam but the waves and the rocks around it need much more detail to feel real'
+    const out = clampReason(text)
+    expect(out.length).toBeLessThanOrEqual(max)
+    expect(out.endsWith('…')).toBe(true)
+    expect(text.startsWith(out.slice(0, -1))).toBe(true)
+    expect(text[out.length - 1]).toBe(' ')
+  })
+  it('never exceeds the limit, even for a single huge word', () => {
+    const out = clampReason('W'.repeat(400))
+    expect(out).toHaveLength(max)
+    expect(out.endsWith('…')).toBe(true)
   })
 })

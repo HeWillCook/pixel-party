@@ -137,7 +137,9 @@ function rejectErrorMessage(reason: DailyRejectReason): string | null {
 }
 
 function mergeServerState(prev: DailyClientState, next: DailyStateView): DailyClientState {
-  if (prev.day !== next.day) return { ...initialDailyClientState(next.day), ...next }
+  if (prev.day !== next.day || next.status === 'not_started') {
+    return { ...initialDailyClientState(next.day), ...next }
+  }
   const isNowEnded = next.status === 'ended'
   const isNewStart = prev.status === 'not_started' && next.status === 'playing'
   return {

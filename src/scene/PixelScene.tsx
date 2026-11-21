@@ -1,6 +1,6 @@
 import { createContext, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { cameraTransform, compositionFor, integerScale, sceneSize, type Camera, type Composition } from './camera'
-import { useSceneClock } from './useSceneClock'
+import { SceneCanvas } from './SceneCanvas'
 import './scene.css'
 
 export const SceneComposition = createContext<Composition>('landscape')
@@ -8,23 +8,7 @@ const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffec
 
 type Draw = (ctx: CanvasRenderingContext2D, frame: number, composition: Composition) => void
 
-function SceneCanvas({ draw, composition, paused }: { draw: Draw; composition: Composition; paused: boolean }) {
-  const ref = useRef<HTMLCanvasElement>(null)
-  const frame = useSceneClock(12, paused)
-  const size = sceneSize(composition)
-
-  useEffect(() => {
-    const ctx = ref.current?.getContext('2d')
-    if (!ctx) return
-    ctx.imageSmoothingEnabled = false
-    ctx.clearRect(0, 0, size.w, size.h)
-    draw(ctx, frame, composition)
-  }, [draw, frame, composition, size.w, size.h])
-
-  return <canvas ref={ref} width={size.w} height={size.h} className="pixel-scene__canvas" aria-hidden="true" />
-}
-
-export function PixelScene({ draw, camera = { x: 0, y: 0, zoom: 1 }, zoomMs = 600, children, className, syncScale = false, paused = false, 'data-testid': testId }: {
+export function PixelScene({ draw, camera = { x: 0, y: 0, zoom: 1 }, zoomMs = 600, children, className, syncScale = false, paused = false, instant = false, 'data-testid': testId }: {
   draw: Draw
   camera?: Camera
   zoomMs?: number
@@ -32,10 +16,45 @@ export function PixelScene({ draw, camera = { x: 0, y: 0, zoom: 1 }, zoomMs = 60
   className?: string
   syncScale?: boolean
   paused?: boolean
+  /** Apply camera changes without a CSS transition (first-measure frames). */
+  instant?: boolean
   'data-testid'?: string
 }) {
   const root = useRef<HTMLDivElement>(null)
-  const [viewport, setViewport] = useState({ w: 0, h: 0 })
+  // Seed from the window so the very first paint never falls back to the minimum
+  // integer scale; the layout effect below measures the real box before paint.
+  const [viewport, setViewport] = useState(() => (
+    typeof window === 'undefined' ? { w: 0, h: 0 } : { w: window.innerWidth, h: window.innerHeight }
+  ))
+  const [moving, setMoving] = useState(false)
+  // A full-page transition (the vertical floor stack) moves this scene by
+  // moving an ancestor, not its camera. Pause the 12 fps art clock for that window so the scene
+  // under the move is not also repainting (both a waste and a per-frame visual delta).
+  const [sceneMoving, setSceneMoving] = useState(false)
+  useEffect(() => {
+    const doc = document.documentElement
+    const sync = () => setSceneMoving(doc.hasAttribute('data-scene-moving'))
+    sync()
+    const observer = new MutationObserver(sync)
+    observer.observe(doc, { attributes: true, attributeFilter: ['data-scene-moving'] })
+    return () => observer.disconnect()
+  }, [])
+  const cameraKey = `${camera.x}|${camera.y}|${camera.zoom}`
+  const lastCameraKey = useRef(cameraKey)
+  const moveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // While the camera is zoomed or travelling, the compositor owns the pixels: redrawing the
+  // canvas at 12fps under a fractional CSS scale makes the nearest-neighbour raster shimmer.
+  useEffect(() => {
+    if (lastCameraKey.current === cameraKey) return
+    lastCameraKey.current = cameraKey
+    if (instant) return
+    if (moveTimer.current) clearTimeout(moveTimer.current)
+    setMoving(true)
+    moveTimer.current = setTimeout(() => { moveTimer.current = null; setMoving(false) }, zoomMs + 80)
+  }, [cameraKey, zoomMs, instant])
+  useEffect(() => () => { if (moveTimer.current) clearTimeout(moveTimer.current) }, [])
+  const clockPaused = paused || moving || sceneMoving || camera.zoom > 1.02
   const composition = viewport.w && viewport.h ? compositionFor(viewport.w, viewport.h) : 'landscape'
   const size = sceneSize(composition)
   const scale = integerScale(viewport.w, viewport.h, composition)
@@ -44,8 +63,14 @@ export function PixelScene({ draw, camera = { x: 0, y: 0, zoom: 1 }, zoomMs = 60
     const element = root.current
     if (!element) return
     const measure = () => {
-      const bounds = element.getBoundingClientRect()
-      setViewport((current) => current.w === bounds.width && current.h === bounds.height ? current : { w: bounds.width, h: bounds.height })
+      // `clientWidth`/`clientHeight` are the layout box. `getBoundingClientRect()`
+      // includes ancestor CSS transforms, so measuring with it inside a scaled
+      // transition wrapper feeds a shrunken width back into `integerScale` and
+      // locks the scene at too small a scale (and the minimum of 2 when 0x0).
+      const width = element.clientWidth || Math.round(element.getBoundingClientRect().width)
+      const height = element.clientHeight || Math.round(element.getBoundingClientRect().height)
+      if (!width || !height) return
+      setViewport((current) => current.w === width && current.h === height ? current : { w: width, h: height })
     }
     measure()
     const observer = new ResizeObserver(measure)
@@ -66,10 +91,10 @@ export function PixelScene({ draw, camera = { x: 0, y: 0, zoom: 1 }, zoomMs = 60
 
   const style = { '--px': `${scale}px`, '--scene-zoom-ms': `${zoomMs}ms` } as CSSProperties
   return (
-    <div ref={root} className={['pixel-scene', className].filter(Boolean).join(' ')} style={style} data-testid={testId}>
+    <div ref={root} className={['pixel-scene', instant ? 'pixel-scene--instant' : '', className].filter(Boolean).join(' ')} style={style} data-testid={testId}>
       <div className="pixel-scene__center" style={{ width: size.w * scale, height: size.h * scale }}>
         <div className="pixel-scene__camera" style={{ transform: cameraTransform(camera) }}>
-          <SceneCanvas draw={draw} composition={composition} paused={paused} />
+          <SceneCanvas draw={draw} composition={composition} paused={clockPaused} />
           <SceneComposition.Provider value={composition}>{children}</SceneComposition.Provider>
         </div>
       </div>

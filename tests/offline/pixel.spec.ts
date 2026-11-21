@@ -106,10 +106,12 @@ test('selected swatch displays a separate keyboard focus outline', async ({ page
   const selected = page.locator('[data-testid="palette"] button[aria-pressed="true"]')
   await expect(selected).toBeVisible()
   const before = await selected.evaluate(element => getComputedStyle(element).outlineOffset)
+  // The focus ring is sized by the scene pixel scale, which follows the viewport.
+  const scenePx = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--px').trim())
   await page.keyboard.press('Shift')
   await selected.focus()
-  await expect(selected).toHaveCSS('outline-offset', '3px')
-  expect(before).not.toBe('3px')
+  await expect(selected).toHaveCSS('outline-offset', scenePx)
+  expect(before).not.toBe(scenePx)
 })
 
 test('navigation, logo and home visibility controls use the palette focus outline', async ({ page }) => {
@@ -210,7 +212,6 @@ test('countdown hook shares one tick per second between state effects and the in
   await expect(page.getByTestId('pixel-canvas')).toBeVisible()
   await page.clock.pauseAt(new Date(epoch.getTime() + 60000))
   await page.keyboard.press('Shift')
-  await expect.poll(() => page.evaluate(() => (window as unknown as { audioContexts: number }).audioContexts)).toBe(1)
   const ticks = () => page.evaluate(() => (window as unknown as { tickOscillators: number }).tickOscillators)
   expect(await ticks()).toBe(0)
   const now = await page.evaluate(() => Date.now())
@@ -220,6 +221,9 @@ test('countdown hook shares one tick per second between state effects and the in
   server.send(JSON.stringify({ t: 'players', count: 2, watching: 0, roster: state.roster }))
   await expect(page.getByTestId('round-players')).toHaveText('2 painters')
   await expect.poll(ticks).toBe(1)
+  // The audio context is created by the first sound (not by the gesture), so a camera move never
+  // pays for the ~100 ms AudioContext construction on its first frame.
+  await expect.poll(() => page.evaluate(() => (window as unknown as { audioContexts: number }).audioContexts)).toBe(1)
   await page.clock.runFor(250)
   expect(await ticks()).toBe(1)
   await page.clock.runFor(1000)
@@ -232,30 +236,53 @@ test('countdown hook shares one tick per second between state effects and the in
   expect(errors).toEqual([])
 })
 
-test('audio unlock retries on a later interaction until the context runs', async ({ page }) => {
+test('audio unlock retries on a later sound until the context runs', async ({ page }) => {
+  const epoch = new Date('2026-11-17T17:00:00Z')
+  await page.clock.install({ time: epoch })
   await page.addInitScript(() => {
     const state = window as unknown as { unlockAttempts: number; AudioContext: unknown }
     state.unlockAttempts = 0
     state.AudioContext = class {
       state = 'suspended'
       destination = {}
-      createGain() { return { gain: { value: 0 }, connect() {} } }
+      get currentTime() { return Date.now() / 1000 }
+      createGain() {
+        return {
+          gain: { value: 0, setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {} },
+          connect() {},
+        }
+      }
+      createOscillator() {
+        return { type: 'sine', frequency: { setValueAtTime() {} }, connect() {}, start() {}, stop() {} }
+      }
       async resume() {
         state.unlockAttempts++
         if (state.unlockAttempts > 1) this.state = 'running'
       }
     }
   })
-  await clientFixture(page, { signedIn: true })
-  await page.routeWebSocket('**/api/pixel/**', socket => socket.send(JSON.stringify(snapshot('playing'))))
+  const errors = await clientFixture(page, { signedIn: true })
+  const state = snapshot('playing')
+  state.round.endsAt = epoch.getTime() + 4000
+  let server!: WebSocketRoute
+  await page.routeWebSocket('**/api/pixel/**', socket => {
+    server = socket
+    socket.send(JSON.stringify(state))
+  })
   await page.goto(`${origin}/r/AB2Z`)
   await expect(page.getByTestId('pixel-canvas')).toBeVisible()
   await page.keyboard.press('Shift')
+  server.send(JSON.stringify({ t: 'players', count: 2, watching: 0, roster: state.roster }))
+  // First tick: the context is suspended, the unlock attempt fails and no sound plays.
+  await page.clock.runFor(1000)
   await expect.poll(() => page.evaluate(() => (window as unknown as { unlockAttempts: number }).unlockAttempts)).toBe(1)
-  await page.keyboard.press('Shift')
+  // Next tick retries; this time the context runs.
+  await page.clock.runFor(1100)
   await expect.poll(() => page.evaluate(() => (window as unknown as { unlockAttempts: number }).unlockAttempts)).toBe(2)
-  await page.keyboard.press('Shift')
+  // A running context is not unlocked again.
+  await page.clock.runFor(1100)
   expect(await page.evaluate(() => (window as unknown as { unlockAttempts: number }).unlockAttempts)).toBe(2)
+  expect(errors).toEqual([])
 })
 
 test('room shells expose the sunset background', async ({ page }) => {
@@ -303,7 +330,7 @@ for (const entry of ['direct', 'home-join'] as const) {
       await expect(page).toHaveURL(`${origin}/r/AB2Z`)
     }
     await expect(page.getByTestId('room-loading')).toHaveText('Setting up your easel…')
-    await expect(page.locator('.porch-world .pixel-scene__canvas')).toBeVisible()
+    await expect(page.locator('.studio-world .pixel-scene__canvas')).toBeVisible()
     await expect(page.getByTestId('pixel-canvas')).toHaveCount(0)
     release()
     await expect(page.getByTestId('room-error-unauthorized')).toBeVisible()
@@ -381,7 +408,11 @@ test('public spectators retain click-to-sign-in and never send placements', asyn
   })
   await page.goto(`${origin}/r/play`)
   await page.getByTestId('pixel-canvas').click()
-  await expect(page.getByRole('heading', { name: 'Sign in to DeepSpace' })).toBeVisible()
+  // The SDK's sign-in form opens on the room's ticket, not as a full-screen pop-up.
+  await expect(page.getByTestId('sign-in-card').getByRole('heading', { name: 'Sign in to paint' })).toBeVisible()
+  expect(await page.getByTestId('auth-overlay').evaluate(el => getComputedStyle(el).position)).not.toBe('fixed')
+  await page.keyboard.press('Escape')
+  await expect(page.getByTestId('sign-in-card')).toHaveCount(0)
   expect(placements).toEqual([])
   expect(errors).toEqual([])
 })
@@ -403,7 +434,7 @@ test('switching from a public board to a private invite clears the previous room
     dispatchEvent(new PopStateEvent('popstate'))
   })
   await expect(page.getByTestId('room-loading')).toHaveText('Setting up your easel…')
-  await expect(page.locator('.porch-world .pixel-scene__canvas')).toBeVisible()
+  await expect(page.locator('.studio-world .pixel-scene__canvas')).toBeVisible()
   await expect(page.getByTestId('pixel-canvas')).toHaveCount(0)
   release()
   await expect(page.getByTestId('room-error-unauthorized')).toBeVisible()
@@ -744,6 +775,65 @@ for (const viewport of [{ width: 1280, height: 720 }, { width: 1366, height: 768
   })
 }
 
+for (const viewport of [
+  { width: 1024, height: 768 },
+  { width: 1100, height: 800 },
+  { width: 1196, height: 827 },
+  { width: 1280, height: 720 },
+  { width: 1366, height: 768 },
+  { width: 1440, height: 900 },
+  { width: 1512, height: 982 },
+  { width: 1920, height: 1080 },
+  { width: 375, height: 812 },
+]) {
+  test(`studio framing keeps tickets, upstairs sign and easel clear at ${viewport.width}x${viewport.height}`, async ({ page }) => {
+    await page.setViewportSize(viewport)
+    await clientFixture(page, { signedIn: true })
+    await page.goto(`${origin}/party`)
+    await expect(page.getByTestId('lobby-page')).toHaveAttribute('data-measured', '1')
+    await expect(page.getByTestId('public-rooms-list')).toBeVisible()
+    const upstairsSign = page.locator('.studio-world .pixel-hotspot[aria-label="Upstairs"]')
+    if (viewport.width <= 600) {
+      await expect(upstairsSign).toBeHidden()
+      await expect(page.getByRole('navigation', { name: 'Studio shortcuts' }).getByRole('link', { name: 'Upstairs', exact: true })).toBeVisible()
+    } else {
+      await expect(upstairsSign).toBeVisible()
+    }
+    const layout = await page.evaluate(() => {
+      const box = (selector: string) => {
+        const element = document.querySelector<HTMLElement>(selector)
+        if (!element) return null
+        const rect = element.getBoundingClientRect()
+        return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom }
+      }
+      return {
+        nav: box('[data-testid="app-navigation"]'),
+        tickets: box('.studio-corkboard'),
+        upstairs: box('.studio-world .pixel-hotspot[aria-label="Upstairs"]'),
+        easel: box('.studio-magic-slot'),
+        workbench: box('.studio-workbench-slot'),
+        joinBooth: box('.studio-booth-slot'),
+        viewport: { width: innerWidth, height: innerHeight },
+      }
+    })
+    expect(layout.nav).not.toBeNull()
+    for (const [name, rect] of Object.entries({
+      tickets: layout.tickets,
+      upstairs: layout.upstairs,
+      easel: layout.easel,
+      workbench: layout.workbench,
+      joinBooth: layout.joinBooth,
+    })) {
+      if (!rect) continue // Form controls move to the mobile shelf in portrait composition.
+      if (name === 'upstairs' && viewport.width <= 600) continue // Mobile keeps the single dock control instead of the wall sign.
+      expect(rect.left, `${name} left`).toBeGreaterThanOrEqual(0)
+      expect(rect.right, `${name} right`).toBeLessThanOrEqual(layout.viewport.width)
+      expect(rect.top, `${name} top`).toBeGreaterThanOrEqual(layout.nav!.bottom - 1)
+      expect(rect.bottom, `${name} bottom`).toBeLessThanOrEqual(layout.viewport.height)
+    }
+  })
+}
+
 test('portrait tablet 1024x1366 keeps create, join, corkboard, Magic Easel, and nav inside viewport', async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 1366 })
   const errors = await clientFixture(page, {
@@ -870,6 +960,7 @@ test('upstairs stairs return home with pan transition and reduced motion is inst
   await expect(upstairs).toBeVisible()
   await upstairs.click()
   await expect(page).toHaveURL(`${origin}/home`)
+  await expect(page.getByTestId('vertical-scene-transition')).toHaveCount(0)
 
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await page.goto(`${origin}/party`)
@@ -913,37 +1004,33 @@ test('signed-out studio lobby shows sign-in button for hosting', async ({ page }
   await expect(page.getByTestId('create-room-signin')).toBeVisible()
   await expect(page.getByTestId('create-room-submit')).toHaveCount(0)
   await page.getByTestId('create-room-signin').click()
-  await expect(page.getByRole('heading', { name: 'Sign in to DeepSpace' })).toBeVisible()
+  // The SDK's sign-in form is a slip pinned to the room-tickets corkboard: no full-screen backdrop, Escape puts it away.
+  await expect(page.getByTestId('sign-in-card').getByRole('heading', { name: 'Sign in to paint' })).toBeVisible()
+  expect(await page.getByTestId('auth-overlay').evaluate(el => getComputedStyle(el).position)).not.toBe('fixed')
+  await page.keyboard.press('Escape')
+  await expect(page.getByTestId('sign-in-card')).toHaveCount(0)
   expect(errors).toEqual([])
 })
 
-test('arriving from porch settles cleanly into the studio', async ({ page }) => {
+test('porch-to-studio uses one vertical move and hands off to the settled lobby', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 })
-  await page.addInitScript(() => {
-    const win = window as unknown as { studioInitialY: number | null }
-    win.studioInitialY = null
-    new MutationObserver(() => {
-      if (win.studioInitialY !== null) return
-      const cam = document.querySelector<HTMLElement>('.studio-world .pixel-scene__camera')
-      if (!cam) return
-      const y = new DOMMatrix(getComputedStyle(cam).transform).m42
-      if (y > 0) win.studioInitialY = y
-    }).observe(document, { childList: true, subtree: true, attributes: true })
-  })
   const errors = await clientFixture(page, { signedIn: true })
   await page.goto(`${origin}/home`)
-  await page.locator('.porch-world').getByRole('link', { name: 'Party studio', exact: true }).click()
+  const startedAt = Date.now()
+  await page.locator('.porch-world').getByRole('link', { name: 'Basement studio', exact: true }).click()
+  await expect(page.getByTestId('vertical-scene-transition')).toBeVisible()
   await expect(page).toHaveURL(`${origin}/party`)
+  await expect(page.getByTestId('vertical-scene-transition')).toHaveCount(0)
+  expect(Date.now() - startedAt).toBeGreaterThanOrEqual(950)
   await expect(page.getByTestId('lobby-page')).toBeVisible()
-  // Interactive studio controls stay clickable during the arrival settle.
+  // The transition overlay is gone at handoff and the normal room controls are live.
+  await expect(page.getByTestId('vertical-scene-transition')).toHaveCount(0)
   await page.getByTestId('visibility-private').click()
-  expect(await page.evaluate(() => (window as unknown as { studioInitialY: number | null }).studioInitialY)).toBeGreaterThan(0)
-  await expect.poll(() => page.evaluate(() => sessionStorage.getItem('studio-from-porch'))).toBeNull()
   await expect.poll(() => page.locator('.studio-world .pixel-scene__camera').evaluate(el => getComputedStyle(el).transform)).toMatch(/matrix\(1, 0, 0, 1, 0, 0\)|none/)
   expect(errors).toEqual([])
 })
 
-test('room exit returns to studio', async ({ page }) => {
+test('room exit zooms back out of the studio easel on the same scene', async ({ page }) => {
   const errors = await clientFixture(page, { signedIn: true })
   await page.routeWebSocket('**/api/pixel/**', socket => socket.send(JSON.stringify(snapshot('playing'))))
   await page.goto(`${origin}/r/AB2Z`)
@@ -952,11 +1039,58 @@ test('room exit returns to studio', async ({ page }) => {
   await expect(page.getByTestId('party-score-note')).toHaveText('Fewer pixels and a faster guess score higher. The round ends when Haiku guesses the word.')
   const exit = page.getByTestId('room-exit')
   await expect(exit).toBeVisible()
-  await expect(exit).toHaveText(/Back downstairs to the studio/)
+  await expect(exit).toHaveText(/Back to the studio/)
   await expect(exit).toHaveAttribute('href', '/party')
+  // The room is a foreground of the studio scene: one scene, no overlay copy of it.
+  await expect(page.locator('.studio-world .pixel-scene__canvas')).toHaveCount(1)
   await exit.click()
+  await expect(page.getByTestId('room-page')).toHaveAttribute('data-play-phase', 'leaving')
+  await expect(page.getByTestId('vertical-scene-transition')).toHaveCount(0)
   await expect(page).toHaveURL(`${origin}/party`)
   await expect(page.getByTestId('lobby-page')).toBeVisible()
+  await expect(page.getByTestId('room-page')).toHaveCount(0)
+  expect(errors).toEqual([])
+})
+
+test('opening a room from the studio pushes the camera into the easel and registers the board on it', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const errors = await clientFixture(page, { signedIn: true })
+  await page.routeWebSocket('**/api/pixel/**', socket => socket.send(JSON.stringify(snapshot('playing'))))
+  await page.goto(`${origin}/party`)
+  await expect(page.getByTestId('lobby-page')).toBeVisible()
+  const scene = page.locator('.studio-world .pixel-scene__camera')
+  const before = await scene.evaluate(element => getComputedStyle(element).transform)
+  await page.getByTestId('lobby-play-now').click()
+  await expect(page).toHaveURL(`${origin}/r/play`)
+  await expect(page.getByTestId('room-page')).toHaveAttribute('data-play-phase', 'entering')
+  // Same scene, same canvas: only its camera moves (nothing is mounted over it, nothing dissolves).
+  await expect(page.locator('.studio-world .pixel-scene__canvas')).toHaveCount(1)
+  await expect(page.getByTestId('vertical-scene-transition')).toHaveCount(0)
+  await expect(page.getByTestId('room-page')).toHaveAttribute('data-play-phase', 'active')
+  await expect.poll(() => scene.evaluate(element => getComputedStyle(element).transform)).not.toBe(before)
+  // At rest the room's board sits exactly on the easel's board.
+  const sits = await page.evaluate(() => {
+    const easel = document.querySelector('.studio-magic-easel__board-wrap')!.getBoundingClientRect()
+    const board = document.querySelector('.room-board')!.getBoundingClientRect()
+    return Math.max(Math.abs(easel.x - board.x), Math.abs(easel.y - board.y), Math.abs(easel.width - board.width), Math.abs(easel.height - board.height))
+  })
+  expect(sits).toBeLessThan(3)
+  expect(errors).toEqual([])
+})
+
+test('browser back from a room plays the same easel zoom-out', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 })
+  const errors = await clientFixture(page, { signedIn: true })
+  await page.routeWebSocket('**/api/pixel/**', socket => socket.send(JSON.stringify(snapshot('playing'))))
+  await page.goto(`${origin}/party`)
+  await expect(page.getByTestId('lobby-page')).toBeVisible()
+  await page.getByTestId('lobby-play-now').click()
+  await expect(page).toHaveURL(`${origin}/r/play`)
+  await expect(page.getByTestId('pixel-canvas')).toBeVisible()
+  await page.goBack()
+  await expect(page.getByTestId('room-page')).toHaveAttribute('data-play-phase', 'leaving')
+  await expect(page).toHaveURL(`${origin}/party`)
+  await expect(page.getByTestId('room-page')).toHaveCount(0)
   expect(errors).toEqual([])
 })
 
@@ -1187,5 +1321,30 @@ test('magic easel sends spectate=1 and preserves it on private room token retry'
   expect(retryPrivate.pathname).toContain('/PVT1/ws')
   expect(retryPrivate.searchParams.get('spectate')).toBe('1')
   expect(retryPrivate.searchParams.get('token')).toBe(fixtureToken)
+  expect(errors).toEqual([])
+})
+
+test('narrow landscape studio lobby fits corkboard without left cutoff', async ({ page }) => {
+  await page.setViewportSize({ width: 1180, height: 880 })
+  const errors = await clientFixture(page, {
+    signedIn: true,
+    rooms: [
+      { recordId: 'r-play', data: { name: 'Public board', mode: 'coop', visibility: 'public', joinCode: 'play', hostId: 'system', status: 'playing', playerCount: 1, lastActiveAt: 5000, isDefaultBoard: true } },
+    ],
+  })
+  await page.goto(`${origin}/party`)
+  const corkboard = page.locator('.studio-corkboard')
+  await expect(corkboard).toBeVisible()
+  const playCard = page.getByTestId('room-card-play')
+  await expect(playCard).toBeVisible()
+
+  await expect.poll(async () => {
+    const corkBox = (await corkboard.boundingBox())!
+    const cardBox = (await playCard.boundingBox())!
+    return Math.min(corkBox.x, cardBox.x)
+  }).toBeGreaterThanOrEqual(0)
+
+  const fitted = await page.locator('.studio-world').getAttribute('data-fitted')
+  expect(fitted).toBe('1')
   expect(errors).toEqual([])
 })

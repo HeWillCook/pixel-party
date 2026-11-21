@@ -127,6 +127,47 @@
   opacity: 0.9;
 }
 
+/* The room's ticket stub, pinned above the easel rather than a full-width bar. */
+.room-play .room-top-bar {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: auto;
+  max-width: min(100%, 760px);
+  margin: 0 auto;
+  padding: 2px 10px;
+  background:
+    repeating-linear-gradient(to bottom, transparent 0 3px, rgba(142, 89, 96, 0.12) 3px 4px),
+    #fff0cc;
+  border: 3px solid #8e5960;
+  box-shadow: inset 0 0 0 2px #fff0cc, 4px 4px 0 rgba(57, 42, 69, 0.55);
+  transform: rotate(-0.5deg);
+  box-sizing: border-box;
+}
+.room-play .room-top-bar::after {
+  content: '';
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: -6px;
+  border-bottom: 2px dashed #8e5960;
+}
+.room-top-bar__pin {
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  width: 14px;
+  height: 14px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: #d86a58;
+  border: 2px solid #392a45;
+  box-shadow: inset 0 2px 0 #f0955f;
+}
+.room-play .room-top-bar :is(.room-invite-ticket, .room-name) { transform: rotate(0.4deg); }
 .room-play .room-exit {
   position: relative;
   display: inline-flex;
@@ -254,28 +295,53 @@
   color: #614052;
 }
 
-/* Chalk slate (guesses + score note) framed in warm studio wood */
+/* Haiku's speech bubble: the tail points up-left at the cat on the sill. */
+.room-play .critic-bubble__speech {
+  filter: drop-shadow(3px 3px 0 rgba(57, 42, 69, 0.4));
+}
+.room-play .critic-bubble__speech::before,
+.room-play .critic-bubble__speech::after {
+  content: '';
+  position: absolute;
+  left: 24px;
+  width: 0;
+  height: 0;
+  border-left: 9px solid transparent;
+  border-right: 9px solid transparent;
+  z-index: 2;
+}
+.room-play .critic-bubble__speech::before {
+  top: -15px;
+  border-bottom: 15px solid #8e5960;
+}
+.room-play .critic-bubble__speech::after {
+  top: -10px;
+  left: 26px;
+  border-left-width: 7px;
+  border-right-width: 7px;
+  border-bottom: 12px solid #fff0cc;
+}
 .room-play .critic-bubble__speech [data-testid="guess-feed"] {
-  background: #2f233b;
-  color: #fff0cc;
-  border: 4px solid #c57d63;
-  border-bottom: 0;
-  box-shadow: inset 0 0 0 2px #614052;
-  padding: 8px 10px;
+  background: #fff0cc;
+  color: #392a45;
+  border: 3px solid #8e5960;
+  border-radius: 10px;
+  box-shadow: inset 0 0 0 2px #fff0cc;
+  padding: 9px 11px;
 }
 
 .room-play .critic-bubble__speech [data-testid="guess-feed"] h4 {
-  color: #ffe29a;
+  color: #614052;
 }
 
 .room-play .critic-bubble__speech [data-testid="guess-confidence"] {
-  background: #392a45;
-  color: #ffe29a;
-  border-color: #ecae7d;
+  background: #ecd4b0;
+  color: #392a45;
+  border-color: #8e5960;
 }
 
 .room-play .critic-bubble__speech [data-testid="guess-feed"] .text-muted-foreground {
-  color: #ecd4b0;
+  color: #614052;
 }
 
 .room-play .critic-bubble__speech [data-testid="guess-list"] {
@@ -283,15 +349,21 @@
 }
 
 .room-play .critic-bubble__speech [data-testid="guess-list"] p {
-  color: #fff0cc;
+  color: #392a45;
 }
 
 .room-play .critic-bubble__speech [data-testid="guess-list"] p > span:first-child {
-  color: #ecae7d;
+  color: #8e5960;
+}
+
+.room-play .critic-bubble__speech [data-testid="guess-list"] p.border {
+  background: #ffe29a;
+  border-color: #8e5960;
+  color: #614052;
 }
 
 .room-play .critic-bubble__speech [data-testid="ai-resting-banner"] {
-  color: #ffe29a;
+  color: #985c5a;
 }
 
 .room-play [data-testid="party-score-note"] {
@@ -307,26 +379,50 @@
 
 /* Ask Haiku gleaming brass counter bell on wooden shelf */
 .room-play .room-bell-shelf {
-  margin-top: 6px;
-  padding: 6px;
-  background: #985c5a;
+  position: relative;
+  margin-top: 8px;
+  padding: 8px 10px 10px;
+  background: linear-gradient(#c57d63, #985c5a 70%, #8e5960);
   border: 3px solid #392a45;
+  border-radius: 0 0 8px 8px;
   box-shadow:
     inset 0 2px 0 #ecae7d,
-    inset 0 -2px 0 #614052,
     0 3px 0 #392a45;
 }
-
+.room-play .room-bell-shelf::before {
+  /* The bell's little wooden base plate. */
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -5px;
+  width: 64%;
+  height: 6px;
+  transform: translateX(-50%);
+  background: #392a45;
+  border-radius: 0 0 6px 6px;
+}
 .room-play .room-bell-btn {
-  background: linear-gradient(180deg, #ffe29a 0%, #f0955f 100%);
+  position: relative;
+  background: radial-gradient(ellipse at 50% 18%, #fff0cc 0 26%, #ffe29a 42%, #ecae7d 62%, #c57d63 100%);
   color: #392a45;
   border: 3px solid #392a45;
+  border-radius: 999px 999px 8px 8px;
   box-shadow:
-    inset 0 2px 0 #fff0cc,
-    inset 0 -2px 0 #c57d63,
-    0 2px 0 #392a45;
+    inset 0 3px 0 #fff0cc,
+    0 3px 0 #392a45;
   font-size: 20px;
   text-shadow: none;
+}
+.room-play .room-bell-btn::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 14%;
+  width: 22%;
+  height: 30%;
+  border-radius: 50%;
+  background: rgba(255, 240, 204, 0.55);
+  pointer-events: none;
 }
 
 .room-play .room-bell-btn:hover:not(:disabled) {
@@ -412,5 +508,61 @@
   .room-play .play-layout__mobile-actions .room-bell-btn {
     min-height: 44px;
     font-size: 17px;
+  }
+}
+
+.room-play .room-exit,
+.room-play .room-bell-btn {
+  transition: background-color 120ms ease, transform 120ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* What sits on the easel when it is not a live board yet: connecting, a closed door, the waiting room. It is the
+   board's own size, so the camera lands on the same rect whatever the room is doing. */
+.room-board {
+  position: relative;
+  flex: none;
+}
+.room-board .pp-frame {
+  border: 0;
+  outline: 0;
+  box-shadow: none;
+  padding: 0;
+  background: transparent;
+}
+.room-board--face {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  padding: 12px;
+  background: #fff0cc;
+  color: #392a45;
+  text-align: center;
+}
+.room-board--face > * {
+  max-width: 100%;
+}
+.room-board__loading {
+  font-size: 24px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.room-play--face .play-layout__right {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .room-play .room-exit,
+  .room-play .room-bell-btn {
+    transition: none;
+  }
+}
+
+/* Phones: the easel's own header (code, painters, round state) sits just above its board. Leave it clear, so the
+   prompt card and the back plaque stack above it instead of covering it. */
+@media (max-width: 767px) {
+  .room-play .play-layout__canvas {
+    margin-top: 34px;
   }
 }

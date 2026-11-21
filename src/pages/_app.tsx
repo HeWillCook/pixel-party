@@ -14,9 +14,10 @@
  * so it's safe to mount here for every page.
  */
 
-import { Suspense } from 'react'
+import { Suspense, useRef } from 'react'
 import { Outlet, useRouteError } from 'react-router-dom'
 import { ErrorScreen } from '../components/ErrorScreen'
+import { reloadForStaleChunk } from '../stale-chunk-recovery'
 import { ToastProvider, TooltipProvider } from '@/components/ui'
 
 export default function App() {
@@ -47,6 +48,11 @@ export default function App() {
  */
 export function Catch() {
   const error = useRouteError()
+  // A stale route chunk (deploy, dev restart) is fixed by one reload; only a second failure shows the card.
+  // Latched: a re-render while the reload starts must not fall through to the card.
+  const reloading = useRef<boolean | null>(null)
+  reloading.current ??= reloadForStaleChunk(error)
+  if (reloading.current) return null
   return <ErrorScreen error={error} />
 }
 

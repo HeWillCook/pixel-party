@@ -29,7 +29,7 @@ export type ServerMsg =
   | { t: 'snapshot'; mode: Mode; width: number; height: number; cells: string; round: RoundView; you: { userId: string | null; cooldownUntil: number; team?: 'red' | 'blue' }; players: number; roster?: ConnectedPlayer[]; watching?: number; aiResting: boolean }
   | { t: 'pixel'; x: number; y: number; c: number; by: string }
   | { t: 'noop'; x: number; y: number; id?: number }
-  | { t: 'reject'; reason: RejectReason | 'ask_too_soon' | 'not_host' | 'canvas_unchanged'; retryAt?: number; x?: number; y?: number; id?: number }
+  | { t: 'reject'; reason: RejectReason | 'ask_too_soon' | 'not_host' | 'canvas_unchanged' | 'canvas_blank'; retryAt?: number; x?: number; y?: number; id?: number }
   | { t: 'round'; round: RoundView }
   | { t: 'judgement'; zone: ZoneId; guesses: string[]; confidence: number; matched: boolean }
   | { t: 'players'; count: number; roster?: ConnectedPlayer[]; watching?: number }
@@ -57,6 +57,7 @@ const REJECT_REASONS = new Set<string>([
   'ask_too_soon',
   'not_host',
   'canvas_unchanged',
+  'canvas_blank',
 ])
 
 function isValidPlacementId(value: unknown): value is number {

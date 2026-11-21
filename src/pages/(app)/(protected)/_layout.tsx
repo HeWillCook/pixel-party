@@ -8,15 +8,13 @@
  * Children may call data hooks like `useUser()` safely because the parent
  * (app)/_layout.tsx mounts <RecordProvider> above this layout.
  *
- * The `fallback` keeps signed-out visitors inside the app's own chrome
- * (without it, AuthGate shows the SDK's full-screen, non-dismissible
- * overlay). The sign-in overlay opens on demand and can be dismissed.
+ * The `fallback` keeps signed-out visitors inside the app's own chrome (without it, AuthGate shows the SDK's
+ * full-screen, non-dismissible overlay): the SDK's sign-in form sits right on the panel, no pop-up.
  */
 
-import { useState } from 'react'
 import { Link, Outlet } from 'react-router-dom'
-import { AuthGate, AuthOverlay } from 'deepspace'
-import { Button } from '@/components/ui'
+import { AuthGate } from 'deepspace'
+import { SignInCard } from '@/components/auth/SignInCard'
 
 export default function ProtectedLayout() {
   return (
@@ -27,8 +25,6 @@ export default function ProtectedLayout() {
 }
 
 function SignedOutPanel() {
-  const [showAuthModal, setShowAuthModal] = useState(false)
-
   return (
     <div className="flex min-h-[60vh] items-center justify-center px-6 py-20">
       <div className="pp-wood-panel w-full max-w-sm p-8 text-center">
@@ -36,9 +32,9 @@ function SignedOutPanel() {
         <p className="mt-2 text-base text-muted-foreground">
           This page is only available to signed-in users.
         </p>
-        <Button className="pp-btn mt-6 w-full text-lg uppercase" onClick={() => setShowAuthModal(true)}>
-          Sign in
-        </Button>
+        <div className="mt-6 text-left">
+          <SignInCard />
+        </div>
         <Link
           to="/"
           className="mt-4 inline-block text-base uppercase text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
@@ -47,7 +43,6 @@ function SignedOutPanel() {
         </Link>
       </div>
 
-      {showAuthModal && <AuthOverlay onClose={() => setShowAuthModal(false)} />}
     </div>
   )
 }

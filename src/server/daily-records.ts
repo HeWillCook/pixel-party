@@ -41,3 +41,26 @@ export function attemptPublisher(read: (userId: string, day: string) => Promise<
     }
   }
 }
+
+// TEMP DEBUG: remove before launch
+export async function resetAttemptRecords(tools: ServerTools, userId: string, day: string): Promise<void> {
+  const emptyCells = encodeCells(new Uint8Array(1024))
+  const scores = await tools.query('dailyScores', { where: { day, userId }, limit: 1 })
+  if (!scores.success) throw new Error(scores.error)
+  const scoreRecord = scores.data.records[0]
+  if (scoreRecord) {
+    const res = await tools.update('dailyScores', scoreRecord.recordId, {
+      score: 0, fit: 0, recognition: 0, speed: 0, bestElapsedMs: 0, ended: 0, medal: 0,
+    })
+    if (!res.success) throw new Error(res.error)
+  }
+  const drawings = await tools.query('dailyDrawings', { where: { day, userId }, limit: 1 })
+  if (!drawings.success) throw new Error(drawings.error)
+  const drawingRecord = drawings.data.records[0]
+  if (drawingRecord) {
+    const res = await tools.update('dailyDrawings', drawingRecord.recordId, {
+      cells: emptyCells, guess: '', reason: '', score: 0, visibility: 'private',
+    })
+    if (!res.success) throw new Error(res.error)
+  }
+}

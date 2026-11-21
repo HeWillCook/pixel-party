@@ -14,3 +14,5 @@ src/modals.tsx
 .claude/launch.json
 .claude/worktrees
 .superpowers/
+docs/superpowers/screenshots/
+tsconfig.tsbuildinfo

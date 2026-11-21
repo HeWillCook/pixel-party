@@ -33,9 +33,11 @@ export function Palette({
   onSelectColor,
   disabled = false,
   cooldownRemainingMs = 0,
+  cooldownTotalMs,
 }: PaletteProps) {
   const colorIndices = [1, 16, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
   const isCoolingDown = cooldownRemainingMs > 0
+  const reserveCooldownSlot = cooldownTotalMs !== undefined || isCoolingDown
 
   return (
     <div
@@ -57,14 +59,13 @@ export function Palette({
               aria-pressed={isSelected}
               title={COLOR_NAMES[colorIdx]}
               className={cn(
-                'relative h-6 w-6 cursor-pointer border-2 border-background transition-transform sm:h-7 sm:w-7',
-                isSelected && '-translate-y-1 outline-2 outline-offset-2 outline-[var(--sunset-1)]',
+                'relative h-6 w-6 cursor-pointer border-2 border-background transition-[transform,translate] duration-150 sm:h-7 sm:w-7',
+                isSelected && '-translate-y-1',
                 disabled && 'cursor-not-allowed opacity-60',
               )}
               style={{
                 backgroundColor: hex,
                 '--swatch': hex,
-                boxShadow: isSelected ? 'inset 0 0 0 3px var(--sunset-1)' : undefined,
                 zIndex: isSelected ? 10 : undefined,
               } as React.CSSProperties}
             >
@@ -75,13 +76,17 @@ export function Palette({
         })}
       </div>
 
-      {isCoolingDown && (
-        <span
-          data-testid="palette-cooldown"
-          className="text-sm text-[var(--sunset-1)]"
-        >
-          Wait {(cooldownRemainingMs / 1000).toFixed(1)}s
-        </span>
+      {reserveCooldownSlot && (
+        <div className="flex h-5 items-center justify-center">
+          {isCoolingDown && (
+            <span
+              data-testid="palette-cooldown"
+              className="text-sm leading-none text-[var(--sunset-1)]"
+            >
+              Wait {(cooldownRemainingMs / 1000).toFixed(1)}s
+            </span>
+          )}
+        </div>
       )}
     </div>
   )

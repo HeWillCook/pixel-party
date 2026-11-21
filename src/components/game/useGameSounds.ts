@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ClientState } from '@/game/client-state'
-import { createCountdownGate, soundEventsFor } from '@/game/sound-events'
+import { createCountdownGate, soundEventsFor, type SoundName } from '@/game/sound-events'
 import { createSfx } from '@/lib/sfx'
 import { useMute } from '@/hooks/useMute'
 
@@ -12,37 +12,40 @@ export function useGameSounds(state: ClientState): { muted: boolean; toggleMute:
   const previous = useRef(state)
   const current = useRef(state)
   current.current = state
+  // See useDailySounds: the AudioContext is created by the first sound, not by the gesture.
+  const interacted = useRef(false)
 
-  useEffect(() => {
-    if (shouldTick(state, Date.now())) sfx.play('tick')
-    for (const sound of soundEventsFor(previous.current, state)) sfx.play(sound)
-    previous.current = state
-  }, [state, sfx, shouldTick])
-
-  useEffect(() => {
-    let active = true
-    const unlock = () => {
-      void sfx.unlock().then(success => {
-        if (!active || !success) return
-        window.removeEventListener('pointerdown', unlock)
-        window.removeEventListener('keydown', unlock)
-      })
-    }
-    window.addEventListener('pointerdown', unlock)
-    window.addEventListener('keydown', unlock)
-    return () => {
-      active = false
-      window.removeEventListener('pointerdown', unlock)
-      window.removeEventListener('keydown', unlock)
-    }
+  const playSound = useCallback((sound: SoundName) => {
+    if (!interacted.current || sfx.isMuted()) return
+    void sfx.unlock().then(ok => { if (ok) sfx.play(sound) })
   }, [sfx])
 
   useEffect(() => {
+    if (shouldTick(state, Date.now())) playSound('tick')
+    for (const sound of soundEventsFor(previous.current, state)) playSound(sound)
+    previous.current = state
+  }, [state, playSound, shouldTick])
+
+  useEffect(() => {
+    const markInteracted = () => {
+      interacted.current = true
+      window.removeEventListener('pointerdown', markInteracted)
+      window.removeEventListener('keydown', markInteracted)
+    }
+    window.addEventListener('pointerdown', markInteracted)
+    window.addEventListener('keydown', markInteracted)
+    return () => {
+      window.removeEventListener('pointerdown', markInteracted)
+      window.removeEventListener('keydown', markInteracted)
+    }
+  }, [])
+
+  useEffect(() => {
     const interval = window.setInterval(() => {
-      if (shouldTick(current.current, Date.now())) sfx.play('tick')
+      if (shouldTick(current.current, Date.now())) playSound('tick')
     }, 250)
     return () => window.clearInterval(interval)
-  }, [sfx, shouldTick])
+  }, [playSound, shouldTick])
 
   return { muted, toggleMute: toggle }
 }

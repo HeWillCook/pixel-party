@@ -2,9 +2,10 @@ import { DAILY, MAX_COLOR } from '../game/config'
 import { autoWindowAt, cellsHash, isBlankCells, isEnded } from '../game/daily/attempt'
 import type { AttemptRow, AutoWindowStatus, GradeKind, GradeReject, GradeResult } from '../game/daily/attempt'
 import { promptForDay } from '../game/daily/prompts'
-import { gradeScore } from '../game/daily/scoring'
+import { blankGradeParts, gradeScore } from '../game/daily/scoring'
 import { decodeCells } from '../game/grid'
 import type { DailyJudge } from './daily-judge'
+import { resetAttemptRecords } from './daily-records'
 import type { AttemptStore } from './daily-room'
 import { utcDay } from './room-time'
 import { roomRecords } from './rooms'
@@ -128,8 +129,26 @@ export async function gradeDaily(deps: DailyDeps, user: DailyUser, kind: GradeKi
   if (!await allowedDay(deps, user.userId, day, now)) return { ok: false, reason: 'invalid_day', state: await readState(deps, user.userId, day) }
   const state = () => readState(deps, user.userId, day)
   if (!validCells(cells)) return { ok: false, reason: 'bad_cells', state: await state() }
+  const decoded = decodeCells(cells, 1024)
+  const blank = isBlankCells(decoded)
   const hash = cellsHash(cells)
-  const reservation = await deps.store.reserve(user.userId, day, kind, hash, now, isBlankCells(decodeCells(cells, 1024)), window)
+
+  // A blank canvas can never be judged: it must never reach the AI (which would hallucinate a
+  // guess) nor earn points (speed in particular). `auto` is handled by reserveGrade's
+  // `skipped_blank`; `ask` and `final` short-circuit here so a blank "Grade now" doesn't burn an
+  // ask and a blank "Submit & finish" earns nothing, leaving any prior real best intact.
+  // The attempt's own status wins first: a stale tab calling in blank after the attempt ended (or
+  // timed out) must be told so instead of receiving a misleading zero-score success.
+  if (blank && kind !== 'auto') {
+    const row = await deps.store.get(user.userId, day, now)
+    if (!row) return { ok: false, reason: 'not_started', state: await state() }
+    if (row.endedAt !== null) return { ok: false, reason: 'ended', state: await state() }
+    const elapsedMs = Math.max(0, now - row.startedAt)
+    if (elapsedMs > DAILY.attemptMs + DAILY.graceMs || (kind !== 'final' && elapsedMs > DAILY.attemptMs)) return { ok: false, reason: 'time_up', state: await state() }
+    return { ok: true, grade: { guess: '', reason: 'Nothing is drawn yet — paint something first.', ...blankGradeParts(), elapsedMs }, state: await state() }
+  }
+
+  const reservation = await deps.store.reserve(user.userId, day, kind, hash, now, blank, window)
   if (!reservation.ok) return { ok: false, reason: reservation.reason, state: await state() }
   if (reservation.ok === 'skipped') return { skipped: reservation.status, window: reservation.window, state: await state() }
   const reservedAt = reservation.row.inFlightSince!
@@ -173,4 +192,18 @@ export async function todaysDrawings(deps: DailyDeps, userId: string): Promise<{
   const drawings = await roomRecords(deps.tools, 'dailyDrawings', { day })
   if (!drawings.success) throw new Error(drawings.error)
   return { ok: true, drawings: drawings.data }
+}
+
+// TEMP DEBUG: remove before launch
+export async function resetDaily(deps: DailyDeps, userId: string): Promise<DailyStateView> {
+  const now = deps.now()
+  const today = utcDay(now)
+  const day = await activeDay(deps, userId, now)
+  await deps.store.reset(userId, day)
+  await resetAttemptRecords(deps.tools, userId, day)
+  if (day !== today) {
+    await deps.store.reset(userId, today)
+    await resetAttemptRecords(deps.tools, userId, today)
+  }
+  return readState(deps, userId, today)
 }

@@ -1,7 +1,7 @@
 import type { Env } from '../../worker.js'
 import { DAILY } from '../game/config'
 import { cellsHash } from '../game/daily/attempt'
-import { buildBlindBody, buildScoreBody, parseBlind, parseScore, type DailyJudgeBody } from '../game/daily/judge'
+import { buildBlindBody, buildScoreBody, clampReason, parseBlind, parseScore, type DailyJudgeBody } from '../game/daily/judge'
 import { decodeCells, type Grid } from '../game/grid'
 import { extractText } from '../game/judge'
 import { renderZonePng, toBase64 } from '../game/png'
@@ -50,13 +50,14 @@ export function fakeDailyJudge(): DailyJudge {
     },
     async score(png: string, _prompt: string, subject: string, guess: string) {
       const hash = parseInt(cellsHash(png), 16)
-      const fit = (hash >>> 8) % 101
       const subjectLower = subject.trim().toLowerCase()
       const guessLower = guess.trim().toLowerCase()
-      const recognition = subjectLower.length > 0 && guessLower.includes(subjectLower)
-        ? 100
-        : (hash >>> 16) % 101
-      const reason = `Fake judge saw "${guess}" for ${subject}.`.slice(0, 140)
+      const recognized = subjectLower.length > 0 && guessLower.includes(subjectLower)
+      // A wrong guess must never look like a good drawing: recognition 0 and a
+      // low fit (0-34), matching the strict real-judge rubric.
+      const fit = recognized ? (hash >>> 8) % 101 : (hash >>> 8) % 35
+      const recognition = recognized ? 100 : 0
+      const reason = clampReason(`Fake judge saw "${guess}" for ${subject}.`)
       return { fit, recognition, reason }
     },
   }

@@ -77,15 +77,17 @@ export const BUDGET = {
 } as const
 
 export const DAILY = {
-  attemptMs: 600_000,
+  attemptMs: 300_000,
   graceMs: 15_000,
-  autoWindowsMs: [120_000, 240_000, 360_000, 480_000] as const,
+  autoWindowsMs: [60_000, 120_000, 180_000, 240_000] as const,
   autoLateMs: 5_000,
-  autoMissAfterMs: 60_000,
+  autoMissAfterMs: 30_000,
   maxAsks: 3,
   askMinGapMs: 20_000,
   inFlightStaleMs: 90_000,
   renderPx: 512,
+  /** Longest judge reason any box can show without clipping (measured with W/M-heavy text; see tests/offline/daily.spec.ts). */
+  reasonMaxChars: 100,
 } as const
 
 export const ROOMS = {

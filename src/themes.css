@@ -54,7 +54,7 @@
 .pp-btn:active:not(:disabled) { transform: translateY(var(--px)); box-shadow: inset 0 var(--px) #e3b28a; }
 .pp-btn:disabled { opacity: .55; }
 .pp-btn:focus-visible, .pp-chip:focus-visible, a.pp-panel:focus-visible, [data-testid^="room-card-"]:focus-visible, a.pp-logo:focus-visible, nav a:focus-visible, nav button:focus-visible, [data-testid="visibility-public"]:focus-visible, [data-testid="visibility-private"]:focus-visible, [data-testid="palette"] button:focus-visible { outline: var(--px) solid #392a45; outline-offset: var(--px); }
-.pp-word { color: #392a45; text-shadow: var(--px) var(--px) #e3b28a; letter-spacing: 1px; }
+.pp-word { color: #392a45; text-shadow: min(var(--px), 2px) min(var(--px), 2px) #e3b28a; letter-spacing: 1px; }
 .pp-results { background: #fff0cc; }
 .pp-results-footer { background: #ecd4b0; }
 @container (max-width: 460px) {
@@ -68,57 +68,107 @@
 @keyframes guess-pop { 0% { opacity: 0; transform: translateY(6px) scale(.94); } 60% { opacity: 1; transform: translateY(-2px) scale(1.03); } 100% { opacity: 1; transform: translateY(0) scale(1); } }
 .animate-guess-pop { animation: guess-pop 280ms cubic-bezier(.22, 1, .36, 1) both; }
 
-.porch-nav { position: relative; flex: none; background: transparent; }
-.porch-shell:has(.room-play) > .porch-nav { --px: 2px; }
-.porch-nav__compact-roof { display: none; }
-.porch-shell:is(:has(.daily-play), :has(.room-play)) .porch-nav__compact-roof { display: block; position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+/* The nav is an absolute overlay on scene pages, so the full <-> compact change animates its own
+   box without touching the scene canvas. Registered custom properties interpolate, so the logo
+   sprites, sign type and beam all move continuously instead of snapping in one frame. */
+@property --nav-px { syntax: '<length>'; inherits: true; initial-value: 3px; }
+@property --nav-c { syntax: '<number>'; inherits: true; initial-value: 0; }
+.porch-nav { position: relative; flex: none; --nav-px: 3px; --px: var(--nav-px); --nav-c: 0; background: transparent; }
+/* The chrome retracts while a room/board move is in flight. A cold load computes the compact
+   pose as its first style, so nothing animates on arrival; a route swap always has a previous
+   pose to leave from, so the nav never snaps between full and compact in one frame. */
+html[data-nav-ready] .porch-nav { transition: --nav-px 360ms cubic-bezier(0.45, 0, 0.2, 1), --nav-c 360ms cubic-bezier(0.45, 0, 0.2, 1); }
+html[data-nav-ready] .porch-nav .porch-nav__logo-full,
+html[data-nav-ready] .porch-nav .porch-nav__logo-compact { transition: opacity 220ms linear, transform 360ms cubic-bezier(0.45, 0, 0.2, 1); }
+html[data-nav-ready] .porch-nav .porch-nav__links { transition: opacity 200ms linear, transform 320ms cubic-bezier(0.45, 0, 0.2, 1), visibility 0s linear 0s; }
+html[data-nav-ready] .porch-nav .porch-nav__compact-roof { transition: opacity 300ms cubic-bezier(0.45, 0, 0.2, 1); }
+/* Compact chrome for play pages; a leaving easel zoom expands the nav while the camera pulls back. */
+.porch-shell:has(.room-play) > .porch-nav,
+.porch-shell:has(.daily-play):not(:has([data-camera="easel"][data-phase="leaving"])) > .porch-nav { --nav-px: 2px; --nav-c: 1; }
+.porch-nav__compact-roof { display: block; position: absolute; inset: 0; overflow: hidden; pointer-events: none; opacity: 0; }
+/* The shell class holds the compact chrome while a room travels inside the transition overlay. */
+.porch-shell:is(:has(.daily-play), :has(.room-play)) .porch-nav__compact-roof { opacity: 1; }
 .porch-shell:is(:has(.daily-play), :has(.room-play)) .porch-nav__roof { display: none; }
-.porch-shell:is(:has(.daily-play), :has(.room-play)) .porch-nav__logo { display: flex; align-items: center; margin-top: 0; }
-.porch-shell:is(:has(.daily-play), :has(.room-play)) .porch-nav__logo-full { display: none; }
-.porch-shell:is(:has(.daily-play), :has(.room-play)) .porch-nav__logo-compact { display: block; }
 .porch-nav__compact-roof canvas { display: block; image-rendering: pixelated; }
 .porch-nav .porch-nav__roof { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
 .porch-nav__roof canvas { display: block; image-rendering: pixelated; }
-.porch-shell:has(.porch-home), .porch-shell:has(.studio-world), .porch-shell--landing { position: relative; }
-.porch-shell:has(.porch-home) > .porch-nav, .porch-shell:has(.studio-world) > .porch-nav, .porch-shell--landing > .porch-nav { position: absolute; z-index: 15; top: 0; left: 0; right: 0; pointer-events: none; }
+.porch-shell:has(.porch-home), .porch-shell:has(.scores-page), .porch-shell:has(.studio-world), .porch-shell--landing { position: relative; }
+.porch-shell:has(.porch-home) > .porch-nav, .porch-shell:has(.scores-page) > .porch-nav, .porch-shell:has(.studio-world) > .porch-nav, .porch-shell--landing > .porch-nav { position: absolute; z-index: 15; top: 0; left: 0; right: 0; pointer-events: none; }
 .porch-shell:has(.porch-home) > .porch-nav .porch-nav__row > :is(a, button), .porch-shell:has(.porch-home) > .porch-nav .porch-nav__links, .porch-shell:has(.porch-home) > .porch-nav .porch-nav__mobile,
+.porch-shell:has(.scores-page) > .porch-nav .porch-nav__row > :is(a, button), .porch-shell:has(.scores-page) > .porch-nav .porch-nav__links, .porch-shell:has(.scores-page) > .porch-nav .porch-nav__mobile,
 .porch-shell:has(.studio-world) > .porch-nav .porch-nav__row > :is(a, button), .porch-shell:has(.studio-world) > .porch-nav .porch-nav__links, .porch-shell:has(.studio-world) > .porch-nav .porch-nav__mobile,
 .porch-shell--landing > .porch-nav .porch-nav__row > :is(a, button), .porch-shell--landing > .porch-nav .porch-nav__links, .porch-shell--landing > .porch-nav .porch-nav__mobile { pointer-events: auto; }
-.porch-shell:has(.porch-home) .porch-nav__roof, .porch-shell--landing .porch-nav__roof { display: none; }
-.porch-shell:has(.porch-home) .porch-nav__row, .porch-shell:has(.studio-world) .porch-nav__row, .porch-shell--landing .porch-nav__row { max-width: none; }
-.porch-shell:has(.porch-home) .porch-nav__toggle, .porch-shell:has(.studio-world) .porch-nav__toggle, .porch-shell--landing .porch-nav__toggle { color: #fff0cc; }
+.porch-shell:has(.porch-home) .porch-nav__roof, .porch-shell:has(.scores-page) .porch-nav__roof, .porch-shell--landing .porch-nav__roof { display: none; }
+.porch-shell:has(.porch-home) .porch-nav__row, .porch-shell:has(.scores-page) .porch-nav__row, .porch-shell:has(.studio-world) .porch-nav__row, .porch-shell--landing .porch-nav__row { max-width: none; }
+.porch-shell:has(.porch-home) .porch-nav__toggle, .porch-shell:has(.scores-page) .porch-nav__toggle, .porch-shell:has(.studio-world) .porch-nav__toggle, .porch-shell--landing .porch-nav__toggle { color: #fff0cc; }
+@media (min-width: 768px) {
+  /* Daily play overlays the nav too: its 108 <-> 52 change must never resize or shift the board. */
+  .porch-shell:has(.daily-play) > .porch-nav { position: absolute; z-index: 2; top: 0; left: 0; right: 0; pointer-events: none; }
+  .porch-shell:has(.daily-play) > .porch-nav .porch-nav__row > :is(a, button) { pointer-events: auto; }
+  .porch-shell:has(.daily-play) > main { padding-top: 52px; }
+}
 .porch-sprite { display: block; flex: none; }
-.porch-nav__row { position: relative; display: flex; align-items: flex-start; gap: var(--px); min-height: calc(var(--px) * 24); max-width: 1280px; margin: auto; padding: 0 calc(var(--px) * 2); }
-.porch-nav__logo { position: relative; z-index: 2; display: block; flex: none; min-height: 44px; margin-top: calc(var(--px) * 2); margin-right: var(--px); transform-origin: 50% 0; transition: transform 180ms steps(3); }
-.porch-nav__logo-compact { display: none; }
+@media (min-width: 768px) {
+  .porch-nav { height: calc(var(--nav-px) * (26 + 10 * (1 - var(--nav-c)))); overflow: hidden; }
+}
+.porch-nav__row { position: relative; display: flex; align-items: flex-start; gap: var(--px); height: 100%; min-height: calc(var(--px) * 24); max-width: 1280px; margin: auto; padding: 0 calc(var(--px) * 2); }
+.porch-nav__logo { position: relative; z-index: 2; display: block; flex: none; width: calc(var(--px) * 70); height: calc(var(--px) * 34); min-height: 44px; margin-top: calc(var(--nav-px) * 2 * (1 - var(--nav-c))); margin-right: var(--px); transform-origin: 50% 0; transition: transform 180ms steps(3); }
+/* Both logo sprites stay mounted and cross-fade; the compact one starts at the full logo's size,
+   so the shrink reads as the sign sliding into its compact spot (no display swap). */
+.porch-nav__logo-full, .porch-nav__logo-compact { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+.porch-nav__logo-compact { opacity: 0; transform: scale(1.6279); }
+.porch-shell:is(:has(.daily-play), :has(.room-play)) .porch-nav__logo-full { opacity: 0; transform: scale(0.6143); }
+.porch-shell:is(:has(.daily-play), :has(.room-play)) .porch-nav__logo-compact { opacity: 1; transform: scale(1); }
 .porch-nav__logo:hover, .porch-nav__logo:focus-visible { transform: rotate(-2deg); }
 .porch-nav__logo::after { content: '✦'; position: absolute; top: 25%; left: 10%; color: #fff0bb; font-size: calc(var(--px) * 4); opacity: 0; animation: logo-glint 7s steps(1) infinite; pointer-events: none; }
 @keyframes logo-glint { 0%, 88%, 100% { opacity: 0; } 90% { opacity: .9; left: 20%; } 92% { opacity: .9; left: 70%; } }
 .porch-nav__links { display: flex; align-items: flex-start; gap: var(--px); margin-top: calc(var(--px) * 8); }
-.porch-nav__sign { position: relative; display: block; flex: none; min-height: 44px; color: #392a45; text-align: center; font-size: 21px; line-height: 1; transition: transform 100ms steps(1); }
-.porch-nav__sign[aria-current="page"] { margin-right: calc(var(--px) * 9); }
+.porch-shell:is(:has(.daily-play), :has(.room-play)) .porch-nav__links { opacity: 0; transform: translateY(calc(var(--nav-px) * -6)); visibility: hidden; pointer-events: none; transition-delay: 0s, 0s, 360ms; }
+.porch-nav__sign { position: relative; display: block; flex: none; min-height: 44px; color: #392a45; text-align: center; font-size: 21px; line-height: 1; transition: transform 140ms cubic-bezier(0.22, 1, 0.36, 1); }
+.porch-nav__sign[aria-current="page"] { margin-right: calc(var(--px) * 11); }
 .porch-nav__sign > span { position: absolute; top: calc(var(--px) * 7); left: 0; right: 0; }
 .porch-nav__sign:hover, .porch-nav__sign:focus-visible { transform: translateY(calc(var(--px) * -1)); }
-.porch-nav__lantern { position: absolute; z-index: 1; right: calc(var(--px) * -9); top: calc(var(--px) * 4); pointer-events: none; }
+.porch-nav__lantern { position: absolute; z-index: 1; right: calc(var(--px) * -10); top: calc(var(--px) * 4); pointer-events: none; }
 .porch-nav__spacer { flex: 1; }
-.porch-nav__mail { display: flex; align-items: center; align-self: center; gap: var(--px); min-height: 44px; color: #392a45; cursor: pointer; }
-.porch-nav__mail-art { position: relative; display: block; }
-.porch-nav__flag { position: absolute; top: calc(var(--px) * 3); right: 0; }
-.porch-nav__username { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: #fff0cc; border: var(--px) solid #8e5960; padding: var(--px) calc(var(--px) * 2); font-size: 18px; }
+.porch-nav__mail { position: relative; display: flex; align-items: center; align-self: center; gap: 6px; min-height: 44px; color: #392a45; cursor: pointer; }
+.porch-nav__mail-art { position: relative; display: block; flex: none; }
+/* The letterbox is the account avatar; cap it so the nav bar never grows around it. */
+.porch-nav__mail-art canvas { width: auto !important; height: clamp(40px, calc(var(--px) * 18), 56px) !important; }
+.porch-shell:has(.studio-world) .porch-nav__mail-art canvas { height: 64px !important; }
+/* The name is a small paper tag tied to the letterbox, not a floating pill. */
+.porch-nav__username { position: relative; max-width: 132px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 2px 7px 2px 15px; background: #fff0cc; border: 2px solid #8e5960; box-shadow: 2px 2px #392a45; color: #392a45; font-size: 15px; line-height: 1.1; transform: rotate(-1.5deg); }
+.porch-nav__username::before { content: ''; position: absolute; left: 4px; top: 50%; width: 4px; height: 4px; margin-top: -2px; border-radius: 50%; background: #8e5960; box-shadow: inset 0 0 0 1px #392a45; }
+.porch-nav__username::after { content: ''; position: absolute; left: -7px; top: 50%; width: 7px; height: 1px; background: #8e5960; }
 .porch-nav__toggle { display: none; align-self: center; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; color: #fff0cc; }
-.porch-shell:not(:has(.porch-home), :has(.studio-world), :has(.room-play), :has(.daily-play), .porch-shell--landing) .porch-nav__toggle { color: #392a45; background: #fff0cc; border: var(--px) solid #8e5960; }
+.porch-shell:not(:has(.porch-home), :has(.scores-page), :has(.studio-world), :has(.room-play), :has(.daily-play), .porch-shell--landing) .porch-nav__toggle { color: #392a45; background: #fff0cc; border: var(--px) solid #8e5960; }
 .porch-nav__mobile { display: none; }
 @media (min-width: 768px) and (max-width: 959px) {
-  .porch-nav { --px: 2px; }
+  .porch-nav { --nav-px: 2px; }
   .porch-nav__sign { font-size: 16px; }
-  .porch-nav__username { font-size: 16px; max-width: 108px; }
+  .porch-nav__username { font-size: 14px; max-width: 116px; }
 }
 @media (max-width: 767px) {
   .porch-nav__links { display: none; }
+  /* The porch/practice pages have their own dock: one menu entry point, not two. */
+  html:has(.porch-home) .porch-nav__toggle { display: none; }
   .porch-nav__toggle { display: flex; }
   .porch-nav__mobile { position: relative; display: flex; flex-wrap: wrap; justify-content: center; gap: calc(var(--px) * 2); padding: calc(var(--px) * 2); background: #bc806e; }
   .porch-nav__mobile .porch-nav__sign[aria-current="page"] { margin-right: calc(var(--px) * 10); }
   .porch-nav__username { display: none; }
 }
-@media (max-width: 640px) { .porch-nav__sign { font-size: calc(var(--px) * 8); } }
-@media (prefers-reduced-motion: reduce) { .porch-nav__sign, .porch-nav__logo { transition: none; } .porch-nav__sign:hover, .porch-nav__sign:focus-visible, .porch-nav__logo:hover, .porch-nav__logo:focus-visible { transform: none; } .porch-nav__logo::after { animation: none; } }
+@media (max-width: 640px) { .porch-nav { --nav-px: 2px; } .porch-nav__sign { font-size: calc(var(--px) * 8); } }
+@media (prefers-reduced-motion: reduce) {
+  .porch-nav, .porch-nav__sign, .porch-nav__logo, .porch-nav__logo-full, .porch-nav__logo-compact, .porch-nav__links, .porch-nav__row, .porch-nav .porch-nav__roof, .porch-nav__compact-roof { transition: none; animation: none; }
+  .porch-nav__sign:hover, .porch-nav__sign:focus-visible, .porch-nav__logo:hover, .porch-nav__logo:focus-visible { transform: none; }
+  .porch-nav__logo::after { animation: none; }
+}
+
+/* Arrival curtains and the hand-off veil shared by the porch zooms. */
+:root {
+  /* Porch -> Scores / Gallery handoff: opaque warm chalk-dark veil shared by the porch zoom-in and the destination's arrival. */
+  --chalk-veil: radial-gradient(ellipse at 50% 45%, #4a3340 0%, #2c2231 60%, #1e1824 100%);
+}
+
+.route-curtain { width: 100%; height: 100%; min-height: 100%; background: var(--color-background); animation: route-curtain-in 180ms ease-out 90ms backwards; }
+@keyframes route-curtain-in { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .route-curtain { animation: none; } }
