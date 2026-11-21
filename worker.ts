@@ -167,12 +167,12 @@ function agentAccess(identity: AgentIdentity) {
   }
 }
 
-declare const __PIXEL_PARTY_TEST__: boolean
+declare const __PIXLE_TEST__: boolean
 
 const app = new Hono<AppContext>()
 // Only the test build exposes this readiness check; it refuses to start tests
 // until the worker's paid-integration guard and auth service are both active.
-if (typeof __PIXEL_PARTY_TEST__ !== 'undefined' && __PIXEL_PARTY_TEST__) {
+if (typeof __PIXLE_TEST__ !== 'undefined' && __PIXLE_TEST__) {
   app.get('/api/__test/ready', async c => {
     const result = await createServerTools(c.env).integration('invalid-endpoint', {})
     if (result.success || result.code !== 'test_integration_disabled') return c.json({ error: 'test guard inactive' }, 503)

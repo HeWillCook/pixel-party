@@ -23,7 +23,7 @@ function contextFor(userId = 'alice'): AgentToolContext<Env> {
   return {
     env: {} as Env,
     userId,
-    request: new Request('https://pixel-party.test/_deepspace/agent/tools'),
+    request: new Request('https://pixle.test/_deepspace/agent/tools'),
   }
 }
 

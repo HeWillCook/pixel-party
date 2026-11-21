@@ -85,7 +85,7 @@ const server = http.createServer(async (req, res) => {
       console.log(`[local-judge] POST /judge -> 400 (${Date.now() - startedAt}ms)`)
       return
     }
-    tmpPath = path.join(os.tmpdir(), `pixel-party-judge-${randomUUID()}.png`)
+    tmpPath = path.join(os.tmpdir(), `pixle-judge-${randomUUID()}.png`)
     await fs.writeFile(tmpPath, Buffer.from(body.png, 'base64'))
     const text = await runClaude(body.system, body.user, tmpPath)
     sendJson(res, 200, { text })

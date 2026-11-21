@@ -25,7 +25,7 @@ export function haikuGreeting(facts: HaikuFacts, visit: number): string {
   return lines[(visit - 1) % lines.length]
 }
 
-const VISITS_KEY = 'pixel-party:haiku-visits'
+const VISITS_KEY = 'pixle:haiku-visits'
 
 /** How many times Haiku has greeted this browser (kept in localStorage; 0 when it is unavailable). */
 export function readHaikuVisits(): number {

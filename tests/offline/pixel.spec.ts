@@ -739,7 +739,7 @@ for (const viewport of [{ width: 1280, height: 720 }, { width: 1366, height: 768
     const errors = await clientFixture(page, {
       signedIn: true,
       rooms: [
-        { recordId: 'r-play', data: { name: 'Pixel Party', mode: 'coop', visibility: 'public', joinCode: 'play', hostId: 'system', status: 'playing', playerCount: 4, lastActiveAt: 5000, isDefaultBoard: true } },
+        { recordId: 'r-play', data: { name: 'Pixle', mode: 'coop', visibility: 'public', joinCode: 'play', hostId: 'system', status: 'playing', playerCount: 4, lastActiveAt: 5000, isDefaultBoard: true } },
         { recordId: 'r-1', data: { name: "Will's Studio", mode: 'coop', visibility: 'public', joinCode: 'QX3J', hostId: 'host', status: 'playing', playerCount: 3, lastActiveAt: 4000, isDefaultBoard: false } },
         { recordId: 'r-2', data: { name: 'Sunset Sketch', mode: 'coop', visibility: 'public', joinCode: 'M9K2', hostId: 'other', status: 'lobby', playerCount: 2, lastActiveAt: 3000, isDefaultBoard: false } },
         { recordId: 'r-3', data: { name: 'Late Night', mode: 'coop', visibility: 'public', joinCode: 'P4W8', hostId: 'other', status: 'playing', playerCount: 1, lastActiveAt: 2000, isDefaultBoard: false } },
@@ -839,7 +839,7 @@ test('portrait tablet 1024x1366 keeps create, join, corkboard, Magic Easel, and 
   const errors = await clientFixture(page, {
     signedIn: true,
     rooms: [
-      { recordId: 'r-play', data: { name: 'Pixel Party', mode: 'coop', visibility: 'public', joinCode: 'play', hostId: 'system', status: 'playing', playerCount: 4, lastActiveAt: 5000, isDefaultBoard: true } },
+      { recordId: 'r-play', data: { name: 'Pixle', mode: 'coop', visibility: 'public', joinCode: 'play', hostId: 'system', status: 'playing', playerCount: 4, lastActiveAt: 5000, isDefaultBoard: true } },
       { recordId: 'r-1', data: { name: "Will's Studio", mode: 'coop', visibility: 'public', joinCode: 'QX3J', hostId: 'host', status: 'playing', playerCount: 3, lastActiveAt: 4000, isDefaultBoard: false } },
       { recordId: 'r-2', data: { name: 'Sunset Sketch', mode: 'coop', visibility: 'public', joinCode: 'M9K2', hostId: 'other', status: 'lobby', playerCount: 2, lastActiveAt: 3000, isDefaultBoard: false } },
       { recordId: 'r-3', data: { name: 'Overflow Easel', mode: 'coop', visibility: 'public', joinCode: 'Z7T1', hostId: 'other', status: 'lobby', playerCount: 1, lastActiveAt: 1000, isDefaultBoard: false } },
@@ -984,7 +984,7 @@ test('375 lobby no horizontal scroll and primary controls stay reachable', async
   const errors = await clientFixture(page, {
     signedIn: true,
     rooms: [
-      { recordId: 'r-play', data: { name: 'Pixel Party', mode: 'coop', visibility: 'public', joinCode: 'play', hostId: 'system', status: 'playing', playerCount: 4, lastActiveAt: 5000, isDefaultBoard: true } },
+      { recordId: 'r-play', data: { name: 'Pixle', mode: 'coop', visibility: 'public', joinCode: 'play', hostId: 'system', status: 'playing', playerCount: 4, lastActiveAt: 5000, isDefaultBoard: true } },
       { recordId: 'r-1', data: { name: 'A Very Long Studio Room Name That Must Truncate Cleanly', mode: 'coop', visibility: 'public', joinCode: 'QX3J', hostId: 'host', status: 'playing', playerCount: 3, lastActiveAt: 4000, isDefaultBoard: false } },
     ],
   })

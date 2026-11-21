@@ -47,7 +47,7 @@ jobs:
           # retry button, the gallery debug paintings, the studio debug room),
           # which a plain production build strips. This is not a deploy: the
           # deploy guard keys on DEEPSPACE_SITE_ORIGIN, which is unset here.
-          PIXEL_PARTY_TEST: '1'
+          PIXLE_TEST: '1'
       - run: npx playwright install --with-deps chromium
       - run: npx playwright test --config tests/offline.playwright.config.ts
       - if: failure()

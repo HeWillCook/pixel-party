@@ -1,5 +1,5 @@
 /**
- * Read-only agent tools for Pixel Party.
+ * Read-only agent tools for Pixle.
  *
  * One definition serves the local agent and the browser tool surface. Every
  * tool goes through the caller's record executor, so the app's normal row

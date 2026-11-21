@@ -436,7 +436,7 @@ test('the logo has a 44px mobile target', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 })
   await setup(page)
   await page.goto(`${origin}/party`)
-  const logo = page.getByRole('link', { name: 'Pixel Party, home', exact: true })
+  const logo = page.getByRole('link', { name: 'Pixle, home', exact: true })
   expect((await logo.boundingBox())!.height).toBeGreaterThanOrEqual(44)
 })
 
@@ -468,7 +468,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720
     test.skip(process.env.SCREENSHOTS !== '1')
     await page.setViewportSize(viewport)
     await setup(page, false, [
-      { recordId: 'r-play', data: { name: 'Pixel Party', mode: 'coop', visibility: 'public', joinCode: 'play', hostId: 'system', status: 'playing', playerCount: 5, lastActiveAt: 5000, isDefaultBoard: true } },
+      { recordId: 'r-play', data: { name: 'Pixle', mode: 'coop', visibility: 'public', joinCode: 'play', hostId: 'system', status: 'playing', playerCount: 5, lastActiveAt: 5000, isDefaultBoard: true } },
       { recordId: 'r-1', data: { name: "Will's Studio", mode: 'coop', visibility: 'public', joinCode: 'QX3J', hostId: 'host', status: 'playing', playerCount: 3, lastActiveAt: 4000, isDefaultBoard: false } },
       { recordId: 'r-2', data: { name: 'Sunset Cove', mode: 'coop', visibility: 'public', joinCode: 'M9K2', hostId: 'other', status: 'lobby', playerCount: 2, lastActiveAt: 3000, isDefaultBoard: false } },
       { recordId: 'r-3', data: { name: 'Night Owls', mode: 'coop', visibility: 'public', joinCode: 'P4W8', hostId: 'other', status: 'playing', playerCount: 4, lastActiveAt: 2000, isDefaultBoard: false } },
@@ -806,7 +806,7 @@ test('capture Task 6 remaining screens across viewports', async ({ page }) => {
 
   // Studio overflow at 1366x768 and portrait tablet at 1024x1366
   await setup(page, false, [
-    { recordId: 'r-play', data: { name: 'Pixel Party', mode: 'coop', visibility: 'public', joinCode: 'play', hostId: 'system', status: 'playing', playerCount: 5, lastActiveAt: 5000, isDefaultBoard: true } },
+    { recordId: 'r-play', data: { name: 'Pixle', mode: 'coop', visibility: 'public', joinCode: 'play', hostId: 'system', status: 'playing', playerCount: 5, lastActiveAt: 5000, isDefaultBoard: true } },
     { recordId: 'r-1', data: { name: "Will's Studio", mode: 'coop', visibility: 'public', joinCode: 'QX3J', hostId: 'host', status: 'playing', playerCount: 3, lastActiveAt: 4000, isDefaultBoard: false } },
     { recordId: 'r-2', data: { name: 'Sunset Cove', mode: 'coop', visibility: 'public', joinCode: 'M9K2', hostId: 'other', status: 'lobby', playerCount: 2, lastActiveAt: 3000, isDefaultBoard: false } },
     { recordId: 'r-3', data: { name: 'Night Owls', mode: 'coop', visibility: 'public', joinCode: 'P4W8', hostId: 'other', status: 'playing', playerCount: 4, lastActiveAt: 2000, isDefaultBoard: false } },
@@ -1888,7 +1888,7 @@ async function cameraFrames(page: Page, run: () => Promise<unknown>, ms = 1500) 
 
 test('every app route has its own tab title', async ({ page }) => {
   await setup(page)
-  for (const [path, title] of [['/home', "Today's Daily · Pixel Party"], ['/scores', 'Scores · Pixel Party'], ['/settings', 'Settings · Pixel Party'], ['/party', 'Party · Pixel Party'], ['/u/host', 'Your gallery · Pixel Party'], ['/nope', 'Not found · Pixel Party']]) {
+  for (const [path, title] of [['/home', "Today's Daily · Pixle"], ['/scores', 'Scores · Pixle'], ['/settings', 'Settings · Pixle'], ['/party', 'Party · Pixle'], ['/u/host', 'Your gallery · Pixle'], ['/nope', 'Not found · Pixle']]) {
     await page.goto(`${origin}${path}`)
     await expect(page, path).toHaveTitle(title)
   }
@@ -1900,7 +1900,7 @@ test('the nav sits in the same place on every route', async ({ page }) => {
   const logoX = async (path: string) => {
     await page.goto(`${origin}${path}`)
     await expect(page.getByTestId('app-navigation')).toBeVisible()
-    return page.getByRole('link', { name: 'Pixel Party, home' }).evaluate((element) => Math.round(element.getBoundingClientRect().x))
+    return page.getByRole('link', { name: 'Pixle, home' }).evaluate((element) => Math.round(element.getBoundingClientRect().x))
   }
   const xs = [await logoX('/home'), await logoX('/scores'), await logoX('/u/host'), await logoX('/settings'), await logoX('/nope')]
   expect(new Set(xs).size, `logo x per route: ${xs}`).toBe(1)
@@ -2107,7 +2107,7 @@ test('the landing is exactly one viewport', async ({ page }) => {
     const heights = await page.evaluate(() => ({ page: document.documentElement.scrollHeight, view: window.innerHeight }))
     expect(heights.page).toBeLessThanOrEqual(heights.view)
     // The copy for search and screen readers is still in the page.
-    await expect(page.getByRole('heading', { name: 'Draw together at Pixel Party' })).toBeAttached()
+    await expect(page.getByRole('heading', { name: 'Draw together at Pixle' })).toBeAttached()
   }
 })
 

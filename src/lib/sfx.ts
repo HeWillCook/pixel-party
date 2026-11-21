@@ -1,6 +1,6 @@
 import type { SoundName } from '@/game/sound-events'
 
-export const MUTE_KEY = 'pixel-party:muted'
+export const MUTE_KEY = 'pixle:muted'
 export interface Sfx { play(name: SoundName): void; whoosh(): void; unlock(): Promise<boolean>; isMuted(): boolean; setMuted(m: boolean): void }
 
 const tones: Record<SoundName, { notes: number[]; duration: number; wave: OscillatorType }> = {

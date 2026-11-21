@@ -23,7 +23,7 @@ it('syncs two hook instances and storage events', () => {
   first.toggle()
   expect(subscriptions.map(read => read())).toEqual([true, true])
   expect(listeners.map(listener => listener.mock.calls.length)).toEqual([1, 1])
-  values.set('pixel-party:muted', '0')
+  values.set('pixle:muted', '0')
   events.dispatchEvent(new Event('storage'))
   expect(subscriptions.map(read => read())).toEqual([false, false])
   expect(listeners.map(listener => listener.mock.calls.length)).toEqual([2, 2])

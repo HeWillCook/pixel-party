@@ -131,7 +131,7 @@ async function setupClient(page: Page, options: { signedOut?: boolean; dailyStat
           {
             recordId: 'default-board',
             data: {
-              name: 'Pixel Party',
+              name: 'Pixle',
               mode: 'coop',
               visibility: 'public',
               joinCode: 'play',

@@ -8,8 +8,8 @@
  * module that uses one would throw.
  */
 
-/** `PIXEL_PARTY_TEST=1`: the offline/Playwright build. */
-declare const __PIXEL_PARTY_TEST__: boolean
+/** `PIXLE_TEST=1`: the offline/Playwright build. */
+declare const __PIXLE_TEST__: boolean
 
 /** `'fake' | 'local'` in tests and local dev, `'real'` (the default) otherwise. */
 declare const __DAILY_JUDGE__: 'fake' | 'local' | 'real' | undefined
@@ -18,6 +18,6 @@ declare const __DAILY_JUDGE__: 'fake' | 'local' | 'real' | undefined
  * The debug surface from the pre-launch review: POST /api/daily/reset,
  * POST /api/daily/debug-paintings, and the debug controls on the Daily,
  * gallery and studio screens. True for `vite serve` (the owner's dev server)
- * and the PIXEL_PARTY_TEST build, false for a production build.
+ * and the PIXLE_TEST build, false for a production build.
  */
 declare const __DEBUG_TOOLS__: boolean

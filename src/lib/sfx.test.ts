@@ -58,7 +58,7 @@ describe('sfx', () => {
     sfx.whoosh()
     expect(audio.createOscillator).toHaveBeenCalledTimes(1)
   })
-  it('persists mute to storage under pixel-party:muted', () => {
+  it('persists mute to storage under pixle:muted', () => {
     const storage = { getItem: vi.fn(() => '1'), setItem: vi.fn() }
     const sfx = createSfx({ storage })
     expect(sfx.isMuted()).toBe(true)

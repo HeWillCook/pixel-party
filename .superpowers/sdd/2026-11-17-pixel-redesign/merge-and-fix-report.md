@@ -1,4 +1,4 @@
-# Pixel Party redesign: merge and review fixes
+# Pixle redesign: merge and review fixes
 
 Date: 2026-11-17. Branch: `t3/pixel-redesign-direction`.
 

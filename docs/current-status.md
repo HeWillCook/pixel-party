@@ -2,7 +2,7 @@
 
 ## Handoff (2026-11-17)
 
-**Goal:** Pixel Party, Will's DeepSpace build-exercise submission: a daily solo pixel-art challenge with the
+**Goal:** Pixle, Will's DeepSpace build-exercise submission: a daily solo pixel-art challenge with the
 multiplayer party canvas as a secondary mode. The app is live at https://pixel-party.app.space; the repository is
 `HeWillCook/pixel-party`.
 
