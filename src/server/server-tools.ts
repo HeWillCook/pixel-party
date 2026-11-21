@@ -94,7 +94,7 @@ export function createServerTools(env: Env): ServerTools {
     create: (collection, data, recordId) => execTool('records.create', { collection, data, recordId }),
     update: (collection, recordId, data) => execTool('records.update', { collection, recordId, data }),
     get: (collection, recordId) => execTool('records.get', { collection, recordId }),
-    // TEMP DEBUG: remove before launch (used only by daily-debug.ts)
+    // DEV ONLY (__DEBUG_TOOLS__) (used only by daily-debug.ts)
     deleteWhere: (collection, where, limit) => execTool('records.deleteWhere', { collection, where, limit }),
     query: (collection, options) => execTool('records.query', { collection, ...options }),
     integration,

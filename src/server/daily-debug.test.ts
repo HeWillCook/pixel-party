@@ -3,7 +3,7 @@ import { decodeCells } from '../game/grid'
 import { addDebugPaintings, clearDebugPaintings, debugCells, MAX_DEBUG_PAINTINGS } from './daily-debug'
 import { memoryTools } from './room-test-tools'
 
-// TEMP DEBUG: remove with daily-debug.ts before launch
+// DEV ONLY (__DEBUG_TOOLS__): remove with daily-debug.ts
 const now = Date.UTC(2026, 10, 18, 12)
 const alice = { userId: 'alice', name: 'Alice' }
 

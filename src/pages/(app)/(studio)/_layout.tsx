@@ -123,7 +123,7 @@ export default function StudioLayout() {
     await createRoom(trimmed, visibility)
   }
 
-  // TEMP DEBUG: remove before launch
+  // DEV ONLY (__DEBUG_TOOLS__)
   const handleDebugRoom = () => {
     if (creating) return
     if (!isSignedIn) {
@@ -262,7 +262,7 @@ export default function StudioLayout() {
         onVisibilityChange={setVisibility}
         onCreateRoom={handleCreateRoom}
         onRequestSignIn={() => setSignInOpen(true)}
-        onDebugRoom={handleDebugRoom}
+        onDebugRoom={__DEBUG_TOOLS__ ? handleDebugRoom : undefined}
         signInOpen={signInOpen && !inRoom}
         onCloseSignIn={() => setSignInOpen(false)}
         onJoinCodeChange={setJoinCodeInput}

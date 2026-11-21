@@ -514,8 +514,8 @@ export default function DailyHomePage() {
           onEasel={() => { if (signedOut) requestSignIn(); else if (ended) void openEnded(); else void handleStart() }}
           onSignOut={() => signOut()} onToggleMute={toggleMute}>
           {state.lastError && <p className="porch-error pp-panel" role="status">{state.lastError}</p>}
-          {/* TEMP DEBUG: remove before launch */}
-          {isSignedIn && state.loaded && ended && (
+          {/* DEV ONLY (__DEBUG_TOOLS__) */}
+          {__DEBUG_TOOLS__ && isSignedIn && state.loaded && ended && (
             <div className="porch-retry-debug">
               <TempRetryDailyButton autoStart={false} onAfterReset={() => void handleStart()} />
             </div>
@@ -603,10 +603,10 @@ export default function DailyHomePage() {
   const ended = state.status === 'ended'
   const closeupPrompt = state.prompt ?? bestDrawingDoc?.prompt
   const exitCloseup = () => { enableNavMotion(); setPhase('leaving') }
-  const retryButton = (
-    // TEMP DEBUG: remove before launch
+  // DEV ONLY (__DEBUG_TOOLS__)
+  const retryButton = __DEBUG_TOOLS__ ? (
     <TempRetryDailyButton compact autoStart={false} onAfterReset={() => void handleStart()} className="w-full" />
-  )
+  ) : null
 
   return (
     <div
@@ -952,8 +952,8 @@ export default function DailyHomePage() {
                         startedAt={state.startedAt}
                         manualUsed={state.asksUsed}
                       />
-                      {/* TEMP DEBUG: remove before launch */}
-                      <TempRetryDailyButton compact onAfterReset={() => setMobileScoreOpen(false)} />
+                      {/* DEV ONLY (__DEBUG_TOOLS__) */}
+                      {__DEBUG_TOOLS__ && <TempRetryDailyButton compact onAfterReset={() => setMobileScoreOpen(false)} />}
                     </div>
                   </Modal>
                 </div>

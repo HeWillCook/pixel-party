@@ -1,4 +1,4 @@
-// TEMP DEBUG: remove before launch
+// DEV ONLY (__DEBUG_TOOLS__)
 // Fills a signed-in player's gallery wall with generated paintings so a full wall can be tested without painting dozens.
 // They are ordinary dailyDrawings + dailyScores rows (the rows the wall reads), tagged so they can be cleared again.
 import { promptForDay } from '../game/daily/prompts'

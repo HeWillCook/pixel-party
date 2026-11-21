@@ -1,4 +1,4 @@
-// TEMP DEBUG: remove before launch
+// DEV ONLY (__DEBUG_TOOLS__)
 import { useState } from 'react'
 import { getAuthToken } from 'deepspace'
 

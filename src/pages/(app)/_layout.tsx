@@ -22,6 +22,8 @@ import { RecordProvider, RecordScope, AgentTools } from 'deepspace'
 import Navigation from '../../components/Navigation'
 import { useToast } from '@/components/ui'
 import { APP_NAME, SCOPE_ID } from '../../constants'
+import { Seo } from '../../components/Seo'
+import { seo } from '../../seo'
 import { schemas } from '../../schemas'
 import { DailyAttemptProvider } from '../../hooks/DailyAttemptProvider'
 import { useDailyLock } from '../../hooks/useDailyLock'
@@ -36,7 +38,7 @@ export default function AppLayout() {
     <DeepSpaceAuthProvider>
       {/* The prerendered landing owns the document <title> and React drops it
           when <Seo> unmounts, so every route without <Seo> sets its own. */}
-      <title>{APP_NAME}</title>
+      <AppHead />
       <AuthBoot>
         <ShellChrome>
         <div className="porch-shell flex h-screen flex-col overflow-hidden">
@@ -53,6 +55,21 @@ export default function AppLayout() {
       </AuthBoot>
     </DeepSpaceAuthProvider>
   )
+}
+
+/**
+ * Head tags for the app routes. Per-user and per-room screens only ever show
+ * the signed-in player's own data or a room's live state, so they ask crawlers
+ * to stay away; the public screens (/scores, /party) keep the plain title.
+ */
+const NOINDEX_ROUTES = [/^\/home\/?$/, /^\/settings\/?$/, /^\/u\/[^/]+\/?$/, /^\/r\/[^/]+\/?$/]
+
+function AppHead() {
+  const { pathname } = useLocation()
+  const noindex = NOINDEX_ROUTES.some(pattern => pattern.test(pathname))
+  return noindex
+    ? <Seo title={APP_NAME} description={seo.description} noindex />
+    : <title>{APP_NAME}</title>
 }
 
 /** A running Daily attempt owns the screen: a typed URL or a stale link to anywhere else lands back on the easel. */

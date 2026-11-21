@@ -87,7 +87,7 @@ export interface StudioLobbyProps {
   onVisibilityChange: (value: 'public' | 'private') => void
   onCreateRoom: (e: FormEvent) => void
   onRequestSignIn: () => void
-  /** TEMP DEBUG: remove before launch. Creates a room with a generated name and walks into it. */
+  /** DEV ONLY (__DEBUG_TOOLS__): creates a room with a generated name and walks into it. */
   onDebugRoom?: () => void
   /** The sign-in slip pinned to the room-tickets corkboard. */
   signInOpen: boolean
@@ -941,8 +941,8 @@ export function StudioLobby(props: StudioLobbyProps) {
             Got a code?
           </button>
         </nav>
-        {/* TEMP DEBUG: remove before launch */}
-        {props.onDebugRoom && !room && (
+        {/* DEV ONLY (__DEBUG_TOOLS__) */}
+        {__DEBUG_TOOLS__ && props.onDebugRoom && !room && (
           <button type="button" data-testid="temp-debug-room" className="pp-chip studio-debug-room" disabled={props.creating} onClick={props.onDebugRoom} title="Temporary testing button: create a room with a generated name and go in">
             Debug: new room
           </button>

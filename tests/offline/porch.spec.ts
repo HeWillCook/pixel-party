@@ -42,6 +42,8 @@ test('porch objects are present and labelled', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 })
   await setup(page)
   await page.goto(`${origin}/home`)
+  // /home is per-user: crawlers are told to stay away (the landing is the public page).
+  await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', 'noindex, nofollow')
   const scene = page.locator('.porch-world')
   for (const name of ['Start Daily Challenge', "Today's scores", 'Basement studio', 'Account menu', 'Your gallery', 'Mute sounds', 'Scoring rules']) {
     await expect(scene.getByRole(name === "Today's scores" || name === 'Basement studio' || name === 'Your gallery' ? 'link' : 'button', { name, exact: true })).toBeVisible()
@@ -706,7 +708,7 @@ test('studio mailbox tag fits username and order form submit uses readable butto
   expect(submitStyle.height).toBeGreaterThanOrEqual(32)
 })
 
-// TEMP DEBUG: remove with the debug-room button before launch
+// DEV ONLY (__DEBUG_TOOLS__): remove with the debug-room button
 test('the debug-room button creates a generated room through the normal path and walks in, or opens the sign-in slip when signed out', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   await setup(page, true)
@@ -729,6 +731,7 @@ test('remaining screens use porch-wood panels, letter settings, and Haiku\'s 404
   await page.goto(`${origin}/settings`)
   await expect(page.getByTestId('settings-letter')).toContainText('From the porch mailbox')
   await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible()
+  await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', 'noindex, nofollow')
 
   await page.goto(`${origin}/does-not-exist`)
   await expect(page.getByTestId('not-found-bubble')).toContainText("Oops — this page doesn't exist.")
@@ -740,9 +743,6 @@ test('remaining screens use porch-wood panels, letter settings, and Haiku\'s 404
   await setup(page, true)
   await page.goto(`${origin}/settings`)
   await expect(page.getByTestId('settings-letter').getByTestId('sign-in-card')).toBeVisible()
-  await page.goto(`${origin}/api-status`)
-  await expect(page.getByRole('heading', { name: 'Sign in to continue' })).toBeVisible()
-  await expect(page.locator('.pp-wood-panel')).toBeVisible()
 })
 
 test('non-scene pages render porch roof overhang immediately without flat dark slab below beam', async ({ page }) => {
@@ -751,7 +751,7 @@ test('non-scene pages render porch roof overhang immediately without flat dark s
   await page.route('**/api/integrations', (route) =>
     route.fulfill({ json: { success: true, data: { integrations: { anthropic: {}, deepgram: {} } } } }),
   )
-  for (const [path, signedOut] of [['/settings', false], ['/settings', true], ['/api-status', false]] as const) {
+  for (const [path, signedOut] of [['/settings', false], ['/settings', true]] as const) {
     if (signedOut) await setup(page, true)
     await page.goto(`${origin}${path}`)
     const roofCanvas = page.locator('.porch-nav__roof canvas').first()
@@ -862,25 +862,6 @@ test('capture Task 6 remaining screens across viewports', async ({ page }) => {
   await expect(page.getByTestId('magic-easel-smoke')).toBeVisible()
   await page.evaluate(() => document.fonts.ready)
   await page.screenshot({ path: resolve(dir, 'party-easel-smoke-1280x720.png') })
-
-  // Protected signed-out panel (porch-wood panel)
-  await setup(page, true)
-  await page.setViewportSize({ width: 1280, height: 720 })
-  await page.goto(`${origin}/api-status`)
-  await expect(page.getByRole('heading', { name: 'Sign in to continue' })).toBeVisible()
-  await page.evaluate(() => document.fonts.ready)
-  await page.screenshot({ path: resolve(dir, 'signed-out-1280x720.png') })
-
-  // API status (porch-wood panel)
-  await setup(page)
-  await page.route('**/api/integrations', (route) =>
-    route.fulfill({ json: { success: true, data: { integrations: { anthropic: {}, deepgram: {} } } } }),
-  )
-  await page.setViewportSize({ width: 1280, height: 720 })
-  await page.goto(`${origin}/api-status`)
-  await expect(page.getByText('Integration catalog ready')).toBeVisible()
-  await page.evaluate(() => document.fonts.ready)
-  await page.screenshot({ path: resolve(dir, 'api-status-1280x720.png') })
 })
 
 test('StaticPorchNav renders landing signs without false aria-current and fits tablet 768px nav without overflow', async ({ page }) => {

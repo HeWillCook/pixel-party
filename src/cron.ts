@@ -28,8 +28,7 @@
 
 import type { CronTask } from 'deepspace/worker'
 import type { Env } from '../worker.js'
-import { closeDay } from './server/daily-close.js'
-import { utcDay } from './server/room-time.js'
+import { closeRecentDays } from './server/daily-close.js'
 import { createServerTools } from './server/server-tools.js'
 
 export const tasks: CronTask[] = [
@@ -40,6 +39,7 @@ export const tasks: CronTask[] = [
 
 export async function runTask(name: string, env: Env): Promise<void> {
   if (name === 'daily-close') {
-    await closeDay(createServerTools(env), utcDay(Date.now() - 86_400_000))
+    // Both of the last two UTC days: a delayed alarm must not skip a day.
+    await closeRecentDays(createServerTools(env), Date.now())
   }
 }
