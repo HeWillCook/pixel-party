@@ -17,6 +17,8 @@ import { PorchLabels } from '@/components/porch/PorchLabels'
 import { settledNavHeight } from '@/components/porch/navMetrics'
 import { useDaily } from '@/hooks/DailyAttemptProvider'
 import { useMute } from '@/hooks/useMute'
+import { useMyProfile } from '@/hooks/useProfile'
+import { UsernameForm } from '@/components/profile/UsernameForm'
 import {
   consumeSettingsArrival,
   consumeZoomHandoff,
@@ -89,6 +91,7 @@ const waxSeal = defineSprite(
 export default function SettingsPage() {
   const { user } = useUser()
   const { isSignedIn } = useAuth()
+  const { profile, apply: applyProfile } = useMyProfile()
   const { state: daily } = useDaily()
   // The same preference as the porch radio.
   const { muted, toggle: toggleMute } = useMute()
@@ -292,8 +295,17 @@ export default function SettingsPage() {
               {isSignedIn ? <>
                 <dl className="settings-letter__fields mt-5 space-y-4 text-lg">
                   <div className="border-b-2 border-[#d1b5a3] pb-2">
-                    <dt className="text-[15px] uppercase tracking-wider text-muted-foreground">Name</dt>
-                    <dd className="mt-0.5 text-2xl text-foreground">{user?.name || '—'}</dd>
+                    <dt className="text-[15px] uppercase tracking-wider text-muted-foreground">Username</dt>
+                    <dd className="mt-1 text-2xl text-foreground" data-testid="settings-username">
+                      <UsernameForm
+                        initialValue={profile?.username ?? ''}
+                        currentUsername={profile?.username ?? null}
+                        submitLabel="Save"
+                        hint="3-16 characters. You can change it once a day."
+                        compact
+                        onSaved={applyProfile}
+                      />
+                    </dd>
                   </div>
                   <div className="border-b-2 border-[#d1b5a3] pb-2">
                     <dt className="text-[15px] uppercase tracking-wider text-muted-foreground">Email</dt>

@@ -5,6 +5,7 @@ import { rectToPercent } from '../../scene/camera'
 import { SceneComposition } from '../../scene/PixelScene'
 import { porchLayout } from '../../scene/porch/layout'
 import { useDaily } from '../../hooks/DailyAttemptProvider'
+import { useMyProfile } from '../../hooks/useProfile'
 import { summarizePorch, type PorchPeer, type PorchPresenceState, type PorchSummary } from './presenceSummary'
 
 /** Every app route but the studio below (/party and the rooms) is the porch scene or a close-up of it (home, scores, galleries, settings, the 404). */
@@ -34,11 +35,14 @@ export function PorchPresenceProvider({ children }: { children: ReactNode }) {
 
 function PorchPresenceSession({ onSummary }: { onSummary: (summary: PorchSummary | null) => void }) {
   const { user } = useAuthProfileReady({ requireUser: false })
+  const { username } = useMyProfile()
   const { state } = useDaily()
   const day = state.day || new Date().toISOString().slice(0, 10)
   const { peers, connected, updateState } = usePresenceRoom(`porch:${day}`)
   const painting = state.status === 'playing'
-  const name = user?.name || ''
+  // Publish the chosen Pixle username; fall back to the sign-in name only if
+  // the profile has not answered (or the player has not picked one yet).
+  const name = username || user?.name || ''
 
   // Published when it changes (and again after a reconnect, which joins with empty state): never per frame, never per route.
   const published = useRef<string>('')

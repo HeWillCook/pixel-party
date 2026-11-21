@@ -267,8 +267,13 @@ test('reduced motion enters party without waiting for the pan', async ({ page })
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await setup(page)
   await page.goto(`${origin}/home`)
+  // Hovering a sign warms its route chunk (prefetch-routes.ts). Do that before
+  // starting the clock so this measures the navigation, not a cold JS fetch.
+  const studio = page.getByRole('link', { name: 'Basement studio' })
+  await studio.hover()
+  await page.waitForTimeout(500)
   const start = Date.now()
-  await page.getByRole('link', { name: 'Basement studio' }).click()
+  await studio.click()
   await expect(page).toHaveURL(`${origin}/party`)
   expect(Date.now() - start).toBeLessThan(500)
 })
@@ -905,11 +910,14 @@ test('StaticPorchNav renders landing signs without false aria-current and fits t
 
 test('play pages show CompactRoof with integer-scaled compact logo and clean 375x667 mobile tray', async ({ page }) => {
   await setup(page)
+  // The first half checks Daily's compact chrome. A running attempt locks the
+  // app to /home, so end it before navigating to the room below.
+  let dailyStatus: 'playing' | 'ended' = 'playing'
   await page.route('**/api/daily/me', (route) =>
     route.fulfill({
       json: {
         day: '2026-11-17',
-        status: 'playing',
+        status: dailyStatus,
         prompt: 'A lighthouse',
         startedAt: Date.now() - 30_000,
         endsAt: Date.now() + 270_000,
@@ -935,6 +943,9 @@ test('play pages show CompactRoof with integer-scaled compact logo and clean 375
   expect(Math.round(logoBox.width)).toBe(86)
   expect(Math.round(logoBox.height)).toBe(40)
 
+  // Leave the easel before walking into the room, or the Daily lock sends the
+  // next document load back to /home.
+  dailyStatus = 'ended'
   const cells = Buffer.from(new Uint8Array(32 * 32)).toString('base64')
   const now = Date.now()
   await page.routeWebSocket('**/api/pixel/**', (socket) => {

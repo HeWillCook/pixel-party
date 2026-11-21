@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { useQuery } from 'deepspace'
 import { useLoadTimeout, useQueryRetry } from '../../hooks/useLoadGuard'
+import { useUsername } from '../../hooks/useProfile'
 
 export interface WallItem {
   day: string
@@ -25,6 +26,8 @@ export function useGalleryItems(userId: string, enabled = true) {
   const { attempt, limit, retry } = useQueryRetry()
   const { records: drawings, status: queryStatus } = useQuery<Drawing>('dailyDrawings', { where: { userId: who }, orderBy: 'day', orderDir: 'desc', limit })
   const { records: scores } = useQuery<Score>('dailyScores', { where: { userId: who }, limit })
+  // The player's chosen Pixle name outranks the name copied onto old score rows.
+  const username = useUsername(enabled ? userId : null)
   // A wall that never answers becomes the error card (with a Retry) rather than "Hanging paintings…" for ever; a wall not asked for just waits.
   const guarded = useLoadTimeout(enabled ? queryStatus : 'ready', attempt)
   const status = enabled ? guarded : 'loading'
@@ -48,7 +51,7 @@ export function useGalleryItems(userId: string, enabled = true) {
     const items: WallItem[] = Array.from(byDay.values()).sort((a, b) => b.day.localeCompare(a.day)).map((item) => ({
       day: item.day, prompt: item.prompt?.trim() || 'Daily painting', cells: item.cells, score: item.score, guess: item.guess, medal: medals.get(item.day) ?? 0,
     }))
-    const name = drawings.find((record) => record.data?.displayName)?.data.displayName || scores.find((record) => record.data?.displayName)?.data.displayName
+    const name = username || drawings.find((record) => record.data?.displayName)?.data.displayName || scores.find((record) => record.data?.displayName)?.data.displayName
     return { items, status, name, retry }
-  }, [drawings, scores, status, userId, retry])
+  }, [drawings, scores, username, status, userId, retry])
 }

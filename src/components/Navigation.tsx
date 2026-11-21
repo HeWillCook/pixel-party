@@ -12,6 +12,7 @@ import { defineSprite, drawSprite, type Sprite } from '../scene/sprite'
 import { dispatchSceneNavigation, isPrimaryClick, markPorchReturn as markPorchReturnFrom, requestSignIn, type SceneNavKind } from './porch/returnFlag'
 import { prefetchRoute } from '../prefetch-routes'
 import { useDailyLock } from '../hooks/useDailyLock'
+import { useMyProfile } from '../hooks/useProfile'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from './ui'
 
 const woodPalette = { a: P.wood[0], b: P.wood[1], c: P.wood[2], d: P.wood[3], e: P.wood[4], f: P.sun[4], g: P.flame[1], h: P.paper[3], i: P.sea[1], j: P.sun[2] }
@@ -370,6 +371,10 @@ function navKindFor(item: (typeof nav)[number]): SceneNavKind {
 
 export default function Navigation() {
   const { isLoaded, isSignedIn, user, userLoading } = useAuthProfileReady({ requireUser: true })
+  const { username } = useMyProfile()
+  // The chosen Pixle name, falling back to the sign-in name only while it is
+  // unknown or before the first username is set.
+  const displayName = username || user?.name || user?.email || 'Signed in'
   // While a Daily attempt runs there is no way out of the easel: every exit is removed from the bar.
   const locked = useDailyLock()
   const location = useLocation()
@@ -452,9 +457,9 @@ export default function Navigation() {
         {!locked && <div className="porch-nav__links">{visibleNav.map(navLink)}</div>}
         <div className="porch-nav__spacer" />
         {locked || !isLoaded || !profileReady ? null : isSignedIn && user ? <DropdownMenu>
-          <DropdownMenuTrigger render={<button aria-label={`${user.name || user.email}, your account`} title={user.name || user.email} className="porch-nav__mail"><span className="porch-nav__mail-art"><NavMailbox signedIn /></span><span data-testid="nav-user-name" className="porch-nav__username">{user.name || user.email}</span></button>} />
+          <DropdownMenuTrigger render={<button aria-label={`${displayName}, your account`} title={displayName} className="porch-nav__mail"><span className="porch-nav__mail-art"><NavMailbox signedIn /></span><span data-testid="nav-user-name" className="porch-nav__username">{displayName}</span></button>} />
           <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuLabel><div>{user.name || 'Signed in'}</div><div data-testid="nav-user-email" className="text-sm text-muted-foreground">{user.email}</div></DropdownMenuLabel>
+            <DropdownMenuLabel><div>{displayName}</div><div data-testid="nav-user-email" className="text-sm text-muted-foreground">{user.email}</div></DropdownMenuLabel>
             <DropdownMenuSeparator />
             {visibleNav.map(item => <DropdownMenuItem key={item.label} render={<Link to={pathFor(item)} onClick={(event) => routeClick(item, pathFor(item), event)} />}>{item.label}</DropdownMenuItem>)}
             <DropdownMenuSeparator />
