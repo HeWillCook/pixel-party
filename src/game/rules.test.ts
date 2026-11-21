@@ -20,11 +20,12 @@ describe('cooldownMs', () => {
     expect(cooldownMs(0)).toBe(0)
   })
 
-  it('scales linearly by 1000ms per player up to 10_000ms', () => {
-    expect(cooldownMs(2)).toBe(2000)
-    expect(cooldownMs(3)).toBe(3000)
-    expect(cooldownMs(10)).toBe(10_000)
-    expect(cooldownMs(25)).toBe(10_000)
+  it('scales by 250ms per painter, capped at 1500ms', () => {
+    expect(cooldownMs(2)).toBe(500)
+    expect(cooldownMs(3)).toBe(750)
+    expect(cooldownMs(4)).toBe(1000)
+    expect(cooldownMs(6)).toBe(1500)
+    expect(cooldownMs(25)).toBe(1500)
   })
 })
 
@@ -70,13 +71,13 @@ describe('validatePlacement', () => {
 
   it('rejects placements within cooldown and includes retryAt', () => {
     expect(
-      validatePlacement({ ...base, playersConnected: 3, lastPlacedAt: 1000, now: 2000 }),
-    ).toEqual({ ok: false, reason: 'cooldown', retryAt: 4000 })
+      validatePlacement({ ...base, playersConnected: 3, lastPlacedAt: 1000, now: 1500 }),
+    ).toEqual({ ok: false, reason: 'cooldown', retryAt: 1750 })
   })
 
   it('allows placement exactly when cooldown expires', () => {
     expect(
-      validatePlacement({ ...base, playersConnected: 3, lastPlacedAt: 1000, now: 4000 }),
+      validatePlacement({ ...base, playersConnected: 3, lastPlacedAt: 1000, now: 1750 }),
     ).toEqual({ ok: true })
   })
 })

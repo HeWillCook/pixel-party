@@ -151,7 +151,7 @@ export function applyServerMsg(s: ClientState, m: ServerMsg, now: number = Date.
     case 'snapshot': {
       const cells = decodeCells(m.cells, m.width * m.height)
       const isNewRound = !s.round || s.round.id !== m.round.id
-      return {
+      const loaded: ClientState = {
         ...s,
         snapshotLoaded: true,
         snapshotSeq: s.snapshotSeq + 1,
@@ -176,6 +176,10 @@ export function applyServerMsg(s: ClientState, m: ServerMsg, now: number = Date.
         aiResting: m.aiResting,
         lastReject: null,
       }
+      // Joining or reloading mid-round: Haiku's recent judgements arrive with the snapshot, so the feed is not blank.
+      // A reconnect that already holds this round's log keeps it.
+      if (loaded.guessLog.length > 0 || !m.judgements?.length) return loaded
+      return m.judgements.reduce((acc, j) => logJudgement(acc, j, j.at), loaded)
     }
     case 'pixel': {
       if (m.x < 0 || m.x >= s.width || m.y < 0 || m.y >= s.height) return s
@@ -336,31 +340,7 @@ export function applyServerMsg(s: ClientState, m: ServerMsg, now: number = Date.
           : s.guesses,
       }
     }
-    case 'judgement': {
-      const loggedGuesses = new Set(s.guessLog.flatMap(entry => entry.guesses.map(guess => guess.trim().toLowerCase())))
-      const hasNewGuess = m.guesses.some(guess => !loggedGuesses.has(guess.trim().toLowerCase()))
-      const hasNewMatch = m.matched && !s.guessLog.some(entry => entry.matched)
-      const guessLog = hasNewGuess || hasNewMatch
-        ? [{
-            id: (s.guessLog[0]?.id ?? 0) + 1,
-            atMs: s.round ? Math.max(0, now - s.round.startedAt) : 0,
-            guesses: m.guesses,
-            matched: m.matched,
-          }, ...s.guessLog].slice(0, 50)
-        : s.guessLog
-      return {
-        ...s,
-        guessLog,
-        guesses: {
-          ...s.guesses,
-          [m.zone]: {
-            guesses: m.guesses,
-            confidence: m.confidence,
-            matched: m.matched,
-          },
-        },
-      }
-    }
+    case 'judgement': return logJudgement(s, m, now)
     case 'players': {
       return {
         ...s,
@@ -375,6 +355,33 @@ export function applyServerMsg(s: ClientState, m: ServerMsg, now: number = Date.
         aiResting: true,
       }
     }
+  }
+}
+
+/** Adds one of Haiku's judgements to the feed (and the latest-guess slot); `at` is when it was made. */
+function logJudgement(
+  s: ClientState,
+  m: { zone: ZoneId; guesses: string[]; confidence: number; matched: boolean },
+  at: number,
+): ClientState {
+  const loggedGuesses = new Set(s.guessLog.flatMap(entry => entry.guesses.map(guess => guess.trim().toLowerCase())))
+  const hasNewGuess = m.guesses.some(guess => !loggedGuesses.has(guess.trim().toLowerCase()))
+  const hasNewMatch = m.matched && !s.guessLog.some(entry => entry.matched)
+  const guessLog = hasNewGuess || hasNewMatch
+    ? [{
+        id: (s.guessLog[0]?.id ?? 0) + 1,
+        atMs: s.round ? Math.max(0, at - s.round.startedAt) : 0,
+        guesses: m.guesses,
+        matched: m.matched,
+      }, ...s.guessLog].slice(0, 50)
+    : s.guessLog
+  return {
+    ...s,
+    guessLog,
+    guesses: {
+      ...s.guesses,
+      [m.zone]: { guesses: m.guesses, confidence: m.confidence, matched: m.matched },
+    },
   }
 }
 

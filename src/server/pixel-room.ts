@@ -8,7 +8,7 @@ import { encodeCells } from '../game/grid'
 import { buildJudgeBody, extractText } from '../game/judge'
 import { runJudge } from '../game/judge-flow'
 import { renderZonePng, toBase64 } from '../game/png'
-import { parseClientMsg, type ServerMsg } from '../game/protocol'
+import { parseClientMsg, RECENT_JUDGEMENTS, type RecentJudgement, type ServerMsg } from '../game/protocol'
 import {
   advance, applyJudgeOutcome, applyPlacements, countPlayers, deserializeRoomState,
   newRoomState, nextAlarmAt, nextRoundRejection, serializeRoomState, startNextRound,
@@ -79,6 +79,8 @@ export class PixelRoom extends BaseRoom<Env> {
   private hostUserId = ''
   private statusWrite: Promise<void> = Promise.resolve()
   private connectingSpectator = false
+  /** Haiku's last few judgements for the current round, for late joiners. Memory only: gone with the Durable Object. */
+  private recentJudgements: { roundId: string; list: RecentJudgement[] } = { roundId: '', list: [] }
 
   constructor(state: DurableObjectState, env: Env) {
     super(state, env)
@@ -290,7 +292,13 @@ export class PixelRoom extends BaseRoom<Env> {
       cells: encodeCells(state.grid.cells), round: state.round, players, roster: this.playerRoster(), watching: this.watcherCount(),
       you: { userId, cooldownUntil: placedAt === undefined ? 0 : placedAt + cooldownMs(players) },
       aiResting: this.restingDay === utcDay(Date.now()),
+      judgements: this.recentJudgements.roundId === state.round.id ? this.recentJudgements.list : [],
     })
+  }
+
+  private rememberJudgement(event: { zone: RecentJudgement['zone']; guesses: string[]; confidence: number; matched: boolean }, roundId: string): void {
+    const list = this.recentJudgements.roundId === roundId ? this.recentJudgements.list : []
+    this.recentJudgements = { roundId, list: [...list, { zone: event.zone, guesses: event.guesses, confidence: event.confidence, matched: event.matched, at: Date.now() }].slice(-RECENT_JUDGEMENTS) }
   }
 
   private persist(): void {
@@ -329,6 +337,7 @@ export class PixelRoom extends BaseRoom<Env> {
         case 'noop': if (sender) this.sendGame(sender, { t: 'noop', x: event.x, y: event.y, ...(event.id === undefined ? {} : { id: event.id }) }); break
         case 'reject': if (sender) this.sendGame(sender, { t: 'reject', reason: event.reason, x: event.x, y: event.y, ...(event.retryAt === undefined ? {} : { retryAt: event.retryAt }), ...(event.id === undefined ? {} : { id: event.id }) }); break
         default: {
+          if (event.type === 'judgement') this.rememberJudgement(event, transition.state.round.id)
           const { type, ...payload } = event
           this.broadcastGame({ t: type, ...payload } as ServerMsg)
         }
