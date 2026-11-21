@@ -244,6 +244,22 @@ export default function DailyHomePage() {
   const bestDrawingDoc = myDrawings[0]?.data
   const bestScoreDoc = myScores[0]?.data
 
+  // What Haiku (the porch cat) can tell you when you say hello: today's top score and your painting from yesterday. The first query is
+  // the very one the chalkboard already makes, so it costs nothing more.
+  const yesterdayDay = useMemo(() => {
+    const date = new Date(`${state.day}T00:00:00Z`)
+    if (Number.isNaN(date.getTime())) return '__none__'
+    date.setUTCDate(date.getUTCDate() - 1)
+    return date.toISOString().slice(0, 10)
+  }, [state.day])
+  const { records: todaysScores } = useQuery<DailyScoreRecord>('dailyScores', { where: { day: queryDay }, limit: 1000 })
+  const { records: yesterdaysScores } = useQuery<DailyScoreRecord>('dailyScores', { where: { day: yesterdayDay, userId: queryUserId }, limit: 1 })
+  const haikuFacts = useMemo(() => ({
+    best: state.status === 'ended' ? Math.max(state.best, bestScoreDoc?.score ?? 0) : 0,
+    top: todaysScores.reduce((top, record) => Math.max(top, typeof record.data?.score === 'number' ? record.data.score : 0), 0),
+    yesterday: yesterdaysScores[0]?.data?.score ?? 0,
+  }), [state.status, state.best, bestScoreDoc?.score, todaysScores, yesterdaysScores])
+
   const [activeColor, setActiveColor] = useState<number>(4)
   const [tool, setTool] = useState<Tool>('paint')
   const [history, setHistory] = useState<History>(() => emptyHistory())
@@ -507,7 +523,7 @@ export default function DailyHomePage() {
           easelTestId={signedOut ? 'daily-sign-in-button' : ended ? undefined : 'daily-start-button'} easelDisabled={starting}
           easelCells={ended ? endedCells : undefined}
           easelText={<EaselFaceText mode={signedOut ? 'signin' : ended ? 'finished' : 'cover'} best={endedBestScore} />}
-          signedIn={!!isSignedIn} galleryHref={`/u/${encodeURIComponent(userId)}`} muted={muted}
+          signedIn={!!isSignedIn} galleryHref={`/u/${encodeURIComponent(userId)}`} muted={muted} haikuFacts={haikuFacts}
           wall={isSignedIn && userId ? <OwnGalleryWall userId={userId} /> : undefined}
           pendingChain={pendingChain}
           onConsumePendingChain={() => setPendingChain(null)}

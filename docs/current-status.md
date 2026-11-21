@@ -12,7 +12,7 @@ remains available at `/party`. The build is on branch `t3/daily-pixel-art-game`;
 this task.
 
 **Done:**
-- A signed-in player gets one 10-minute daily attempt, can paint, request grades, reload and restore the attempt,
+- A signed-in player gets one 5-minute daily attempt (auto-grades at minutes 1 to 4, three manual asks, a final grade), can paint, request grades, reload and restore the attempt,
   finish early, and see their best grade retained. Every attempt is ranked; the public leaderboard and user gallery
   are readable without signing in.
 - Scoring totals 0–1000 from fit×5, recognition×4, and speed. The default development/test judge is fake; production

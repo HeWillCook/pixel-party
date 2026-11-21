@@ -15,11 +15,14 @@ import { StudioSprite } from '@/components/play/StudioSprite'
 import { PorchWall } from '@/components/gallery/PorchWall'
 import { PorchLabels } from '@/components/porch/PorchLabels'
 import { useDaily } from '@/hooks/DailyAttemptProvider'
+import { useMute } from '@/hooks/useMute'
 import {
   consumeSettingsArrival,
   consumeZoomHandoff,
   enableNavMotion,
+  markSceneMove,
   peekZoomHandoff,
+  queueSceneNavigation,
   SCENE_NAV_EVENT,
   setPorchChain,
   setZoomHandoff,
@@ -86,6 +89,8 @@ export default function SettingsPage() {
   const { user } = useUser()
   const { isSignedIn } = useAuth()
   const { state: daily } = useDaily()
+  // The same preference as the porch radio.
+  const { muted, toggle: toggleMute } = useMute()
   const easelMode = !isSignedIn ? 'signin' : daily.status === 'ended' ? 'finished' : 'cover'
   const navigate = useNavigate()
   const backdropRef = useRef<HTMLDivElement>(null)
@@ -148,8 +153,9 @@ export default function SettingsPage() {
 
   // The letter slides back into the mailbox while the camera flies: to the porch, or straight to the next close-up.
   const startExit = useCallback((kind: SceneNavKind, path: string) => {
-    if (zoomTimer.current) return
+    if (zoomTimer.current) { queueSceneNavigation(path); return }
     enableNavMotion()
+    markSceneMove()
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     const toPorch = kind === 'porch'
     if (reduced) {
@@ -264,16 +270,16 @@ export default function SettingsPage() {
             />
 
             <div className="settings-letter__body p-6 sm:p-8">
-              <header className="settings-letter__head flex flex-wrap items-start justify-between gap-4 border-b-2 border-dashed border-[#d1b5a3] pb-4">
-                <div>
-                  <p className="text-sm uppercase tracking-widest text-[var(--soft-text)]">
+              <header className="settings-letter__head flex items-start justify-between gap-4 border-b-2 border-dashed border-[#d1b5a3] pb-4">
+                <div className="min-w-0">
+                  <p className="text-[15px] uppercase tracking-widest text-[var(--soft-text)]">
                     From the porch mailbox
                   </p>
                   <h2 className="mt-1 text-3xl uppercase text-[var(--sunset-2)]">{isSignedIn ? 'Your account' : 'Post for you'}</h2>
                 </div>
 
-                <div className="flex items-center gap-3">
-                  <span className="pp-chip px-2.5 py-1 text-sm uppercase tracking-wider">
+                <div className="flex shrink-0 items-center gap-3">
+                  <span className="pp-chip hidden px-2.5 py-1 text-[15px] uppercase tracking-wider sm:inline-block">
                     Porch Post
                   </span>
                   <div className="border-2 border-[#8e5960] bg-[#fff0cc] p-1">
@@ -285,17 +291,25 @@ export default function SettingsPage() {
               {isSignedIn ? <>
                 <dl className="settings-letter__fields mt-5 space-y-4 text-lg">
                   <div className="border-b-2 border-[#d1b5a3] pb-2">
-                    <dt className="text-sm uppercase tracking-wider text-muted-foreground">Name</dt>
+                    <dt className="text-[15px] uppercase tracking-wider text-muted-foreground">Name</dt>
                     <dd className="mt-0.5 text-2xl text-foreground">{user?.name || '—'}</dd>
                   </div>
                   <div className="border-b-2 border-[#d1b5a3] pb-2">
-                    <dt className="text-sm uppercase tracking-wider text-muted-foreground">Email</dt>
+                    <dt className="text-[15px] uppercase tracking-wider text-muted-foreground">Email</dt>
                     <dd className="mt-0.5 break-all text-2xl text-foreground">{user?.email || '—'}</dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 border-b-2 border-[#d1b5a3] pb-3">
+                    <dt id="settings-sound-label" className="text-[15px] uppercase tracking-wider text-muted-foreground">Sound</dt>
+                    <dd>
+                      <button type="button" role="switch" aria-checked={!muted} aria-labelledby="settings-sound-label" data-testid="settings-sound" className="pp-btn min-h-[44px] min-w-[88px] px-4 text-lg uppercase" onClick={toggleMute}>
+                        {muted ? 'Off' : 'On'}
+                      </button>
+                    </dd>
                   </div>
                 </dl>
   
                 <footer className="settings-letter__footer mt-7 flex flex-wrap items-center justify-between gap-4">
-                  <div className="flex items-center gap-2.5 text-base text-[var(--soft-text)]">
+                  <div className="flex items-center gap-2.5 text-[17px] text-[var(--soft-text)]">
                     <StudioSprite sprite={waxSeal} scale={3} />
                     <span>Stamped on the sunset porch</span>
                   </div>

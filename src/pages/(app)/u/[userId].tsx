@@ -6,6 +6,9 @@ import { TempDebugPaintings } from '../../../components/gallery/TempDebugPaintin
 import { WallEmpty } from '../../../components/gallery/WallEmpty'
 import { useGalleryItems } from '../../../components/gallery/useGalleryItems'
 import { useWallPager } from '../../../components/gallery/useWallPager'
+import { Seo } from '../../../components/Seo'
+import { galleryTitle } from '../../../route-titles'
+import { seo } from '../../../seo'
 import { PorchLabels } from '../../../components/porch/PorchLabels'
 import { isPrimaryClick } from '../../../components/porch/returnFlag'
 import { usePorchCloseup } from '../../../components/porch/usePorchCloseup'
@@ -33,7 +36,7 @@ export default function ProfilePage() {
   const { state: daily } = useDaily()
   const ownPath = `/u/${encodeURIComponent(userId)}`
   const isSelf = useCallback((path: string) => path === ownPath, [ownPath])
-  const { items, status, name } = useGalleryItems(userId)
+  const { items, status, name, retry } = useGalleryItems(userId)
   const closeup = usePorchCloseup({ pose: 'gallery', kind: 'gallery', isSelf })
   const { backdropRef, viewport, composition, navHeight, leaving, startExit } = closeup
   const toPorch = useCallback(() => startExit('rest', '/home'), [startExit])
@@ -123,6 +126,7 @@ export default function ProfilePage() {
       data-phase={leaving ? 'leaving' : 'active'}
       style={{ '--gallery-nav': `${navHeight}px` } as CSSProperties}
     >
+      <Seo title={galleryTitle(isOwner, name)} description={seo.description} noindex />
       <div
         ref={backdropRef}
         className={leaving ? 'gallery-backdrop' : 'gallery-backdrop gallery-backdrop--dismiss'}
@@ -150,6 +154,7 @@ export default function ProfilePage() {
             onGo={go}
             loading={status === 'loading'}
             failed={status === 'error'}
+            onRetry={retry}
             empty={<WallEmpty onPaint={onPorchLink} />}
           />
         </PixelScene>

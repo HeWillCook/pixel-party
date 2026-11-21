@@ -76,6 +76,25 @@ describe('gallery wall', () => {
     expect(Math.abs(only.frame.x + layout.frame / 2 - mid)).toBeLessThanOrEqual(layout.frame / 2 + 1)
   })
 
+  it('balances a partial page into even rows instead of leaving one frame alone', () => {
+    const { layout } = layoutOf({ w: 1980, h: 1240 })
+    expect(layout.cols).toBe(6)
+    const rowsOf = (count: number) => {
+      const slots = Array.from({ length: count }, (_, index) => wallSlot(layout, index, count))
+      const byRow = new Map<number, number[]>()
+      for (const slot of slots) byRow.set(slot.frame.y, [...(byRow.get(slot.frame.y) ?? []), slot.frame.x])
+      return [...byRow.entries()].sort((a, b) => a[0] - b[0]).map(([, xs]) => xs.sort((a, b) => a - b))
+    }
+    const seven = rowsOf(7)
+    expect(seven.map((row) => row.length)).toEqual([4, 3])
+    // Both rows are centred on the same axis.
+    const centre = (row: number[]) => (row[0] + row[row.length - 1] + layout.frame) / 2
+    expect(Math.abs(centre(seven[0]) - centre(seven[1]))).toBeLessThanOrEqual(1)
+    expect(rowsOf(12).map((row) => row.length)).toEqual([6, 6])
+    expect(rowsOf(11).map((row) => row.length)).toEqual([6, 5])
+    expect(rowsOf(4).map((row) => row.length)).toEqual([4])
+  })
+
   it('counts pages: none for an empty wall, a partial last page for 47 paintings', () => {
     const { layout } = layoutOf({ w: 1980, h: 1240 })
     expect(wallPageCount(0, layout.perPage)).toBe(0)

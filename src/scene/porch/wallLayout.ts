@@ -39,7 +39,7 @@ export function captionType(scale: number): { prompt: number; meta: number } {
   return { prompt: Math.max(3, scale ? 11 / scale : 3), meta: Math.max(2.6, scale ? 10 / scale : 2.6) }
 }
 
-/** Caption card height: border and padding, the longest real prompt on two lines, and a date and grade that wrap onto two more at worst. */
+/** The tallest a caption card can be: border and padding, the longest real prompt on two lines, and a date and grade that wrap onto two more at worst. The grid reserves this; a page's cards shrink to its own tallest caption (see `GalleryWall`). */
 export function captionHeight(scale: number): number {
   const type = captionType(scale)
   return Math.ceil(3.4 + 2 * type.prompt * 1.05 + 2 * type.meta * 1.1)
@@ -108,10 +108,15 @@ export function wallPageLayout(composition: Composition, viewport: { w: number; 
   }
 }
 
-/** Where painting `index` of a page (0 = first, of `onPage` on it) hangs: its frame and the card under it, relative to the rail's top-left. A short last row is centred. */
+/**
+ * Where painting `index` of a page (0 = first, of `onPage` on it) hangs: its frame and the card under it, relative to the rail's top-left.
+ * A partial page balances its rows instead of leaving one frame alone (7 on a six-column page hang as 4 + 3), and each row is centred.
+ */
 export function wallSlot(layout: WallPageLayout, index: number, onPage: number): { frame: Rect; card: Rect } {
-  const row = Math.floor(index / layout.cols), column = index % layout.cols
-  const inRow = Math.min(layout.cols, onPage - row * layout.cols)
+  const rows = Math.max(1, Math.ceil(onPage / layout.cols))
+  const perRow = Math.ceil(onPage / rows)
+  const row = Math.floor(index / perRow), column = index % perRow
+  const inRow = Math.min(perRow, onPage - row * perRow)
   const pitch = layout.frame + layout.gap
   const x = layout.left - layout.rail.x + column * pitch + Math.floor(((layout.cols - inRow) * pitch) / 2)
   const y = layout.top - layout.rail.y + row * (layout.frame + 1 + layout.card + ROW_GAP)

@@ -19,7 +19,7 @@ export const ZOOM_HANDOFF_KEY = 'zoom-handoff'
 export const SCENE_NAV_EVENT = 'pixel:scene-nav'
 
 import { playWhoosh } from '../../scene/whoosh'
-import type { ZoomHandoff } from '../../scene/zoom'
+import { SCENE_ZOOM_MS, type ZoomHandoff } from '../../scene/zoom'
 
 /**
  * In-flight zoom passed between routes. The destination continues the same curve from the hand-off progress
@@ -50,6 +50,9 @@ export function peekZoomHandoff(): ZoomHandoffFlag | null {
     if (!raw) return null
     const parsed = JSON.parse(raw) as Partial<ZoomHandoffFlag>
     if (!parsed || typeof parsed.at !== 'number' || typeof parsed.durationMs !== 'number' || typeof parsed.progress !== 'number') return null
+    // A hand-off no page picked up (the arriving page was an ended Daily close-up, say) must not fly a later arrival: it expires, and one from an earlier page load (a different clock) is void.
+    const age = performance.now() - parsed.at
+    if (age < 0 || age > parsed.durationMs + 2000) { sessionStorage.removeItem(ZOOM_HANDOFF_KEY); return null }
     const from = parseCamera(parsed.from)
     const to = parseCamera(parsed.to)
     return from && to ? { at: parsed.at, durationMs: parsed.durationMs, progress: parsed.progress, from, to } : null
@@ -176,4 +179,46 @@ export function dispatchSceneNavigation(kind: SceneNavKind, path: string): boole
 /** Asks the scene on screen to show its sign-in form. Returns false when no scene took the request (the caller falls back to /settings). */
 export function requestSignIn(): boolean {
   return dispatchSceneNavigation('signin', typeof window === 'undefined' ? '/' : window.location.pathname)
+}
+
+/**
+ * A click while the camera is already moving is not lost: the latest one waits and runs when the move lands (the way the gallery's
+ * page turns queue). A move marks itself when it starts; the page that refuses the new request hands it here.
+ */
+let moveUntil = 0
+let queuedPath: string | null = null
+let queueTimer = 0
+
+export function markSceneMove(ms = SCENE_ZOOM_MS + 150): void {
+  if (typeof performance !== 'undefined') moveUntil = Math.max(moveUntil, performance.now() + ms)
+}
+
+function navKindForPath(path: string): SceneNavKind | null {
+  if (path === '/home') return 'porch'
+  if (path === '/scores') return 'scores'
+  if (path === '/party') return 'party'
+  if (path === '/settings') return 'settings'
+  if (path === '/u' || path.startsWith('/u/')) return 'gallery'
+  return null
+}
+
+/** The porch's own "stay here" (a click on Daily while on the porch) cancels the move and whatever waited behind it. */
+export function clearQueuedSceneNavigation(): void {
+  queuedPath = null
+  if (typeof window !== 'undefined') window.clearTimeout(queueTimer)
+}
+
+export function queueSceneNavigation(path: string): void {
+  if (typeof window === 'undefined' || !navKindForPath(path)) return
+  queuedPath = path
+  window.clearTimeout(queueTimer)
+  const fire = () => {
+    const wait = moveUntil - performance.now()
+    if (wait > 0) { queueTimer = window.setTimeout(fire, wait); return }
+    const next = queuedPath
+    queuedPath = null
+    const kind = next ? navKindForPath(next) : null
+    if (next && kind) dispatchSceneNavigation(kind, next)
+  }
+  queueTimer = window.setTimeout(fire, Math.max(0, moveUntil - performance.now()))
 }

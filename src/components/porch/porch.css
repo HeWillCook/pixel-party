@@ -36,12 +36,15 @@
 @media (prefers-reduced-motion: reduce) { .porch-world .pixel-hotspot::after, .porch-easel-copy { animation: none; } .porch-world .pixel-hotspot, .porch-home__scene--leaving .pixel-hotspot, .porch-world .porch-more-ticket, .porch-world .porch-dock { transition: none; animation: none; } }
 .porch-more-ticket { position: absolute; z-index: 4; min-width: 44px; min-height: 44px; color: #392a45; background: #ecd4b0; border: var(--px) solid #8e5960; box-shadow: var(--px) var(--px) #392a45; font-size: calc(var(--px) * 5); }
 .porch-more-ticket:focus-visible { outline: var(--px) solid #392a45; }
-.porch-more-actions { display: grid; gap: 8px; }
-.porch-more-actions :is(a, button) { min-height: 44px; text-align: left; }
+.porch-more-actions { display: grid; gap: calc(var(--px) * 2); }
+/* Small pixel planks, the dock's own style: a sheet of buttons that stays out of the scene's way. */
+.porch-more-actions :is(a, button) { position: relative; display: flex; align-items: center; min-height: 44px; padding: 0 calc(var(--px) * 4); color: #392a45; background: linear-gradient(#f3e2c4, #d1b5a3 68%, #c57d63); border: var(--px) solid #614052; box-shadow: inset 0 var(--px) 0 #fff0cc, var(--px) var(--px) 0 #392a45; font-size: 15px; line-height: 1; text-align: left; text-decoration: none; white-space: nowrap; }
+.porch-more-actions small { display: block; margin-top: 2px; font-size: 11px; opacity: .8; }
+.porch-more-actions :is(a, button):active { transform: translateY(var(--px)); box-shadow: inset 0 var(--px) 0 #e3b28a; }
+.porch-more-actions :is(a, button):focus-visible { outline: var(--px) solid #392a45; outline-offset: var(--px); }
 .porch-dock { display: none; }
-.porch-landing-copy { margin: 16px auto; max-width: 60rem; padding: 20px; }
-.porch-landing-copy h1 { font-size: 28px; }
-.porch-landing-copy p { font-size: 20px; }
+/* The landing is exactly one viewport, like the porch it shows: its copy for search and screen readers is visually hidden. */
+.porch-shell--landing { height: 100dvh; overflow: hidden; }
 :is(html:has(.porch-home), html:has(.scores-page), .porch-shell--landing) .porch-nav__sign { font-size: calc(var(--px) * 7); }
 @media (max-width: 640px) {
   :is(html:has(.porch-home), html:has(.scores-page), .porch-shell--landing) .porch-nav__mail { display: none; }
@@ -75,6 +78,7 @@
     line-height: 1;
     text-align: center;
   }
+  .porch-dock :is(a, button):disabled { opacity: .55; }
   .porch-dock :is(a, button)::before {
     content: '';
     position: absolute;
@@ -112,6 +116,27 @@
 .porch-mailbox-card :is(a, button) { min-height: 44px; display: inline-flex; align-items: center; padding: 0 12px; color: #392a45; background: #ecd4b0; border: calc(var(--px) * 1) solid #8e5960; text-align: left; text-decoration: none; }
 .porch-mailbox-card .pp-btn { color: #fff0cc; }
 /* The More ticket's sheet slides up out of the ticket (transform only). */
-.porch-more-sheet { position: fixed; z-index: 17; width: max-content; max-width: 90%; pointer-events: auto; color: #392a45; background: #fff0cc; border: var(--px) solid #8e5960; box-shadow: var(--px) var(--px) #392a45; padding: calc(var(--px) * 2); animation: porch-more-up 220ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+.porch-more-sheet { position: fixed; z-index: 17; width: max-content; max-width: 90%; pointer-events: auto; color: #392a45; background: #ecd4b0; border: var(--px) solid #8e5960; box-shadow: var(--px) var(--px) #392a45; padding: calc(var(--px) * 2.5); animation: porch-more-up 220ms cubic-bezier(0.22, 1, 0.36, 1) both; }
 @keyframes porch-more-up { 0% { transform: translateY(calc(var(--px) * 6)); } 100% { transform: none; } }
+/* On a phone the sheet rises out of the dock's More plank, right-aligned above it. */
+@media (max-width: 640px) { .porch-more-sheet { left: auto !important; right: calc(var(--px) * 3); bottom: calc(var(--px) * 31) !important; } }
 @media (prefers-reduced-motion: reduce) { .porch-more-sheet { animation: none; } }
+
+/* Haiku says hello: his bubble stands over the cat, in scene units, in the same style as his other bubbles. */
+.porch-haiku { cursor: help; }
+.porch-haiku__bubble { position: absolute; left: 0; bottom: calc(100% + var(--px) * 1.5); z-index: 5; width: max-content; max-width: calc(var(--px) * 40); padding: calc(var(--px) * 1.2) calc(var(--px) * 2); color: #392a45; background: #fff0cc; border: var(--px) solid #985c5a; box-shadow: inset 0 0 0 var(--px) #ecae7d, var(--px) var(--px) 0 #614052; font-size: max(12px, calc(var(--px) * 2.7)); font-weight: 700; line-height: 1.1; text-align: left; white-space: normal; pointer-events: none; animation: porch-haiku-pop 220ms steps(3) both; }
+@keyframes porch-haiku-pop { 0% { opacity: 0; transform: translateY(calc(var(--px) * 1.5)) scale(0.92); } 100% { opacity: 1; transform: none; } }
+.porch-haiku__bubble::after { content: ''; position: absolute; left: calc(var(--px) * 5); bottom: calc(var(--px) * -2.6); width: calc(var(--px) * 1.6); height: calc(var(--px) * 1.6); background: #fff0cc; border-right: var(--px) solid #985c5a; border-bottom: var(--px) solid #985c5a; transform: rotate(45deg); }
+@media (prefers-reduced-motion: reduce) { .porch-haiku__bubble { animation: none; } }
+
+/* The porch tally: a small plank hanging from the easel's crossbar (two cords), the names dropping out of it on hover or focus. */
+.porch-presence { position: absolute; z-index: 4; display: flex; justify-content: center; align-items: flex-start; pointer-events: none; }
+.porch-presence__plank { position: relative; display: grid; gap: calc(var(--px) * 0.4); justify-items: center; min-width: 44px; min-height: 44px; margin-top: calc(var(--px) * 2); padding: calc(var(--px) * 1) calc(var(--px) * 2.5); color: #392a45; background: linear-gradient(#f3e2c4, #d1b5a3 70%, #c57d63); border: var(--px) solid #614052; box-shadow: inset 0 var(--px) 0 #fff0cc, var(--px) var(--px) 0 rgba(57, 42, 69, 0.55); font-size: max(11px, calc(var(--px) * 2.8)); line-height: 1.05; text-align: center; white-space: nowrap; pointer-events: auto; cursor: help; }
+.porch-presence__plank::before, .porch-presence__plank::after { content: ''; position: absolute; top: calc(var(--px) * -2.4); width: var(--px); height: calc(var(--px) * 2.4); background: #614052; }
+.porch-presence__plank::before { left: 22%; }
+.porch-presence__plank::after { right: 22%; }
+.porch-presence__plank:focus-visible { outline: var(--px) solid #392a45; outline-offset: var(--px); }
+.porch-presence__headline { font-weight: 700; }
+.porch-presence__detail { color: #8e3f4c; }
+.porch-presence__names { display: grid; gap: calc(var(--px) * 0.3); margin-top: calc(var(--px) * 0.6); padding-top: calc(var(--px) * 0.8); border-top: 1px dashed #985c5a; font-size: max(11px, calc(var(--px) * 2.5)); }
+.porch-world--transitioning .porch-presence { pointer-events: none; }

@@ -8,8 +8,8 @@ second mode.
 ## Daily mode
 
 Visit `/home`, sign in, and start today's challenge. Everyone gets the same prompt and a 32×32 canvas. Paint for up
-to 10 minutes; the app grades automatically every two minutes, and you can use up to three **Ask now** grades.
-Choose **Done** to finish early. Your attempt appears on the daily leaderboard, while your best grade and matching
+to 5 minutes; the app grades automatically at minutes 1 to 4, you can use up to three **Ask now** grades, and the
+attempt ends with a final grade. Choose **Done** to finish early. Your attempt appears on the daily leaderboard, while your best grade and matching
 drawing are retained for your profile. The prompt is hidden from the public gallery until the attempt ends and the
 day closes.
 
@@ -17,7 +17,7 @@ Grades total up to 1000 points:
 
 - **Fit (0–500):** how well the drawing matches the prompt, multiplied by 5.
 - **Recognition (0–400):** whether the blind judge recognized the prompt subject, multiplied by 4.
-- **Speed (0–100):** `round(100 × (1 − elapsed time / 600 seconds))` at the best grade.
+- **Speed (0–100):** `round(100 × (1 − elapsed time / 300 seconds))` at the best grade.
 
 Daily mode requires sign-in to play; visitors who are signed out can still view the leaderboard and public profiles.
 The server enforces one attempt per UTC day and grade limits. In development and tests, a deterministic fake judge is

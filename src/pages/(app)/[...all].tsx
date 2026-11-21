@@ -1,4 +1,5 @@
 import { useCallback, useEffect, type CSSProperties } from 'react'
+import { projectRect, type Rect } from '../../scene/camera'
 import { useAuthProfileReady } from 'deepspace'
 import { PorchWall } from '../../components/gallery/PorchWall'
 import { PorchLabels } from '../../components/porch/PorchLabels'
@@ -9,7 +10,7 @@ import { useDaily } from '../../hooks/DailyAttemptProvider'
 import { PixelScene } from '../../scene/PixelScene'
 import { drawPorch } from '../../scene/porch/drawPorch'
 import { haikuLayout } from '../../scene/porch/haikuCamera'
-import { porchHaiku } from '../../scene/porch/layout'
+import { porchHatch, porchHaiku, porchLayout } from '../../scene/porch/layout'
 import '../../components/haiku/lost.css'
 
 /**
@@ -47,6 +48,16 @@ export default function NotFoundPage() {
   // Where the bubble settles on screen: laid out on exactly the landing camera's projection.
   const spot = viewport.w && viewport.h ? haikuLayout(closeup.landing, viewport, composition) : null
   const portrait = composition === 'portrait'
+  // Words glued to an object the screen cuts through (the easel's card, the hatch sign) step away while Haiku's corner rests.
+  const cut = (rect: Rect) => {
+    if (!viewport.w || !viewport.h) return false
+    const on = projectRect(rect, closeup.landing, viewport, composition)
+    return on.x < -1 || on.x + on.w > viewport.w + 1 || on.y < closeup.navHeight - 1 || on.y + on.h > viewport.h + 1
+  }
+  const easel = porchLayout[composition].easel
+  const settled = !leaving && !flying
+  const easelAway = settled && cut({ x: easel.x + easel.w * 0.23, y: easel.y + easel.h * 0.28, w: easel.w * 0.55, h: easel.h * 0.45 })
+  const basementAway = settled && cut(porchHatch[composition].sign)
 
   return (
     <div className="lost-page" data-testid="not-found-page" data-phase={leaving ? 'leaving' : 'active'}>
@@ -61,7 +72,7 @@ export default function NotFoundPage() {
       >
         <PixelScene draw={draw} className="lost-backdrop__scene" camera={closeup.camera} zoomMs={closeup.zoomMs} instant={!leaving && !flying}>
           <PorchWall />
-          <PorchLabels easel={easelMode} best={daily.best} />
+          <PorchLabels easel={easelMode} best={daily.best} easelAway={easelAway} basementAway={basementAway} />
         </PixelScene>
       </div>
       <div ref={closeup.registerRef} className="lost-register" data-registered="">

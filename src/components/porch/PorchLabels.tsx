@@ -11,8 +11,13 @@ export function signCopyStyle(composition: Composition): CSSProperties {
   return {
     left: `${(board.x + 2 - whole.x) / whole.w * 100}%`, top: `${(board.y + 2 - whole.y) / whole.h * 100}%`,
     width: `${(board.w - 4) / whole.w * 100}%`, height: `${(board.h - 4) / whole.h * 100}%`,
+    // A phone's sign is read at arm's length: never under 11px.
+    ...(composition === 'portrait' ? { fontSize: 'max(11px, calc(var(--px) * 3.3))' } : {}),
   }
 }
+
+/** What the hatch sign says: a phone's sign is narrower, so it drops "studio" (the hatch's own label still says it). */
+export const basementSignText = (composition: Composition) => composition === 'portrait' ? 'Basement ↓' : 'Basement studio ↓'
 
 /**
  * Every word that is physically on a porch object (the easel's card, the chalkboard's board, the hatch sign, the gallery sign,
@@ -20,16 +25,24 @@ export function signCopyStyle(composition: Composition): CSSProperties {
  * (the gallery wall, Haiku's corner) carries them, so the camera flying back finds each word where it belongs the moment the porch
  * takes over, instead of every label popping in at the swap.
  */
-export function PorchLabels({ easel, best, board }: { easel: EaselFaceMode; best: number; /** The chalkboard's writing: the inert board unless the page has the live one. */ board?: ReactNode }) {
+export function PorchLabels({ easel, best, board, easelAway = false, basementAway = false }: {
+  easel: EaselFaceMode
+  best: number
+  /** The chalkboard's writing: the inert board unless the page has the live one. */
+  board?: ReactNode
+  /** Put the easel's card (or the hatch sign's words) away while the camera rests where the object is cut by the screen's edge. */
+  easelAway?: boolean
+  basementAway?: boolean
+}) {
   const composition = useContext(SceneComposition)
   const rect = porchLayout[composition]
   const portrait = composition === 'portrait'
   return (
     <>
-      <EaselFaceObject mode={easel} best={best} />
+      <EaselFaceObject mode={easel} best={best} away={easelAway} />
       {board ?? <ChalkboardBoard />}
-      <div aria-hidden="true" style={{ position: 'absolute', pointerEvents: 'none', ...rectToPercent(rect.basement, composition) }}>
-        <span className="porch-basement-sign-copy" style={signCopyStyle(composition)}>Basement studio ↓</span>
+      <div aria-hidden="true" className={basementAway ? 'porch-label--away' : 'porch-label'} style={{ position: 'absolute', pointerEvents: 'none', ...rectToPercent(rect.basement, composition) }}>
+        <span className="porch-basement-sign-copy" style={signCopyStyle(composition)}>{basementSignText(composition)}</span>
       </div>
       <div aria-hidden="true" style={{ position: 'absolute', pointerEvents: 'none', ...rectToPercent(rect.gallery, composition) }}><span className="porch-gallery-sign-copy">Gallery</span></div>
       {!portrait && <div aria-hidden="true" style={{ position: 'absolute', pointerEvents: 'none', ...rectToPercent(rect.note, composition) }}><span className="porch-note-title">House rules</span></div>}

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuthProfileReady, useQuery } from 'deepspace'
 import { OwnGalleryWall } from '../../components/gallery/OwnGalleryWall'
 import { ChalkboardBoard } from '../../components/porch/ChalkboardBoard'
@@ -65,6 +65,14 @@ export default function ScoresPage() {
   }, [easelState, bestDrawingCells, isSignedIn, muted, backdropRef])
 
   const toPorch = () => startExit('rest', '/home')
+  // Escape puts the board away: the same flight back to the porch as the porch button.
+  const toPorchRef = useRef(toPorch)
+  toPorchRef.current = toPorch
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape' && !event.defaultPrevented) toPorchRef.current() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
   // The wall of the painter just picked is hung while the camera starts across the porch to it, so the paintings are there when it arrives.
   const [visiting, setVisiting] = useState('')
   const visit = (href: string) => { setVisiting(decodeURIComponent(href.split('/').pop() ?? '')); startExit('gallery', href) }
@@ -95,6 +103,8 @@ export default function ScoresPage() {
           <PorchLabels
             easel={easelState}
             best={easelBest}
+            // At rest on the board the easel is a sliver at the left edge: its card (a giant clipped fragment) steps away until the camera leaves.
+            easelAway={!leaving && !closeup.continuing}
             board={<ChalkboardBoard live onPorch={toPorch} onSelectPainter={visit} />}
           />
         </PixelScene>

@@ -259,7 +259,8 @@
 .scores-list {
   display: flex;
   flex-direction: column;
-  gap: calc(var(--px, 3px) * 2);
+  /* Tight rows: six fit the slate at 1980x1240 (the thumbnails stay two screen pixels per cell). */
+  gap: 2px;
   list-style: none;
   margin: 0;
   padding: 0 calc(var(--px, 3px) * 4) calc(var(--px, 3px) * 2) 0;
@@ -306,9 +307,9 @@
   gap: calc(var(--px, 3px) * 4);
   width: 100%;
   min-height: 44px;
-  padding: calc(var(--px, 3px) * 2) calc(var(--px, 3px) * 3);
+  padding: 2px calc(var(--px, 3px) * 3);
   background: #34516a;
-  border: var(--px, 3px) solid #263451;
+  border: 2px solid #263451;
   color: #fff0cc;
   font-size: 23px;
   line-height: 1.2;
@@ -346,14 +347,21 @@
 }
 
 .scores-thumb {
-  border: var(--px, 3px) solid #fff0cc;
-  box-shadow: 0 0 0 var(--px, 3px) #392a45;
+  border: 2px solid #fff0cc;
+  box-shadow: 0 0 0 1px #392a45;
 }
 
 .scores-avatar,
 .scores-avatar * {
   border-radius: 0;
   image-rendering: pixelated;
+}
+
+.scores-avatar [data-slot='avatar-fallback'] {
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1;
+  text-transform: uppercase;
 }
 
 .scores-avatar {
@@ -374,6 +382,24 @@
 .scores-row-link:hover .scores-row-name {
   color: #fff0bb;
   text-decoration: underline;
+}
+
+.scores-retry {
+  margin-left: calc(var(--px, 3px) * 2);
+  min-height: 44px;
+  padding: var(--px, 3px) calc(var(--px, 3px) * 3);
+  font-size: 19px;
+  line-height: 1;
+  color: #fff0cc;
+  background: #34516a;
+  border: var(--px, 3px) solid #ecd4b0;
+  box-shadow: var(--px, 3px) var(--px, 3px) 0 #392a45;
+  cursor: pointer;
+}
+
+.scores-retry:focus-visible {
+  outline: var(--px, 3px) solid #fff0bb;
+  outline-offset: var(--px, 3px);
 }
 
 .scores-medal {
@@ -493,6 +519,22 @@
     display: none;
   }
 
+  /* A smaller thumbnail leaves the name room for two lines before it is cut. */
+  .scores-thumb {
+    width: 48px !important;
+    height: 48px !important;
+  }
+
+  .scores-row-name {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    white-space: normal;
+    overflow-wrap: break-word;
+    font-size: 18px;
+    line-height: 1.05;
+  }
+
   .scores-rank {
     width: 22px;
     font-size: 20px;
@@ -538,3 +580,8 @@
     transform: none;
   }
 }
+
+/* Words on a porch object whose object the screen cuts through step out of view while the camera rests there (and come back as it leaves). */
+.porch-easel-object, .porch-label, .porch-label--away { transition: opacity 160ms ease-out; }
+.porch-easel-object--away, .porch-label--away { opacity: 0; }
+@media (prefers-reduced-motion: reduce) { .porch-easel-object, .porch-label, .porch-label--away { transition: none; } }

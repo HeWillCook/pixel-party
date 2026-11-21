@@ -199,10 +199,49 @@ function SpriteImage({ sprite, className = '' }: { sprite: Sprite; className?: s
   return <canvas ref={ref} className={`porch-sprite ${className}`} width={sprite.w} height={sprite.h} style={{ width: `calc(var(--px) * ${sprite.w})`, height: `calc(var(--px) * ${sprite.h})` }} aria-hidden="true" />
 }
 
+/** Publishes the bar's live height as `--porch-nav-height` on the shell, so scene overlays can sit below it without measuring. */
+function useNavHeightVar() {
+  const ref = useRef<HTMLElement>(null)
+  useEffect(() => {
+    const nav = ref.current
+    const shell = nav?.closest<HTMLElement>('.porch-shell')
+    const row = nav?.querySelector<HTMLElement>('.porch-nav__row')
+    if (!nav || !shell || !row) return
+    let last = ''
+    let barHeight = 0
+    // The phone menu drops below the bar. `--porch-nav-height` stays the bar's own height; `--porch-nav-bottom` is the lowest edge of
+    // the bar or the open menu, so scene pages that sit under the bar (the gallery's header card) can step down clear of the menu.
+    const publish = () => {
+      const drawer = nav.querySelector('.porch-nav__mobile')?.getBoundingClientRect()
+      if (!drawer) barHeight = Math.round(nav.getBoundingClientRect().height)
+      const bar = barHeight || Math.round(row.getBoundingClientRect().height)
+      const bottom = Math.round(drawer ? drawer.bottom : bar)
+      const value = `${bar} ${bottom}`
+      if (value === last) return
+      last = value
+      // On the shell, and on the document too: a floor pan carries `main` into an overlay outside the shell.
+      for (const element of [shell, document.documentElement]) {
+        element.style.setProperty('--porch-nav-height', `${bar}px`)
+        element.style.setProperty('--porch-nav-bottom', `${bottom}px`)
+      }
+    }
+    const observer = new ResizeObserver(publish)
+    observer.observe(row)
+    observer.observe(nav)
+    publish()
+    return () => {
+      observer.disconnect()
+      for (const element of [shell, document.documentElement]) { element.style.removeProperty('--porch-nav-height'); element.style.removeProperty('--porch-nav-bottom') }
+    }
+  }, [])
+  return ref
+}
+
 const staticNavItems = nav.filter((item) => !item.devOnly && !item.roles)
 
 export function StaticPorchNav() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const navRef = useNavHeightVar()
   const navLink = (item: (typeof nav)[number]) => {
     const to = item.label === 'Gallery' ? '/home' : item.path
     const onClick = (event: MouseEvent<HTMLElement>) => {
@@ -218,7 +257,7 @@ export function StaticPorchNav() {
     )
   }
   return (
-    <nav data-testid="app-navigation" className="porch-nav">
+    <nav ref={navRef} data-testid="app-navigation" className="porch-nav">
       <PorchNavRoof pathname="/" />
       <div className="porch-nav__row">
         <Link to="/" aria-label="Pixel Party, home" className="porch-nav__logo"><SpriteImage sprite={logoSign} className="porch-nav__logo-full" /><SpriteImage sprite={compactLogoSign} className="porch-nav__logo-compact" /></Link>
@@ -250,6 +289,7 @@ export default function Navigation() {
   const locked = useDailyLock()
   const location = useLocation()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const navRef = useNavHeightVar()
   const navigate = useNavigate()
   // Sign-in is a form on a scene object (the mailbox on the porch, the ticket board below): the scene on screen takes the request.
   const openSignIn = () => { if (!requestSignIn()) navigate('/settings') }
@@ -298,7 +338,7 @@ export default function Navigation() {
     </Link>
   }
   return <>
-    <nav data-testid="app-navigation" className="porch-nav">
+    <nav ref={navRef} data-testid="app-navigation" className="porch-nav">
       <PorchNavRoof pathname={location.pathname} />
       <CompactRoof />
       <div className="porch-nav__row">
@@ -327,7 +367,7 @@ export default function Navigation() {
         {!locked && <div className="porch-nav__links">{visibleNav.map(navLink)}</div>}
         <div className="porch-nav__spacer" />
         {locked || !isLoaded || !profileReady ? null : isSignedIn && user ? <DropdownMenu>
-          <DropdownMenuTrigger render={<button aria-label={`Account menu: ${user.name || user.email}`} title={user.name || user.email} className="porch-nav__mail"><span className="porch-nav__mail-art"><NavMailbox signedIn /></span><span data-testid="nav-user-name" className="porch-nav__username">{user.name || user.email}</span></button>} />
+          <DropdownMenuTrigger render={<button aria-label={`${user.name || user.email}, your account`} title={user.name || user.email} className="porch-nav__mail"><span className="porch-nav__mail-art"><NavMailbox signedIn /></span><span data-testid="nav-user-name" className="porch-nav__username">{user.name || user.email}</span></button>} />
           <DropdownMenuContent align="end" className="w-56">
             <DropdownMenuLabel><div>{user.name || 'Signed in'}</div><div data-testid="nav-user-email" className="text-sm text-muted-foreground">{user.email}</div></DropdownMenuLabel>
             <DropdownMenuSeparator />
