@@ -263,14 +263,22 @@ test('a stale route chunk reloads the tab once, then a scene-native card (not a 
   await expect(page.getByTestId('settings-letter')).toBeVisible({ timeout: 10_000 })
 })
 
-test('reduced motion enters party without waiting for the pan', async ({ page }) => {
+test('reduced motion enters party without the pan transition', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await setup(page)
   await page.goto(`${origin}/home`)
-  const start = Date.now()
+  // Watch for the pan's marker instead of racing a wall clock: under reduced motion the scene
+  // never starts a move, so the marker must never appear.
+  await page.evaluate(() => {
+    const watched = window as Window & { __sawSceneMove?: boolean }
+    watched.__sawSceneMove = false
+    new MutationObserver(() => {
+      if (document.documentElement.hasAttribute('data-scene-moving')) watched.__sawSceneMove = true
+    }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-scene-moving'] })
+  })
   await page.getByRole('link', { name: 'Basement studio' }).click()
   await expect(page).toHaveURL(`${origin}/party`)
-  expect(Date.now() - start).toBeLessThan(500)
+  expect(await page.evaluate(() => (window as Window & { __sawSceneMove?: boolean }).__sawSceneMove)).toBe(false)
 })
 
 test('daily loading shows only the neutral view', async ({ page }) => {

@@ -344,7 +344,9 @@ test('reduced motion zoom is immediate', async ({ page }) => {
   await playFixture(page)
   await page.goto(`${origin}/home`)
   await page.getByTestId('daily-start-button').click()
-  await expect(page.getByTestId('daily-playing')).toBeVisible({ timeout: 100 })
+  await expect(page.getByTestId('daily-playing')).toBeVisible()
+  // The camera does not animate: reduced motion lands with a zero-duration move.
+  await expect(page.locator('[data-camera="easel"] .pixel-scene__camera')).toHaveCSS('transition-duration', '0s')
 })
 
 test('drawable easel remains still', async ({ page }) => {
