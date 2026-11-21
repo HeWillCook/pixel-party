@@ -176,8 +176,11 @@ export function paintSign(ctx: Ctx, b: Rect, signH: number): void {
   }
   R(fx, fy, fw, 1, PAPER[3])
   R(fx, fy + fh - 1, fw, 1, WOOD[3])
-  // Nails: dark head with a bright pixel, at the corners and the plank joints.
-  for (const [nx, ny] of [[fx + 3, fy + 3], [fx + fw - 6, fy + 3], [fx + 3, fy + fh - 5], [fx + fw - 6, fy + fh - 5]]) { R(nx, ny, 2, 2, WOOD[0]); R(nx + 1, ny, 1, 1, WOOD[4]) }
+  // Nails: dark head with a bright pixel, at the corners. A face too short for two rows (the Upstairs sign) gets one nail at each end, centred:
+  // two rows 2 px apart merged into a stray "E" beside the label.
+  const tall = fh >= 14
+  const rows = tall ? [fy + 3, fy + fh - 5] : [fy + Math.floor(fh / 2) - 1]
+  for (const ny of rows) for (const nx of [fx + 3, fx + fw - 6]) { R(nx, ny, 2, 2, WOOD[0]); R(nx + 1, ny, 1, 1, WOOD[4]) }
 }
 
 /** Twisted hanging rope from the roof beam to the lantern ring. */

@@ -176,7 +176,7 @@ function paintStairs(ctx: Ctx, o: StudioOptions): void {
   const s = o.layout.upstairs
   paintSign(ctx, s, 11)
   const sx = (s.x + 1) * D, sy = (s.y + 1) * D
-  const cx = sx + 14, cy = sy + 7
+  const cx = sx + 19, cy = sy + 7
   for (let i = 0; i < 5; i++) { R(cx - i + 1, cy + i + 1, 2 * i + 2, 1, P.paper[3]); R(cx - i, cy + i, 2 * i + 2, 1, WOOD[0]) }
   R(cx, cy + 6, 4, 6, P.paper[3]); R(cx - 1, cy + 5, 4, 6, WOOD[0])
 }

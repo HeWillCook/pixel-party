@@ -22,8 +22,10 @@ import { SCENE_ZOOM_MS } from '../../scene/zoom'
 import { Badge, Button, Input, Label } from '../ui'
 import { MagicEasel } from './MagicEasel'
 import { requestVerticalSceneTransition } from '../porch/VerticalSceneTransition'
+import { settledNavHeight } from '../porch/navMetrics'
 import {
   enableNavMotion,
+  sceneMoving,
   SCENE_NAV_EVENT,
   type SceneNavKind,
 } from '../porch/returnFlag'
@@ -741,7 +743,9 @@ export function StudioLobby(props: StudioLobbyProps) {
         navigate(path)
         return
       }
-      spatialExitStarted.current = true
+      // A request made while another move is still in flight (the descent into the basement) is queued by the transition and replayed
+      // when it lands; latching here would swallow that replay. The latch is only for an exit this call starts itself.
+      if (!sceneMoving()) spatialExitStarted.current = true
       const handled = requestVerticalSceneTransition({
         source: 'studio',
         target: 'porch',
@@ -953,7 +957,7 @@ export function StudioLobby(props: StudioLobbyProps) {
         { x: slotRects.corkboard.x - 2, y: Math.min(slotRects.corkboard.y, slotRects.signIn.y) - 2, w: slotRects.signIn.x + slotRects.signIn.w - slotRects.corkboard.x + 4, h: Math.max(slotRects.corkboard.y + slotRects.corkboard.h, slotRects.signIn.y + slotRects.signIn.h) - Math.min(slotRects.corkboard.y, slotRects.signIn.y) + 4 },
         { w: stageBox.w, h: stageBox.h },
         composition,
-        document.querySelector('[data-testid="app-navigation"]')?.getBoundingClientRect().height || 72,
+        settledNavHeight(),
       )
     : null
   const signInMoved = useRef(false)

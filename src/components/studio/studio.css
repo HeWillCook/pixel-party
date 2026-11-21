@@ -122,7 +122,7 @@
   background: #ecd4b0;
   border: var(--px) dashed #8e5960;
   color: #614052;
-  font-size: calc(var(--px) * 3);
+  font-size: max(11px, calc(var(--px) * 3));
   line-height: 1.1;
   text-align: center;
 }

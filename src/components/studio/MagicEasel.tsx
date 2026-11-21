@@ -252,7 +252,8 @@ export function MagicEasel({
           ) : selectedCode ? (
             <div data-testid="magic-easel-preview" className="studio-magic-easel__preview">
               <div className="studio-magic-easel__hud">
-                <span className="studio-magic-easel__code">
+                {/* With a room open the code is already in the room's ticket stub and invite plank: this chip would only peek out at the board's corner (it keeps its place so the board does not move). */}
+                <span className="studio-magic-easel__code" style={roomView ? { visibility: 'hidden' } : undefined} aria-hidden={roomView ? true : undefined}>
                   {selectedCode === 'play' ? 'OPEN' : selectedCode}
                 </span>
                 <span data-testid="magic-easel-painters" className="studio-magic-easel__stat">

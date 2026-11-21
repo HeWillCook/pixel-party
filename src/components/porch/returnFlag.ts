@@ -193,6 +193,11 @@ export function markSceneMove(ms = SCENE_ZOOM_MS + 150): void {
   if (typeof performance !== 'undefined') moveUntil = Math.max(moveUntil, performance.now() + ms)
 }
 
+/** True while a marked camera move is still in flight (a request made now is queued, not started). */
+export function sceneMoving(): boolean {
+  return typeof performance !== 'undefined' && performance.now() < moveUntil
+}
+
 function navKindForPath(path: string): SceneNavKind | null {
   if (path === '/home') return 'porch'
   if (path === '/scores') return 'scores'
