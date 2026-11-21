@@ -43,7 +43,7 @@ export function HaikuStrip({ guessLog, aiResting, asking, hasPixels, roundState,
   } else if (hasPixels) {
     text = 'Taking a look…'
   } else {
-    text = 'Paint something and I will guess!'
+    text = 'Paint and I will guess!'
   }
   return (
     <div data-testid="haiku-strip" className={`haiku-strip${won ? ' haiku-strip--won' : ''}`} aria-live="polite">

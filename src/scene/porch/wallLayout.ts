@@ -34,9 +34,9 @@ const HUD_PX = 64
 /** A medal pinned to a frame's corner hangs this far above it. */
 const MEDAL_RISE = 4
 
-/** The caption type in scene units: `3` and `2.6` units, never below 11px and 10px (the px floors, as units at this scale). */
+/** The caption type in scene units: `3` and `2.6` units, never below 11px (the px floor, as units at this scale). */
 export function captionType(scale: number): { prompt: number; meta: number } {
-  return { prompt: Math.max(3, scale ? 11 / scale : 3), meta: Math.max(2.6, scale ? 10 / scale : 2.6) }
+  return { prompt: Math.max(3, scale ? 11 / scale : 3), meta: Math.max(2.6, scale ? 11 / scale : 2.6) }
 }
 
 /** The tallest a caption card can be: border and padding, the longest real prompt on two lines, and a date and grade that wrap onto two more at worst. The grid reserves this; a page's cards shrink to its own tallest caption (see `GalleryWall`). */
