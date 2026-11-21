@@ -1,5 +1,6 @@
 import { AlertCircle, Award, Cat, FlaskConical, Sparkles } from 'lucide-react'
 import type { GradeView } from '../../server/daily-service'
+import type { VerdictStage } from '../../hooks/useDailyAttempt'
 import { cn } from '../../lib/utils'
 
 declare const __DAILY_JUDGE__: 'fake' | 'local' | 'real' | undefined
@@ -20,6 +21,8 @@ export interface GradePanelProps {
   grading: boolean
   lastError: string | null
   ended?: boolean
+  /** The final verdict reveal: suspense line, then the guess, then the score. */
+  stage?: VerdictStage | null
 }
 
 export function GradePanel({
@@ -28,7 +31,10 @@ export function GradePanel({
   grading,
   lastError,
   ended = false,
+  stage = null,
 }: GradePanelProps) {
+  const showScore = stage === null || stage === 'score'
+  const showGuess = stage === null || stage === 'guess' || stage === 'score'
   return (
     <div
       data-testid="grade-panel"
@@ -81,45 +87,51 @@ export function GradePanel({
 
       {latest ? (
         <div className="space-y-3">
-          <div className="border border-border bg-background/50 p-3">
-            <p
-              data-testid="daily-latest-guess"
-              className="text-lg text-[var(--sunset-1)] sm:text-2xl"
-            >
-              Haiku thinks: {latest.guess || '—'}
-            </p>
-            {latest.reason && (
+          {showGuess && (
+            <div className="border border-border bg-background/50 p-3">
               <p
-                data-testid="daily-latest-reason"
-                className="mt-1 text-base text-muted-foreground"
+                data-testid="daily-latest-guess"
+                className="text-lg text-[var(--sunset-1)] sm:text-2xl"
               >
-                {latest.reason}
+                Haiku thinks: {latest.guess || '—'}
               </p>
-            )}
-          </div>
-
-          <div
-            data-testid="daily-score-breakdown"
-            className="flex flex-col gap-3 bg-background/60 p-2.5 text-base"
-          >
-            {[
-              { label: 'Matches the prompt', value: latest.fit, max: 500, id: 'grade-fit' },
-              { label: 'Easy to recognise', value: latest.recognition, max: 400, id: 'grade-recognition' },
-              { label: 'Speed', value: latest.speed, max: 100, id: 'grade-speed' },
-            ].map(part => (
-              <div key={part.id}>
-                <div className="flex justify-between gap-2">
-                  <span>{part.label}</span>
-                  <span data-testid={part.id}>{part.value} / {part.max}</span>
-                </div>
-                <progress aria-label={part.label} value={part.value} max={part.max} className="h-2 w-full accent-[var(--sunset-1)]" />
-              </div>
-            ))}
-            <div className="flex justify-between gap-2">
-              <span>Total</span>
-              <span data-testid="grade-total" className="text-[var(--sunset-1)]">{latest.total} / 1000</span>
+              {latest.reason && (
+                <p
+                  data-testid="daily-latest-reason"
+                  className="mt-1 text-base text-muted-foreground"
+                >
+                  {latest.reason}
+                </p>
+              )}
             </div>
-          </div>
+          )}
+
+          {showScore && (
+            <div
+              data-testid="daily-score-breakdown"
+              className="flex flex-col gap-3 bg-background/60 p-2.5 text-base"
+            >
+              {[
+                { label: 'Matches the prompt', value: latest.matchPoints, max: 500, id: 'grade-match' },
+                { label: 'Art quality bonus', value: latest.qualityBonus, max: 500, id: 'grade-quality' },
+              ].map(part => (
+                <div key={part.id}>
+                  <div className="flex justify-between gap-2">
+                    <span>{part.label}</span>
+                    <span data-testid={part.id}>{part.value} / {part.max}</span>
+                  </div>
+                  <progress aria-label={part.label} value={part.value} max={part.max} className="h-2 w-full accent-[var(--sunset-1)]" />
+                </div>
+              ))}
+              <p className="text-sm text-muted-foreground">
+                The art quality bonus only grows with how well the drawing matches the prompt.
+              </p>
+              <div className="flex justify-between gap-2">
+                <span>Total</span>
+                <span data-testid="grade-total" className="text-[var(--sunset-1)]">{latest.total} / 1000</span>
+              </div>
+            </div>
+          )}
         </div>
       ) : (
         <div className="flex items-center gap-2 py-1 text-base text-muted-foreground sm:text-lg">
@@ -127,7 +139,7 @@ export function GradePanel({
           <span>
             {ended
               ? `Final best score: ${best} / 1000.`
-              : 'No grade yet — auto-grades run every minute, or press Grade now for a check.'}
+              : 'No judgement yet — Haiku looks at 2:30 and delivers the final verdict at 5:00.'}
           </span>
         </div>
       )}

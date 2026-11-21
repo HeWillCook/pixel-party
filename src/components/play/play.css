@@ -606,6 +606,12 @@
   line-height: 1.15;
   color: #ecd4b0;
 }
+.daily-chalkboard__part-hint {
+  margin: 1px 0 0;
+  font-size: 12px;
+  line-height: 1.15;
+  color: #c9b795;
+}
 .daily-chalkboard__ledge {
   display: flex;
   align-items: center;

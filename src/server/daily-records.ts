@@ -21,16 +21,29 @@ export function attemptPublisher(read: (userId: string, day: string) => Promise<
     const publishing = previous.catch(() => {}).then(async () => {
       const row = await read(userId, day)
       if (!row) return
+      // Score = the HIGHER judgement; its parts come from that same best judgement so the
+      // numbers add up to the score the leaderboard shows.
       const best = row.bestGrade
+      // The travelling caption (guess/reason) belongs to the MOST RECENT judgement, and the image
+      // is the latest canvas the player had.
+      const latest = row.lastGrade
       await upsert(tools, 'dailyScores', row, {
         displayName: row.profile?.name ?? 'Player', avatarUrl: row.profile?.image ?? '',
-        score: row.bestScore, fit: best?.grade.fit ?? 0, recognition: best?.grade.recognition ?? 0,
-        speed: best?.grade.speed ?? 0, bestElapsedMs: row.bestElapsedMs ?? 0, ended: Number(isEnded(row, now)),
+        score: row.bestScore,
+        match: best?.grade.match ?? 0,
+        quality: best?.grade.quality ?? 0,
+        matchPoints: best?.grade.matchPoints ?? 0,
+        qualityBonus: best?.grade.qualityBonus ?? 0,
+        recognition: best?.grade.recognition ?? 0,
+        startedAt: row.startedAt,
+        ended: Number(isEnded(row, now)),
       }, { medal: 0 })
       await upsert(tools, 'dailyDrawings', row, {
         displayName: row.profile?.name ?? 'Player', prompt: promptForDay(day).prompt,
-        cells: best?.cells ?? row.lastCells ?? encodeCells(new Uint8Array(1024)),
-        guess: best?.grade.guess ?? '', reason: best?.grade.reason ?? '', score: row.bestScore,
+        cells: row.lastCells ?? best?.cells ?? latest?.cells ?? encodeCells(new Uint8Array(1024)),
+        guess: latest?.grade.guess ?? best?.grade.guess ?? '',
+        reason: latest?.grade.reason ?? best?.grade.reason ?? '',
+        score: row.bestScore,
       }, { visibility: 'private' })
     })
     locks.set(key, publishing)
@@ -50,7 +63,7 @@ export async function resetAttemptRecords(tools: ServerTools, userId: string, da
   const scoreRecord = scores.data.records[0]
   if (scoreRecord) {
     const res = await tools.update('dailyScores', scoreRecord.recordId, {
-      score: 0, fit: 0, recognition: 0, speed: 0, bestElapsedMs: 0, ended: 0, medal: 0,
+      score: 0, match: 0, quality: 0, matchPoints: 0, qualityBonus: 0, recognition: 0, ended: 0, medal: 0,
     })
     if (!res.success) throw new Error(res.error)
   }

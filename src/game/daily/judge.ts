@@ -16,6 +16,11 @@ export interface DailyJudgeBody {
   ]
 }
 
+export type ScoreKind = 'halfway' | 'final'
+
+/** Haiku's peeks are one playful line: never a score, never a number. */
+export const PEEK_MAX_CHARS = 90
+
 export const BLIND_SYSTEM =
   'You are guessing a 32x32 pixel-art drawing made by one person for a guessing game. Ignore isolated stray pixels; they may be noise. If the image is entirely blank (no colored pixels drawn), reply with {"guess": ""}. Reply with raw JSON only, no markdown fences: {"guess": "short phrase"}.'
 
@@ -23,24 +28,34 @@ export const BLIND_USER_TEXT =
   'What is this a drawing of? Reply with raw JSON only: {"guess": "short phrase"}.'
 
 export const SCORE_SYSTEM =
-  'You judge a 32x32 pixel-art drawing for a daily challenge. Score strictly against the rubric; never inflate.\n' +
+  'You judge a 32x32 pixel-art drawing for a daily challenge. The two scales are independent: how much of the PROMPT is drawn, and how well-drawn it is. Score strictly against the rubric; never inflate.\n' +
   '\n' +
-  'fit (0-100): how much of the prompt (subject plus the detail it asks for) is actually drawn.\n' +
+  'match (0-100): how clearly and completely the drawing depicts the PROMPT (its subject plus the detail it asks for), regardless of craft. Judge the idea, not the execution.\n' +
   '- 0-15: scribbles, unrelated marks, or nearly blank.\n' +
-  '- 20-40: crude or minimal, missing the key details, only loosely readable.\n' +
-  '- 45-65: clearly recognizable subject with basic detail.\n' +
-  '- 70-85: strong detail and a clear match to the prompt.\n' +
-  '- 86-100: standout composition and pixel craft; reserve for excellent work only.\n' +
+  '- 20-40: only loosely related to the prompt, missing the asked detail.\n' +
+  '- 45-65: the subject is clearly there with the basic asked detail.\n' +
+  '- 70-85: the subject and the asked detail both read clearly and deliberately.\n' +
+  '- 86-100: every part of the prompt is unmistakably depicted.\n' +
+  '\n' +
+  'quality (0-100): pixel-art craft only, regardless of the prompt. Consider composition, readable shapes, deliberate colour use, clean lines, coherent fills, and whether the drawing uses the 32x32 frame sensibly (not a tiny speck in a corner, not a muddy all-over texture).\n' +
+  '- 0-15: no legible craft; noise, stray marks, or a blank field.\n' +
+  '- 20-40: rough but readable, with little control of shape or colour.\n' +
+  '- 45-65: competent pixel work; shapes and colours mostly hold together.\n' +
+  '- 70-85: confident, clean pixel art with a clear focal point.\n' +
+  '- 86-100: striking, polished pixel art; reserve for excellent work only.\n' +
   '\n' +
   'recognition (0-100): how close the blind guess is to the target subject.\n' +
   '- 0: the blind guess missed the subject completely; a wrong guess must never score above 0 here.\n' +
   '- 35-60: only a closely related subject or visual cousin of the target.\n' +
   '- 75-100: exact subject or a clear synonym.\n' +
   '\n' +
-  'If recognition is 0, the drawing is unrecognizable, so fit must stay low (at most 55).\n' +
-  'If the image is entirely blank (no colored pixels drawn), reply with {"fit": 0, "recognition": 0, "reason": "Nothing is drawn yet"}.\n' +
+  'If the image is entirely blank (no colored pixels drawn), reply with {"match": 0, "recognition": 0, "quality": 0, "reason": "Nothing is drawn yet"}.\n' +
   `The reason is ONE sentence addressed to the player, at most ${DAILY.reasonMaxChars} characters including spaces; it is shown in a small box, so shorter is better.\n` +
-  `Reply with raw JSON only, no markdown fences: {"fit": number, "recognition": number, "reason": "one sentence, at most ${DAILY.reasonMaxChars} characters"}.`
+  `Reply with raw JSON only, no markdown fences: {"match": number, "recognition": number, "quality": number, "reason": "one sentence, at most ${DAILY.reasonMaxChars} characters"}.`
+
+export const PEEK_SYSTEM =
+  'You are Haiku, a warm, cheeky cat art critic watching a person paint a 32x32 pixel-art drawing for a daily challenge. Look at the image and the prompt, then say ONE playful, encouraging line in character — a tiny observation or gentle nudge, never mean. Never mention scores, points, numbers, percentages, or grading. Never say what the prompt is outright. Reply with raw JSON only, no markdown fences: {"line": "one short sentence"}.\n' +
+  `The line is at most ${PEEK_MAX_CHARS} characters including spaces.`
 
 export function buildBlindBody(pngBase64: string): DailyJudgeBody {
   return {
@@ -60,12 +75,17 @@ export function buildBlindBody(pngBase64: string): DailyJudgeBody {
   }
 }
 
-export function buildScoreBody(pngBase64: string, prompt: string, subject: string, guess: string): DailyJudgeBody {
+export function buildScoreBody(pngBase64: string, prompt: string, subject: string, guess: string, kind: ScoreKind = 'halfway'): DailyJudgeBody {
+  const verdict =
+    kind === 'final'
+      ? `This is the FINAL VERDICT at the end of the attempt: make the reason a theatrical, suspenseful one-sentence verdict, as if announcing a great reveal. Still at most ${DAILY.reasonMaxChars} characters.\n`
+      : 'This is the halfway check-in: keep the reason normal and encouraging.\n'
   const userText =
     `Prompt: ${prompt}\n` +
     `Subject: ${subject}\n` +
     `Blind guess: ${guess}\n` +
-    `Reply with raw JSON only: {"fit": number, "recognition": number, "reason": "one sentence, at most ${DAILY.reasonMaxChars} characters"}.`
+    verdict +
+    `Reply with raw JSON only: {"match": number, "recognition": number, "quality": number, "reason": "one sentence, at most ${DAILY.reasonMaxChars} characters"}.`
 
   return {
     model: JUDGE.model,
@@ -78,6 +98,24 @@ export function buildScoreBody(pngBase64: string, prompt: string, subject: strin
         content: [
           { type: 'image', source: { type: 'base64', media_type: 'image/png', data: pngBase64 } },
           { type: 'text', text: userText },
+        ],
+      },
+    ],
+  }
+}
+
+export function buildPeekBody(pngBase64: string, prompt: string): DailyJudgeBody {
+  return {
+    model: JUDGE.model,
+    max_tokens: JUDGE.maxTokens,
+    temperature: 0.7,
+    system: PEEK_SYSTEM,
+    messages: [
+      {
+        role: 'user',
+        content: [
+          { type: 'image', source: { type: 'base64', media_type: 'image/png', data: pngBase64 } },
+          { type: 'text', text: `The prompt is: ${prompt}\nReply with raw JSON only: {"line": "one short sentence"}.` },
         ],
       },
     ],
@@ -137,14 +175,24 @@ export function clampReason(text: string, max: number = DAILY.reasonMaxChars): s
   return `${words.replace(/[\s,;:\-–—]+$/, '')}…`
 }
 
-export function parseScore(text: string): { fit: number; recognition: number; reason: string } | null {
+export function parseScore(text: string): { match: number; recognition: number; quality: number; reason: string } | null {
   const parsed = extractJsonObject(text)
   if (!parsed) return null
-  const fit = parseClampedPercent(parsed.fit)
+  const match = parseClampedPercent(parsed.match)
   const recognition = parseClampedPercent(parsed.recognition)
-  if (fit === null || recognition === null) return null
+  const quality = parseClampedPercent(parsed.quality)
+  if (match === null || recognition === null || quality === null) return null
   if (typeof parsed.reason !== 'string') return null
   const reason = clampReason(parsed.reason)
   if (reason.length === 0) return null
-  return { fit, recognition, reason }
+  return { match, recognition, quality, reason }
+}
+
+/** One playful peek line: no score, no digits (a number in a "non-scoring" line reads as a score). */
+export function parsePeek(text: string): { line: string } | null {
+  const parsed = extractJsonObject(text)
+  if (!parsed || typeof parsed.line !== 'string') return null
+  const line = clampReason(parsed.line, PEEK_MAX_CHARS)
+  if (line.length === 0 || /\d/.test(line)) return null
+  return { line }
 }

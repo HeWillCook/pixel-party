@@ -5,7 +5,7 @@ import { reserveBudget } from './budget'
 import { createDailyJudge, renderCellsPng } from './daily-judge'
 import { registerDailyDebugRoutes } from './daily-debug-routes'
 import { doAttemptStore } from './daily-room'
-import { dailyState, endDaily, gradeDaily, InvalidAttemptDay, startDaily, todaysDrawings } from './daily-service'
+import { AttemptEndTooEarly, dailyState, endDaily, gradeDaily, InvalidAttemptDay, peekDaily, saveDailyCanvas, startDaily, todaysDrawings } from './daily-service'
 import type { DailyDeps, DailyUser } from './daily-service'
 import { resolveAuth } from './http-routes'
 import { createServerTools } from './server-tools'
@@ -45,10 +45,20 @@ export function registerDailyRoutes(app: Hono<AppContext>): void {
   if (__DEBUG_TOOLS__) registerDailyDebugRoutes(daily, dependencies)
   daily.post('/grade', async c => {
     const body: unknown = await c.req.json().catch(() => null)
-    if (!objectBody(body) || !dayBody(body.day) || (body.kind !== 'auto' && body.kind !== 'ask' && body.kind !== 'final') || typeof body.cells !== 'string' || (body.kind === 'auto' && (!Number.isInteger(body.window) || (body.window as number) < 0 || (body.window as number) >= DAILY.autoWindowsMs.length))) {
+    if (!objectBody(body) || !dayBody(body.day) || (body.kind !== 'auto' && body.kind !== 'final') || typeof body.cells !== 'string' || (body.kind === 'auto' && (!Number.isInteger(body.window) || (body.window as number) < 0 || (body.window as number) >= DAILY.autoWindowsMs.length))) {
       return c.json({ error: 'bad_request' }, 400)
     }
     return c.json(await gradeDaily(dependencies(c.env), c.get('dailyUser'), body.kind, body.cells, body.day, body.window as number | undefined))
+  })
+  daily.post('/peek', async c => {
+    const body: unknown = await c.req.json().catch(() => null)
+    if (!objectBody(body) || !dayBody(body.day) || typeof body.cells !== 'string') return c.json({ error: 'bad_request' }, 400)
+    return c.json(await peekDaily(dependencies(c.env), c.get('dailyUser'), body.cells, body.day))
+  })
+  daily.post('/canvas', async c => {
+    const body: unknown = await c.req.json().catch(() => null)
+    if (!objectBody(body) || !dayBody(body.day) || typeof body.cells !== 'string') return c.json({ error: 'bad_request' }, 400)
+    return c.json(await saveDailyCanvas(dependencies(c.env), c.get('dailyUser'), body.cells, body.day))
   })
   daily.post('/end', async c => {
     const body: unknown = await c.req.json().catch(() => null)
@@ -57,6 +67,7 @@ export function registerDailyRoutes(app: Hono<AppContext>): void {
       return c.json(await endDaily(dependencies(c.env), c.get('dailyUser'), body.cells as string | undefined ?? null, body.day))
     } catch (error) {
       if (error instanceof InvalidAttemptDay) return c.json({ error: error.message }, 400)
+      if (error instanceof AttemptEndTooEarly) return c.json({ error: error.message }, 400)
       throw error
     }
   })

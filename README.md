@@ -7,23 +7,27 @@ second mode.
 
 ## Daily mode
 
-Visit `/home`, sign in, and start today's challenge. Everyone gets the same prompt and a 32×32 canvas. Paint for up
-to 5 minutes; the app grades automatically at minutes 1 to 4, you can use up to three **Ask now** grades, and the
-attempt ends with a final grade. Choose **Done** to finish early. Your attempt appears on the daily leaderboard, while your best grade and matching
-drawing are retained for your profile. The prompt is hidden from the public gallery until the attempt ends and the
-day closes.
+Visit `/home`, sign in, and start today's challenge. Everyone gets the same prompt and a 32×32 canvas. Paint for the
+full five minutes: Haiku judges the canvas at the halfway point (2:30) and delivers the final verdict at 5:00, both
+automatically. Your attempt appears on the daily leaderboard. The prompt is hidden from the public gallery until the
+attempt ends and the day closes.
 
-Grades total up to 1000 points:
+Each judgement totals up to 1000 points, and your **higher** judgement is your score:
 
-- **Fit (0–500):** how well the drawing matches the prompt, multiplied by 5.
-- **Recognition (0–400):** whether the blind judge recognized the prompt subject, multiplied by 4.
-- **Speed (0–100):** `round(100 × (1 − elapsed time / 300 seconds))` at the best grade.
+- **Matches the prompt (0–500):** how much of the prompt (subject plus the asked detail) is drawn, weighted 60/40
+  with how recognizable the blind guess found it. If the blind guess misses the subject entirely, the prompt score is
+  capped at 30.
+- **Art quality bonus (0–500):** pixel-art craft, paid in proportion to the prompt match, so a beautiful drawing of
+  the wrong thing earns almost nothing.
+
+There is no speed component. The painting shown on your profile and in the gallery is the **latest** canvas you had
+(the one you had at 5:00), while the guess and comment that travel with it come from the most recent judgement.
 
 Daily mode requires sign-in to play; visitors who are signed out can still view the leaderboard and public profiles.
-The server enforces one attempt per UTC day and grade limits. In development and tests, a deterministic fake judge is
-used by default. Production uses DeepSpace's server-side `anthropic/chat-completion` integration. An opt-in local
-`claude -p` helper is available for development only: run `npm run judge:local` and configure `DAILY_JUDGE=local`
-for the local dev process. Do not use this mode for production.
+The server enforces one attempt per UTC day and refuses any early finish. In development and tests, a deterministic
+fake judge is used by default. Production uses DeepSpace's server-side `anthropic/chat-completion` integration. An
+opt-in local `claude -p` helper is available for development only: run `npm run judge:local` and configure
+`DAILY_JUDGE=local` for the local dev process. Do not use this mode for production.
 
 ## Party mode
 

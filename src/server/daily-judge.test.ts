@@ -33,16 +33,26 @@ describe('fakeDailyJudge', () => {
     expect(scoreA1).toEqual(scoreA2)
     expect(scoreB).not.toBeNull()
 
-    expect(scoreA1!.fit).toBeGreaterThanOrEqual(0)
-    expect(scoreA1!.fit).toBeLessThanOrEqual(100)
-    expect(scoreA1!.recognition).toBeGreaterThanOrEqual(0)
-    expect(scoreA1!.recognition).toBeLessThanOrEqual(100)
-    expect(scoreB!.fit).toBeGreaterThanOrEqual(0)
-    expect(scoreB!.fit).toBeLessThanOrEqual(100)
-    expect(scoreB!.recognition).toBeGreaterThanOrEqual(0)
-    expect(scoreB!.recognition).toBeLessThanOrEqual(100)
+    for (const score of [scoreA1!, scoreB!]) {
+      expect(score.match).toBeGreaterThanOrEqual(0)
+      expect(score.match).toBeLessThanOrEqual(100)
+      expect(score.recognition).toBeGreaterThanOrEqual(0)
+      expect(score.recognition).toBeLessThanOrEqual(100)
+      expect(score.quality).toBeGreaterThanOrEqual(0)
+      expect(score.quality).toBeLessThanOrEqual(100)
+    }
 
     expect({ blind: blindA1, score: scoreA1 }).not.toEqual({ blind: blindB, score: scoreB })
+  })
+
+  it('keeps an unrecognized drawing low and its peek playful and non-numeric', async () => {
+    const judge = fakeDailyJudge()
+    const score = await judge.score('png', 'a lighthouse', 'lighthouse', 'a teapot')
+    expect(score).toMatchObject({ recognition: 0 })
+    expect(score!.match).toBeLessThanOrEqual(40)
+    const peek = await judge.peek?.('png', 'a lighthouse')
+    expect(peek?.line.length).toBeGreaterThan(0)
+    expect(peek?.line).not.toMatch(/\d/)
   })
 })
 
@@ -63,6 +73,7 @@ describe('createDailyJudge', () => {
     expect(blind).not.toBeNull()
     const score = await judge.score('fake-png-base64', 'a cat sleeping in a teacup', 'cat', blind!.guess)
     expect(score).not.toBeNull()
+    expect(await judge.peek?.('fake-png-base64', 'a cat sleeping in a teacup')).not.toBeNull()
     expect(fetchBomb).not.toHaveBeenCalled()
   })
 
@@ -90,7 +101,10 @@ describe('createDailyJudge', () => {
         return Response.json({ text: '{"guess":"a candle"}' })
       }
       if (calls.length === 2) {
-        return Response.json({ text: '{"fit":75,"recognition":40,"reason":"Good shape."}' })
+        return Response.json({ text: '{"match":75,"recognition":40,"quality":60,"reason":"Good shape."}' })
+      }
+      if (calls.length === 3) {
+        return Response.json({ text: '{"line":"Ooh, a candle with attitude."}' })
       }
       return new Response('unavailable', { status: 503 })
     })
@@ -99,10 +113,12 @@ describe('createDailyJudge', () => {
     const judge = createDailyJudge({} as Env, 'local')
     expect(await judge.blind('png-1')).toEqual({ guess: 'a candle' })
     expect(await judge.score('png-1', 'a lighthouse in a storm', 'lighthouse', 'a candle')).toEqual({
-      fit: 75,
+      match: 75,
       recognition: 40,
+      quality: 60,
       reason: 'Good shape.',
     })
+    expect(await judge.peek?.('png-1', 'a lighthouse in a storm')).toEqual({ line: 'Ooh, a candle with attitude.' })
     expect(await judge.blind('png-1')).toBeNull()
 
     expect(calls[0].url).toBe('http://127.0.0.1:8789/judge')
@@ -111,6 +127,8 @@ describe('createDailyJudge', () => {
     expect(calls[1].body.user).toContain('a lighthouse in a storm')
     expect(calls[1].body.user).toContain('lighthouse')
     expect(calls[1].body.user).toContain('a candle')
+    expect(calls[2].body.user).toContain('a lighthouse in a storm')
+    expect(calls[2].body.system).toContain('Haiku')
   })
 
   it('calls anthropic/chat-completion via createServerTools in real mode', async () => {
@@ -127,7 +145,7 @@ describe('createDailyJudge', () => {
             return Response.json({ success: true, data: { content: [{ type: 'text', text: '{"guess":"a lighthouse"}' }] } })
           }
           if (requests.length === 2) {
-            return Response.json({ success: true, data: { content: [{ type: 'text', text: '{"fit":88,"recognition":100,"reason":"Spot on!"}' }] } })
+            return Response.json({ success: true, data: { content: [{ type: 'text', text: '{"match":88,"recognition":100,"quality":70,"reason":"Spot on!"}' }] } })
           }
           return Response.json({ error: 'rate_limited' }, { status: 429 })
         },
@@ -137,8 +155,9 @@ describe('createDailyJudge', () => {
     const judge = createDailyJudge(env, 'real')
     expect(await judge.blind('png-real')).toEqual({ guess: 'a lighthouse' })
     expect(await judge.score('png-real', 'a lighthouse in a storm', 'lighthouse', 'a lighthouse')).toEqual({
-      fit: 88,
+      match: 88,
       recognition: 100,
+      quality: 70,
       reason: 'Spot on!',
     })
     expect(await judge.blind('png-real')).toBeNull()

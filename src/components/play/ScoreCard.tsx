@@ -15,9 +15,8 @@ export interface ScoreCardProps {
 
 export function ScoreCard({ latest, best, grading, lastError, notice, sheet = false, actions }: ScoreCardProps) {
   const parts = [
-    { label: 'Matches the prompt', value: latest?.fit ?? 0, max: 500, id: 'grade-fit', color: 'sun' },
-    { label: 'Easy to recognise', value: latest?.recognition ?? 0, max: 400, id: 'grade-recognition', color: 'sea' },
-    { label: 'Speed', value: latest?.speed ?? 0, max: 100, id: 'grade-speed', color: 'peach' },
+    { label: 'Matches the prompt', value: latest?.matchPoints ?? 0, max: 500, id: 'grade-match', color: 'sun' },
+    { label: 'Art quality bonus', value: latest?.qualityBonus ?? 0, max: 500, id: 'grade-quality', color: 'sea' },
   ] as const
 
   return (
@@ -83,6 +82,9 @@ export function ScoreCard({ latest, best, grading, lastError, notice, sheet = fa
                     </div>
                   )
                 })}
+                <p className="daily-chalkboard__part-hint">
+                  The art quality bonus only pays out as far as the drawing matches the prompt.
+                </p>
               </div>
 
               <div className="daily-chalkboard__note">
@@ -99,7 +101,7 @@ export function ScoreCard({ latest, best, grading, lastError, notice, sheet = fa
           ) : (
             <div className="daily-chalkboard__body">
               <p className="daily-chalkboard__status">
-                {grading ? 'Haiku is looking…' : 'No grade yet — paint to get a score'}
+                {grading ? 'Haiku is looking…' : 'No judgement yet — paint and Haiku will look'}
               </p>
               <div data-testid="daily-score-breakdown" className="daily-chalkboard__bars">
                 {parts.map(part => (
@@ -126,7 +128,7 @@ export function ScoreCard({ latest, best, grading, lastError, notice, sheet = fa
 
           {!sheet && (
             <p className="daily-chalkboard__hint" data-testid="daily-chalkboard-hint">
-              Grade now keeps you drawing &middot; Submit locks your best score &amp; speed
+              Haiku looks at 2:30, then gives the final verdict at 5:00 &middot; your best judgement counts
             </p>
           )}
         </div>

@@ -29,19 +29,17 @@ export interface DailyStateView {
   startedAt?: number
   endsAt?: number
   autoUsed: number
-  asksUsed: number
   finalUsed: boolean
   best: number
   windows: AutoWindowView[]
-  asksLeft: number
   nextAutoAt: number | null
   serverNow: number
+  /** The most recent canvas (saved periodically while painting and at every judgement). */
   lastCells?: string
-  bestCells?: string
 }
 
 function stateView(day: string, row: AttemptRow | null, now: number): DailyStateView {
-  if (!row) return { day, status: 'not_started', autoUsed: 0, asksUsed: 0, finalUsed: false, best: 0, windows: [], asksLeft: DAILY.maxAsks, nextAutoAt: null, serverNow: now }
+  if (!row) return { day, status: 'not_started', autoUsed: 0, finalUsed: false, best: 0, windows: [], nextAutoAt: null, serverNow: now }
   const ended = isEnded(row, now)
   const windows = row.windows.map(window => ({ index: window.index, dueAt: autoWindowAt(row.startedAt, window.index), status: window.status, score: window.score, late: window.late }))
   return {
@@ -51,15 +49,12 @@ function stateView(day: string, row: AttemptRow | null, now: number): DailyState
     startedAt: row.startedAt,
     endsAt: row.startedAt + DAILY.attemptMs,
     autoUsed: row.autoUsed,
-    asksUsed: row.asksUsed,
     finalUsed: row.finalUsed,
     best: row.bestScore,
     windows,
-    asksLeft: Math.max(0, DAILY.maxAsks - row.asksUsed),
     nextAutoAt: ended ? null : windows.find(window => window.status === 'pending')?.dueAt ?? null,
     serverNow: now,
     ...(row.lastCells !== null ? { lastCells: row.lastCells } : {}),
-    ...(ended && row.bestGrade?.cells ? { bestCells: row.bestGrade.cells } : {}),
   }
 }
 
@@ -79,10 +74,14 @@ async function allowedDay(deps: DailyDeps, userId: string, day: string, now: num
   if (day === utcDay(now)) return true
   if (day !== utcDay(now - 86_400_000)) return false
   const row = await deps.store.get(userId, day)
-  return row !== null && !isEnded(row, now)
+  if (!row) return false
+  // A just-ended attempt (its final verdict set endedAt) still accepts a closing end/canvas call
+  // until its grace window runs out; after that the day is closed to further writes.
+  return !isEnded(row, now) || now <= row.startedAt + DAILY.attemptMs + DAILY.graceMs
 }
 
 export class InvalidAttemptDay extends Error {}
+export class AttemptEndTooEarly extends Error {}
 
 function validCells(cells: string): boolean {
   try {
@@ -133,40 +132,42 @@ export async function gradeDaily(deps: DailyDeps, user: DailyUser, kind: GradeKi
   const blank = isBlankCells(decoded)
   const hash = cellsHash(cells)
 
-  // A blank canvas can never be judged: it must never reach the AI (which would hallucinate a
-  // guess) nor earn points (speed in particular). `auto` is handled by reserveGrade's
-  // `skipped_blank`; `ask` and `final` short-circuit here so a blank "Grade now" doesn't burn an
-  // ask and a blank "Submit & finish" earns nothing, leaving any prior real best intact.
-  // The attempt's own status wins first: a stale tab calling in blank after the attempt ended (or
-  // timed out) must be told so instead of receiving a misleading zero-score success.
-  if (blank && kind !== 'auto') {
-    const row = await deps.store.get(user.userId, day, now)
-    if (!row) return { ok: false, reason: 'not_started', state: await state() }
-    if (row.endedAt !== null) return { ok: false, reason: 'ended', state: await state() }
-    const elapsedMs = Math.max(0, now - row.startedAt)
-    if (elapsedMs > DAILY.attemptMs + DAILY.graceMs || (kind !== 'final' && elapsedMs > DAILY.attemptMs)) return { ok: false, reason: 'time_up', state: await state() }
-    return { ok: true, grade: { guess: '', reason: 'Nothing is drawn yet — paint something first.', ...blankGradeParts(), elapsedMs }, state: await state() }
-  }
-
+  // A blank canvas never reaches the AI. The halfway judgement skips it outright; a blank final
+  // earns zero and still ends the attempt with a verdict.
   const reservation = await deps.store.reserve(user.userId, day, kind, hash, now, blank, window)
   if (!reservation.ok) return { ok: false, reason: reservation.reason, state: await state() }
   if (reservation.ok === 'skipped') return { skipped: reservation.status, window: reservation.window, state: await state() }
+
   const reservedAt = reservation.row.inFlightSince!
   const ownsReservation = async () => (await deps.store.get(user.userId, day))?.inFlightSince === reservedAt
+  const elapsedMs = reservation.elapsedMs
+  const reserved = await deps.store.get(user.userId, day)
   let grade: GradeView | null = null
   try {
-    const png = await deps.render(cells)
-    const blind = await judgeCall(deps, ownsReservation, () => deps.judge.blind(png))
-    if (blind) {
-      const prompt = promptForDay(day)
-      const scored = await judgeCall(deps, ownsReservation, () => deps.judge.score(png, prompt.prompt, prompt.subject, blind.guess))
-      if (scored) grade = {
-        guess: blind.guess, reason: scored.reason,
-        ...gradeScore({ ...scored, elapsedMs: reservation.elapsedMs }), elapsedMs: reservation.elapsedMs,
+    if (blank) {
+      grade = { guess: '', reason: 'Nothing is drawn yet — paint something first.', ...blankGradeParts(), elapsedMs }
+    } else if (kind === 'final' && reserved?.lastGradedHash === hash && reserved.lastGrade) {
+      // The canvas has not changed since the halfway verdict: reuse it rather than pay for a
+      // second look. The final still ends the attempt, with the latest canvas and a verdict.
+      grade = { ...reserved.lastGrade.grade, elapsedMs }
+    } else {
+      const png = await deps.render(cells)
+      const blind = await judgeCall(deps, ownsReservation, () => deps.judge.blind(png))
+      if (blind) {
+        const prompt = promptForDay(day)
+        const scored = await judgeCall(deps, ownsReservation, () => deps.judge.score(png, prompt.prompt, prompt.subject, blind.guess, kind === 'final' ? 'final' : 'halfway'))
+        if (scored) grade = { guess: blind.guess, reason: scored.reason, ...gradeScore(scored), elapsedMs }
       }
     }
   } catch {
     grade = null
+  }
+  if (!grade && kind === 'final') {
+    // The last verdict must always land: reuse the most recent judgement, or an empty verdict.
+    const fallback = reserved?.lastGrade?.grade ?? reserved?.bestGrade?.grade
+    grade = fallback
+      ? { ...fallback, elapsedMs }
+      : { guess: '', reason: 'The canvas got the better of me, but the verdict stands.', ...blankGradeParts(), elapsedMs }
   }
   const completed = await deps.store.complete(user.userId, day, grade, hash, cells, deps.now(), reservedAt)
   if (!completed.applied) return { ok: false, reason: 'stale', state: await state() }
@@ -175,9 +176,45 @@ export async function gradeDaily(deps: DailyDeps, user: DailyUser, kind: GradeKi
   return { ok: true, grade, state: await state() }
 }
 
+/**
+ * Haiku's silent peek: one playful, non-scoring line. Capped per attempt, budget-gated, and it
+ * never touches the grade, the last graded hash, or the score.
+ */
+export async function peekDaily(deps: DailyDeps, user: DailyUser, cells: string, day = utcDay(deps.now())): Promise<
+  { ok: true; line: string } | { ok: false; reason: 'invalid_day' | 'bad_cells' | 'not_started' | 'ended' | 'time_up' | 'no_peeks_left' | 'judge_resting' }
+> {
+  const now = deps.now()
+  if (!await allowedDay(deps, user.userId, day, now)) return { ok: false, reason: 'invalid_day' }
+  if (!validCells(cells)) return { ok: false, reason: 'bad_cells' }
+  const reservation = await deps.store.reservePeek(user.userId, day, now)
+  if (!reservation.ok) return { ok: false, reason: reservation.reason }
+  try {
+    if (!await deps.reserveBudget()) return { ok: false, reason: 'judge_resting' }
+    const png = await deps.render(cells)
+    const peeked = await deps.judge.peek?.(png, promptForDay(day).prompt)
+    return peeked ? { ok: true, line: peeked.line } : { ok: false, reason: 'judge_resting' }
+  } catch {
+    return { ok: false, reason: 'judge_resting' }
+  }
+}
+
+/** Saves the latest canvas while the attempt is running, so a tab closed at 4:00 still has its art. */
+export async function saveDailyCanvas(deps: DailyDeps, user: DailyUser, cells: string, day = utcDay(deps.now())): Promise<
+  { ok: true } | { ok: false; reason: 'invalid_day' | 'bad_cells' | 'not_started' | 'ended' | 'time_up' }
+> {
+  const now = deps.now()
+  if (!await allowedDay(deps, user.userId, day, now)) return { ok: false, reason: 'invalid_day' }
+  if (!validCells(cells)) return { ok: false, reason: 'bad_cells' }
+  const saved = await deps.store.save(user.userId, day, cells, now)
+  return saved.ok ? { ok: true } : { ok: false, reason: saved.reason }
+}
+
 export async function endDaily(deps: DailyDeps, user: DailyUser, cells: string | null, day = utcDay(deps.now())): Promise<DailyStateView> {
   const now = deps.now()
   if (!await allowedDay(deps, user.userId, day, now)) throw new InvalidAttemptDay('invalid_attempt_day')
+  const current = await deps.store.get(user.userId, day)
+  // The attempt is a full five minutes: an end before then (bar the clock-skew tolerance) is refused.
+  if (current && current.endedAt === null && now - current.startedAt < DAILY.attemptMs - DAILY.endToleranceMs) throw new AttemptEndTooEarly('too_early')
   const row = await deps.store.end(user.userId, day, cells !== null && validCells(cells) ? cells : null, now)
   if (!row) return readState(deps, user.userId, day)
   await deps.store.publish(user.userId, day, now)

@@ -16,16 +16,16 @@ function numberField(row: Record<string, unknown>, field: string): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0
 }
 
-/** An unknown best time sorts after every real one, so a missing time only breaks ties downward. */
-function bestElapsedMs(row: Record<string, unknown>): number {
-  const value = row.bestElapsedMs
+/** An unknown start time sorts after every real one, so a missing time only breaks ties downward. */
+function startedAt(row: Record<string, unknown>): number {
+  const value = row.startedAt
   return typeof value === 'number' && Number.isFinite(value) ? value : Number.POSITIVE_INFINITY
 }
 
 /**
  * Closes one UTC day: every drawing goes public, and every score is frozen with
- * its medal. Best score wins; an exact score tie goes to the lower elapsed time
- * of the best grade. Safe to run twice — the same rows end in the same state.
+ * its medal. Best score wins; an exact score tie goes to whoever started their
+ * attempt earlier that day. Safe to run twice — the same rows end in the same state.
  */
 export async function closeDay(tools: ServerTools, day: string): Promise<DayCloseResult> {
   const drawings = await roomRecords(tools, 'dailyDrawings', { day })
@@ -39,7 +39,7 @@ export async function closeDay(tools: ServerTools, day: string): Promise<DayClos
   if (!scores.success) throw new Error(scores.error)
   const ranked = [...scores.data].sort((left, right) =>
     numberField(right.data, 'score') - numberField(left.data, 'score')
-    || bestElapsedMs(left.data) - bestElapsedMs(right.data))
+    || startedAt(left.data) - startedAt(right.data))
   for (const [rank, score] of ranked.entries()) {
     const updated = await tools.update('dailyScores', score.recordId, {
       ended: 1,
