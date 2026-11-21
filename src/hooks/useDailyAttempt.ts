@@ -274,6 +274,7 @@ export function useDailyAttempt(): {
       const epoch = mutationEpochRef.current
       try {
         const headers = await authHeaders()
+        if (headers.Authorization) tokenRef.current = headers.Authorization.replace('Bearer ', '')
         const res = await fetch('/api/daily/me', { method: 'GET', headers })
         if (!res.ok) throw new Error('Daily state unavailable')
         if (cancelled) return
@@ -546,8 +547,9 @@ export function useDailyAttempt(): {
 
     if (shouldFinalGrade(now, cur.startedAt, cur.clockOffsetMs)) {
       if (!finishPromiseRef.current) {
+        // The final lands even on an untouched canvas: the attempt always runs its five minutes.
         const localCells = readLocalCells(cur.day, userIdRef.current)
-        if (localCells) void finishAttempt(localCells)
+        void finishAttempt(localCells ?? undefined)
       }
       return
     }

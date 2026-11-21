@@ -591,25 +591,33 @@ export default function DailyHomePage() {
         : `Looks like a ${guessWord}!`
       : 'Scored!'
 
+  const gradedBubble = state.latest ? (
+    <span className="daily-haiku__speech">
+      {voice.line ? (
+        <strong data-testid="daily-haiku-voice" className="daily-haiku__headline">{voice.line}</strong>
+      ) : (
+        <strong className="daily-haiku__headline">
+          {guessLine}&nbsp;&middot;&nbsp;{state.latest.total}
+        </strong>
+      )}
+      {state.latest.reason && (
+        <span className="daily-haiku__reason">{state.latest.reason}</span>
+      )}
+    </span>
+  ) : null
+
   const haikuBubble = state.grading ? (
     'Hmm…'
-  ) : voice.line ? (
-    <span className="daily-haiku__speech">
-      <span data-testid="daily-haiku-voice" className="daily-haiku__reason">{voice.line}</span>
-    </span>
   ) : state.lastError ? (
     <span className="daily-haiku__speech">
       <strong className="daily-haiku__headline">Oops!</strong>
       <span className="daily-haiku__reason">{state.lastError}</span>
     </span>
   ) : state.latest ? (
+    gradedBubble
+  ) : voice.line ? (
     <span className="daily-haiku__speech">
-      <strong className="daily-haiku__headline">
-        {guessLine}&nbsp;&middot;&nbsp;{state.latest.total}
-      </strong>
-      {state.latest.reason && (
-        <span className="daily-haiku__reason">{state.latest.reason}</span>
-      )}
+      <span data-testid="daily-haiku-voice" className="daily-haiku__reason">{voice.line}</span>
     </span>
   ) : state.notice && state.notice.toLowerCase().includes('nothing drawn') ? (
     <span className="daily-haiku__speech">
@@ -751,9 +759,22 @@ export default function DailyHomePage() {
               }
               score={
                 ended ? (
-                  <div className="daily-right-stage">
-                    <GradePanel latest={endedGrade} best={endedScore} grading={state.grading} lastError={state.lastError} ended stage={voice.verdict} />
-                  </div>
+                  voice.verdict === 'suspense' ? (
+                    <div className="daily-right-stage">
+                      <div className="daily-haiku-perch">
+                        <div className="daily-haiku-perch__stool" aria-hidden="true">
+                          <StudioSprite sprite={studioSprites.criticStool} scale={3} />
+                        </div>
+                        <div className="daily-haiku-perch__cat">
+                          <Haiku state="thinking" bubble={voice.line ?? undefined} scale={3} />
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="daily-right-stage">
+                      <GradePanel latest={endedGrade} best={endedScore} grading={state.grading} lastError={state.lastError} ended stage={voice.verdict} />
+                    </div>
+                  )
                 ) : (
                   <div className="daily-right-stage">
                     <div className="daily-haiku-perch">
@@ -808,7 +829,9 @@ export default function DailyHomePage() {
               mobileFooter={ended ? (
                 <div ref={mobileFooterRef} className="daily-mobile-footer">
                   <div className="daily-mobile-strip">
-                    <span data-testid="daily-best-score" className="daily-mobile-strip__best">Best {endedScore}/1000</span>
+                    <span data-testid="daily-best-score" className="daily-mobile-strip__best">
+                      {voice.verdict === 'suspense' ? 'Verdict…' : `Best ${endedScore}/1000`}
+                    </span>
                     <Button type="button" variant="secondary" data-testid="daily-ended-porch-button" aria-label="Back to porch" onClick={exitCloseup} className="pp-btn daily-mobile-strip__btn">
                       <span>Porch</span>
                     </Button>

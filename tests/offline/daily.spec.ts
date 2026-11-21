@@ -9,7 +9,7 @@ const clientDir = resolve(import.meta.dirname, '../../dist/client')
 async function playFixture(page: Page, initiallyPlaying = false) {
   await offlineClient(page, true)
   const now = Date.now()
-  const playing = { day: '2026-11-17', status: 'playing', prompt: 'A tree', startedAt: now, endsAt: now + 300_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: now + 60_000, serverNow: now }
+  const playing = { day: '2026-11-17', status: 'playing', prompt: 'A tree', startedAt: now, endsAt: now + 300_000, autoUsed: 0, finalUsed: false, best: 0, windows: [], nextAutoAt: now + 150_000, serverNow: now }
   await page.route('**/api/daily/**', route => route.fulfill({ json: new URL(route.request().url()).pathname.endsWith('/me') && !initiallyPlaying ? { ...playing, status: 'not_started' } : playing }))
 }
 
@@ -138,7 +138,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720
   })
 }
 
-test('mobile painter tray and grading actions fit without scrolling', async ({ page }) => {
+test('mobile painter tray and grading strip fit without scrolling', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 })
   await playFixture(page, true)
   await page.goto(`${origin}/home`)
@@ -152,14 +152,17 @@ test('mobile painter tray and grading actions fit without scrolling', async ({ p
   expect(swatchBox.y + swatchBox.height).toBeLessThanOrEqual(812)
   await lastSwatch.click()
   await expect(lastSwatch).toHaveAttribute('aria-pressed', 'true')
-  const askBounds = (await page.getByTestId('daily-ask-button').boundingBox())!
-  const doneBounds = (await page.getByTestId('daily-done-button').boundingBox())!
-  expect(askBounds.y).toBe(doneBounds.y)
-  for (const bounds of [askBounds, doneBounds]) {
+  const haikuBox = (await page.getByTestId('daily-mobile-haiku').boundingBox())!
+  const scoreBox = (await page.getByTestId('daily-mobile-score-trigger').boundingBox())!
+  expect(haikuBox.x + haikuBox.width).toBeLessThanOrEqual(scoreBox.x)
+  for (const bounds of [haikuBox, scoreBox]) {
     expect(bounds.x).toBeGreaterThanOrEqual(0)
     expect(bounds.x + bounds.width).toBeLessThanOrEqual(375)
     expect(bounds.y + bounds.height).toBeLessThanOrEqual(812)
   }
+  // There is no early finish any more: the strip holds only Haiku and the score drawer.
+  await expect(page.getByTestId('daily-done-button')).toHaveCount(0)
+  await expect(page.getByTestId('daily-ask-button')).toHaveCount(0)
   await page.getByTestId('daily-mobile-score-trigger').click()
   await expect(page.getByTestId('daily-auto-timeline')).toBeVisible()
   await expect(page.getByTestId('daily-score-breakdown')).toBeVisible()
@@ -173,7 +176,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720
     const tray = page.getByTestId('painter-tray')
     await expect(tray.getByTestId('toolbar')).toBeVisible()
     await expect(tray.getByTestId('palette')).toBeVisible()
-    for (const target of [page.getByTestId('pixel-canvas'), tray, page.getByTestId('daily-ask-button')]) {
+    for (const target of [page.getByTestId('pixel-canvas'), tray, page.getByTestId('grade-panel')]) {
       const bounds = (await target.boundingBox())!
       expect(bounds.y + bounds.height).toBeLessThanOrEqual(viewport.height)
     }
@@ -182,61 +185,64 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720
 }
 
 for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720 }]) {
-  test(`desktop Haiku, chalkboard plaques above boosters, and speech bubble fit ${viewport.width}`, async ({ page }) => {
+  test(`desktop Haiku, chalkboard and the halfway verdict fit ${viewport.width}`, async ({ page }) => {
     await page.setViewportSize(viewport)
+    await page.clock.install({ time: new Date('2026-11-17T12:00:00Z') })
     await offlineClient(page, true)
-    const now = Date.now()
+    const now = Date.parse('2026-11-17T12:00:00Z')
     let releaseGrade!: () => void
     const gradeGate = new Promise<void>(resolve => { releaseGrade = resolve })
-    const playing = { day: new Date(now).toISOString().slice(0, 10), status: 'playing', prompt: 'A lighthouse', startedAt: now - 30_000, endsAt: now + 270_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: now + 30_000, serverNow: now }
+    const playing = { day: '2026-11-17', status: 'playing', prompt: 'A lighthouse', startedAt: now, endsAt: now + 300_000, autoUsed: 0, finalUsed: false, best: 0, windows: [], nextAutoAt: now + 150_000, serverNow: now }
     await page.route('**/api/daily/**', async route => {
       const path = new URL(route.request().url()).pathname
       if (path.endsWith('/me')) return route.fulfill({ json: playing })
+      if (path.endsWith('/start')) return route.fulfill({ json: playing })
       if (path.endsWith('/grade')) {
         await gradeGate
-        return route.fulfill({ json: { ok: true, grade: { guess: 'lighthouse', reason: 'A bright beacon above the waves.', fit: 450, recognition: 310, speed: 80, total: 840, elapsedMs: 30_000 }, state: { ...playing, asksUsed: 1, asksLeft: 2, best: 840 } } })
+        return route.fulfill({ json: { ok: true, grade: { guess: 'lighthouse', reason: 'A bright beacon above the waves.', match: 90, recognition: 80, quality: 70, matchPoints: 430, qualityBonus: 301, total: 731, elapsedMs: 150_000 }, state: { ...playing, autoUsed: 1, best: 731, nextAutoAt: null, windows: [{ index: 0, dueAt: now + 150_000, status: 'graded', score: 731, late: false }] } } })
       }
       return route.fulfill({ json: {} })
     })
     await page.goto(`${origin}/home`)
+    await page.getByTestId('pixel-canvas').click({ position: { x: 5, y: 5 } })
+    await page.clock.fastForward(151_000)
     const haiku = page.getByTestId('haiku')
     const haikuBox = (await haiku.locator('canvas').boundingBox())!
     expect(haikuBox.height).toBeGreaterThanOrEqual(viewport.width === 1440 ? 72 : 64)
     expect(haikuBox.height).toBeLessThanOrEqual(96)
     await expect(page.getByTestId('daily-chalkboard-hint')).toBeVisible()
     await expect(page.locator('.daily-plaques__note')).toHaveCount(0)
-
-    const askBox = (await page.getByTestId('daily-ask-button').boundingBox())!
-    const doneBox = (await page.getByTestId('daily-done-button').boundingBox())!
-    expect(askBox.y + askBox.height).toBeLessThan(doneBox.y)
-    expect(doneBox.y + doneBox.height).toBeLessThanOrEqual(viewport.height)
-    // The chalkboard hangs its plaques; no thruster sprites sit under it (the easel's own thrusters are on the canvas easel).
-    await expect(page.getByTestId('daily-chalkboard-boosters')).toHaveCount(0)
-
-    await page.getByTestId('daily-ask-button').click()
     await expect(haiku).toHaveAttribute('data-haiku-state', 'thinking')
     await expect(page.getByTestId('haiku-bubble')).toHaveText('Hmm…')
 
     releaseGrade()
+    await expect(page.getByTestId('daily-latest-reason')).toContainText('A bright beacon above the waves.')
+    await expect(page.getByTestId('grade-total')).toHaveText('731 / 1000')
+    await expect(page.getByTestId('grade-match')).toHaveText('430 / 500')
+    await expect(page.getByTestId('grade-quality')).toHaveText('301 / 500')
     await expect(haiku).toHaveAttribute('data-haiku-state', 'correct')
-    await expect(page.getByTestId('haiku-bubble')).toContainText('Looks like a lighthouse! · 840')
-    await expect(page.getByTestId('haiku-bubble')).toContainText('A bright beacon above the waves.')
+    // The chalkboard hangs no plaques now (no manual grades, no early finish), and no thruster sprites sit under it.
+    await expect(page.getByTestId('daily-ask-button')).toHaveCount(0)
+    await expect(page.getByTestId('daily-done-button')).toHaveCount(0)
+    await expect(page.getByTestId('daily-chalkboard-boosters')).toHaveCount(0)
+    const panel = (await page.getByTestId('grade-panel').boundingBox())!
+    expect(panel.y + panel.height).toBeLessThanOrEqual(viewport.height)
   })
 }
 
-test('mobile strip places Haiku on the left and opens bubble popover without scrolling', async ({ page }) => {
+test('mobile strip places Haiku on the left and shows a silent peek without scrolling', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 })
+  await page.clock.install({ time: new Date('2026-11-17T12:00:00Z') })
   await offlineClient(page, true)
-  const now = Date.now()
-  let releaseGrade!: () => void
-  const gradeGate = new Promise<void>(resolve => { releaseGrade = resolve })
-  const playing = { day: new Date(now).toISOString().slice(0, 10), status: 'playing', prompt: 'A lighthouse', startedAt: now - 30_000, endsAt: now + 270_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: now + 30_000, serverNow: now }
+  const now = Date.parse('2026-11-17T12:00:00Z')
+  const playing = { day: '2026-11-17', status: 'playing', prompt: 'A lighthouse', startedAt: now, endsAt: now + 300_000, autoUsed: 0, finalUsed: false, best: 0, windows: [], nextAutoAt: now + 150_000, serverNow: now }
+  const peeks: unknown[] = []
   await page.route('**/api/daily/**', async route => {
     const path = new URL(route.request().url()).pathname
     if (path.endsWith('/me')) return route.fulfill({ json: playing })
-    if (path.endsWith('/grade')) {
-      await gradeGate
-      return route.fulfill({ json: { ok: true, grade: { guess: 'lighthouse', reason: 'A bright beacon above the waves.', fit: 450, recognition: 310, speed: 80, total: 840, elapsedMs: 30_000 }, state: { ...playing, asksUsed: 1, asksLeft: 2, best: 840 } } })
+    if (path.endsWith('/peek')) {
+      peeks.push(route.request().postDataJSON())
+      return route.fulfill({ json: { ok: true, line: 'Ooh, a lighthouse with attitude.' } })
     }
     return route.fulfill({ json: {} })
   })
@@ -250,16 +256,14 @@ test('mobile strip places Haiku on the left and opens bubble popover without scr
   expect(haikuBox.x + haikuBox.width).toBeLessThanOrEqual(scoreBox.x)
   expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBeLessThanOrEqual(812)
 
-  await page.getByTestId('daily-ask-button').click()
-  await expect(haikuButton).toHaveAttribute('data-haiku-state', 'thinking')
+  // Haiku's first silent peek lands at 1:15 and is capped/non-scoring.
+  await page.getByTestId('pixel-canvas').click({ position: { x: 5, y: 5 } })
+  await page.clock.fastForward(76_000)
+  await expect.poll(() => peeks.length).toBe(1)
+  await expect(haikuButton).toHaveAttribute('data-haiku-state', 'guess')
   await haikuButton.click()
-  await expect(page.getByTestId('daily-mobile-haiku-popover')).toHaveText(/Hmm…/)
+  await expect(page.getByTestId('daily-mobile-haiku-popover')).toContainText('Ooh, a lighthouse with attitude.')
   expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBeLessThanOrEqual(812)
-
-  releaseGrade()
-  await expect(haikuButton).toHaveAttribute('data-haiku-state', 'correct')
-  await expect(page.getByTestId('daily-mobile-haiku-popover')).toContainText('Looks like a lighthouse! · 840')
-  await expect(page.getByTestId('daily-mobile-haiku-popover')).toContainText('A bright beacon above the waves.')
   await page.getByRole('button', { name: 'Close Haiku message' }).click()
   await expect(page.getByTestId('daily-mobile-haiku-popover')).toHaveCount(0)
 })
@@ -387,11 +391,11 @@ test('reduced motion: clicking the scene around a graded result returns to the p
   await expect(page.getByRole('button', { name: 'View result' })).toBeVisible({ timeout: 400 })
 })
 
-for (const askFirst of [false, true]) test(askFirst ? 'auto-grade fires at 1:00 after an ask at 0:30' : 'auto-grade fires at 1:00 without asks', async ({ page }) => {
+test('the halfway judgement fires once at 2:30 with the latest local canvas', async ({ page }) => {
   await page.clock.install({ time: new Date('2026-11-17T12:00:00Z') })
   await offlineClient(page, true)
   const startedAt = Date.parse('2026-11-17T12:00:00Z')
-  const playing = { day: '2026-11-17', status: 'playing', prompt: 'A tree', startedAt, endsAt: startedAt + 300_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], serverNow: startedAt, nextAutoAt: startedAt + 60_000 }
+  const playing = { day: '2026-11-17', status: 'playing', prompt: 'A tree', startedAt, endsAt: startedAt + 300_000, autoUsed: 0, finalUsed: false, best: 0, windows: [], serverNow: startedAt, nextAutoAt: startedAt + 150_000 }
   const grades: { body: unknown; status: number }[] = []
   page.on('response', response => {
     const request = response.request()
@@ -402,28 +406,74 @@ for (const askFirst of [false, true]) test(askFirst ? 'auto-grade fires at 1:00 
     if (path.endsWith('/me')) return route.fulfill({ json: { ...playing, status: 'not_started' } })
     if (path.endsWith('/start')) return route.fulfill({ json: playing })
     if (path.endsWith('/grade')) {
-      const body = route.request().postDataJSON()
-      if (body.kind === 'auto' && askFirst) return route.fulfill({ status: 200, json: { skipped: 'skipped_unchanged', window: 0, state: { ...playing, asksUsed: 1, asksLeft: 2, nextAutoAt: startedAt + 120_000, serverNow: startedAt + 60_000 } } })
-      return route.fulfill({ status: 200, json: { ok: true, grade: { guess: 'tree', reason: 'tree', fit: 100, recognition: 100, speed: 10, total: 210, elapsedMs: 60_000 }, state: { ...playing, ...(body.kind === 'ask' ? { asksUsed: 1, asksLeft: 2, serverNow: startedAt + 30_000 } : { autoUsed: 1, nextAutoAt: startedAt + 120_000 }) } } })
+      return route.fulfill({ status: 200, json: { ok: true, grade: { guess: 'tree', reason: 'A sturdy tree.', match: 70, recognition: 80, quality: 50, matchPoints: 290, qualityBonus: 145, total: 435, elapsedMs: 150_000 }, state: { ...playing, autoUsed: 1, nextAutoAt: null, best: 435, windows: [{ index: 0, dueAt: startedAt + 150_000, status: 'graded', score: 435, late: false }] } } })
     }
     return route.fulfill({ json: {} })
   })
   await page.goto(`${origin}/home`)
   await page.getByTestId('daily-start-button').click()
   await page.getByTestId('pixel-canvas').click({ position: { x: 5, y: 5 } })
-  if (askFirst) {
-    await page.clock.fastForward(30_000)
-    await page.getByTestId('daily-ask-button').click()
-    await expect.poll(() => grades.length).toBe(1)
-  }
-  await page.clock.fastForward(askFirst ? 35_000 : 65_000)
-  await expect.poll(() => grades.filter(grade => (grade.body as { kind: string }).kind === 'auto')).toMatchObject([{ body: { kind: 'auto', window: 0 }, status: 200 }])
-  if (askFirst) {
-    const notice = page.getByText('Auto-grade skipped: no changes since your last grade')
-    await expect(notice).toBeVisible()
-    await page.clock.fastForward(6_000)
-    await expect(notice).toHaveCount(0)
-  }
+  await page.clock.fastForward(154_000)
+  await expect.poll(() => grades.length).toBe(1)
+  expect(grades[0]).toMatchObject({ body: { kind: 'auto', window: 0 }, status: 200 })
+  await page.clock.fastForward(10_000)
+  expect(grades.filter(grade => (grade.body as { kind: string }).kind === 'auto')).toHaveLength(1)
+  await expect(page.getByTestId('daily-auto-timeline')).toContainText('5:00 in')
+})
+
+test('the final verdict fires automatically at 5:00 and ends the attempt', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.clock.install({ time: new Date('2026-11-17T12:00:00Z') })
+  await offlineClient(page, true)
+  const startedAt = Date.parse('2026-11-17T12:00:00Z')
+  const playing = { day: '2026-11-17', status: 'playing', prompt: 'A tree', startedAt, endsAt: startedAt + 300_000, autoUsed: 1, finalUsed: false, best: 435, windows: [{ index: 0, dueAt: startedAt + 150_000, status: 'graded', score: 435, late: false }], serverNow: startedAt, nextAutoAt: null }
+  const grades: string[] = []
+  await page.route('**/api/daily/**', async route => {
+    const path = new URL(route.request().url()).pathname
+    if (path.endsWith('/me')) return route.fulfill({ json: playing })
+    if (path.endsWith('/grade')) {
+      const body = route.request().postDataJSON() as { kind: string }
+      grades.push(body.kind)
+      return route.fulfill({ json: { ok: true, grade: { guess: 'tree', reason: 'The tree stands, and so does the verdict.', match: 75, recognition: 80, quality: 60, matchPoints: 310, qualityBonus: 186, total: 496, elapsedMs: 300_000 }, state: { ...playing, status: 'ended', finalUsed: true, best: 496, nextAutoAt: null } } })
+    }
+    return route.fulfill({ json: {} })
+  })
+  await page.goto(`${origin}/home`)
+  await expect(page.getByTestId('daily-playing')).toBeVisible()
+  await page.clock.fastForward(300_500)
+  await expect.poll(() => grades).toEqual(['final'])
+  await expect(page.getByTestId('daily-ended')).toBeVisible()
+  // Reduced motion skips the suspense beat: the score is already on the board.
+  await expect(page.getByTestId('grade-total')).toHaveText('496 / 1000')
+  await expect(page.getByTestId('daily-auto-timeline')).toContainText('5:00 · final verdict')
+})
+
+test('the final verdict plays a suspense beat, then the guess, then the score', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.clock.install({ time: new Date('2026-11-17T12:00:00Z') })
+  await offlineClient(page, true)
+  const startedAt = Date.parse('2026-11-17T12:00:00Z')
+  const playing = { day: '2026-11-17', status: 'playing', prompt: 'A tree', startedAt, endsAt: startedAt + 300_000, autoUsed: 1, finalUsed: false, best: 435, windows: [{ index: 0, dueAt: startedAt + 150_000, status: 'graded', score: 435, late: false }], serverNow: startedAt, nextAutoAt: null }
+  await page.route('**/api/daily/**', async route => {
+    const path = new URL(route.request().url()).pathname
+    if (path.endsWith('/me')) return route.fulfill({ json: playing })
+    if (path.endsWith('/grade')) {
+      return route.fulfill({ json: { ok: true, grade: { guess: 'tree', reason: 'The tree stands, and so does the verdict.', match: 75, recognition: 80, quality: 60, matchPoints: 310, qualityBonus: 186, total: 496, elapsedMs: 300_000 }, state: { ...playing, status: 'ended', finalUsed: true, best: 496, nextAutoAt: null } } })
+    }
+    return route.fulfill({ json: {} })
+  })
+  await page.goto(`${origin}/home`)
+  await expect(page.getByTestId('daily-playing')).toBeVisible()
+  await page.clock.fastForward(300_500)
+  await expect(page.getByTestId('daily-ended')).toBeVisible()
+  // The paint is dry: a suspense line first, with no score in sight.
+  await expect(page.getByTestId('haiku-bubble')).toContainText('The paint is dry. I have reached… a verdict.')
+  await expect(page.getByTestId('grade-total')).toHaveCount(0)
+  await page.clock.fastForward(2_600)
+  await expect(page.getByTestId('daily-latest-guess')).toContainText('Haiku thinks: tree')
+  await expect(page.getByTestId('grade-total')).toHaveCount(0)
+  await page.clock.fastForward(1_500)
+  await expect(page.getByTestId('grade-total')).toHaveText('496 / 1000')
 })
 
 test('ended user never sees start', async ({ page }) => {
@@ -433,7 +483,7 @@ test('ended user never sees start', async ({ page }) => {
   await page.route('**/api/daily/me', async route => {
     await gate
     const now = Date.now()
-    await route.fulfill({ json: { day: new Date(now).toISOString().slice(0, 10), status: 'ended', startedAt: now - 300_000, endsAt: now, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: null, serverNow: now } })
+    await route.fulfill({ json: { day: new Date(now).toISOString().slice(0, 10), status: 'ended', startedAt: now - 300_000, endsAt: now, autoUsed: 0, finalUsed: true, best: 0, windows: [], nextAutoAt: null, serverNow: now } })
   })
   await page.goto(`${origin}/home`)
   await expect(page.getByTestId('daily-loading')).toBeVisible()
@@ -444,7 +494,7 @@ test('ended user never sees start', async ({ page }) => {
   release()
   await expect(page.getByTestId('daily-ended')).toBeVisible()
   await page.getByRole('button', { name: 'View result' }).click()
-  await expect(page.getByText('Manual grades: 0 of 3 used')).toBeVisible()
+  await expect(page.getByTestId('daily-auto-timeline')).toContainText('5:00 · final verdict')
 })
 
 async function endedFixture(page: Page) {
@@ -456,12 +506,10 @@ async function endedFixture(page: Page) {
     prompt: 'A lighthouse',
     startedAt: now - 300_000,
     endsAt: now,
-    autoUsed: 0,
-    asksUsed: 1,
-    asksLeft: 2,
+    autoUsed: 1,
     finalUsed: true,
     best: 740,
-    windows: [],
+    windows: [{ index: 0, dueAt: now - 150_000, status: 'graded', score: 740, late: false }],
     nextAutoAt: null,
     serverNow: now,
   }
@@ -491,24 +539,24 @@ test('a graded result zooms back out to the porch via its button and via the sce
   await expect(page.getByRole('button', { name: 'View result' })).toBeVisible()
 })
 
-test('blank canvas zero-score grade renders clean Haiku feedback', async ({ page }) => {
+test('a blank final renders a clean zero verdict', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.clock.install({ time: new Date('2026-11-17T12:00:00Z') })
   await offlineClient(page, true)
-  const now = Date.now()
+  const startedAt = Date.parse('2026-11-17T12:00:00Z')
   const playing = {
-    day: new Date(now).toISOString().slice(0, 10),
+    day: '2026-11-17',
     status: 'playing',
     prompt: 'A lighthouse',
-    startedAt: now - 30_000,
-    endsAt: now + 270_000,
-    autoUsed: 0,
-    asksUsed: 0,
-    asksLeft: 3,
+    startedAt,
+    endsAt: startedAt + 300_000,
+    autoUsed: 1,
     finalUsed: false,
     best: 0,
-    windows: [],
-    nextAutoAt: now + 30_000,
-    serverNow: now,
+    windows: [{ index: 0, dueAt: startedAt + 150_000, status: 'skipped_blank', score: null, late: false }],
+    nextAutoAt: null,
+    serverNow: startedAt,
   }
   await page.route('**/api/daily/**', async route => {
     const path = new URL(route.request().url()).pathname
@@ -517,24 +565,27 @@ test('blank canvas zero-score grade renders clean Haiku feedback', async ({ page
       return route.fulfill({
         json: {
           ok: true,
-          grade: { guess: 'nothing', reason: 'The canvas is still blank.', fit: 0, recognition: 0, speed: 0, total: 0, elapsedMs: 30_000 },
-          state: { ...playing, asksUsed: 1, asksLeft: 2, best: 0 },
+          grade: { guess: '', reason: 'Nothing is drawn yet — paint something first.', match: 0, recognition: 0, quality: 0, matchPoints: 0, qualityBonus: 0, total: 0, elapsedMs: 300_000 },
+          state: { ...playing, status: 'ended', finalUsed: true, best: 0 },
         },
       })
     }
     return route.fulfill({ json: {} })
   })
   await page.goto(`${origin}/home`)
-  await page.getByTestId('daily-ask-button').click()
-  await expect(page.getByTestId('haiku-bubble')).toContainText('Nothing drawn yet! · 0')
-  await expect(page.getByTestId('haiku-bubble')).not.toContainText('Looks like a nothing')
+  await expect(page.getByTestId('daily-playing')).toBeVisible()
+  await page.clock.fastForward(300_500)
+  await expect(page.getByTestId('daily-ended')).toBeVisible()
+  await expect(page.getByTestId('grade-total')).toHaveText('0 / 1000')
+  await expect(page.getByTestId('daily-latest-guess')).toHaveText('Haiku thinks: —')
+  await expect(page.getByTestId('grade-panel')).not.toContainText('Looks like a nothing')
 })
 
 test('reduced motion starts directly in the play view', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await offlineClient(page, true)
   const now = Date.now()
-  const playing = { day: new Date(now).toISOString().slice(0, 10), status: 'playing', prompt: 'A tree', startedAt: now, endsAt: now + 300_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: now + 60_000, serverNow: now }
+  const playing = { day: new Date(now).toISOString().slice(0, 10), status: 'playing', prompt: 'A tree', startedAt: now, endsAt: now + 300_000, autoUsed: 0, finalUsed: false, best: 0, windows: [], nextAutoAt: now + 150_000, serverNow: now }
   await page.route('**/api/daily/**', route => route.fulfill({ json: new URL(route.request().url()).pathname.endsWith('/me') ? { ...playing, status: 'not_started' } : playing }))
   await page.goto(`${origin}/home`)
   await page.getByTestId('daily-start-button').click()
@@ -552,7 +603,7 @@ test('me failure stays loading then recovers', async ({ page }) => {
     if (calls === 1) return route.fulfill({ status: 500, json: {} })
     await gate
     const now = Date.now()
-    return route.fulfill({ json: { day: new Date(now).toISOString().slice(0, 10), status: 'playing', prompt: 'A tree', startedAt: now, endsAt: now + 300_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: now + 60_000, serverNow: now } })
+    return route.fulfill({ json: { day: new Date(now).toISOString().slice(0, 10), status: 'playing', prompt: 'A tree', startedAt: now, endsAt: now + 300_000, autoUsed: 0, finalUsed: false, best: 0, windows: [], nextAutoAt: now + 150_000, serverNow: now } })
   })
   await page.goto(`${origin}/home`)
   await expect.poll(() => calls).toBeGreaterThan(0)
@@ -562,23 +613,29 @@ test('me failure stays loading then recovers', async ({ page }) => {
   await expect(page.getByTestId('daily-playing')).toBeVisible({ timeout: 12_000 })
 })
 
-test('no local canvas, no auto', async ({ page }) => {
+test('no local canvas never fires the halfway auto, but the final still lands', async ({ page }) => {
   await page.clock.install({ time: new Date('2026-11-17T12:02:10Z') })
   await offlineClient(page, true)
   let grades = 0
+  const kinds: string[] = []
   let ends = 0
   const now = Date.parse('2026-11-17T12:02:10Z')
   await page.route('**/api/daily/**', async route => {
-    if (new URL(route.request().url()).pathname.endsWith('/grade')) grades++
-    if (new URL(route.request().url()).pathname.endsWith('/end')) ends++
-    return route.fulfill({ json: { day: '2026-11-17', status: 'playing', prompt: 'A tree', startedAt: now - 130_000, endsAt: now + 170_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: now - 10_000, serverNow: now } })
+    const path = new URL(route.request().url()).pathname
+    if (path.endsWith('/grade')) {
+      grades++
+      kinds.push(route.request().postDataJSON().kind)
+      return route.fulfill({ json: { ok: true, grade: { guess: '', reason: 'Nothing is drawn yet.', match: 0, recognition: 0, quality: 0, matchPoints: 0, qualityBonus: 0, total: 0, elapsedMs: 300_000 }, state: { day: '2026-11-17', status: 'ended', prompt: 'A tree', startedAt: now - 170_000, endsAt: now + 130_000, autoUsed: 0, finalUsed: true, best: 0, windows: [], nextAutoAt: null, serverNow: now + 140_000 } } })
+    }
+    if (path.endsWith('/end')) ends++
+    return route.fulfill({ json: { day: '2026-11-17', status: 'playing', prompt: 'A tree', startedAt: now - 170_000, endsAt: now + 130_000, autoUsed: 0, finalUsed: false, best: 0, windows: [], nextAutoAt: now - 10_000, serverNow: now } })
   })
   await page.goto(`${origin}/home`)
   await expect(page.getByTestId('daily-playing')).toBeVisible()
   await page.clock.fastForward(10_000)
   expect(grades).toBe(0)
-  await page.clock.fastForward(170_000)
-  expect(grades).toBe(0)
+  await page.clock.fastForward(130_000)
+  await expect.poll(() => kinds).toEqual(['final'])
   expect(ends).toBe(0)
 })
 
@@ -586,7 +643,7 @@ test('starting without painting schedules a blank auto', async ({ page }) => {
   await page.clock.install({ time: new Date('2026-11-17T12:00:00Z') })
   await offlineClient(page, true)
   const now = Date.parse('2026-11-17T12:00:00Z')
-  const playing = { day: '2026-11-17', status: 'playing', prompt: 'A tree', startedAt: now, endsAt: now + 300_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: now + 60_000, serverNow: now }
+  const playing = { day: '2026-11-17', status: 'playing', prompt: 'A tree', startedAt: now, endsAt: now + 300_000, autoUsed: 0, finalUsed: false, best: 0, windows: [], nextAutoAt: now + 150_000, serverNow: now }
   let auto: { kind: string; window: number; cells: string } | undefined
   await page.route('**/api/daily/**', async route => {
     const path = new URL(route.request().url()).pathname
@@ -594,33 +651,38 @@ test('starting without painting schedules a blank auto', async ({ page }) => {
     if (path.endsWith('/start')) return route.fulfill({ json: playing })
     if (path.endsWith('/grade')) {
       auto = route.request().postDataJSON()
-      return route.fulfill({ json: { skipped: 'skipped_blank', window: 0, state: { ...playing, nextAutoAt: now + 120_000 } } })
+      return route.fulfill({ json: { skipped: 'skipped_blank', window: 0, state: { ...playing, nextAutoAt: null } } })
     }
     return route.fulfill({ json: {} })
   })
   await page.goto(`${origin}/home`)
   await page.getByTestId('daily-start-button').click()
   await expect(page.getByTestId('daily-playing')).toBeVisible()
-  await page.clock.fastForward(65_000)
+  await page.clock.fastForward(155_000)
   await expect.poll(() => auto?.kind).toBe('auto')
   expect(auto?.window).toBe(0)
   expect(Buffer.from(auto!.cells, 'base64').every(cell => cell === 0)).toBe(true)
-  await expect(page.getByText('Auto-grade skipped: nothing drawn yet')).toBeVisible()
+  await expect(page.getByText('Skipped: nothing drawn yet')).toBeVisible()
 })
 
 test('timeout on party uses the latest stored canvas', async ({ page }) => {
   await page.clock.install({ time: new Date('2026-11-17T12:04:58Z') })
   await offlineClient(page, true)
   const now = Date.parse('2026-11-17T12:04:58Z')
-  const playing = { day: '2026-11-17', status: 'playing', prompt: 'A tree', startedAt: now - 298_000, endsAt: now + 2_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: null, serverNow: now }
+  const playing = { day: '2026-11-17', status: 'playing', prompt: 'A tree', startedAt: now - 298_000, endsAt: now + 2_000, autoUsed: 0, finalUsed: false, best: 0, windows: [], nextAutoAt: null, serverNow: now }
   let finalCells = ''
+  let ends = 0
   await page.route('**/api/daily/**', async route => {
     const path = new URL(route.request().url()).pathname
     if (path.endsWith('/grade')) {
-      finalCells = route.request().postDataJSON().cells
-      return route.fulfill({ json: { ok: false, reason: 'unchanged', state: playing } })
+      const body = route.request().postDataJSON() as { kind: string; cells: string }
+      if (body.kind === 'final') {
+        finalCells = body.cells
+        return route.fulfill({ json: { ok: true, grade: { guess: 'a tree', reason: 'The tree stands.', match: 60, recognition: 80, quality: 40, matchPoints: 260, qualityBonus: 104, total: 364, elapsedMs: 300_000 }, state: { ...playing, status: 'ended', finalUsed: true } } })
+      }
+      return route.fulfill({ json: { skipped: 'skipped_blank', window: 0, state: playing } })
     }
-    if (path.endsWith('/end')) return route.fulfill({ json: { ...playing, status: 'ended' } })
+    if (path.endsWith('/end')) { ends++; return route.fulfill({ json: { ...playing, status: 'ended' } }) }
     return route.fulfill({ json: playing })
   })
   await page.goto(`${origin}/party`)
@@ -633,13 +695,15 @@ test('timeout on party uses the latest stored canvas', async ({ page }) => {
   })
   await page.clock.fastForward(4_000)
   await expect.poll(() => finalCells).toBe(latest)
+  // The final verdict ends the attempt on its own: no separate end request.
+  await expect.poll(() => ends).toBe(0)
 })
 
 test('timer uses server clock offset', async ({ page }) => {
   await page.clock.install({ time: new Date('2026-11-17T12:00:00Z') })
   await offlineClient(page, true)
   const now = Date.parse('2026-11-17T12:00:00Z')
-  await page.route('**/api/daily/**', route => route.fulfill({ json: { day: '2026-11-17', status: 'playing', prompt: 'A tree', startedAt: now - 210_000, endsAt: now + 90_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: null, serverNow: now + 90_000 } }))
+  await page.route('**/api/daily/**', route => route.fulfill({ json: { day: '2026-11-17', status: 'playing', prompt: 'A tree', startedAt: now - 210_000, endsAt: now + 90_000, autoUsed: 1, finalUsed: false, best: 0, windows: [], nextAutoAt: null, serverNow: now + 90_000 } }))
   await page.goto(`${origin}/home`)
   await expect(page.getByTestId('daily-timer')).toHaveText('0:00')
 })
@@ -648,7 +712,7 @@ test('auto-grade sends the latest local canvas, not the one from when the attemp
   await page.clock.install({ time: new Date('2026-11-17T12:00:00Z') })
   await offlineClient(page, true)
   const now = Date.parse('2026-11-17T12:00:00Z')
-  const playing = { day: '2026-11-17', status: 'playing', prompt: 'A tree', startedAt: now, endsAt: now + 300_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: now + 60_000, serverNow: now }
+  const playing = { day: '2026-11-17', status: 'playing', prompt: 'A tree', startedAt: now, endsAt: now + 300_000, autoUsed: 0, finalUsed: false, best: 0, windows: [], nextAutoAt: now + 150_000, serverNow: now }
   let auto = 0
   let sentCells = ''
   await page.route('**/api/daily/**', async route => {
@@ -660,7 +724,7 @@ test('auto-grade sends the latest local canvas, not the one from when the attemp
         auto++
         sentCells = route.request().postDataJSON().cells
       }
-      return route.fulfill({ json: { skipped: 'skipped_unchanged', window: 0, state: { ...playing, nextAutoAt: now + 120_000 } } })
+      return route.fulfill({ json: { ok: true, grade: { guess: 'a tree', reason: 'A tree.', match: 50, recognition: 60, quality: 40, matchPoints: 230, qualityBonus: 92, total: 322, elapsedMs: 150_000 }, state: { ...playing, autoUsed: 1, nextAutoAt: null, best: 322 } } })
     }
     return route.fulfill({ json: {} })
   })
@@ -674,16 +738,16 @@ test('auto-grade sends the latest local canvas, not the one from when the attemp
     localStorage.setItem('daily:2026-11-17:host', encoded)
     return encoded
   })
-  await page.clock.fastForward(65_000)
+  await page.clock.fastForward(155_000)
   await expect.poll(() => auto).toBe(1)
   expect(sentCells).toBe(latestCells)
 })
 
-test('a delayed state refresh cannot overwrite a later grade', async ({ page }) => {
+test('a delayed state refresh cannot overwrite a later verdict', async ({ page }) => {
   await page.clock.install({ time: new Date('2026-11-17T12:00:00Z') })
   await offlineClient(page, true)
   const now = Date.parse('2026-11-17T12:00:00Z')
-  const initial = { day: '2026-11-17', status: 'playing', prompt: 'A tree', startedAt: now, endsAt: now + 300_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: now + 60_000, serverNow: now }
+  const initial = { day: '2026-11-17', status: 'playing', prompt: 'A tree', startedAt: now, endsAt: now + 300_000, autoUsed: 0, finalUsed: false, best: 0, windows: [], nextAutoAt: now + 150_000, serverNow: now }
   let hold = false
   let pending = 0
   let release!: () => void
@@ -694,53 +758,66 @@ test('a delayed state refresh cannot overwrite a later grade', async ({ page }) 
       if (hold) { pending++; await gate }
       return route.fulfill({ json: initial })
     }
-    if (path.endsWith('/grade')) return route.fulfill({ json: { ok: true, grade: { guess: 'tree', reason: 'recognisable tree', fit: 300, recognition: 200, speed: 90, total: 590, elapsedMs: 61_000 }, state: { ...initial, asksUsed: 1, asksLeft: 2, best: 590, nextAutoAt: now + 120_000 } } })
+    if (path.endsWith('/grade')) {
+      const body = route.request().postDataJSON() as { kind: string }
+      if (body.kind === 'auto') return route.fulfill({ json: { ok: false, reason: 'judge_resting', state: { ...initial, serverNow: now + 151_000 } } })
+      return route.fulfill({ json: { ok: true, grade: { guess: 'tree', reason: 'The verdict is in.', match: 70, recognition: 80, quality: 60, matchPoints: 290, qualityBonus: 174, total: 464, elapsedMs: 300_000 }, state: { ...initial, status: 'ended', finalUsed: true, best: 590, serverNow: now + 300_000 } } })
+    }
     return route.fulfill({ json: {} })
   })
   await page.goto(`${origin}/home`)
   await expect(page.getByTestId('daily-playing')).toBeVisible()
+  await page.getByTestId('pixel-canvas').click({ position: { x: 5, y: 5 } })
+  await page.clock.fastForward(151_000)
+  await expect(page.getByTestId('daily-grade-error')).toContainText("Haiku's napping")
+
+  // The missed window sends the tab to re-read the server state; hold that answer.
   hold = true
-  await page.clock.fastForward(95_000)
-  await expect.poll(() => pending).toBe(1)
-  await page.getByTestId('daily-ask-button').click()
-  await expect(page.getByTestId('daily-ask-button')).toHaveText(/Grade now \(2 left\)/)
+  await page.clock.fastForward(31_000)
+  await expect.poll(() => pending).toBeGreaterThanOrEqual(1)
+
+  // A later verdict lands while the stale refresh is still in flight.
+  await page.clock.fastForward(120_000)
+  await expect(page.getByTestId('daily-ended')).toBeVisible()
   await expect(page.getByTestId('daily-best-score')).toContainText('590')
-  const refreshResponse = page.waitForResponse(response => response.url().endsWith('/api/daily/me'))
+
   release()
-  await refreshResponse
   await page.waitForTimeout(100)
-  await expect(page.getByTestId('daily-ask-button')).toHaveText(/Grade now \(2 left\)/)
   await expect(page.getByTestId('daily-best-score')).toContainText('590')
 })
 
-test('grade now and submit are separate', async ({ page }) => {
+test('the halfway judgement and the final verdict are separate, both automatic', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.clock.install({ time: new Date('2026-11-17T12:00:00Z') })
   await offlineClient(page, true)
-  const now = Date.now()
-  const windows = [60_000, 120_000, 180_000, 240_000].map((offset, index) => ({ index, dueAt: now + offset, status: 'pending', score: null, late: false }))
-  const playing = { day: new Date(now).toISOString().slice(0, 10), status: 'playing', prompt: 'A tree', startedAt: now, endsAt: now + 300_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows, nextAutoAt: now + 60_000, serverNow: now }
-  let ends = 0
+  const now = Date.parse('2026-11-17T12:00:00Z')
+  const windows = [{ index: 0, dueAt: now + 150_000, status: 'pending', score: null, late: false }]
+  const playing = { day: '2026-11-17', status: 'playing', prompt: 'A tree', startedAt: now, endsAt: now + 300_000, autoUsed: 0, finalUsed: false, best: 0, windows, nextAutoAt: now + 150_000, serverNow: now }
+  const kinds: string[] = []
   await page.route('**/api/daily/**', async route => {
     const path = new URL(route.request().url()).pathname
     if (path.endsWith('/me')) return route.fulfill({ json: playing })
-    if (path.endsWith('/grade')) return route.fulfill({ json: { ok: true, grade: { guess: 'tree', reason: 'recognisable tree', fit: 300, recognition: 200, speed: 90, total: 590, elapsedMs: 10_000 }, state: { ...playing, asksUsed: 1, asksLeft: 2, best: 590 } } })
-    if (path.endsWith('/end')) { ends++; return route.fulfill({ json: { ...playing, status: 'ended' } }) }
+    if (path.endsWith('/grade')) {
+      const body = route.request().postDataJSON() as { kind: string }
+      kinds.push(body.kind)
+      if (body.kind === 'auto') return route.fulfill({ json: { ok: true, grade: { guess: 'tree', reason: 'recognisable tree', match: 70, recognition: 70, quality: 50, matchPoints: 280, qualityBonus: 140, total: 420, elapsedMs: 150_000 }, state: { ...playing, autoUsed: 1, best: 420, nextAutoAt: null, windows: [{ ...windows[0], status: 'graded', score: 420 }] } } })
+      return route.fulfill({ json: { ok: true, grade: { guess: 'tree', reason: 'The verdict is in.', match: 70, recognition: 70, quality: 50, matchPoints: 280, qualityBonus: 140, total: 420, elapsedMs: 300_000 }, state: { ...playing, status: 'ended', finalUsed: true, best: 590, nextAutoAt: null } } })
+    }
     return route.fulfill({ json: {} })
   })
   await page.goto(`${origin}/home`)
   await expect(page.getByTestId('daily-playing')).toBeVisible()
-    await expect(page.getByTestId('daily-ask-button')).toHaveText(/Grade now \(3 left\)/)
-    await expect(page.getByTestId('daily-done-button')).toHaveText(/Submit & finish/)
-    await expect(page.getByTestId('daily-auto-timeline')).toContainText('2:00 in')
-    await page.getByTestId('daily-ask-button').click()
-    await expect(page.getByTestId('daily-playing')).toBeVisible()
-    await expect(page.getByTestId('daily-ask-button')).toHaveText(/Grade now \(2 left\)/)
-    await expect(page.getByTestId('daily-score-breakdown')).toContainText('Matches the prompt')
-    await expect(page.getByTestId('daily-score-breakdown')).toContainText('Easy to recognise')
-    await expect(page.getByTestId('grade-total')).toContainText('590 / 1000')
-    expect(ends).toBe(0)
-    await page.getByTestId('daily-done-button').click()
-    await expect(page.getByTestId('daily-ended')).toBeVisible()
-    expect(ends).toBe(1)
+  await page.getByTestId('pixel-canvas').click({ position: { x: 5, y: 5 } })
+  await expect(page.getByTestId('daily-auto-timeline')).toContainText('2:30 in')
+  await page.clock.fastForward(151_000)
+  await expect.poll(() => kinds).toEqual(['auto'])
+  await expect(page.getByTestId('daily-playing')).toBeVisible()
+  await expect(page.getByTestId('daily-score-breakdown')).toContainText('Matches the prompt')
+  await expect(page.getByTestId('daily-score-breakdown')).toContainText('Art quality bonus')
+  await expect(page.getByTestId('grade-total')).toContainText('420 / 1000')
+  await page.clock.fastForward(150_000)
+  await expect.poll(() => kinds).toEqual(['auto', 'final'])
+  await expect(page.getByTestId('daily-ended')).toBeVisible()
 })
 
 test('a running attempt owns the screen: no exits, back is a no-op, other routes redirect, a reload resumes', async ({ page }) => {
@@ -825,77 +902,61 @@ test('party route still renders the lobby', async ({ page }) => {
   expect(errors).toEqual([])
 })
 
-for (const invalidAt of ['grade', 'end'] as const) {
-  for (const todayStatus of ['not_started', 'playing', 'ended', 'unavailable'] as const) {
-    test(`invalid-day ${invalidAt} reloads ${todayStatus} without ending another day`, async ({ page }) => {
-      const errors = await offlineClient(page, true)
-      const today = new Date().toISOString().slice(0, 10)
-      const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10)
-      const initial = { day: yesterday, status: 'playing', prompt: 'Yesterday scene', startedAt: Date.now() - 60_000, endsAt: Date.now() + 540_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 123, windows: [], nextAutoAt: Date.now() + 60_000, serverNow: Date.now() }
-      const fresh = { ...initial, day: today, status: todayStatus, prompt: 'Today scene', best: 456 }
-      let refreshes = 0
-      let staleRejected = false
-      const ends: unknown[] = []
-      const grades: unknown[] = []
-      let release!: () => void
-      const reload = new Promise<void>(resolve => { release = resolve })
-      await page.route('**/api/daily/**', async route => {
-        const path = new URL(route.request().url()).pathname
-        if (path.endsWith('/me')) {
-          if (!staleRejected) return route.fulfill({ json: initial })
-          refreshes++
-          await reload
-          return todayStatus === 'unavailable' ? route.fulfill({ status: 503, json: {} }) : route.fulfill({ json: fresh })
-        }
-        if (path.endsWith('/grade')) {
-          grades.push(route.request().postDataJSON())
-          if (invalidAt === 'end') return route.fulfill({ json: { ok: true, grade: { guess: 'old scene', reason: 'old', fit: 100, recognition: 100, speed: 10, total: 210, elapsedMs: 60_000 }, state: { ...initial, finalUsed: true } } })
-          staleRejected = true
-          return route.fulfill({ json: { ok: false, reason: 'invalid_day', state: { ...fresh, status: 'not_started', best: 0 } } })
-        }
-        if (path.endsWith('/end')) {
-          ends.push(route.request().postDataJSON())
-          if (invalidAt === 'end') {
-            staleRejected = true
-            return route.fulfill({ status: 400, json: { error: 'invalid_attempt_day' } })
-          }
-          return route.fulfill({ json: { ...fresh, status: 'ended', best: 0 } })
-        }
-        return route.fulfill({ json: {} })
-      })
-      await page.goto(`${origin}/home`)
-      await expect(page.getByTestId('daily-prompt')).toHaveText('Yesterday scene')
-      await page.getByTestId('daily-done-button').click()
-      await expect.poll(() => refreshes).toBeGreaterThanOrEqual(1)
-      await expect(page.getByTestId('daily-prompt')).toHaveText('Yesterday scene')
-      await expect(page.getByTestId('daily-done-button')).toBeDisabled()
-      if (invalidAt === 'grade') expect(ends).toEqual([])
-      else expect(ends).toMatchObject([{ day: yesterday }])
-      expect(grades).toMatchObject([{ day: yesterday, kind: 'final' }])
-      release()
-      if (todayStatus === 'unavailable') {
-        await expect(page.getByTestId('daily-grade-error')).toContainText('expired')
-        await expect(page.getByTestId('daily-done-button')).toBeDisabled()
-        await expect(page.getByTestId('daily-ask-button')).toBeDisabled()
-      } else {
-        await expect(page.getByTestId(`daily-${todayStatus.replace('_', '-')}`)).toBeVisible()
-        if (invalidAt === 'grade' && todayStatus === 'not_started') {
-          await page.waitForTimeout(300)
-          expect(refreshes).toBe(1)
-        }
-        if (todayStatus === 'playing') {
-          await expect(page.getByTestId('daily-prompt')).toHaveText('Today scene')
-          await expect(page.getByTestId('daily-done-button')).toBeEnabled()
-          await expect(page.getByTestId('daily-ask-button')).toBeEnabled()
-          await page.getByTestId('pixel-canvas').click({ position: { x: 5, y: 5 } })
-          await expect.poll(() => page.evaluate(day => localStorage.getItem(`daily:${day}:host`), today)).not.toBeNull()
-        }
+for (const todayStatus of ['not_started', 'playing', 'ended', 'unavailable'] as const) {
+  test(`an invalid-day final verdict reloads ${todayStatus} without ending another day`, async ({ page }) => {
+    await page.clock.install({ time: new Date() })
+    const errors = await offlineClient(page, true)
+    const today = new Date().toISOString().slice(0, 10)
+    const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10)
+    const initial = { day: yesterday, status: 'playing', prompt: 'Yesterday scene', startedAt: Date.now() - 299_000, endsAt: Date.now() + 1_000, autoUsed: 1, finalUsed: false, best: 123, windows: [], nextAutoAt: null, serverNow: Date.now() }
+    const fresh = { ...initial, day: today, status: todayStatus, prompt: 'Today scene', best: 456 }
+    let refreshes = 0
+    let staleRejected = false
+    const grades: unknown[] = []
+    let release!: () => void
+    const reload = new Promise<void>(resolve => { release = resolve })
+    await page.route('**/api/daily/**', async route => {
+      const path = new URL(route.request().url()).pathname
+      if (path.endsWith('/me')) {
+        if (!staleRejected) return route.fulfill({ json: initial })
+        refreshes++
+        await reload
+        return todayStatus === 'unavailable' ? route.fulfill({ status: 503, json: {} }) : route.fulfill({ json: fresh })
       }
-      if (invalidAt === 'grade') expect(ends).toEqual([])
-      else expect(ends).toMatchObject([{ day: yesterday }])
-      expect(errors).toEqual([])
+      if (path.endsWith('/grade')) {
+        grades.push(route.request().postDataJSON())
+        staleRejected = true
+        return route.fulfill({ json: { ok: false, reason: 'invalid_day', state: { ...fresh, status: 'not_started', best: 0 } } })
+      }
+      return route.fulfill({ json: {} })
     })
-  }
+    await page.goto(`${origin}/home`)
+    await expect(page.getByTestId('daily-prompt')).toHaveText('Yesterday scene')
+    await page.clock.fastForward(3_000)
+    await expect.poll(() => refreshes).toBeGreaterThanOrEqual(1)
+    await expect(page.getByTestId('daily-prompt')).toHaveText('Yesterday scene')
+    await expect(page.getByTestId('daily-grade-error')).toContainText('expired')
+    expect(grades).toMatchObject([{ day: yesterday, kind: 'final' }])
+    release()
+    if (todayStatus === 'unavailable') {
+      await expect(page.getByTestId('daily-grade-error')).toContainText('expired')
+      await page.getByTestId('pixel-canvas').click({ position: { x: 5, y: 5 } }).catch(() => {})
+      await page.waitForTimeout(100)
+      expect(await page.evaluate(day => localStorage.getItem(`daily:${day}:host`), today)).toBeNull()
+    } else {
+      await expect(page.getByTestId(`daily-${todayStatus.replace('_', '-')}`)).toBeVisible()
+      if (todayStatus === 'not_started') {
+        await page.waitForTimeout(300)
+        expect(refreshes).toBe(1)
+      }
+      if (todayStatus === 'playing') {
+        await expect(page.getByTestId('daily-prompt')).toHaveText('Today scene')
+        await page.getByTestId('pixel-canvas').click({ position: { x: 5, y: 5 } })
+        await expect.poll(() => page.evaluate(day => localStorage.getItem(`daily:${day}:host`), today)).not.toBeNull()
+      }
+    }
+    expect(errors).toEqual([])
+  })
 }
 
 async function dailyPlayingSetup(page: Page, initialCells?: Uint8Array) {
@@ -913,9 +974,7 @@ async function dailyPlayingSetup(page: Page, initialCells?: Uint8Array) {
           startedAt: now,
           endsAt: now + 300_000,
           autoUsed: 0,
-          asksUsed: 0,
-          asksLeft: 3,
-          finalUsed: false,
+      finalUsed: false,
           best: 0,
           windows: [],
           nextAutoAt: now + 60_000,
@@ -1145,15 +1204,13 @@ test('hung grade request times out, exits thinking state, and re-enables actions
     day: '2026-11-17',
     status: 'playing',
     prompt: 'A lighthouse',
-    startedAt: now - 30_000,
-    endsAt: now + 270_000,
+    startedAt: now,
+    endsAt: now + 300_000,
     autoUsed: 0,
-    asksUsed: 0,
-    asksLeft: 3,
     finalUsed: false,
     best: 0,
     windows: [],
-    nextAutoAt: now + 30_000,
+    nextAutoAt: now + 150_000,
     serverNow: now,
   }
   await page.route('**/api/daily/**', async route => {
@@ -1172,24 +1229,22 @@ test('hung grade request times out, exits thinking state, and re-enables actions
   })
   await page.goto(`${origin}/home`)
   await expect(page.getByTestId('daily-playing')).toBeVisible()
+  await page.getByTestId('pixel-canvas').click({ position: { x: 5, y: 5 } })
 
-  const askBtn = page.getByTestId('daily-ask-button')
-  const doneBtn = page.getByTestId('daily-done-button')
   const haiku = page.getByTestId('haiku')
 
-  await askBtn.click()
+  await page.clock.fastForward(151_000)
   await expect(haiku).toHaveAttribute('data-haiku-state', 'thinking')
   await expect(page.getByTestId('haiku-bubble')).toHaveText('Hmm…')
-  await expect(askBtn).toBeDisabled()
-  await expect(doneBtn).toBeDisabled()
 
   await page.clock.fastForward(25_500)
 
   await expect(haiku).toHaveAttribute('data-haiku-state', 'idle')
   await expect(page.getByTestId('daily-grade-error')).toContainText('Haiku took too long to answer — try again.')
   await expect(page.getByTestId('haiku-bubble')).toContainText('Haiku took too long to answer — try again.')
-  await expect(askBtn).toBeEnabled()
-  await expect(doneBtn).toBeEnabled()
+  // Painting is possible again after the timed-out judgement (no manual retry button exists).
+  await page.getByTestId('pixel-canvas').click({ position: { x: 8, y: 8 } })
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('daily:2026-11-17:host'))).not.toBeNull()
   releaseHang()
   expect(errors).toEqual([])
 })
@@ -1205,12 +1260,10 @@ test('mobile Haiku popover exposes dialog/status semantics and restores focus on
     startedAt: now - 30_000,
     endsAt: now + 270_000,
     autoUsed: 0,
-    asksUsed: 0,
-    asksLeft: 3,
     finalUsed: false,
     best: 0,
     windows: [],
-    nextAutoAt: now + 30_000,
+    nextAutoAt: now + 150_000,
     serverNow: now,
   }
   await page.route('**/api/daily/**', async route => {
@@ -1270,10 +1323,10 @@ test('temporary retry daily debug button resets attempt with the same prompt', a
   const errors = await offlineClient(page, true)
   const makeState = (s: 'ended' | 'not_started' | 'playing') => (
     s === 'ended'
-      ? { day: '2026-11-17', status: 'ended', prompt: 'A lighthouse', autoUsed: 0, asksUsed: 1, asksLeft: 2, finalUsed: true, best: 750, windows: [], nextAutoAt: null, serverNow: now }
+      ? { day: '2026-11-17', status: 'ended', prompt: 'A lighthouse', autoUsed: 0, finalUsed: true, best: 750, windows: [], nextAutoAt: null, serverNow: now }
       : s === 'not_started'
-        ? { day: '2026-11-17', status: 'not_started', prompt: 'A lighthouse', autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: null, serverNow: now }
-        : { day: '2026-11-17', status: 'playing', prompt: 'A lighthouse', startedAt: now, endsAt: now + 300_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: now + 60_000, serverNow: now }
+        ? { day: '2026-11-17', status: 'not_started', prompt: 'A lighthouse', autoUsed: 0, finalUsed: false, best: 0, windows: [], nextAutoAt: null, serverNow: now }
+        : { day: '2026-11-17', status: 'playing', prompt: 'A lighthouse', startedAt: now, endsAt: now + 300_000, autoUsed: 0, finalUsed: false, best: 0, windows: [], nextAutoAt: now + 150_000, serverNow: now }
   )
   await page.route('**/api/daily/**', async route => {
     const path = new URL(route.request().url()).pathname
@@ -1322,19 +1375,21 @@ function clipProbe(list: string[]) {
 for (const [name, viewport] of [['1980x1240', { width: 1980, height: 1240 }], ['1440x900', { width: 1440, height: 900 }], ['375x812', { width: 375, height: 812 }]] as const) {
   test(`a maximum-length judge reason of wide characters is never clipped at ${name}`, async ({ page }) => {
     await page.setViewportSize(viewport)
+    await page.clock.install({ time: new Date('2026-11-17T12:00:00Z') })
     await offlineClient(page, true)
-    const now = Date.now()
+    const now = Date.parse('2026-11-17T12:00:00Z')
     const reason = Array.from({ length: DAILY.reasonMaxChars }, (_, index) => (index % 9 === 8 ? ' ' : index % 2 ? 'M' : 'W')).join('')
     expect(reason).toHaveLength(DAILY.reasonMaxChars)
-    const playing = { day: new Date(now).toISOString().slice(0, 10), status: 'playing', prompt: 'A lighthouse', startedAt: now - 30_000, endsAt: now + 270_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: now + 30_000, serverNow: now }
+    const playing = { day: '2026-11-17', status: 'playing', prompt: 'A lighthouse', startedAt: now, endsAt: now + 300_000, autoUsed: 0, finalUsed: false, best: 0, windows: [], nextAutoAt: now + 150_000, serverNow: now }
     await page.route('**/api/daily/**', route => {
       const path = new URL(route.request().url()).pathname
-      if (path.endsWith('/grade')) return route.fulfill({ json: { ok: true, grade: { guess: 'a lighthouse by the sea at dusk', reason, fit: 400, recognition: 300, speed: 80, total: 780, elapsedMs: 30_000 }, state: { ...playing, asksUsed: 1, asksLeft: 2, best: 780 } } })
+      if (path.endsWith('/grade')) return route.fulfill({ json: { ok: true, grade: { guess: 'a lighthouse by the sea at dusk', reason, match: 90, recognition: 75, quality: 60, matchPoints: 420, qualityBonus: 252, total: 672, elapsedMs: 150_000 }, state: { ...playing, autoUsed: 1, best: 672, nextAutoAt: null } } })
       return route.fulfill({ json: playing })
     })
     await page.goto(`${origin}/home`)
     await expect(page.getByTestId('daily-playing')).toBeVisible()
-    await page.getByTestId('daily-ask-button').click()
+    await page.getByTestId('pixel-canvas').click({ position: { x: 5, y: 5 } })
+    await page.clock.fastForward(151_000)
     const check = (selectors: string[]) => page.evaluate(clipProbe, selectors)
     if (viewport.width < 600) {
       await page.getByTestId('daily-mobile-haiku').click()
@@ -1356,15 +1411,20 @@ for (const [name, viewport] of [['1980x1240', { width: 1980, height: 1240 }], ['
 // Review finding: Back from an ended Daily close-up (compact 52 px nav) to Scores framed the board from that compact bar and pinned it ~56 px high.
 test('Back from an ended Daily to Scores frames the board like a fresh Scores page', async ({ page }) => {
   await page.setViewportSize({ width: 1980, height: 1240 })
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.clock.install({ time: new Date('2026-11-17T12:00:00Z') })
   await offlineClient(page, true)
-  const now = Date.now()
-  const day = new Date(now).toISOString().slice(0, 10)
+  const now = Date.parse('2026-11-17T12:00:00Z')
+  const day = '2026-11-17'
   let status: 'not_started' | 'playing' | 'ended' = 'not_started'
-  const state = () => ({ day, status, prompt: 'A tree', startedAt: now, endsAt: now + 300_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: status === 'ended', best: 0, windows: [], nextAutoAt: null, serverNow: Date.now() })
+  const state = () => ({ day, status, prompt: 'A tree', startedAt: now, endsAt: now + 300_000, autoUsed: 0, finalUsed: status === 'ended', best: 0, windows: [], nextAutoAt: status === 'playing' ? now + 150_000 : null, serverNow: Date.now() })
   await page.route('**/api/daily/**', async route => {
     const path = new URL(route.request().url()).pathname
     if (path.endsWith('/start')) status = 'playing'
-    if (path.endsWith('/end')) status = 'ended'
+    if (path.endsWith('/grade')) {
+      status = 'ended'
+      return route.fulfill({ json: { ok: true, grade: { guess: 'a tree', reason: 'The tree stands.', match: 60, recognition: 80, quality: 50, matchPoints: 260, qualityBonus: 130, total: 390, elapsedMs: 300_000 }, state: state() } })
+    }
     return route.fulfill({ json: state() })
   })
   await page.goto(`${origin}/scores`)
@@ -1372,7 +1432,7 @@ test('Back from an ended Daily to Scores frames the board like a fresh Scores pa
   await page.getByTestId('app-navigation').getByRole('link', { name: 'Daily' }).click()
   await page.getByTestId('daily-start-button').click()
   await expect(page.getByTestId('daily-playing')).toBeVisible()
-  await page.getByTestId('daily-done-button').click()
+  await page.clock.fastForward(300_500)
   await expect(page.getByTestId('daily-ended')).toBeVisible()
   await expect.poll(async () => (await page.getByTestId('app-navigation').boundingBox())!.height).toBeLessThan(60)
   await page.goBack()

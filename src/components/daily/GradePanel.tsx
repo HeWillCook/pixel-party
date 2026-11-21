@@ -85,7 +85,12 @@ export function GradePanel({
         </div>
       )}
 
-      {latest ? (
+      {stage === 'suspense' ? (
+        <div className="flex items-center gap-2 py-1 text-base text-muted-foreground sm:text-lg">
+          <Cat className="h-4 w-4 shrink-0 text-[var(--sunset-1)]" aria-hidden />
+          <span>The paint is dry. Haiku is reaching a verdict…</span>
+        </div>
+      ) : latest ? (
         <div className="space-y-3">
           {showGuess && (
             <div className="border border-border bg-background/50 p-3">
