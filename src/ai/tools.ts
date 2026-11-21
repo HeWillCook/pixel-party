@@ -66,20 +66,74 @@ async function query(executor: UserToolExecutor, collection: string, options: Re
   return result.data.records
 }
 
+interface LeaderboardEntry {
+  rank: number
+  userId: string
+  displayName: string
+  score: number
+}
+
+/** The Scores page's exact ordering: best row per player, then score, then fastest best attempt. */
+async function rankDay(executor: UserToolExecutor, day: string, count: number) {
+  const [scores, drawings] = await Promise.all([
+    query(executor, 'dailyScores', { where: { day }, limit: 1000 }),
+    query(executor, 'dailyDrawings', { where: { day }, limit: 1000 }),
+  ])
+
+  // The Scores page falls back to the drawing's guess when deciding whether
+  // a zero-score row still counts as a graded painting.
+  const guessByUser = new Map<string, string>()
+  for (const { data } of drawings) {
+    const userId = text(data, 'userId')
+    if (userId && typeof data.guess === 'string') guessByUser.set(userId, data.guess)
+  }
+
+  const bestByUser = new Map<string, { userId: string; displayName: string; score: number; bestElapsedMs: number | null; guess: string }>()
+  for (const { data } of scores) {
+    const userId = text(data, 'userId')
+    if (!userId || typeof data.score !== 'number') continue
+    if (text(data, 'day') && text(data, 'day') !== day) continue
+    const existing = bestByUser.get(userId)
+    if (existing && data.score <= existing.score) continue
+    bestByUser.set(userId, {
+      userId,
+      displayName: text(data, 'displayName').trim() || 'Player',
+      score: data.score,
+      bestElapsedMs: typeof data.bestElapsedMs === 'number' ? data.bestElapsedMs : null,
+      guess: typeof data.guess === 'string' ? data.guess : '',
+    })
+  }
+
+  const graded = Array.from(bestByUser.values()).filter(row => row.score > 0 || (row.guess || guessByUser.get(row.userId) || '').trim().length > 0)
+  const ranked = rankScores(graded)
+  const entries: LeaderboardEntry[] = ranked.slice(0, count).map(({ userId, rank }) => {
+    const row = bestByUser.get(userId)!
+    return { rank, userId, displayName: row.displayName, score: row.score }
+  })
+  return { day, total: ranked.length, returned: entries.length, entries }
+}
+
 export function buildTools(executor: UserToolExecutor, context: AgentToolContext<Env>): ToolSet {
   const tools: ToolSet = {}
 
-  tools.today_prompt = tool({
-    description: 'The current UTC day\'s Daily painting prompt, the day itself, and the attempt timing and auto-grade schedule.',
+  tools.daily_info = tool({
+    description: 'The UTC day, the Daily attempt rules, and yesterday\'s closed prompt with its top three. Today\'s prompt stays hidden until a player starts their attempt.',
     inputSchema: z.object({}),
     execute: async () => {
-      const day = utcDay(Date.now())
+      const now = Date.now()
+      const day = utcDay(now)
+      const yesterday = utcDay(now - 86_400_000)
+      const board = await rankDay(executor, yesterday, 3)
       return {
         day,
-        prompt: promptForDay(day).prompt,
         attemptMinutes: DAILY.attemptMs / 60_000,
         autoGradeMinutes: DAILY.autoWindowsMs.map(offset => offset / 60_000),
         manualGrades: DAILY.maxAsks,
+        yesterday: {
+          day: yesterday,
+          prompt: promptForDay(yesterday).prompt,
+          top3: board.entries,
+        },
       }
     },
   })
@@ -90,56 +144,19 @@ export function buildTools(executor: UserToolExecutor, context: AgentToolContext
       day: daySchema.optional().describe('UTC day to read, YYYY-MM-DD. Defaults to today.'),
       limit: z.number().int().optional().describe('Number of entries to return, 1-50. Defaults to 10.'),
     }),
-    execute: async ({ day, limit }) => {
-      const target = day ?? utcDay(Date.now())
-      const count = clampLimit(limit, 10)
-      const [scores, drawings] = await Promise.all([
-        query(executor, 'dailyScores', { where: { day: target }, limit: 1000 }),
-        query(executor, 'dailyDrawings', { where: { day: target }, limit: 1000 }),
-      ])
-
-      // The Scores page falls back to the drawing's guess when deciding whether
-      // a zero-score row still counts as a graded painting.
-      const guessByUser = new Map<string, string>()
-      for (const { data } of drawings) {
-        const userId = text(data, 'userId')
-        if (userId && typeof data.guess === 'string') guessByUser.set(userId, data.guess)
-      }
-
-      const bestByUser = new Map<string, { userId: string; displayName: string; score: number; bestElapsedMs: number | null; guess: string }>()
-      for (const { data } of scores) {
-        const userId = text(data, 'userId')
-        if (!userId || typeof data.score !== 'number') continue
-        if (text(data, 'day') && text(data, 'day') !== target) continue
-        const existing = bestByUser.get(userId)
-        if (existing && data.score <= existing.score) continue
-        bestByUser.set(userId, {
-          userId,
-          displayName: text(data, 'displayName').trim() || 'Player',
-          score: data.score,
-          bestElapsedMs: typeof data.bestElapsedMs === 'number' ? data.bestElapsedMs : null,
-          guess: typeof data.guess === 'string' ? data.guess : '',
-        })
-      }
-
-      const graded = Array.from(bestByUser.values()).filter(row => row.score > 0 || (row.guess || guessByUser.get(row.userId) || '').trim().length > 0)
-      const ranked = rankScores(graded)
-      const entries = ranked.slice(0, count).map(({ userId, rank }) => {
-        const row = bestByUser.get(userId)!
-        return { rank, userId, displayName: row.displayName, score: row.score }
-      })
-      return { day: target, total: ranked.length, returned: entries.length, entries }
-    },
+    execute: async ({ day, limit }) => rankDay(executor, day ?? utcDay(Date.now()), clampLimit(limit, 10)),
   })
 
   tools.player_gallery = tool({
-    description: 'A player\'s recent Daily paintings, newest day first: day, prompt, score, and Haiku\'s guess. Private or unpublished rows are never included.',
+    description: 'A player\'s recent Daily paintings, newest day first: day, score, Haiku\'s guess, and the prompt once that day is closed or the caller owns the painting. Private or unpublished rows are never included.',
     inputSchema: z.object({
       userId: z.string().trim().min(1).max(128).describe('The player\'s user id.'),
       limit: z.number().int().optional().describe('Number of paintings to return, 1-50. Defaults to 12.'),
     }),
     execute: async ({ userId, limit }) => {
       const count = clampLimit(limit, 12)
+      const today = utcDay(Date.now())
+      const owned = userId === context.userId
       const records = await query(executor, 'dailyDrawings', { where: { userId }, limit: 1000 })
       const bestByDay = new Map<string, Record<string, unknown>>()
       for (const { data } of records) {
@@ -150,7 +167,7 @@ export function buildTools(executor: UserToolExecutor, context: AgentToolContext
         // The record executor already enforces this; repeating it keeps a
         // caller's private in-progress row out of anyone else's gallery even
         // if a future caller uses a more privileged executor.
-        if (text(data, 'visibility') === 'private' && userId !== context.userId) continue
+        if (text(data, 'visibility') === 'private' && !owned) continue
         const score = numberValue(data, 'score')
         if (score <= 0 && !(text(data, 'guess')).trim()) continue
         const existing = bestByDay.get(day)
@@ -159,12 +176,18 @@ export function buildTools(executor: UserToolExecutor, context: AgentToolContext
       const paintings = Array.from(bestByDay.entries())
         .sort(([left], [right]) => right.localeCompare(left))
         .slice(0, count)
-        .map(([day, data]) => ({
-          day,
-          prompt: text(data, 'prompt').trim() || 'Daily painting',
-          score: numberValue(data, 'score'),
-          guess: text(data, 'guess'),
-        }))
+        .map(([day, data]) => {
+          // Today's prompt is only revealed once the player starts an attempt,
+          // so another player's gallery cannot be used to read it early. A
+          // finished older day is public after the daily close.
+          const promptRevealed = owned || (day < today && text(data, 'visibility') === 'public')
+          return {
+            day,
+            ...(promptRevealed ? { prompt: text(data, 'prompt').trim() || 'Daily painting' } : {}),
+            score: numberValue(data, 'score'),
+            guess: text(data, 'guess'),
+          }
+        })
       return { userId, total: bestByDay.size, returned: paintings.length, paintings }
     },
   })

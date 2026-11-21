@@ -81,18 +81,34 @@ afterEach(() => {
 })
 
 describe('agent tools', () => {
-  it('returns today\'s prompt and the player-visible DAILY timing', async () => {
+  it('returns today\'s rules and yesterday\'s closed prompt and top three, never today\'s prompt', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-11-17T23:30:00Z'))
-    const { tools } = setup()
+    const { records, tools } = setup()
+    const yesterday = '2026-11-16'
+    records.rows('dailyScores').set('alice-yesterday', scoreRow('alice', yesterday, 900, 400_000))
+    records.rows('dailyScores').set('bob-yesterday', scoreRow('bob', yesterday, 700, 200_000))
+    records.rows('dailyScores').set('carol-yesterday', scoreRow('carol', yesterday, 700, 100_000))
+    records.rows('dailyScores').set('dave-yesterday', scoreRow('dave', yesterday, 100, 50_000))
 
-    expect(await run(tools, 'today_prompt', {})).toEqual({
+    const info = await run(tools, 'daily_info', {}) as Record<string, unknown>
+    expect(info).toEqual({
       day,
-      prompt: promptForDay(day).prompt,
       attemptMinutes: 5,
       autoGradeMinutes: DAILY.autoWindowsMs.map(offset => offset / 60_000),
       manualGrades: DAILY.maxAsks,
+      yesterday: {
+        day: yesterday,
+        prompt: promptForDay(yesterday).prompt,
+        top3: [
+          { rank: 1, userId: 'alice', displayName: 'alice', score: 900 },
+          { rank: 2, userId: 'carol', displayName: 'carol', score: 700 },
+          { rank: 3, userId: 'bob', displayName: 'bob', score: 700 },
+        ],
+      },
     })
+    expect(info).not.toHaveProperty('prompt')
+    expect(JSON.stringify(info)).not.toContain(promptForDay(day).prompt)
   })
 
   it('ranks the leaderboard like the Scores page: best row per player, score then fastest tie-break', async () => {
@@ -149,27 +165,43 @@ describe('agent tools', () => {
     await expect(validate(tools, 'today_leaderboard', { day, limit: 10 })).resolves.toMatchObject({ success: true })
   })
 
-  it('returns only a player\'s graded paintings, newest day first, without cells', async () => {
+  it('returns only a player\'s graded paintings, newest day first, without cells or an early prompt', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(`${day}T12:00:00Z`))
     const { records, tools } = setup('alice')
     records.rows('dailyDrawings').set('bob-private', drawingRow('bob', '2026-11-16', { visibility: 'private', score: 500 }))
     records.rows('dailyDrawings').set('bob-public', drawingRow('bob', '2026-11-15', { score: 400, guess: 'a fox' }))
+    records.rows('dailyDrawings').set('bob-today', drawingRow('bob', day, { score: 200, prompt: promptForDay(day).prompt }))
+    records.rows('dailyDrawings').set('bob-future', drawingRow('bob', nextDay, { score: 100, prompt: 'a secret future prompt' }))
     records.rows('dailyDrawings').set('bob-blank', drawingRow('bob', '2026-11-14', { cells: '' }))
     records.rows('dailyDrawings').set('bob-zero', drawingRow('bob', '2026-11-13', { score: 0 }))
 
     expect(await run(tools, 'player_gallery', { userId: 'bob' })).toEqual({
       userId: 'bob',
-      total: 1,
-      returned: 1,
-      paintings: [{ day: '2026-11-15', prompt: 'a lighthouse in a storm', score: 400, guess: 'a fox' }],
+      total: 3,
+      returned: 3,
+      paintings: [
+        { day: nextDay, score: 100, guess: '' },
+        { day, score: 200, guess: '' },
+        { day: '2026-11-15', prompt: 'a lighthouse in a storm', score: 400, guess: 'a fox' },
+      ],
     })
+    const bobGallery = JSON.stringify(await run(tools, 'player_gallery', { userId: 'bob' }))
+    expect(bobGallery).not.toContain(promptForDay(day).prompt)
+    expect(bobGallery).not.toContain('a secret future prompt')
 
-    // The caller may see their own private row, but not someone else's.
+    // The caller may see their own private row — including today's prompt — but not someone else's.
     records.rows('dailyDrawings').set('alice-private', drawingRow('alice', '2026-11-16', { visibility: 'private', score: 300 }))
-    const own = await run(tools, 'player_gallery', { userId: 'alice' }) as { paintings: { day: string }[] }
-    expect(own.paintings.map(painting => painting.day)).toEqual(['2026-11-16'])
+    records.rows('dailyDrawings').set('alice-today', drawingRow('alice', day, { visibility: 'private', score: 250, prompt: promptForDay(day).prompt }))
+    const own = await run(tools, 'player_gallery', { userId: 'alice' }) as { paintings: { day: string; prompt?: string }[] }
+    expect(own.paintings.map(painting => painting.day)).toEqual([day, '2026-11-16'])
+    expect(own.paintings[0]).toMatchObject({ day, prompt: promptForDay(day).prompt })
+    expect(own.paintings[1]).toMatchObject({ day: '2026-11-16', prompt: 'a lighthouse in a storm' })
   })
 
   it('keeps one painting per day and clamps the gallery to 1-50', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(`${day}T12:00:00Z`))
     const { records, tools } = setup('alice')
     for (let index = 0; index < 60; index++) {
       const paintingDay = new Date(Date.UTC(2026, 0, 1 + index)).toISOString().slice(0, 10)
@@ -222,7 +254,7 @@ describe('agent tools', () => {
     const records = memoryTools()
     const calls: string[] = []
     const tools = buildTools(executorFor(records.tools.query, name => calls.push(name)), contextFor())
-    await run(tools, 'today_prompt', {})
+    await run(tools, 'daily_info', {})
     await run(tools, 'live_rooms', {})
     expect(calls.every(name => name === 'records.query')).toBe(true)
   })

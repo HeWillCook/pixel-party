@@ -27,7 +27,7 @@ describe('scaffold AI surfaces', () => {
   it.each(['/_deepspace/agent', '/_deepspace/agent/browser'].flatMap((base) => [
     ['GET', `${base}/tools`],
     ['GET', `${base}/tools.md`],
-    ['POST', `${base}/tools/today_prompt`],
+    ['POST', `${base}/tools/daily_info`],
     ['POST', `${base}/mcp`],
   ]))('%s %s is mounted and refuses an unauthenticated caller', async (method, path) => {
     const fetch = vi.fn()
