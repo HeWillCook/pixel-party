@@ -6,6 +6,7 @@ import { useLoadTimeout, useQueryRetry } from '../../hooks/useLoadGuard'
 import { Haiku } from '../haiku/Haiku'
 import { isPrimaryClick } from '../porch/returnFlag'
 import { Avatar, AvatarFallback, AvatarImage } from '../ui'
+import { DrawingViewer, type ViewerDrawing } from './DrawingViewer'
 import { PixelMedal, PixelTrophy } from './PixelMedals'
 import { PixelThumb } from './PixelThumb'
 import '../scores/scores.css'
@@ -26,6 +27,7 @@ interface Drawing {
   userId: string
   cells?: string
   guess?: string
+  reason?: string
 }
 
 const MAX_HISTORY_DAYS = 90
@@ -124,6 +126,45 @@ export function Leaderboard({
     score: gradedByUser.get(userId)!,
     rank,
   }))
+
+  // The full-size viewer walks exactly the rows whose thumbnails the board is showing: the same
+  // `showDrawings` gate, so a painting that is still hidden has no thumbnail and nothing to open.
+  const viewerDrawings: ViewerDrawing[] = showDrawings
+    ? sorted.flatMap(({ score, rank }) => {
+        const drawing = drawingByUser.get(score.userId)
+        const cells = typeof drawing?.cells === 'string' ? drawing.cells : ''
+        if (!cells) return []
+        return [{
+          userId: score.userId,
+          name: score.displayName?.trim() || 'Player',
+          rank,
+          score: score.score,
+          cells,
+          guess: drawing?.guess ?? score.guess ?? '',
+          reason: drawing?.reason ?? '',
+        }]
+      })
+    : []
+  const viewerIndexByUser = new Map(viewerDrawings.map((drawing, index) => [drawing.userId, index]))
+
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null)
+  const thumbRefs = useRef(new Map<string, HTMLButtonElement>())
+  const viewerUserId = viewerIndex === null ? undefined : viewerDrawings[viewerIndex]?.userId
+  const restoreFocus = useCallback(
+    () => (viewerUserId ? (thumbRefs.current.get(viewerUserId) ?? null) : null),
+    [viewerUserId],
+  )
+  const closeViewer = useCallback(() => {
+    // The dialog gives focus back to the thumbnail of the painting last on screen. A backdrop press
+    // does not restore focus on its own, so land it there on the next frame as well.
+    const userId = viewerUserId
+    setViewerIndex(null)
+    if (!userId) return
+    requestAnimationFrame(() => {
+      const thumb = thumbRefs.current.get(userId)
+      if (thumb && document.activeElement !== thumb) thumb.focus({ preventScroll: true })
+    })
+  }, [viewerUserId])
 
   // Drawn scrollbar: the slate only fits three 120 px rows, so a clipped row always shows a thumb
   // and a bottom fade instead of looking like a layout bug. Native scrollbars are hidden because
@@ -250,6 +291,8 @@ export function Leaderboard({
               {sorted.map(({ score, rank }) => {
               const drawing = showDrawings ? drawingByUser.get(score.userId) : undefined
               const hasCells = typeof drawing?.cells === 'string' && drawing.cells.length > 0
+              const cells = hasCells ? drawing!.cells! : ''
+              const viewerAt = viewerIndexByUser.get(score.userId)
               const medal = offset === 0 ? (rank <= 3 ? rank : 0) : (score.medal ?? 0)
               const playerName = score.displayName?.trim() || 'Player'
               const painterHref = `/u/${encodeURIComponent(score.userId)}`
@@ -269,9 +312,7 @@ export function Leaderboard({
                     title={playerName}
                   >
                     <span className="scores-rank">{rank}</span>
-                    {hasCells && drawing?.cells ? (
-                      <PixelThumb cells={drawing.cells} size={64} className="scores-thumb" />
-                    ) : null}
+                    {hasCells && <span className="scores-thumb-slot" aria-hidden="true" />}
                     <Avatar className="scores-avatar">
                       <AvatarImage src={score.avatarUrl || undefined} />
                       <AvatarFallback className="bg-[#263451] text-[#fff0cc]">
@@ -292,6 +333,24 @@ export function Leaderboard({
                       <span className="scores-points-max"> / 1000</span>
                     </span>
                   </Link>
+                  {/* The thumbnail is the way in, laid over its slot (outside the row link) so a tap
+                      opens the painting instead of the painter's gallery. */}
+                  {viewerAt !== undefined && cells && (
+                    <button
+                      type="button"
+                      className="scores-thumb-button"
+                      data-testid="leaderboard-thumb-button"
+                      aria-label={`View ${playerName}'s drawing`}
+                      aria-haspopup="dialog"
+                      ref={(element) => {
+                        if (element) thumbRefs.current.set(score.userId, element)
+                        else thumbRefs.current.delete(score.userId)
+                      }}
+                      onClick={() => setViewerIndex(viewerAt)}
+                    >
+                      <PixelThumb cells={cells} size={64} className="scores-thumb" />
+                    </button>
+                  )}
                 </li>
               )
             })}
@@ -319,6 +378,16 @@ export function Leaderboard({
           <span className="scores-eraser" />
         </div>
       </div>
+
+      {viewerIndex !== null && viewerUserId !== undefined && (
+        <DrawingViewer
+          drawings={viewerDrawings}
+          index={viewerIndex}
+          onIndexChange={setViewerIndex}
+          onClose={closeViewer}
+          finalFocus={restoreFocus}
+        />
+      )}
     </div>
   )
 }

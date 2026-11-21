@@ -299,6 +299,7 @@
 
 .scores-row {
   list-style: none;
+  position: relative;
 }
 
 .scores-row-link {
@@ -322,10 +323,15 @@
   border-color: #c57d63;
 }
 
-.scores-row-link:hover {
+.scores-row:hover .scores-row-link {
   background: #3e5b5b;
   border-color: #ecd4b0;
   transform: translateX(3px);
+}
+
+/* The thumbnail button rides with the row it belongs to (see .scores-thumb-button). */
+.scores-row:hover .scores-thumb-button {
+  transform: translate(3px, -50%);
 }
 
 .scores-row-link:focus-visible {
@@ -349,6 +355,38 @@
 .scores-thumb {
   border: 2px solid #fff0cc;
   box-shadow: 0 0 0 1px #392a45;
+}
+
+/* The thumbnail is the way into a painting: a button over its slot, beside the row link (never
+   inside it) so tapping the picture opens it full size instead of the painter's gallery. The slot
+   keeps the row's flex layout exactly as the thumbnail's canvas did. */
+.scores-thumb-slot {
+  flex: none;
+  width: 68px; /* 64 px canvas + its 2 px frame on both sides */
+  height: 68px;
+}
+
+.scores-thumb-button {
+  position: absolute;
+  top: 50%;
+  left: calc(var(--px, 3px) * 7 + 30px); /* the row's 2px border, its padding, the rank column and the gap */
+  padding: 0;
+  border: 0;
+  background: none;
+  line-height: 0;
+  cursor: pointer;
+  transform: translateY(-50%);
+  transition: transform 160ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.scores-thumb-button:hover .scores-thumb {
+  border-color: #ffcf84;
+  box-shadow: 0 0 0 1px #392a45, 0 0 0 3px #c57d63;
+}
+
+.scores-thumb-button:focus-visible {
+  outline: var(--px, 3px) solid #fff0bb;
+  outline-offset: var(--px, 3px);
 }
 
 .scores-avatar,
@@ -379,7 +417,7 @@
   white-space: nowrap;
 }
 
-.scores-row-link:hover .scores-row-name {
+.scores-row:hover .scores-row-name {
   color: #fff0bb;
   text-decoration: underline;
 }
@@ -525,6 +563,15 @@
     height: 48px !important;
   }
 
+  .scores-thumb-slot {
+    width: 52px; /* 48 px canvas + its 2 px frame on both sides */
+    height: 52px;
+  }
+
+  .scores-thumb-button {
+    left: calc(var(--px, 2px) * 6 + 24px); /* the row's 2px border, its padding, the narrower rank column and the gap */
+  }
+
   .scores-row-name {
     display: -webkit-box;
     -webkit-box-orient: vertical;
@@ -576,7 +623,204 @@
   .scores-row-link {
     transition: none;
   }
-  .scores-row-link:hover {
+  .scores-row:hover .scores-row-link {
+    transform: none;
+  }
+  .scores-thumb-button {
+    transition: none;
+  }
+  .scores-row:hover .scores-thumb-button {
+    transform: translateY(-50%);
+  }
+}
+
+/* Full-size viewer: the board's own slate, chalk and 3 px pixel borders, so a painting opens onto
+   the same board it was drawn on. The dialog primitive's cream panel is overridden here. */
+.drawing-viewer {
+  --dv-px: 3px;
+  --dv-art: min(420px, calc(100vw - 72px), calc(100dvh - 320px));
+  display: flex;
+  flex-direction: column;
+  width: auto;
+  max-width: min(520px, calc(100vw - 2rem));
+  max-height: calc(100dvh - 2rem);
+  padding: calc(var(--dv-px) * 4);
+  overflow-y: auto;
+  background: #293b4a !important;
+  border: var(--dv-px) solid #392a45 !important;
+  box-shadow:
+    0 0 0 calc(var(--dv-px) * 2) #c57d63,
+    0 0 0 calc(var(--dv-px) * 3) #392a45,
+    inset 0 3px 0 #34516a !important;
+  border-radius: 0 !important;
+  color: #fff0cc;
+}
+
+.drawing-viewer__panel {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--dv-px) * 3);
+  min-height: 0;
+}
+
+.drawing-viewer__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: calc(var(--dv-px) * 3);
+  padding-bottom: calc(var(--dv-px) * 3);
+  background-image: repeating-linear-gradient(
+    to right,
+    #3e5b5b 0 calc(var(--dv-px) * 2),
+    transparent calc(var(--dv-px) * 2) calc(var(--dv-px) * 4)
+  );
+  background-position: left bottom;
+  background-size: 100% var(--dv-px);
+  background-repeat: no-repeat;
+}
+
+.drawing-viewer__name {
+  margin: 0;
+  min-width: 0;
+  font-size: 30px;
+  line-height: 1.1;
+  color: #fff0bb;
+  text-shadow: calc(var(--dv-px) * 0.66) calc(var(--dv-px) * 0.66) 0 #392a45;
+  overflow-wrap: anywhere;
+}
+
+.drawing-viewer__medal {
+  flex: none;
+}
+
+.drawing-viewer__meta {
+  margin: 0 0 0 auto;
+  font-size: 20px;
+  line-height: 1.2;
+  color: #ecd4b0;
+  white-space: nowrap;
+}
+
+.drawing-viewer__stage {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* The painting itself: one whole-number pixel per cell, at the largest size that still fits. */
+.drawing-viewer__art {
+  width: var(--dv-art) !important;
+  height: var(--dv-art) !important;
+  border: var(--dv-px) solid #fff0cc;
+  box-shadow: 0 0 0 var(--dv-px) #392a45;
+  image-rendering: pixelated;
+  background: #fff0cc;
+}
+
+.drawing-viewer__ai {
+  padding: calc(var(--dv-px) * 2) calc(var(--dv-px) * 3);
+  background: #34516a;
+  border: var(--dv-px) solid #263451;
+}
+
+.drawing-viewer__guess {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.2;
+  color: #fff0bb;
+  overflow-wrap: anywhere;
+}
+
+.drawing-viewer__reason {
+  margin: calc(var(--dv-px) * 1) 0 0;
+  font-size: 19px;
+  line-height: 1.25;
+  color: #ecd4b0;
+  overflow-wrap: anywhere;
+}
+
+.drawing-viewer__controls {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--dv-px) * 2);
+}
+
+.drawing-viewer__step,
+.drawing-viewer__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  padding: var(--dv-px) calc(var(--dv-px) * 2);
+  font-family: inherit;
+  font-size: 24px;
+  line-height: 1;
+  color: #fff0cc;
+  background: #34516a;
+  border: var(--dv-px) solid #ecd4b0;
+  border-radius: 0;
+  box-shadow: var(--dv-px) var(--dv-px) 0 #392a45;
+  cursor: pointer;
+}
+
+.drawing-viewer__step:hover:not(:disabled),
+.drawing-viewer__close:hover {
+  background: #3e5b5b;
+  color: #fff0bb;
+}
+
+.drawing-viewer__step:active:not(:disabled),
+.drawing-viewer__close:active {
+  transform: translateY(var(--dv-px));
+  box-shadow: none;
+}
+
+.drawing-viewer__step:disabled {
+  background: #263451;
+  border-color: #79647a;
+  color: #aa8c91;
+  box-shadow: none;
+  cursor: default;
+}
+
+.drawing-viewer__step:focus-visible,
+.drawing-viewer__close:focus-visible {
+  outline: var(--dv-px) solid #fff0bb;
+  outline-offset: var(--dv-px);
+}
+
+.drawing-viewer__close {
+  margin-left: auto;
+}
+
+.drawing-viewer__count {
+  flex: 1;
+  text-align: center;
+  font-size: 20px;
+  line-height: 1;
+  color: #ecd4b0;
+}
+
+@media (max-width: 640px) {
+  .drawing-viewer {
+    --dv-px: 2px;
+    --dv-art: min(420px, calc(100vw - 72px), calc(100dvh - 300px));
+    padding: calc(var(--dv-px) * 4);
+  }
+
+  .drawing-viewer__name {
+    font-size: 26px;
+  }
+
+  .drawing-viewer__meta {
+    font-size: 18px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drawing-viewer__step:active:not(:disabled),
+  .drawing-viewer__close:active {
     transform: none;
   }
 }
