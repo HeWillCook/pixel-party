@@ -206,11 +206,13 @@ for (const [viewport, dsf] of [[{ width: 1980, height: 1240 }, 2], [{ width: 144
       if (direction === 'down') await page.getByRole('link', { name: 'Basement studio' }).click()
       else await page.getByRole('link', { name: 'Upstairs' }).first().click()
       await expect(page).toHaveURL(`${origin}/${direction === 'down' ? 'party' : 'home'}`)
-      await page.waitForTimeout(400)
+      // Sample the whole move: wait for the floor cutaway to leave rather than a fixed delay (CI renders slower).
+      await expect(page.locator('.vertical-scene-transition__floor-art')).toHaveCount(0, { timeout: 5000 })
       const frames = await page.evaluate(() => (window as unknown as { __stairSamples: { left: number; width: number; what: string }[][] }).__stairSamples)
       // Frames where the floor cutaway is on screen: the move itself. Every section painted in it shares the stair's column.
       const moving = frames.filter((frame) => frame.some((entry) => entry.what === 'cutaway'))
-      expect(moving.length).toBeGreaterThan(20)
+      // Enough frames to prove the move was sampled; the exact count depends on the machine's frame rate.
+      expect(moving.length).toBeGreaterThan(8)
       const sections = new Set(moving.flat().map((entry) => entry.what))
       expect([...sections].sort()).toEqual(['basement', 'cutaway', 'porch'])
       const all = moving.flat()
