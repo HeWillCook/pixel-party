@@ -128,6 +128,16 @@ export function wallSlot(layout: WallPageLayout, index: number, onPage: number):
 
 export const wallPageCount = (count: number, perPage: number) => (count > 0 ? Math.ceil(count / perPage) : 0)
 
+/**
+ * The screen y just under the lowest place a painting (or its caption) can hang, on this viewport.
+ * The player's page uses it to keep its stats plaque on the deck boards, never over the wall.
+ */
+export function wallFrameBottom(composition: Composition, viewport: { w: number; h: number }, scale: number): number {
+  const sceneH = sceneSize(composition).h
+  const oy = scale ? (viewport.h - sceneH * scale) / 2 : 0
+  return Math.round((FLOOR[composition] - 12) * scale + oy)
+}
+
 /** The camera on the wall: the same zoom as the rest pose, panned along the porch until its right edge is at `WALL_VIEW_RIGHT`. */
 export function wallTargetCamera(viewport: { w: number; h: number }, composition: Composition): Camera {
   if (!viewport.w || !viewport.h) return { ...REST_CAMERA }

@@ -9,6 +9,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '../ui'
 import { DrawingViewer, type ViewerDrawing } from './DrawingViewer'
 import { PixelMedal, PixelTrophy } from './PixelMedals'
 import { PixelThumb } from './PixelThumb'
+import { PlayerStatsDialog } from '../stats/PlayerStatsDialog'
 import '../scores/scores.css'
 
 interface Score {
@@ -149,6 +150,7 @@ export function Leaderboard({
 
   const [viewerIndex, setViewerIndex] = useState<number | null>(null)
   const thumbRefs = useRef(new Map<string, HTMLButtonElement>())
+  const rowLinkRefs = useRef(new Map<string, HTMLAnchorElement>())
   const viewerUserId = viewerIndex === null ? undefined : viewerDrawings[viewerIndex]?.userId
   const restoreFocus = useCallback(
     () => (viewerUserId ? (thumbRefs.current.get(viewerUserId) ?? null) : null),
@@ -165,6 +167,19 @@ export function Leaderboard({
       if (thumb && document.activeElement !== thumb) thumb.focus({ preventScroll: true })
     })
   }, [viewerUserId])
+
+  // A name or avatar opens the player's stats card; the row's artwork still opens the painting. Keyboard
+  // activation of the row link (`detail === 0`) opens the same card, and the card links on to the gallery.
+  const [statsUserId, setStatsUserId] = useState<string | null>(null)
+  const closeStats = useCallback(() => {
+    const userId = statsUserId
+    setStatsUserId(null)
+    if (!userId) return
+    requestAnimationFrame(() => {
+      const link = rowLinkRefs.current.get(userId)
+      if (link && document.activeElement !== link) link.focus({ preventScroll: true })
+    })
+  }, [statsUserId])
 
   // Drawn scrollbar: the slate only fits three 120 px rows, so a clipped row always shows a thumb
   // and a bottom fade instead of looking like a layout bug. Native scrollbars are hidden because
@@ -271,8 +286,8 @@ export function Leaderboard({
         <p className="scores-subtitle">
           {offset === 0
             ? ended
-              ? 'Final standings · tap a painter to visit their gallery'
-              : 'Live rankings so far · paintings reveal at day end'
+              ? 'Final standings · tap a painter for stats · tap a painting to see it'
+              : 'Live rankings so far · tap a painter for stats · paintings reveal at day end'
             : `Standings for ${selectedDay}`}
         </p>
 
@@ -304,8 +319,19 @@ export function Leaderboard({
                   <Link
                     className="scores-row-link"
                     to={painterHref}
+                    ref={(element) => {
+                      if (element) rowLinkRefs.current.set(score.userId, element)
+                      else rowLinkRefs.current.delete(score.userId)
+                    }}
                     onClick={(event: MouseEvent<HTMLAnchorElement>) => {
-                      if (!onSelectPainter || !isPrimaryClick(event)) return
+                      if (!isPrimaryClick(event)) return
+                      const onPlayer = event.detail === 0 || (event.target as Element).closest('[data-player-stats]') !== null
+                      if (onPlayer) {
+                        event.preventDefault()
+                        setStatsUserId(score.userId)
+                        return
+                      }
+                      if (!onSelectPainter) return
                       event.preventDefault()
                       onSelectPainter(painterHref)
                     }}
@@ -313,13 +339,15 @@ export function Leaderboard({
                   >
                     <span className="scores-rank">{rank}</span>
                     {hasCells && <span className="scores-thumb-slot" aria-hidden="true" />}
-                    <Avatar className="scores-avatar">
-                      <AvatarImage src={score.avatarUrl || undefined} />
-                      <AvatarFallback className="bg-[#263451] text-[#fff0cc]">
-                        {Array.from(playerName)[0] ?? ''}
-                      </AvatarFallback>
-                    </Avatar>
-                    <span className="scores-row-name">{playerName}</span>
+                    <span className="scores-player-stats" data-player-stats>
+                      <Avatar className="scores-avatar">
+                        <AvatarImage src={score.avatarUrl || undefined} />
+                        <AvatarFallback className="bg-[#263451] text-[#fff0cc]">
+                          {Array.from(playerName)[0] ?? ''}
+                        </AvatarFallback>
+                      </Avatar>
+                      <span className="scores-row-name" data-player-stats>{playerName}</span>
+                    </span>
                     {medal > 0 && medal <= 3 && (
                       <PixelMedal
                         medal={medal as 1 | 2 | 3}
@@ -386,6 +414,20 @@ export function Leaderboard({
           onIndexChange={setViewerIndex}
           onClose={closeViewer}
           finalFocus={restoreFocus}
+        />
+      )}
+
+      {statsUserId !== null && (
+        <PlayerStatsDialog
+          userId={statsUserId}
+          onClose={closeStats}
+          finalFocus={() => rowLinkRefs.current.get(statsUserId) ?? null}
+          onSeeGallery={onSelectPainter
+            ? (href) => {
+                setStatsUserId(null)
+                onSelectPainter(href)
+              }
+            : undefined}
         />
       )}
     </div>

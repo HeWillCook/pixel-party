@@ -12,10 +12,11 @@ import { seo } from '../../../seo'
 import { PorchLabels } from '../../../components/porch/PorchLabels'
 import { isPrimaryClick } from '../../../components/porch/returnFlag'
 import { usePorchCloseup } from '../../../components/porch/usePorchCloseup'
+import { PlayerStatsCard } from '../../../components/stats/PlayerStatsCard'
 import { useDaily } from '../../../hooks/DailyAttemptProvider'
 import { PixelScene } from '../../../scene/PixelScene'
 import { drawPorch } from '../../../scene/porch/drawPorch'
-import { wallPageCount, wallPageLayout } from '../../../scene/porch/wallLayout'
+import { wallFrameBottom, wallPageCount, wallPageLayout } from '../../../scene/porch/wallLayout'
 import { integerScale } from '../../../scene/camera'
 import '../../../components/gallery/gallery.css'
 
@@ -52,6 +53,12 @@ export default function ProfilePage() {
     const scale = integerScale(viewport.w, viewport.h, composition)
     return viewport.w && viewport.h ? wallPageLayout(composition, viewport, scale, items.length).perPage : 1
   }, [viewport, composition, items.length])
+  // The plaque sits on the deck boards: the height is whatever is left below the lowest painting.
+  const statsMaxHeight = useMemo(() => {
+    if (!viewport.w || !viewport.h) return 200
+    const scale = integerScale(viewport.w, viewport.h, composition)
+    return Math.max(88, Math.round(viewport.h - wallFrameBottom(composition, viewport, scale) - 16))
+  }, [viewport, composition])
   const pages = status === 'loading' || status === 'error' ? 0 : wallPageCount(items.length, perPage)
   const { page, turn, go, finish } = useWallPager(userId, pages)
   const goRef = useRef(go)
@@ -163,6 +170,14 @@ export default function ProfilePage() {
         <h1 className="gallery-hud__title">{heading}</h1>
         <Link to="/home" onClick={onPorchLink} data-testid="gallery-back" className="pp-chip">← Back to the porch</Link>
       </header>
+      <aside
+        className="gallery-stats-plaque"
+        data-testid="gallery-stats-plaque"
+        style={{ maxHeight: `${statsMaxHeight}px` }}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <PlayerStatsCard userId={userId} variant="plaque" />
+      </aside>
       {/* DEV ONLY (__DEBUG_TOOLS__) */}
       {__DEBUG_TOOLS__ && isOwner && <TempDebugPaintings />}
     </div>
