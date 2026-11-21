@@ -1,6 +1,6 @@
 import { BaseRoom } from 'deepspace/worker'
 import type { Env } from '../../worker.js'
-import { completeGrade, endAttempt, normalizeRow, reserveGrade, reservePeek, saveLatestCells, settleMissedWindows, startAttempt } from '../game/daily/attempt'
+import { completeGrade, endAttempt, normalizeRow, reserveGrade, refundPeek, reservePeek, saveLatestCells, settleMissedWindows, startAttempt } from '../game/daily/attempt'
 import type { AttemptProfile, AttemptRow, GradeKind, GradeResult } from '../game/daily/attempt'
 import { attemptPublisher } from './daily-records'
 import { createServerTools, type ServerTools } from './server-tools'
@@ -13,6 +13,7 @@ type Operation =
   | { op: 'end'; userId: string; day: string; cells: string | null; now: number }
   | { op: 'save'; userId: string; day: string; cells: string; now: number }
   | { op: 'peek'; userId: string; day: string; now: number }
+  | { op: 'unpeek'; userId: string; day: string }
   | { op: 'get'; userId: string; day: string; now?: number }
   // DEV ONLY (__DEBUG_TOOLS__)
   | { op: 'reset'; userId: string; day: string }
@@ -25,6 +26,8 @@ export interface AttemptStore {
   end(userId: string, day: string, cells: string | null, now: number): Promise<AttemptRow | null>
   save(userId: string, day: string, cells: string, now: number): Promise<ReturnType<typeof saveLatestCells>>
   reservePeek(userId: string, day: string, now: number): Promise<ReturnType<typeof reservePeek>>
+  /** Optional so simple test stores can skip it; the real store always has it. */
+  refundPeek?(userId: string, day: string): Promise<void>
   get(userId: string, day: string, now?: number): Promise<AttemptRow | null>
   publish(userId: string, day: string, now: number): Promise<void>
   // DEV ONLY (__DEBUG_TOOLS__)
@@ -41,6 +44,7 @@ function applyOperation(row: AttemptRow | null, body: Operation) {
     case 'end': return { row: row ? endAttempt(row, body.cells, body.now) : null }
     case 'save': return saveLatestCells(row, body.cells, body.now)
     case 'peek': return reservePeek(row, body.now)
+    case 'unpeek': return refundPeek(row)
     case 'get': return { row: row ? body.now === undefined ? normalizeRow(row) : settleMissedWindows(row, body.now) : null }
     case 'reset': return { row: null }
   }
@@ -91,6 +95,7 @@ function makeStore(invoke: (body: Operation | PublishOperation) => Promise<Retur
     end: async (userId, day, cells, now) => (await invoke({ op: 'end', userId, day, cells, now }) as { row: AttemptRow | null }).row,
     save: (userId, day, cells, now) => invoke({ op: 'save', userId, day, cells, now }) as ReturnType<AttemptStore['save']>,
     reservePeek: (userId, day, now) => invoke({ op: 'peek', userId, day, now }) as ReturnType<AttemptStore['reservePeek']>,
+    refundPeek: async (userId, day) => { await invoke({ op: 'unpeek', userId, day }) },
     get: async (userId, day, now) => (await invoke({ op: 'get', userId, day, now }) as { row: AttemptRow | null }).row,
     publish: async (userId, day, now) => { await invoke({ op: 'publish', userId, day, now }) },
     reset: async (userId, day) => { await invoke({ op: 'reset', userId, day }) },

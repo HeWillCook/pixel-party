@@ -164,6 +164,16 @@ describe('daily attempt', () => {
     expect(cellsHash('abc')).not.toBe(cellsHash('abd'))
   })
 
+  it('a final reserved before a concurrent end still counts toward best and latest', () => {
+    const halfway = completeGrade(reserve(initial(), 'auto', 'h', now + 150_000), grade(400), 'h', 'cells', now + 150_001, now + 150_000).row
+    const pending = reserve(halfway, 'final', 'h2', now + 300_000)
+    const ended = endAttempt(pending, 'final-cells', now + 300_500)
+    const landed = completeGrade(ended, grade(800), 'h2', 'final-cells', now + 301_000, now + 300_000)
+    expect(landed.applied).toBe(true)
+    expect(landed.improved).toBe(true)
+    expect(landed.row).toMatchObject({ endedAt: now + 300_500, lastCells: 'final-cells', bestScore: 800, inFlightSince: null, bestGrade: { cells: 'final-cells' }, lastGrade: { cells: 'final-cells' } })
+  })
+
   it('ignores stale completions and accepts the current reservation', () => {
     const firstTime = now + 150_000
     const secondTime = now + 300_000

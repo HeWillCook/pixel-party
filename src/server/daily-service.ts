@@ -188,12 +188,17 @@ export async function peekDaily(deps: DailyDeps, user: DailyUser, cells: string,
   if (!validCells(cells)) return { ok: false, reason: 'bad_cells' }
   const reservation = await deps.store.reservePeek(user.userId, day, now)
   if (!reservation.ok) return { ok: false, reason: reservation.reason }
+  // A look that never produces a line gives the peek back, so a budget outage doesn't eat them.
+  const refund = async () => { try { await deps.store.refundPeek?.(user.userId, day) } catch { /* best effort */ } }
   try {
-    if (!await deps.reserveBudget()) return { ok: false, reason: 'judge_resting' }
+    if (!await deps.reserveBudget()) { await refund(); return { ok: false, reason: 'judge_resting' } }
     const png = await deps.render(cells)
     const peeked = await deps.judge.peek?.(png, promptForDay(day).prompt)
-    return peeked ? { ok: true, line: peeked.line } : { ok: false, reason: 'judge_resting' }
+    if (peeked) return { ok: true, line: peeked.line }
+    await refund()
+    return { ok: false, reason: 'judge_resting' }
   } catch {
+    await refund()
     return { ok: false, reason: 'judge_resting' }
   }
 }
@@ -206,7 +211,11 @@ export async function saveDailyCanvas(deps: DailyDeps, user: DailyUser, cells: s
   if (!await allowedDay(deps, user.userId, day, now)) return { ok: false, reason: 'invalid_day' }
   if (!validCells(cells)) return { ok: false, reason: 'bad_cells' }
   const saved = await deps.store.save(user.userId, day, cells, now)
-  return saved.ok ? { ok: true } : { ok: false, reason: saved.reason }
+  if (!saved.ok) return { ok: false, reason: saved.reason }
+  // Publish too, so a player who closes the tab and never comes back still has their latest
+  // canvas on the day's drawing (the client only saves when the canvas changed, at most every 10 s).
+  await deps.store.publish(user.userId, day, now)
+  return { ok: true }
 }
 
 export async function endDaily(deps: DailyDeps, user: DailyUser, cells: string | null, day = utcDay(deps.now())): Promise<DailyStateView> {

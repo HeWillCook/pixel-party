@@ -225,15 +225,13 @@ export function useDailyAttempt(): {
       if (restoredKeyRef.current === key) return
       restoredKeyRef.current = key
 
-      const fromLocal = readLocalCells(serverState.day, uid)
-      if (fromLocal) {
-        cellsRef.current = fromLocal
-        setCells(fromLocal)
-        return
-      }
-      const fromServer = decodeValidCells(serverState.lastCells) ?? new Uint8Array(GRID_CELLS)
-      cellsRef.current = fromServer
-      setCells(fromServer)
+      // The server's saved canvas wins: a second device's stale local copy must never be
+      // restored and then autosaved over newer art. Local storage only fills in when the server
+      // has nothing yet (e.g. the first autosave has not landed).
+      const fromServer = decodeValidCells(serverState.lastCells)
+      const restored = fromServer ?? readLocalCells(serverState.day, uid) ?? new Uint8Array(GRID_CELLS)
+      cellsRef.current = restored
+      setCells(restored)
     },
     [],
   )

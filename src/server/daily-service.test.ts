@@ -278,7 +278,7 @@ describe('daily service', () => {
   })
 
   it('saves the latest canvas while the attempt is active only', async () => {
-    const { deps, at } = setup()
+    const { deps, records, at } = setup()
     await startDaily(deps, user)
     at(startedAt + 10_000)
     expect(await saveDailyCanvas(deps, user, cells)).toEqual({ ok: true })
@@ -286,6 +286,8 @@ describe('daily service', () => {
     at(startedAt + 20_000)
     expect(await saveDailyCanvas(deps, user, otherCells)).toEqual({ ok: true })
     expect((await dailyState(deps, user.userId)).lastCells).toBe(otherCells)
+    // Each save publishes, so a closed tab's latest canvas reaches the day's drawing record.
+    expect(onlyRow(records, 'dailyDrawings')).toMatchObject({ cells: otherCells, visibility: 'private' })
     at(FINAL)
     await endDaily(deps, user, null)
     expect(await saveDailyCanvas(deps, user, cells)).toEqual({ ok: false, reason: 'ended' })
@@ -317,6 +319,11 @@ describe('daily service', () => {
     at(startedAt + 75_000)
     expect(await peekDaily(deps, user, cells)).toEqual({ ok: false, reason: 'judge_resting' })
     expect(deps.judge.peek).not.toHaveBeenCalled()
+    // A look that never produced a line gives the peek back.
+    expect(await deps.store.get(user.userId, day)).toMatchObject({ peeksUsed: 0 })
+    vi.mocked(deps.judge.peek).mockRejectedValueOnce(new Error('judge down'))
+    expect(await peekDaily(deps, user, cells)).toEqual({ ok: false, reason: 'judge_resting' })
+    expect(await deps.store.get(user.userId, day)).toMatchObject({ peeksUsed: 0 })
   })
 
   it('rejects a peek after the attempt ended and on invalid cells', async () => {

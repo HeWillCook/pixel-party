@@ -112,8 +112,13 @@ export function completeGrade(row: AttemptRow, outcome: GradeResult | null, cell
     cleared.windows = current.windows.map(window => window.index === index ? { ...window, status: 'graded', resolvedAt: now, score: outcome.total, late: reservedAt - autoWindowAt(row.startedAt, index) > DAILY.autoLateMs } : window)
     cleared.autoUsed++
   }
-  if (row.endedAt !== null) return { improved: false, applied: true, row: cleared }
   const improved = outcome.total > row.bestScore
+  if (row.endedAt !== null) {
+    // The attempt was ended (e.g. a concurrent /end) while this judgement was in flight. It was
+    // reserved in time, so it still counts toward the best score and the latest caption; the ended
+    // canvas and end time stay as they are.
+    return { improved, applied: true, row: { ...cleared, lastGradeAt: now, lastGradedHash: cellsHash, bestScore: improved ? outcome.total : row.bestScore, bestGrade: improved ? { cells, grade: outcome } : row.bestGrade, lastGrade: { cells, grade: outcome } } }
+  }
   const next: AttemptRow = {
     ...cleared,
     lastGradeAt: now,
@@ -135,6 +140,13 @@ export function reservePeek(row: AttemptRow | null, now: number): { ok: true; ro
   const current = normalizeRow(row)
   if (current.peeksUsed >= DAILY.maxPeeks) return { ok: false, reason: 'no_peeks_left' }
   return { ok: true, row: { ...current, peeksUsed: current.peeksUsed + 1 } }
+}
+
+/** Gives back a peek whose look never produced a line (budget resting or the judge failed). */
+export function refundPeek(row: AttemptRow | null): { row: AttemptRow | null } {
+  if (!row) return { row }
+  const current = normalizeRow(row)
+  return { row: { ...current, peeksUsed: Math.max(0, current.peeksUsed - 1) } }
 }
 
 /** Periodic canvas save: only while the attempt is running, so a closed tab still stores its latest art. */
