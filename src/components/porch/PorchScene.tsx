@@ -17,8 +17,11 @@ import {
 } from '../../scene/zoom'
 import { PorchLocalCloseup, type LocalPhase } from './PorchLocalCloseup'
 import { RulesNote } from './RulesNote'
+import { HaikuHello } from './HaikuHello'
+import { PorchPresenceSign } from './PorchPresence'
+import type { HaikuFacts } from './haikuGreeting'
 import { PorchWall } from '../gallery/PorchWall'
-import { signCopyStyle } from './PorchLabels'
+import { basementSignText, signCopyStyle } from './PorchLabels'
 import { ChalkboardBoard } from './ChalkboardBoard'
 import { SignInCard } from '../auth/SignInCard'
 import { localCloseup, type LocalKind } from '../../scene/porch/localPoses'
@@ -68,6 +71,8 @@ export interface PorchSceneProps {
   easelText?: ReactNode
   pendingChain?: PorchChainDest | null
   onConsumePendingChain?: () => void
+  /** What the cat can tell you about today, once the page has it (his first words are always who he is). */
+  haikuFacts?: HaikuFacts
   /** The wall to the left of the porch (with the player's paintings, once they are loaded); a bare wall when absent. */
   wall?: ReactNode
   children?: ReactNode
@@ -107,12 +112,14 @@ function Objects({
     <Hotspot rect={rect.gallery} label="Your gallery" href={props.signedIn ? props.galleryHref : undefined} onClick={props.signedIn ? onGallery : props.landing ? props.onSignIn : onMailbox}>
       <span className="porch-gallery-sign-copy" aria-hidden="true">Gallery</span>
     </Hotspot>
+    <HaikuHello rect={rect.cat} facts={props.haikuFacts} />
     <Hotspot rect={rect.easel} label={props.easelLabel} href={props.landing ? '/home' : undefined} onClick={props.landing ? undefined : props.onEasel} testId={props.easelTestId} disabled={props.easelDisabled}><span className={props.easelState === 'finished' ? 'porch-easel-copy porch-easel-copy--tag' : 'porch-easel-copy'}>{props.easelText}</span></Hotspot>
+    {!props.landing && <PorchPresenceSign />}
     <Hotspot rect={rect.chalkboard} label="Today's scores" href="/scores" onClick={onScores} />
     {!props.landing && <ChalkboardBoard />}
     {composition === 'landscape' && <Hotspot rect={rect.radio} label={props.muted ? 'Unmute sounds' : 'Mute sounds'} pressed={props.muted} onClick={props.onToggleMute} />}
     <Hotspot rect={rect.basement} label="Basement studio" href="/party" onClick={onParty} testId={props.landing ? 'landing-browse-lobby' : undefined}>
-      <span className="porch-basement-sign-copy" style={signCopyStyle(composition)}>Basement studio ↓</span>
+      <span className="porch-basement-sign-copy" style={signCopyStyle(composition)}>{basementSignText(composition)}</span>
     </Hotspot>
     {composition !== 'landscape' && <button type="button" className="porch-more-ticket" style={rectToPercent(rect.more, composition)} aria-expanded={moreOpen} onClick={onToggleMore}>More</button>}
   </>

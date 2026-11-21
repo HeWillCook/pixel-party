@@ -72,17 +72,18 @@ for (const viewport of [{ width: 375, height: 812 }, { width: 640, height: 360 }
     await page.mouse.click(4, 4)
     await expect(menu).toBeHidden()
     await expect(more).toBeFocused()
-    const account = page.getByRole('navigation', { name: 'Porch shortcuts' }).getByRole('button', { name: 'Account' })
-    await account.click()
+    // Account lives in More: the sheet's first plank opens the mailbox, and putting the mailbox away comes back to More.
+    await more.click()
+    await menu.getByRole('button', { name: 'Account' }).click()
     const dialog = page.getByRole('dialog', { name: 'Account menu' })
     await expect(dialog.locator(':focus')).toBeVisible()
     await page.keyboard.press('Escape')
     await expect(dialog).toBeHidden()
-    await expect(account).toBeFocused()
+    await expect(more).toBeFocused()
     await account.click()
     await page.mouse.click(4, 4)
     await expect(dialog).toBeHidden()
-    await expect(account).toBeFocused()
+    await expect(more).toBeFocused()
   })
 }
 
@@ -155,7 +156,7 @@ test('signed-out porch offers sign-in on easel and mailbox', async ({ page }) =>
   await page.goto(`${origin}/home`)
   const scene = page.locator('.porch-world')
   await expect(scene.getByRole('button', { name: 'Sign in to paint' })).toBeVisible()
-  await expect(scene.getByRole('button', { name: 'Sign in', exact: true })).toBeVisible()
+  await expect(scene.getByRole('button', { name: 'Sign in at the mailbox', exact: true })).toBeVisible()
 })
 
 test('basement sign runs a vertical floor transition before navigating', async ({ page }) => {
@@ -318,15 +319,17 @@ test('portrait porch keeps every object in view and tappable', async ({ page }) 
   }
   const dock = page.getByRole('navigation', { name: 'Porch shortcuts' })
   await expect(page.locator('.board-face [data-testid="scores-chalkboard"]')).toBeVisible()
-  for (const name of ['Scores', 'Gallery', 'Party', 'Account', 'More']) await expect(dock.getByRole(name === 'Account' || name === 'More' ? 'button' : 'link', { name, exact: true })).toBeVisible()
+  for (const name of ['Daily', 'Scores', 'Party', 'Gallery', 'More']) await expect(dock.getByRole(name === 'Daily' || name === 'More' ? 'button' : 'link', { name, exact: true })).toBeVisible()
+  // The phone dock reads in the desktop order.
+  expect((await dock.locator('a, button').allInnerTexts()).map((text) => text.trim().split(/\s+/).pop())).toEqual(['Daily', 'Scores', 'Party', 'Gallery', 'More'])
   const more = page.getByRole('button', { name: 'More', exact: true })
   const moreBox = (await more.boundingBox())!
   expect(moreBox.y + moreBox.height).toBeGreaterThan(760)
   await expect(page.locator('.porch-nav__mail-art')).toBeHidden()
   await more.click()
   const menu = page.getByRole('group', { name: 'More porch actions' })
-  for (const name of ['Public board', 'Mute sounds', 'Scoring rules']) {
-    const item = menu.getByText(name, { exact: true })
+  // Account, the open canvas (the public board, named for a newcomer), sound and the rules: compact planks, all on screen.
+  for (const item of [menu.getByRole('button', { name: 'Account' }), menu.getByRole('link', { name: /Open canvas/ }), menu.getByRole('button', { name: 'Mute sounds' }), menu.getByRole('button', { name: 'Scoring rules' })]) {
     await expect(item).toBeVisible()
     const bounds = (await item.boundingBox())!
     expect(bounds.y).toBeGreaterThanOrEqual(0)
@@ -378,7 +381,7 @@ for (const viewport of [{ width: 1280, height: 720 }, { width: 375, height: 812 
 test('mailbox menu provides account actions', async ({ page }) => {
   await setup(page)
   await page.goto(`${origin}/party`)
-  await page.getByRole('button', { name: 'Account menu' }).click()
+  await page.getByRole('button', { name: /your account/ }).click()
   for (const name of ['My gallery', 'Settings', 'Sign out']) await expect(page.getByRole('menuitem', { name })).toBeVisible()
 })
 
@@ -387,7 +390,7 @@ test('navigation artwork uses the scene roof and mailbox', async ({ page }) => {
   await setup(page)
   await page.goto(`${origin}/party`)
   const beam = page.locator('.porch-nav__roof canvas').first()
-  const mailbox = page.getByRole('button', { name: 'Account menu' }).locator('canvas').first()
+  const mailbox = page.getByRole('button', { name: /your account/ }).locator('canvas').first()
   await expect(beam).toBeVisible()
   await expect(mailbox).toBeVisible()
   expect((await beam.boundingBox())!.height).toBeGreaterThanOrEqual(36)
@@ -1488,7 +1491,7 @@ test('door opens own gallery from porch canvases and mailbox menu', async ({ pag
   await setup(page)
   await page.goto(`${origin}/home`)
   const header = page.getByTestId('app-navigation')
-  await header.getByRole('button', { name: /Account menu:/ }).click()
+  await header.getByRole('button', { name: /your account/ }).click()
   await expect(page.getByRole('menuitem', { name: 'My gallery' })).toBeVisible()
   await page.keyboard.press('Escape')
   await header.getByRole('link', { name: 'Scores', exact: true }).click()
@@ -1500,7 +1503,7 @@ test('door opens own gallery from porch canvases and mailbox menu', async ({ pag
   await expect(page.getByRole('heading', { name: 'Your gallery' })).toBeVisible()
 
   await page.goto(`${origin}/party`)
-  await page.getByRole('button', { name: /Account menu/ }).click()
+  await page.getByRole('button', { name: /your account/ }).click()
   await page.getByRole('menuitem', { name: 'My gallery' }).click()
   await expect(page).toHaveURL(`${origin}/u/host`)
   await expect(page.getByRole('heading', { name: 'Your gallery' })).toBeVisible()
@@ -1666,7 +1669,7 @@ test('switching from a graded result zooms back out to the porch first before en
   await page.getByRole('button', { name: 'View result' }).click()
   await expect(page.getByTestId('daily-ended')).toBeVisible()
 
-  await page.getByRole('button', { name: /Account menu:/ }).click()
+  await page.getByRole('button', { name: /your account/ }).click()
   await page.getByRole('menuitem', { name: 'Party' }).click()
   await expect(page.locator('[data-camera="easel"]')).toHaveAttribute('data-phase', 'leaving')
   await expect(page).toHaveURL(`${origin}/party`, { timeout: 8000 })
@@ -1704,7 +1707,7 @@ test('party room exits upstairs through stairwell to porch and scores', async ({
   await page.goto(`${origin}/r/AB2Z`)
   await expect(page.getByTestId('pixel-canvas')).toBeVisible()
 
-  await page.getByRole('button', { name: /Account menu:/ }).click()
+  await page.getByRole('button', { name: /your account/ }).click()
   await page.getByRole('menuitem', { name: 'Scores' }).click()
   await expect(page).toHaveURL(`${origin}/scores`, { timeout: 6000 })
   const routes = await page.evaluate(() => (window as unknown as { __spaRoutes: string[] }).__spaRoutes)

@@ -30,6 +30,7 @@ import { DailyAttemptProvider } from '../../hooks/DailyAttemptProvider'
 import { useDailyLock } from '../../hooks/useDailyLock'
 import { VerticalSceneTransition } from '../../components/porch/VerticalSceneTransition'
 import { usePopMoves } from '../../components/porch/popMoves'
+import { PorchPresenceProvider } from '../../components/porch/PorchPresence'
 import { prefetchAllRoutes } from '../../prefetch-routes'
 import { warmSceneArt } from '../../scene/warm-art'
 // The scores page's stylesheet (and the porch's `--to-scores` backdrop it owns) is needed on the porch before the first Scores visit.
@@ -150,7 +151,7 @@ function AuthBoot({ children }: { children: ReactNode }) {
     >
       <RecordScope roomId={SCOPE_ID} schemas={schemas}>
         <AgentTools />
-        <DailyAttemptProvider>{children}</DailyAttemptProvider>
+        <DailyAttemptProvider><PorchPresenceProvider>{children}</PorchPresenceProvider></DailyAttemptProvider>
       </RecordScope>
     </RecordProvider>
   )
