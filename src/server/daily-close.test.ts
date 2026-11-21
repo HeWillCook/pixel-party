@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { closeDay } from './daily-close'
+import { closeDay, closeRecentDays } from './daily-close'
 import { memoryTools } from './room-test-tools'
 
 const day = '2026-11-17'
@@ -74,5 +74,29 @@ describe('daily close', () => {
     const afterFirstRun = snapshot(records)
     expect(await closeDay(records.tools, day)).toEqual({ published: 5, medals: 3 })
     expect(snapshot(records)).toBe(afterFirstRun)
+  })
+
+  it('closes the two most recent UTC days so a delayed alarm cannot skip one', async () => {
+    // The alarm missed 2026-11-20 00:10 and fires on the 21st: the day that
+    // just ended is the 20th, and the 19th must be closed too or it stays
+    // private forever because the next run only ever looks at `now - 24h`.
+    const records = memoryTools()
+    for (const rowDay of ['2026-11-19', '2026-11-20']) {
+      records.rows('dailyScores').set(`player-${rowDay}`, scoreRow('alice', rowDay, 800, 100_000))
+      records.rows('dailyDrawings').set(`player-${rowDay}`, drawingRow('alice', rowDay))
+    }
+    records.rows('dailyScores').set('today', scoreRow('bob', '2026-11-21', 950, 10_000))
+    records.rows('dailyDrawings').set('today', drawingRow('bob', '2026-11-21'))
+
+    expect(await closeRecentDays(records.tools, Date.UTC(2026, 10, 21, 0, 10)))
+      .toEqual(['2026-11-20', '2026-11-19'])
+
+    expect(records.rows('dailyDrawings').get('player-2026-11-19')!.visibility).toBe('public')
+    expect(records.rows('dailyDrawings').get('player-2026-11-20')!.visibility).toBe('public')
+    expect(records.rows('dailyScores').get('player-2026-11-19')!.ended).toBe(1)
+    expect(records.rows('dailyScores').get('player-2026-11-20')!.ended).toBe(1)
+    // The running day stays private until its own close.
+    expect(records.rows('dailyDrawings').get('today')!.visibility).toBe('private')
+    expect(records.rows('dailyScores').get('today')!.ended).toBe(0)
   })
 })

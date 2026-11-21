@@ -205,6 +205,26 @@ describe('durable room boundaries', () => {
     }
   })
 
+  it('never calls the judge for a paint-then-erase blank canvas and rejects the ask', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(10_000)
+    const harness = roomHarness()
+    try {
+      const owner = await harness.connect('owner')
+      await harness.room.command(owner.connection, { t: 'place', cells: [{ x: 1, y: 1, c: 4 }] })
+      await harness.room.command(owner.connection, { t: 'place', cells: [{ x: 1, y: 1, c: 0 }] })
+      expect(decodeCells(harness.saved().grid.cells as unknown as string, 1024).every(cell => cell === 0)).toBe(true)
+      vi.setSystemTime(Date.now() + JUDGE.askMinMs)
+      owner.send.mockClear()
+      await harness.room.command(owner.connection, { t: 'ask' })
+      expect(messages(owner).at(-1)).toEqual({ t: 'reject', reason: 'canvas_blank' })
+      expect(integration).not.toHaveBeenCalled()
+      expect(reserve).not.toHaveBeenCalled()
+    } finally {
+      harness.database.close()
+    }
+  })
+
   it('persists the trusted host header and enforces it after wake', async () => {
     const database = new DatabaseSync(':memory:')
     const sockets: WebSocket[] = []
@@ -797,7 +817,7 @@ describe('durable room boundaries', () => {
     await harness.room.command(alice.connection, { t: 'place', x: 3, y: 3, c: 17 })
     expect(messages(alice).at(-1)).toMatchObject({ t: 'reject', reason: 'bad_color', x: 3, y: 3 })
 
-    // During cooldown (players=2 -> 2000ms): erasing empty sends sender-only noop echoing placement id without persisting; erasing non-empty is rejected
+    // During cooldown (players=2 -> 500ms): erasing empty sends sender-only noop echoing placement id without persisting; erasing non-empty is rejected
     const sql = vi.spyOn(harness.durable.storage.sql, 'exec')
     alice.send.mockClear()
     bob.send.mockClear()

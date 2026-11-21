@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react'
 import { AlertCircle } from 'lucide-react'
 import type { GradeView } from '../../server/daily-service'
-import { BoosterSprite } from './BoosterSprite'
 
 export interface ScoreCardProps {
   latest: GradeView | null
@@ -149,11 +148,6 @@ export function ScoreCard({ latest, best, grading, lastError, notice, sheet = fa
               {actions}
             </div>
           )}
-          <div className="daily-chalkboard__boosters" data-testid="daily-chalkboard-boosters" aria-hidden="true">
-            <BoosterSprite scale={3} phaseOffset={1} />
-            <BoosterSprite scale={3} phaseOffset={3} />
-            <BoosterSprite scale={3} phaseOffset={5} />
-          </div>
         </>
       )}
     </section>

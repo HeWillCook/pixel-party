@@ -1,6 +1,18 @@
-import { AlertCircle, Award, Cat, Sparkles } from 'lucide-react'
+import { AlertCircle, Award, Cat, FlaskConical, Sparkles } from 'lucide-react'
 import type { GradeView } from '../../server/daily-service'
 import { cn } from '../../lib/utils'
+
+declare const __DAILY_JUDGE__: 'fake' | 'local' | 'real' | undefined
+
+/**
+ * Build-time judge mode. Never import this from the server module — that would
+ * pull worker code into the client bundle. `fake` means the deterministic
+ * canned guesser is running (dev/tests), so the wording must not be mistaken
+ * for real Haiku vision.
+ */
+export function simulatedJudge(): boolean {
+  return typeof __DAILY_JUDGE__ !== 'undefined' && __DAILY_JUDGE__ === 'fake'
+}
 
 export interface GradePanelProps {
   latest: GradeView | null
@@ -35,6 +47,16 @@ export function GradePanel({
           <span className="text-base uppercase tracking-wider text-[var(--sunset-1)]">
             {grading ? 'Haiku is looking…' : ended ? 'Final Verdict' : "Haiku's Verdict"}
           </span>
+          {simulatedJudge() && (
+            <span
+              data-testid="daily-simulated-judge"
+              title="Canned dev/test judge — not real Haiku vision"
+              className="inline-flex items-center gap-1 border border-border bg-secondary px-1.5 py-0.5 text-xs uppercase tracking-wider text-muted-foreground"
+            >
+              <FlaskConical className="h-3 w-3" aria-hidden />
+              Simulated dev judge
+            </span>
+          )}
         </div>
 
         <span
@@ -105,7 +127,7 @@ export function GradePanel({
           <span>
             {ended
               ? `Final best score: ${best} / 1000.`
-              : 'No grade yet — auto-grades run every 2 minutes, or press Grade now for a check.'}
+              : 'No grade yet — auto-grades run every minute, or press Grade now for a check.'}
           </span>
         </div>
       )}

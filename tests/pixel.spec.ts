@@ -46,7 +46,9 @@ test('two painters sync, respect cooldown, and allow spectators', async ({ users
   await clickCell(a.page, 4, 4)
   await firstConfirmed
   const synced = expect.poll(() => color(b.page, 4, 4), { timeout: 2000 }).toEqual(red)
-  // Simulate a fast client clock to exercise authoritative rejection and rollback.
+  // Simulate a fast client clock to exercise authoritative rejection and rollback. The server's window with two painters is only
+  // 500 ms: the click follows the confirmation straight away (a machine that stalls longer than that between the two would be accepted,
+  // not rejected). The second click cannot go earlier: before the confirmation the client has no server cooldown to answer to.
   await a.page.evaluate(() => sessionStorage.setItem('clockOffset', '5000'))
   await clickCell(a.page, 6, 6)
   await expect(a.page.getByTestId('reject-notice')).toContainText('Brush cooling down')
@@ -59,7 +61,8 @@ test('two painters sync, respect cooldown, and allow spectators', async ({ users
   expect(painterBefore).toEqual(spectatorBefore)
   await clickCell(page, 5, 5)
   await expect(page.getByTestId('spectator-banner')).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'Sign in to DeepSpace' })).toBeVisible()
+  // A spectator's click places nothing and opens the same sign-in slip as the banner's "Sign in to play".
+  await expect(page.getByRole('dialog', { name: 'Sign in' })).toBeVisible()
   expect(spectatorPlacements).toEqual([])
   await expect.poll(() => color(a.page, 5, 5)).toEqual(painterBefore)
   await expect.poll(() => color(page, 5, 5)).toEqual(spectatorBefore)

@@ -8,11 +8,12 @@ export type RejectReason =
   | 'cooldown'
   | 'rate_limited'
 
+/** Per-painter wait between pixels: alone is instant (the solo bucket paces drags), with friends it is 250 ms per painter, capped at 1.5 s. */
 export function cooldownMs(playersConnected: number): number {
   if (playersConnected <= 1) {
     return 0
   }
-  return Math.min(1000 * playersConnected, 10_000)
+  return Math.min(250 * playersConnected, 1500)
 }
 
 export function validatePlacement(p: {

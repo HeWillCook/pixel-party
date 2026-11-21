@@ -64,11 +64,11 @@ describe('final review regressions', () => {
     await vi.waitFor(() => expect(records.update).toHaveBeenCalled())
     at(startedAt + 20_000)
     const second = gradeDaily(deps, user, 'ask', otherCells)
-    await vi.waitFor(async () => expect((await deps.store.get(user.userId, day))?.bestScore).toBe(997))
+    await vi.waitFor(async () => expect((await deps.store.get(user.userId, day))?.bestScore).toBe(993))
     held.resolve()
     await Promise.all([first, second])
-    expect(row('dailyScores')).toMatchObject({ score: 997, fit: 500, recognition: 400 })
-    expect(row('dailyDrawings')).toMatchObject({ score: 997, cells: otherCells, reason: 'best' })
+    expect(row('dailyScores')).toMatchObject({ score: 993, fit: 500, recognition: 400 })
+    expect(row('dailyDrawings')).toMatchObject({ score: 993, cells: otherCells, reason: 'best' })
   })
 
   it.each(['dailyScores', 'dailyDrawings'])('I2 repairs a failed %s projection on a later lower grade', async failedCollection => {
@@ -105,14 +105,14 @@ describe('final review regressions', () => {
   })
 
   it('I3 resumes yesterday after midnight and binds old tabs when both days exist', async () => {
-    const late = Date.UTC(2026, 10, 17, 23, 55)
+    const late = Date.UTC(2026, 10, 17, 23, 57)
     const { deps, at } = setup(late)
     await startDaily(deps, user)
-    at(late + 360_000)
+    at(late + 200_000)
     expect(await dailyState(deps, user.userId)).toMatchObject({ day, status: 'playing', startedAt: late })
     expect(await startDaily(deps, user)).toMatchObject({ day: '2026-11-18' })
     expect(await dailyState(deps, user.userId)).toMatchObject({ day, status: 'playing' })
-    expect(await gradeDaily(deps, user, 'ask', cells, day)).toMatchObject({ ok: true, grade: { elapsedMs: 360_000 }, state: { day } })
+    expect(await gradeDaily(deps, user, 'ask', cells, day)).toMatchObject({ ok: true, grade: { elapsedMs: 200_000 }, state: { day } })
     expect(await endDaily(deps, user, cells, day)).toMatchObject({ day, status: 'ended' })
     expect(await deps.store.get(user.userId, '2026-11-18')).toMatchObject({ endedAt: null, asksUsed: 0 })
     expect(await dailyState(deps, user.userId)).toMatchObject({ day: '2026-11-18', status: 'playing', best: 0 })

@@ -3,6 +3,7 @@ import { DAILY } from '../game/config'
 import type { AppContext, Env } from '../../worker.js'
 import { reserveBudget } from './budget'
 import { createDailyJudge, renderCellsPng } from './daily-judge'
+import { registerDailyDebugRoutes } from './daily-debug-routes'
 import { doAttemptStore } from './daily-room'
 import { dailyState, endDaily, gradeDaily, InvalidAttemptDay, startDaily, todaysDrawings } from './daily-service'
 import type { DailyDeps, DailyUser } from './daily-service'
@@ -38,6 +39,10 @@ export function registerDailyRoutes(app: Hono<AppContext>): void {
   })
 
   daily.post('/start', async c => c.json(await startDaily(dependencies(c.env), c.get('dailyUser'))))
+  // DEV ONLY (__DEBUG_TOOLS__): the debug-registration module (reset plus
+  // generated paintings) is gone from a production build, so an unknown-route
+  // call falls through to the JSON 404 in http-routes.ts.
+  if (__DEBUG_TOOLS__) registerDailyDebugRoutes(daily, dependencies)
   daily.post('/grade', async c => {
     const body: unknown = await c.req.json().catch(() => null)
     if (!objectBody(body) || !dayBody(body.day) || (body.kind !== 'auto' && body.kind !== 'ask' && body.kind !== 'final') || typeof body.cells !== 'string' || (body.kind === 'auto' && (!Number.isInteger(body.window) || (body.window as number) < 0 || (body.window as number) >= DAILY.autoWindowsMs.length))) {

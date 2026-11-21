@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { DAILY } from '../../src/game/config'
 
 const origin = 'http://pixel.test'
 const clientDir = resolve(import.meta.dirname, '../../dist/client')
@@ -8,19 +9,16 @@ const clientDir = resolve(import.meta.dirname, '../../dist/client')
 async function playFixture(page: Page, initiallyPlaying = false) {
   await offlineClient(page, true)
   const now = Date.now()
-  const playing = { day: '2026-11-17', status: 'playing', prompt: 'A tree', startedAt: now, endsAt: now + 600_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: now + 120_000, serverNow: now }
+  const playing = { day: '2026-11-17', status: 'playing', prompt: 'A tree', startedAt: now, endsAt: now + 300_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: now + 60_000, serverNow: now }
   await page.route('**/api/daily/**', route => route.fulfill({ json: new URL(route.request().url()).pathname.endsWith('/me') && !initiallyPlaying ? { ...playing, status: 'not_started' } : playing }))
 }
 
-test('resume reconnects measurement and permits drawing after exit', async ({ page }) => {
+test('a reload mid-attempt resumes on the easel: measurement reconnects and drawing works', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await page.setViewportSize({ width: 1280, height: 720 })
-  await playFixture(page)
+  await playFixture(page, true)
   await page.goto(`${origin}/home`)
-  await page.getByTestId('daily-start-button').click()
-  await page.getByTestId('daily-exit').click()
-  await page.getByRole('dialog').getByRole('button', { name: 'Exit', exact: true }).click()
-  await page.getByRole('button', { name: 'Resume painting' }).click()
+  await expect(page.getByTestId('daily-start-button')).toHaveCount(0)
   const canvas = page.getByTestId('pixel-canvas')
   await expect(canvas).toBeVisible()
   await page.setViewportSize({ width: 1440, height: 900 })
@@ -132,9 +130,10 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720
       expect(easelBox.y).toBeGreaterThanOrEqual(0)
       expect(easelBox.x + easelBox.width).toBeLessThanOrEqual(viewport.width)
       expect(easelBox.y + easelBox.height).toBeLessThanOrEqual(viewport.height)
-      const booster = (await easel.locator('.hover-easel__booster').first().boundingBox())!
       const palette = (await page.getByTestId('palette').boundingBox())!
-      expect(booster.y + booster.height + 9).toBeLessThanOrEqual(palette.y)
+      expect(easelBox.y + easelBox.height + 9).toBeLessThanOrEqual(palette.y)
+      // The HTML easel carries no thruster sprites of its own: the canvas easel's thrusters are the only ones.
+      await expect(easel.locator('.porch-sprite')).toHaveCount(0)
     }
   })
 }
@@ -189,7 +188,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720
     const now = Date.now()
     let releaseGrade!: () => void
     const gradeGate = new Promise<void>(resolve => { releaseGrade = resolve })
-    const playing = { day: new Date(now).toISOString().slice(0, 10), status: 'playing', prompt: 'A lighthouse', startedAt: now - 30_000, endsAt: now + 570_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: now + 90_000, serverNow: now }
+    const playing = { day: new Date(now).toISOString().slice(0, 10), status: 'playing', prompt: 'A lighthouse', startedAt: now - 30_000, endsAt: now + 270_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: now + 30_000, serverNow: now }
     await page.route('**/api/daily/**', async route => {
       const path = new URL(route.request().url()).pathname
       if (path.endsWith('/me')) return route.fulfill({ json: playing })
@@ -209,10 +208,10 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720
 
     const askBox = (await page.getByTestId('daily-ask-button').boundingBox())!
     const doneBox = (await page.getByTestId('daily-done-button').boundingBox())!
-    const boosterBox = (await page.getByTestId('daily-chalkboard-boosters').boundingBox())!
     expect(askBox.y + askBox.height).toBeLessThan(doneBox.y)
-    expect(doneBox.y + doneBox.height).toBeLessThanOrEqual(boosterBox.y + 4)
-    expect(boosterBox.y + boosterBox.height).toBeLessThanOrEqual(viewport.height)
+    expect(doneBox.y + doneBox.height).toBeLessThanOrEqual(viewport.height)
+    // The chalkboard hangs its plaques; no thruster sprites sit under it (the easel's own thrusters are on the canvas easel).
+    await expect(page.getByTestId('daily-chalkboard-boosters')).toHaveCount(0)
 
     await page.getByTestId('daily-ask-button').click()
     await expect(haiku).toHaveAttribute('data-haiku-state', 'thinking')
@@ -231,7 +230,7 @@ test('mobile strip places Haiku on the left and opens bubble popover without scr
   const now = Date.now()
   let releaseGrade!: () => void
   const gradeGate = new Promise<void>(resolve => { releaseGrade = resolve })
-  const playing = { day: new Date(now).toISOString().slice(0, 10), status: 'playing', prompt: 'A lighthouse', startedAt: now - 30_000, endsAt: now + 570_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: now + 90_000, serverNow: now }
+  const playing = { day: new Date(now).toISOString().slice(0, 10), status: 'playing', prompt: 'A lighthouse', startedAt: now - 30_000, endsAt: now + 270_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: now + 30_000, serverNow: now }
   await page.route('**/api/daily/**', async route => {
     const path = new URL(route.request().url()).pathname
     if (path.endsWith('/me')) return route.fulfill({ json: playing })
@@ -273,33 +272,55 @@ test('start zooms into the easel', async ({ page }) => {
   await expect(page.locator('[data-camera="easel"]')).toBeAttached()
 })
 
-test('easel camera crossfades on entry and reverses on exit', async ({ page }) => {
+test('easel camera zooms on entry with the board registered to the easel, never full size', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
   await playFixture(page)
   await page.goto(`${origin}/home`)
+  // Every frame from the click, compare the board with where the porch easel's board really is under the live camera.
+  await page.evaluate(() => {
+    const samples: { error: number; width: number }[] = []
+    ;(window as unknown as { __samples: typeof samples }).__samples = samples
+    const sample = () => {
+      const board = document.querySelector('[data-testid="pixel-canvas"]')
+      const camera = document.querySelector('[data-camera="easel"] .pixel-scene__camera')
+      if (board && camera) {
+        const m = new DOMMatrix(getComputedStyle(camera).transform)
+        const scale = Math.ceil(Math.max(innerWidth / 320, innerHeight / 180))
+        const ox = (innerWidth - 320 * scale) / 2
+        const oy = (innerHeight - 180 * scale) / 2
+        // Landscape easel at (138, 40); its 32x32 art starts (18, 25) inside it.
+        const x = ox + m.e + (138 + 18) * scale * m.a
+        const y = oy + m.f + (40 + 25) * scale * m.a
+        const w = 32 * scale * m.a
+        const rect = board.getBoundingClientRect()
+        samples.push({ width: rect.width, error: Math.max(Math.abs(rect.x - x), Math.abs(rect.y - y), Math.abs(rect.width - w)) })
+      }
+    }
+    const tick = () => { requestAnimationFrame(() => { setTimeout(sample, 0); tick() }) }
+    tick()
+  })
   await page.getByTestId('daily-start-button').click()
   const backdrop = page.locator('[data-camera="easel"]')
   await expect(backdrop).toHaveAttribute('data-phase', 'entering')
-  await expect(backdrop.locator('.pixel-scene__camera')).toHaveCSS('transition-duration', '0.6s')
+  await expect(backdrop.locator('.pixel-scene__camera')).toHaveCSS('transition-duration', '0.8s')
   const camera = backdrop.locator('.pixel-scene__camera')
   const entryStart = await camera.evaluate(element => getComputedStyle(element).transform)
   await page.waitForTimeout(150)
   const entryMiddle = await camera.evaluate(element => getComputedStyle(element).transform)
-  if (process.env.PLAY_TRANSITION_SCREENSHOTS) await page.screenshot({ path: '/tmp/play-entry-midpoint.png' })
   expect(entryMiddle).not.toBe(entryStart)
   await expect(backdrop).toHaveAttribute('data-phase', 'active')
-  await expect(backdrop.locator('.play-scenery-layer')).toHaveCSS('opacity', '1')
-  await expect(backdrop.locator('.play-scenery-layer')).toHaveCSS('transition-duration', '0.15s')
-  await page.getByTestId('daily-exit').click()
-  await page.getByRole('dialog').getByRole('button', { name: 'Exit', exact: true }).click()
-  await expect(backdrop).toHaveAttribute('data-phase', 'leaving')
-  await page.waitForTimeout(200)
-  const exitStart = await camera.evaluate(element => getComputedStyle(element).transform)
-  await page.waitForTimeout(150)
-  const exitMiddle = await camera.evaluate(element => getComputedStyle(element).transform)
-  if (process.env.PLAY_TRANSITION_SCREENSHOTS) await page.screenshot({ path: '/tmp/play-exit-midpoint.png' })
-  expect(exitMiddle).not.toBe(exitStart)
-  await expect(page.getByTestId('daily-playing')).toHaveCount(0)
-  await expect(page.locator('.porch-world .pixel-hotspot').first()).toBeVisible()
+  await expect(backdrop.locator('.play-scenery-layer')).toHaveCount(0)
+  await expect(backdrop.locator('canvas')).toHaveCount(1)
+  await page.waitForTimeout(100)
+  const samples = await page.evaluate(() => (window as unknown as { __samples: { error: number; width: number }[] }).__samples)
+  const entering = samples.filter(sample => sample.error > 0 || sample.width > 0)
+  expect(entering.length).toBeGreaterThan(5)
+  // Glued to the easel's board on every frame of the move (and exactly on it once it lands).
+  expect(Math.max(...entering.map(sample => sample.error))).toBeLessThan(3)
+  // It really did travel: it was drawn smaller than its final size at some frame, and lands at full size.
+  const settled = entering[entering.length - 1].width
+  expect(settled).toBeGreaterThanOrEqual(400)
+  expect(Math.min(...entering.map(sample => sample.width))).toBeLessThan(settled * 0.9)
 })
 
 test('reload mid-attempt never shows porch hotspots', async ({ page }) => {
@@ -332,7 +353,7 @@ test('drawable easel remains still', async ({ page }) => {
   expect(await easel.boundingBox()).toEqual(before)
 })
 
-test('camera centers the porch board on the measured drawing canvas', async ({ page }) => {
+test('camera centers the porch board on the measured drawing canvas with 1:1 proportions', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   await playFixture(page)
   await page.goto(`${origin}/home`)
@@ -341,29 +362,35 @@ test('camera centers the porch board on the measured drawing canvas', async ({ p
   await expect.poll(async () => page.evaluate(() => {
     const scene = document.querySelector('[data-camera="easel"] canvas')!.getBoundingClientRect()
     const target = document.querySelector('[data-testid="pixel-canvas"]')!.getBoundingClientRect()
-    const sceneCenterX = scene.left + (138 + 15 + 39 / 2) / 320 * scene.width
-    const sceneCenterY = scene.top + (40 + 23 + 51 / 2) / 180 * scene.height
-    return Math.max(Math.abs(sceneCenterX - target.left - target.width / 2), Math.abs(sceneCenterY - target.top - target.height / 2))
+    const sceneCenterX = scene.left + (138 + 18 + 32 / 2) / 320 * scene.width
+    const sceneCenterY = scene.top + (40 + 25 + 32 / 2) / 180 * scene.height
+    const sceneBoardW = (32 / 320) * scene.width
+    const sceneBoardH = (32 / 180) * scene.height
+    return Math.max(
+      Math.abs(sceneCenterX - target.left - target.width / 2),
+      Math.abs(sceneCenterY - target.top - target.height / 2),
+      Math.abs(sceneBoardW - target.width),
+      Math.abs(sceneBoardH - target.height),
+    )
   })).toBeLessThan(3)
 })
 
-test('reduced motion exit returns to the porch and resumes the attempt', async ({ page }) => {
+test('reduced motion: clicking the scene around a graded result returns to the porch at once', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' })
-  await playFixture(page, true)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await endedFixture(page)
   await page.goto(`${origin}/home`)
-  await page.getByTestId('daily-exit').click()
-  await page.getByRole('dialog').getByRole('button', { name: 'Exit', exact: true }).click()
-  await expect(page.getByRole('button', { name: 'Resume painting' })).toBeVisible({ timeout: 100 })
-  await expect(page).toHaveURL(`${origin}/home`)
-  await page.getByRole('button', { name: 'Resume painting' }).click()
-  await expect(page.getByTestId('pixel-canvas')).toBeVisible({ timeout: 100 })
+  await page.getByRole('button', { name: 'View result' }).click()
+  await expect(page.getByTestId('daily-ended-porch-button')).toBeVisible({ timeout: 100 })
+  await page.getByTestId('scene-dismiss').click({ position: { x: 60, y: 820 } })
+  await expect(page.getByRole('button', { name: 'View result' })).toBeVisible({ timeout: 100 })
 })
 
-for (const askFirst of [false, true]) test(askFirst ? 'auto-grade fires at 2:00 after an ask at 1:30' : 'auto-grade fires at 2:00 without asks', async ({ page }) => {
+for (const askFirst of [false, true]) test(askFirst ? 'auto-grade fires at 1:00 after an ask at 0:30' : 'auto-grade fires at 1:00 without asks', async ({ page }) => {
   await page.clock.install({ time: new Date('2026-11-17T12:00:00Z') })
   await offlineClient(page, true)
   const startedAt = Date.parse('2026-11-17T12:00:00Z')
-  const playing = { day: '2026-11-17', status: 'playing', prompt: 'A tree', startedAt, endsAt: startedAt + 600_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], serverNow: startedAt, nextAutoAt: startedAt + 120_000 }
+  const playing = { day: '2026-11-17', status: 'playing', prompt: 'A tree', startedAt, endsAt: startedAt + 300_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], serverNow: startedAt, nextAutoAt: startedAt + 60_000 }
   const grades: { body: unknown; status: number }[] = []
   page.on('response', response => {
     const request = response.request()
@@ -375,8 +402,8 @@ for (const askFirst of [false, true]) test(askFirst ? 'auto-grade fires at 2:00 
     if (path.endsWith('/start')) return route.fulfill({ json: playing })
     if (path.endsWith('/grade')) {
       const body = route.request().postDataJSON()
-      if (body.kind === 'auto' && askFirst) return route.fulfill({ status: 200, json: { skipped: 'skipped_unchanged', window: 0, state: { ...playing, asksUsed: 1, asksLeft: 2, nextAutoAt: startedAt + 240_000, serverNow: startedAt + 120_000 } } })
-      return route.fulfill({ status: 200, json: { ok: true, grade: { guess: 'tree', reason: 'tree', fit: 100, recognition: 100, speed: 10, total: 210, elapsedMs: 120_000 }, state: { ...playing, ...(body.kind === 'ask' ? { asksUsed: 1, asksLeft: 2, serverNow: startedAt + 90_000 } : { autoUsed: 1, nextAutoAt: startedAt + 240_000 }) } } })
+      if (body.kind === 'auto' && askFirst) return route.fulfill({ status: 200, json: { skipped: 'skipped_unchanged', window: 0, state: { ...playing, asksUsed: 1, asksLeft: 2, nextAutoAt: startedAt + 120_000, serverNow: startedAt + 60_000 } } })
+      return route.fulfill({ status: 200, json: { ok: true, grade: { guess: 'tree', reason: 'tree', fit: 100, recognition: 100, speed: 10, total: 210, elapsedMs: 60_000 }, state: { ...playing, ...(body.kind === 'ask' ? { asksUsed: 1, asksLeft: 2, serverNow: startedAt + 30_000 } : { autoUsed: 1, nextAutoAt: startedAt + 120_000 }) } } })
     }
     return route.fulfill({ json: {} })
   })
@@ -384,11 +411,11 @@ for (const askFirst of [false, true]) test(askFirst ? 'auto-grade fires at 2:00 
   await page.getByTestId('daily-start-button').click()
   await page.getByTestId('pixel-canvas').click({ position: { x: 5, y: 5 } })
   if (askFirst) {
-    await page.clock.fastForward(90_000)
+    await page.clock.fastForward(30_000)
     await page.getByTestId('daily-ask-button').click()
     await expect.poll(() => grades.length).toBe(1)
   }
-  await page.clock.fastForward(askFirst ? 35_000 : 125_000)
+  await page.clock.fastForward(askFirst ? 35_000 : 65_000)
   await expect.poll(() => grades.filter(grade => (grade.body as { kind: string }).kind === 'auto')).toMatchObject([{ body: { kind: 'auto', window: 0 }, status: 200 }])
   if (askFirst) {
     const notice = page.getByText('Auto-grade skipped: no changes since your last grade')
@@ -405,7 +432,7 @@ test('ended user never sees start', async ({ page }) => {
   await page.route('**/api/daily/me', async route => {
     await gate
     const now = Date.now()
-    await route.fulfill({ json: { day: new Date(now).toISOString().slice(0, 10), status: 'ended', startedAt: now - 600_000, endsAt: now, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: null, serverNow: now } })
+    await route.fulfill({ json: { day: new Date(now).toISOString().slice(0, 10), status: 'ended', startedAt: now - 300_000, endsAt: now, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: null, serverNow: now } })
   })
   await page.goto(`${origin}/home`)
   await expect(page.getByTestId('daily-loading')).toBeVisible()
@@ -419,11 +446,94 @@ test('ended user never sees start', async ({ page }) => {
   await expect(page.getByText('Manual grades: 0 of 3 used')).toBeVisible()
 })
 
+async function endedFixture(page: Page) {
+  await offlineClient(page, true)
+  const now = Date.now()
+  const ended = {
+    day: new Date(now).toISOString().slice(0, 10),
+    status: 'ended',
+    prompt: 'A lighthouse',
+    startedAt: now - 300_000,
+    endsAt: now,
+    autoUsed: 0,
+    asksUsed: 1,
+    asksLeft: 2,
+    finalUsed: true,
+    best: 740,
+    windows: [],
+    nextAutoAt: null,
+    serverNow: now,
+  }
+  await page.route('**/api/daily/me', route => route.fulfill({ json: ended }))
+}
+
+test('a graded result zooms back out to the porch via its button and via the scene around it', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await endedFixture(page)
+  await page.goto(`${origin}/home`)
+  await page.getByRole('button', { name: 'View result' }).click()
+  await expect(page.getByTestId('daily-ended-porch-button')).toBeVisible()
+  await page.getByTestId('daily-ended-porch-button').click()
+  await expect(page.locator('[data-camera="easel"]')).toHaveAttribute('data-phase', 'leaving')
+  await expect(page.getByRole('button', { name: 'View result' })).toBeVisible()
+
+  await page.getByRole('button', { name: 'View result' }).click()
+  await expect(page.getByTestId('daily-ended-porch-button')).toBeVisible()
+  await expect(page.locator('[data-camera="easel"]')).toHaveAttribute('data-phase', 'active')
+  // A click on a panel is not a background click.
+  await page.getByTestId('grade-panel').click()
+  await expect(page.locator('[data-camera="easel"]')).toHaveAttribute('data-phase', 'active')
+  // The scene around the board is the way out.
+  await expect(page.getByTestId('scene-dismiss')).toBeVisible()
+  await page.getByTestId('scene-dismiss').click({ position: { x: 60, y: 820 } })
+  await expect(page.locator('[data-camera="easel"]')).toHaveAttribute('data-phase', 'leaving')
+  await expect(page.getByRole('button', { name: 'View result' })).toBeVisible()
+})
+
+test('blank canvas zero-score grade renders clean Haiku feedback', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await offlineClient(page, true)
+  const now = Date.now()
+  const playing = {
+    day: new Date(now).toISOString().slice(0, 10),
+    status: 'playing',
+    prompt: 'A lighthouse',
+    startedAt: now - 30_000,
+    endsAt: now + 270_000,
+    autoUsed: 0,
+    asksUsed: 0,
+    asksLeft: 3,
+    finalUsed: false,
+    best: 0,
+    windows: [],
+    nextAutoAt: now + 30_000,
+    serverNow: now,
+  }
+  await page.route('**/api/daily/**', async route => {
+    const path = new URL(route.request().url()).pathname
+    if (path.endsWith('/me')) return route.fulfill({ json: playing })
+    if (path.endsWith('/grade')) {
+      return route.fulfill({
+        json: {
+          ok: true,
+          grade: { guess: 'nothing', reason: 'The canvas is still blank.', fit: 0, recognition: 0, speed: 0, total: 0, elapsedMs: 30_000 },
+          state: { ...playing, asksUsed: 1, asksLeft: 2, best: 0 },
+        },
+      })
+    }
+    return route.fulfill({ json: {} })
+  })
+  await page.goto(`${origin}/home`)
+  await page.getByTestId('daily-ask-button').click()
+  await expect(page.getByTestId('haiku-bubble')).toContainText('Nothing drawn yet! · 0')
+  await expect(page.getByTestId('haiku-bubble')).not.toContainText('Looks like a nothing')
+})
+
 test('reduced motion starts directly in the play view', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await offlineClient(page, true)
   const now = Date.now()
-  const playing = { day: new Date(now).toISOString().slice(0, 10), status: 'playing', prompt: 'A tree', startedAt: now, endsAt: now + 600_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: now + 120_000, serverNow: now }
+  const playing = { day: new Date(now).toISOString().slice(0, 10), status: 'playing', prompt: 'A tree', startedAt: now, endsAt: now + 300_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: now + 60_000, serverNow: now }
   await page.route('**/api/daily/**', route => route.fulfill({ json: new URL(route.request().url()).pathname.endsWith('/me') ? { ...playing, status: 'not_started' } : playing }))
   await page.goto(`${origin}/home`)
   await page.getByTestId('daily-start-button').click()
@@ -441,7 +551,7 @@ test('me failure stays loading then recovers', async ({ page }) => {
     if (calls === 1) return route.fulfill({ status: 500, json: {} })
     await gate
     const now = Date.now()
-    return route.fulfill({ json: { day: new Date(now).toISOString().slice(0, 10), status: 'playing', prompt: 'A tree', startedAt: now, endsAt: now + 600_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: now + 120_000, serverNow: now } })
+    return route.fulfill({ json: { day: new Date(now).toISOString().slice(0, 10), status: 'playing', prompt: 'A tree', startedAt: now, endsAt: now + 300_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: now + 60_000, serverNow: now } })
   })
   await page.goto(`${origin}/home`)
   await expect.poll(() => calls).toBeGreaterThan(0)
@@ -460,16 +570,13 @@ test('no local canvas, no auto', async ({ page }) => {
   await page.route('**/api/daily/**', async route => {
     if (new URL(route.request().url()).pathname.endsWith('/grade')) grades++
     if (new URL(route.request().url()).pathname.endsWith('/end')) ends++
-    return route.fulfill({ json: { day: '2026-11-17', status: 'playing', prompt: 'A tree', startedAt: now - 130_000, endsAt: now + 470_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: now - 10_000, serverNow: now } })
+    return route.fulfill({ json: { day: '2026-11-17', status: 'playing', prompt: 'A tree', startedAt: now - 130_000, endsAt: now + 170_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: now - 10_000, serverNow: now } })
   })
   await page.goto(`${origin}/home`)
   await expect(page.getByTestId('daily-playing')).toBeVisible()
   await page.clock.fastForward(10_000)
   expect(grades).toBe(0)
-  await page.getByRole('button', { name: /Account menu:/ }).click()
-  await page.getByRole('menuitem', { name: 'Party', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Room tickets' })).toBeVisible()
-  await page.clock.fastForward(470_000)
+  await page.clock.fastForward(170_000)
   expect(grades).toBe(0)
   expect(ends).toBe(0)
 })
@@ -478,7 +585,7 @@ test('starting without painting schedules a blank auto', async ({ page }) => {
   await page.clock.install({ time: new Date('2026-11-17T12:00:00Z') })
   await offlineClient(page, true)
   const now = Date.parse('2026-11-17T12:00:00Z')
-  const playing = { day: '2026-11-17', status: 'playing', prompt: 'A tree', startedAt: now, endsAt: now + 600_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: now + 120_000, serverNow: now }
+  const playing = { day: '2026-11-17', status: 'playing', prompt: 'A tree', startedAt: now, endsAt: now + 300_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: now + 60_000, serverNow: now }
   let auto: { kind: string; window: number; cells: string } | undefined
   await page.route('**/api/daily/**', async route => {
     const path = new URL(route.request().url()).pathname
@@ -486,14 +593,14 @@ test('starting without painting schedules a blank auto', async ({ page }) => {
     if (path.endsWith('/start')) return route.fulfill({ json: playing })
     if (path.endsWith('/grade')) {
       auto = route.request().postDataJSON()
-      return route.fulfill({ json: { skipped: 'skipped_blank', window: 0, state: { ...playing, nextAutoAt: now + 240_000 } } })
+      return route.fulfill({ json: { skipped: 'skipped_blank', window: 0, state: { ...playing, nextAutoAt: now + 120_000 } } })
     }
     return route.fulfill({ json: {} })
   })
   await page.goto(`${origin}/home`)
   await page.getByTestId('daily-start-button').click()
   await expect(page.getByTestId('daily-playing')).toBeVisible()
-  await page.clock.fastForward(125_000)
+  await page.clock.fastForward(65_000)
   await expect.poll(() => auto?.kind).toBe('auto')
   expect(auto?.window).toBe(0)
   expect(Buffer.from(auto!.cells, 'base64').every(cell => cell === 0)).toBe(true)
@@ -501,10 +608,10 @@ test('starting without painting schedules a blank auto', async ({ page }) => {
 })
 
 test('timeout on party uses the latest stored canvas', async ({ page }) => {
-  await page.clock.install({ time: new Date('2026-11-17T12:09:58Z') })
+  await page.clock.install({ time: new Date('2026-11-17T12:04:58Z') })
   await offlineClient(page, true)
-  const now = Date.parse('2026-11-17T12:09:58Z')
-  const playing = { day: '2026-11-17', status: 'playing', prompt: 'A tree', startedAt: now - 598_000, endsAt: now + 2_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: null, serverNow: now }
+  const now = Date.parse('2026-11-17T12:04:58Z')
+  const playing = { day: '2026-11-17', status: 'playing', prompt: 'A tree', startedAt: now - 298_000, endsAt: now + 2_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: null, serverNow: now }
   let finalCells = ''
   await page.route('**/api/daily/**', async route => {
     const path = new URL(route.request().url()).pathname
@@ -531,16 +638,16 @@ test('timer uses server clock offset', async ({ page }) => {
   await page.clock.install({ time: new Date('2026-11-17T12:00:00Z') })
   await offlineClient(page, true)
   const now = Date.parse('2026-11-17T12:00:00Z')
-  await page.route('**/api/daily/**', route => route.fulfill({ json: { day: '2026-11-17', status: 'playing', prompt: 'A tree', startedAt: now - 510_000, endsAt: now + 90_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: null, serverNow: now + 90_000 } }))
+  await page.route('**/api/daily/**', route => route.fulfill({ json: { day: '2026-11-17', status: 'playing', prompt: 'A tree', startedAt: now - 210_000, endsAt: now + 90_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: null, serverNow: now + 90_000 } }))
   await page.goto(`${origin}/home`)
   await expect(page.getByTestId('daily-timer')).toHaveText('0:00')
 })
 
-test('auto-grade fires on another route', async ({ page }) => {
+test('auto-grade sends the latest local canvas, not the one from when the attempt started', async ({ page }) => {
   await page.clock.install({ time: new Date('2026-11-17T12:00:00Z') })
   await offlineClient(page, true)
   const now = Date.parse('2026-11-17T12:00:00Z')
-  const playing = { day: '2026-11-17', status: 'playing', prompt: 'A tree', startedAt: now, endsAt: now + 600_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: now + 120_000, serverNow: now }
+  const playing = { day: '2026-11-17', status: 'playing', prompt: 'A tree', startedAt: now, endsAt: now + 300_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: now + 60_000, serverNow: now }
   let auto = 0
   let sentCells = ''
   await page.route('**/api/daily/**', async route => {
@@ -552,16 +659,13 @@ test('auto-grade fires on another route', async ({ page }) => {
         auto++
         sentCells = route.request().postDataJSON().cells
       }
-      return route.fulfill({ json: { skipped: 'skipped_unchanged', window: 0, state: { ...playing, nextAutoAt: now + 240_000 } } })
+      return route.fulfill({ json: { skipped: 'skipped_unchanged', window: 0, state: { ...playing, nextAutoAt: now + 120_000 } } })
     }
     return route.fulfill({ json: {} })
   })
   await page.goto(`${origin}/home`)
   await page.getByTestId('daily-start-button').click()
   await page.getByTestId('pixel-canvas').click({ position: { x: 5, y: 5 } })
-  await page.getByRole('button', { name: /Account menu:/ }).click()
-  await page.getByRole('menuitem', { name: 'Party', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Room tickets' })).toBeVisible()
   const latestCells = await page.evaluate(() => {
     const cells = new Uint8Array(1024)
     cells[50] = 7
@@ -569,7 +673,7 @@ test('auto-grade fires on another route', async ({ page }) => {
     localStorage.setItem('daily:2026-11-17:host', encoded)
     return encoded
   })
-  await page.clock.fastForward(125_000)
+  await page.clock.fastForward(65_000)
   await expect.poll(() => auto).toBe(1)
   expect(sentCells).toBe(latestCells)
 })
@@ -578,7 +682,7 @@ test('a delayed state refresh cannot overwrite a later grade', async ({ page }) 
   await page.clock.install({ time: new Date('2026-11-17T12:00:00Z') })
   await offlineClient(page, true)
   const now = Date.parse('2026-11-17T12:00:00Z')
-  const initial = { day: '2026-11-17', status: 'playing', prompt: 'A tree', startedAt: now, endsAt: now + 600_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: now + 120_000, serverNow: now }
+  const initial = { day: '2026-11-17', status: 'playing', prompt: 'A tree', startedAt: now, endsAt: now + 300_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: now + 60_000, serverNow: now }
   let hold = false
   let pending = 0
   let release!: () => void
@@ -589,13 +693,13 @@ test('a delayed state refresh cannot overwrite a later grade', async ({ page }) 
       if (hold) { pending++; await gate }
       return route.fulfill({ json: initial })
     }
-    if (path.endsWith('/grade')) return route.fulfill({ json: { ok: true, grade: { guess: 'tree', reason: 'recognisable tree', fit: 300, recognition: 200, speed: 90, total: 590, elapsedMs: 181_000 }, state: { ...initial, asksUsed: 1, asksLeft: 2, best: 590, nextAutoAt: now + 240_000 } } })
+    if (path.endsWith('/grade')) return route.fulfill({ json: { ok: true, grade: { guess: 'tree', reason: 'recognisable tree', fit: 300, recognition: 200, speed: 90, total: 590, elapsedMs: 61_000 }, state: { ...initial, asksUsed: 1, asksLeft: 2, best: 590, nextAutoAt: now + 120_000 } } })
     return route.fulfill({ json: {} })
   })
   await page.goto(`${origin}/home`)
   await expect(page.getByTestId('daily-playing')).toBeVisible()
   hold = true
-  await page.clock.fastForward(181_000)
+  await page.clock.fastForward(95_000)
   await expect.poll(() => pending).toBe(1)
   await page.getByTestId('daily-ask-button').click()
   await expect(page.getByTestId('daily-ask-button')).toHaveText(/Grade now \(2 left\)/)
@@ -608,11 +712,11 @@ test('a delayed state refresh cannot overwrite a later grade', async ({ page }) 
   await expect(page.getByTestId('daily-best-score')).toContainText('590')
 })
 
-for (const action of ['exit confirm returns to porch', 'grade now and submit are separate'] as const) test(action, async ({ page }) => {
+test('grade now and submit are separate', async ({ page }) => {
   await offlineClient(page, true)
   const now = Date.now()
-  const windows = [120_000, 240_000, 360_000, 480_000].map((offset, index) => ({ index, dueAt: now + offset, status: 'pending', score: null, late: false }))
-  const playing = { day: new Date(now).toISOString().slice(0, 10), status: 'playing', prompt: 'A tree', startedAt: now, endsAt: now + 600_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows, nextAutoAt: now + 120_000, serverNow: now }
+  const windows = [60_000, 120_000, 180_000, 240_000].map((offset, index) => ({ index, dueAt: now + offset, status: 'pending', score: null, late: false }))
+  const playing = { day: new Date(now).toISOString().slice(0, 10), status: 'playing', prompt: 'A tree', startedAt: now, endsAt: now + 300_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows, nextAutoAt: now + 60_000, serverNow: now }
   let ends = 0
   await page.route('**/api/daily/**', async route => {
     const path = new URL(route.request().url()).pathname
@@ -623,18 +727,6 @@ for (const action of ['exit confirm returns to porch', 'grade now and submit are
   })
   await page.goto(`${origin}/home`)
   await expect(page.getByTestId('daily-playing')).toBeVisible()
-  if (action === 'exit confirm returns to porch') {
-    await page.getByTestId('daily-exit').click()
-    const dialog = page.getByRole('dialog')
-    await expect(dialog.getByText('Leave the easel?')).toBeVisible()
-    await dialog.getByRole('button', { name: 'Keep painting' }).click()
-    await expect(page.getByTestId('daily-playing')).toBeVisible()
-    await page.getByTestId('daily-exit').click()
-    await page.getByRole('dialog').getByRole('button', { name: 'Exit', exact: true }).click()
-    await expect(page).toHaveURL(`${origin}/home`)
-    await expect(page.getByRole('button', { name: 'Resume painting' })).toBeVisible()
-    expect(ends).toBe(0)
-  } else {
     await expect(page.getByTestId('daily-ask-button')).toHaveText(/Grade now \(3 left\)/)
     await expect(page.getByTestId('daily-done-button')).toHaveText(/Submit & finish/)
     await expect(page.getByTestId('daily-auto-timeline')).toContainText('2:00 in')
@@ -648,7 +740,30 @@ for (const action of ['exit confirm returns to porch', 'grade now and submit are
     await page.getByTestId('daily-done-button').click()
     await expect(page.getByTestId('daily-ended')).toBeVisible()
     expect(ends).toBe(1)
-  }
+})
+
+test('a running attempt owns the screen: no exits, back is a no-op, other routes redirect, a reload resumes', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await playFixture(page)
+  await page.goto(`${origin}/party`)
+  await expect(page.getByRole('heading', { name: 'Room tickets' })).toBeVisible()
+  await page.getByTestId('app-navigation').getByRole('link', { name: 'Daily' }).click()
+  await page.getByTestId('daily-start-button').click()
+  await expect(page.getByTestId('daily-playing')).toBeVisible()
+  // Every exit is gone from the bar and the board.
+  const nav = page.getByTestId('app-navigation')
+  await expect(nav.getByRole('link')).toHaveCount(0)
+  await expect(nav.getByRole('button')).toHaveCount(0)
+  await expect(page.getByTestId('daily-exit')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Back to porch' })).toHaveCount(0)
+  // Browser back stays where it is.
+  await page.goBack()
+  await expect(page).toHaveURL(`${origin}/home`)
+  await expect(page.getByTestId('daily-playing')).toBeVisible()
+  // A typed URL lands back on the easel.
+  await page.evaluate(() => { window.history.pushState({}, '', '/scores'); window.dispatchEvent(new PopStateEvent('popstate')) })
+  await expect(page.getByTestId('daily-playing')).toBeVisible()
+  await expect(page).toHaveURL(`${origin}/home`)
 })
 
 async function offlineClient(page: Page, signedIn = false) {
@@ -687,7 +802,7 @@ test('signed-out home shows chalkboard hotspot and sign-in without revealing a p
   await page.goto(`${origin}/home`)
   await expect(page.getByTestId('daily-sign-in-button')).toBeVisible()
   await expect(page.getByRole('link', { name: "Today's scores" })).toBeVisible()
-  await expect(page.getByText("Today's top five")).toBeVisible()
+  await expect(page.locator('.board-face [data-testid="scores-chalkboard"]')).toBeVisible()
   await expect(page.getByTestId('daily-prompt')).toHaveCount(0)
   expect(meRequests).toBe(0)
   expect(errors).toEqual([])
@@ -697,7 +812,7 @@ test('signed-out profile renders its heading and empty state without errors', as
   const errors = await offlineClient(page)
   await page.goto(`${origin}/u/offline-player`)
   await expect(page.getByRole('heading', { name: 'Gallery' })).toBeVisible()
-  await expect(page.getByText('No drawings to show yet.')).toBeVisible()
+  await expect(page.getByText('Your first painting hangs here')).toBeVisible()
   expect(errors).toEqual([])
 })
 
@@ -795,14 +910,14 @@ async function dailyPlayingSetup(page: Page, initialCells?: Uint8Array) {
           status: 'playing',
           prompt: 'A tree',
           startedAt: now,
-          endsAt: now + 600_000,
+          endsAt: now + 300_000,
           autoUsed: 0,
           asksUsed: 0,
           asksLeft: 3,
           finalUsed: false,
           best: 0,
           windows: [],
-          nextAutoAt: now + 120_000,
+          nextAutoAt: now + 60_000,
           serverNow: now,
           ...(initialCells ? { lastCells: Buffer.from(initialCells).toString('base64') } : {}),
         },
@@ -1030,14 +1145,14 @@ test('hung grade request times out, exits thinking state, and re-enables actions
     status: 'playing',
     prompt: 'A lighthouse',
     startedAt: now - 30_000,
-    endsAt: now + 570_000,
+    endsAt: now + 270_000,
     autoUsed: 0,
     asksUsed: 0,
     asksLeft: 3,
     finalUsed: false,
     best: 0,
     windows: [],
-    nextAutoAt: now + 90_000,
+    nextAutoAt: now + 30_000,
     serverNow: now,
   }
   await page.route('**/api/daily/**', async route => {
@@ -1087,14 +1202,14 @@ test('mobile Haiku popover exposes dialog/status semantics and restores focus on
     status: 'playing',
     prompt: 'A lighthouse',
     startedAt: now - 30_000,
-    endsAt: now + 570_000,
+    endsAt: now + 270_000,
     autoUsed: 0,
     asksUsed: 0,
     asksLeft: 3,
     finalUsed: false,
     best: 0,
     windows: [],
-    nextAutoAt: now + 90_000,
+    nextAutoAt: now + 30_000,
     serverNow: now,
   }
   await page.route('**/api/daily/**', async route => {
@@ -1127,4 +1242,148 @@ test('mobile Haiku popover exposes dialog/status semantics and restores focus on
   await expect(popover).toHaveCount(0)
   await expect(trigger).toBeFocused()
   expect(errors).toEqual([])
+})
+
+test('all bottom palette swatches share identical dimensions without white swatch offset', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await playFixture(page, true)
+  await page.goto(`${origin}/home`)
+  await expect(page.getByTestId('palette')).toBeVisible()
+  const swatchBoxes = await page.getByTestId('palette').locator('button span[aria-hidden]').evaluateAll(
+    els => els.map(el => {
+      const r = el.getBoundingClientRect()
+      return { width: r.width, height: r.height }
+    }),
+  )
+  expect(swatchBoxes).toHaveLength(16)
+  for (const box of swatchBoxes) {
+    expect(Math.abs(box.width - swatchBoxes[0]!.width)).toBeLessThan(0.5)
+    expect(Math.abs(box.height - swatchBoxes[0]!.height)).toBeLessThan(0.5)
+  }
+})
+
+test('temporary retry daily debug button resets attempt with the same prompt', async ({ page }) => {
+  const now = Date.now()
+  let resetCalls = 0
+  let status: 'ended' | 'not_started' | 'playing' = 'ended'
+  const errors = await offlineClient(page, true)
+  const makeState = (s: 'ended' | 'not_started' | 'playing') => (
+    s === 'ended'
+      ? { day: '2026-11-17', status: 'ended', prompt: 'A lighthouse', autoUsed: 0, asksUsed: 1, asksLeft: 2, finalUsed: true, best: 750, windows: [], nextAutoAt: null, serverNow: now }
+      : s === 'not_started'
+        ? { day: '2026-11-17', status: 'not_started', prompt: 'A lighthouse', autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: null, serverNow: now }
+        : { day: '2026-11-17', status: 'playing', prompt: 'A lighthouse', startedAt: now, endsAt: now + 300_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: now + 60_000, serverNow: now }
+  )
+  await page.route('**/api/daily/**', async route => {
+    const path = new URL(route.request().url()).pathname
+    if (path.endsWith('/me')) return route.fulfill({ json: makeState(status) })
+    if (path.endsWith('/reset')) {
+      resetCalls++
+      status = 'not_started'
+      return route.fulfill({ json: makeState('not_started') })
+    }
+    if (path.endsWith('/start')) {
+      status = 'playing'
+      return route.fulfill({ json: makeState('playing') })
+    }
+    return route.fulfill({ json: {} })
+  })
+
+  await page.goto(`${origin}/home`)
+  await expect(page.getByTestId('temp-retry-daily')).toBeVisible()
+  await page.getByTestId('temp-retry-daily').click()
+  await expect.poll(() => resetCalls).toBe(1)
+  await expect(page.getByTestId('daily-playing')).toBeVisible()
+  await expect(page.getByTestId('daily-prompt')).toHaveText('A lighthouse')
+  expect(errors).toEqual([])
+})
+
+// A maximum-length reason made of the widest glyphs must fit every box that shows it, at every viewport.
+function clipProbe(list: string[]) {
+  const bad: string[] = []
+  for (const selector of list) {
+    const elements = [...document.querySelectorAll<HTMLElement>(selector)]
+    if (!elements.length) bad.push(`${selector}: missing`)
+    for (const el of elements) {
+      if (el.scrollHeight > el.clientHeight + 1 || el.scrollWidth > el.clientWidth + 1) bad.push(`${selector}: scroll ${el.scrollWidth}x${el.scrollHeight} > client ${el.clientWidth}x${el.clientHeight}`)
+      const box = el.getBoundingClientRect()
+      for (let parent = el.parentElement; parent && parent !== document.body; parent = parent.parentElement) {
+        const style = getComputedStyle(parent)
+        if (style.overflowX === 'visible' && style.overflowY === 'visible') continue
+        const clip = parent.getBoundingClientRect()
+        if (box.top < clip.top - 1 || box.bottom > clip.bottom + 1 || box.left < clip.left - 1 || box.right > clip.right + 1) bad.push(`${selector}: outside ${parent.className}`)
+      }
+    }
+  }
+  return bad
+}
+
+for (const [name, viewport] of [['1980x1240', { width: 1980, height: 1240 }], ['1440x900', { width: 1440, height: 900 }], ['375x812', { width: 375, height: 812 }]] as const) {
+  test(`a maximum-length judge reason of wide characters is never clipped at ${name}`, async ({ page }) => {
+    await page.setViewportSize(viewport)
+    await offlineClient(page, true)
+    const now = Date.now()
+    const reason = Array.from({ length: DAILY.reasonMaxChars }, (_, index) => (index % 9 === 8 ? ' ' : index % 2 ? 'M' : 'W')).join('')
+    expect(reason).toHaveLength(DAILY.reasonMaxChars)
+    const playing = { day: new Date(now).toISOString().slice(0, 10), status: 'playing', prompt: 'A lighthouse', startedAt: now - 30_000, endsAt: now + 270_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: now + 30_000, serverNow: now }
+    await page.route('**/api/daily/**', route => {
+      const path = new URL(route.request().url()).pathname
+      if (path.endsWith('/grade')) return route.fulfill({ json: { ok: true, grade: { guess: 'a lighthouse by the sea at dusk', reason, fit: 400, recognition: 300, speed: 80, total: 780, elapsedMs: 30_000 }, state: { ...playing, asksUsed: 1, asksLeft: 2, best: 780 } } })
+      return route.fulfill({ json: playing })
+    })
+    await page.goto(`${origin}/home`)
+    await expect(page.getByTestId('daily-playing')).toBeVisible()
+    await page.getByTestId('daily-ask-button').click()
+    const check = (selectors: string[]) => page.evaluate(clipProbe, selectors)
+    if (viewport.width < 600) {
+      await page.getByTestId('daily-mobile-haiku').click()
+      await expect(page.getByTestId('daily-mobile-haiku-popover')).toContainText('WMWM')
+      expect(await check(['.daily-mobile-haiku-popover__content'])).toEqual([])
+      await page.getByTestId('daily-mobile-haiku').click()
+      await page.getByTestId('daily-mobile-score-trigger').click()
+      await expect(page.getByTestId('daily-latest-reason')).toContainText('WMWM')
+      expect(await check(['[data-testid=daily-latest-reason]', '.daily-chalk-sheet'])).toEqual([])
+    } else {
+      await expect(page.getByTestId('daily-latest-reason')).toContainText('WMWM')
+      expect(await check(['.daily-haiku__reason', '.haiku__bubble', '[data-testid=daily-latest-reason]'])).toEqual([])
+      // The stage holding the bubble and chalkboard grows to fit them instead of scrolling or clipping.
+      expect(await page.locator('.daily-right-stage').evaluate(el => el.scrollHeight - el.clientHeight)).toBeLessThanOrEqual(1)
+    }
+  })
+}
+
+// Review finding: Back from an ended Daily close-up (compact 52 px nav) to Scores framed the board from that compact bar and pinned it ~56 px high.
+test('Back from an ended Daily to Scores frames the board like a fresh Scores page', async ({ page }) => {
+  await page.setViewportSize({ width: 1980, height: 1240 })
+  await offlineClient(page, true)
+  const now = Date.now()
+  const day = new Date(now).toISOString().slice(0, 10)
+  let status: 'not_started' | 'playing' | 'ended' = 'not_started'
+  const state = () => ({ day, status, prompt: 'A tree', startedAt: now, endsAt: now + 300_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: status === 'ended', best: 0, windows: [], nextAutoAt: null, serverNow: Date.now() })
+  await page.route('**/api/daily/**', async route => {
+    const path = new URL(route.request().url()).pathname
+    if (path.endsWith('/start')) status = 'playing'
+    if (path.endsWith('/end')) status = 'ended'
+    return route.fulfill({ json: state() })
+  })
+  await page.goto(`${origin}/scores`)
+  await expect(page.getByTestId('scores-chalkboard')).toBeVisible()
+  await page.getByTestId('app-navigation').getByRole('link', { name: 'Daily' }).click()
+  await page.getByTestId('daily-start-button').click()
+  await expect(page.getByTestId('daily-playing')).toBeVisible()
+  await page.getByTestId('daily-done-button').click()
+  await expect(page.getByTestId('daily-ended')).toBeVisible()
+  await expect.poll(async () => (await page.getByTestId('app-navigation').boundingBox())!.height).toBeLessThan(60)
+  await page.goBack()
+  await expect(page).toHaveURL(`${origin}/scores`)
+  const board = page.getByTestId('scores-chalkboard')
+  const settled = async () => {
+    let last = ''
+    await expect.poll(async () => { const box = JSON.stringify(await board.boundingBox()); const same = box === last; last = box; return same }, { timeout: 5000, intervals: [400] }).toBe(true)
+    return (await board.boundingBox())!
+  }
+  const afterBack = await settled()
+  await page.reload()
+  const fresh = await settled()
+  for (const key of ['x', 'y', 'width', 'height'] as const) expect(Math.abs(afterBack[key] - fresh[key]), `board ${key}`).toBeLessThan(2)
 })

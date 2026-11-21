@@ -4,10 +4,10 @@ import { PixelMedal, PixelTrophy } from './PixelMedals'
 import { PixelThumb } from './PixelThumb'
 
 describe('PixelMedals and PixelThumb', () => {
-  it('renders 11x11 medals and 11x10 trophy on the --px scene grid', () => {
+  it('renders 11x11 medals and an 11x10 trophy on the --px scene grid, authored at 2x detail', () => {
     const trophy = renderToString(<PixelTrophy />)
-    expect(trophy).toContain('width="11"')
-    expect(trophy).toContain('height="10"')
+    expect(trophy).toContain('width="22"')
+    expect(trophy).toContain('height="20"')
     expect(trophy).toContain('calc(var(--px, 3px) * 11)')
 
     for (const [rank, label] of [
@@ -16,8 +16,8 @@ describe('PixelMedals and PixelThumb', () => {
       [3, 'Bronze medal'],
     ] as const) {
       const html = renderToString(<PixelMedal medal={rank} label={label} />)
-      expect(html).toContain('width="11"')
-      expect(html).toContain('height="11"')
+      expect(html).toContain('width="22"')
+      expect(html).toContain('height="22"')
       expect(html).toContain(`aria-label="${label}"`)
       expect(html).toContain('calc(var(--px, 3px) * 11)')
     }

@@ -9,6 +9,8 @@ export interface AskAiButtonProps {
   isSpectator: boolean
   aiResting: boolean
   roundPlaying: boolean
+  /** The round has ended and the next has not started (the intermission / result screen). */
+  roundOver?: boolean
   onAsk: () => void
 }
 
@@ -18,6 +20,7 @@ export function AskAiButton({
   isSpectator,
   aiResting,
   roundPlaying,
+  roundOver = false,
   onAsk,
 }: AskAiButtonProps) {
   const waitMs = Math.max(0, askAvailableAt - now)
@@ -30,7 +33,7 @@ export function AskAiButton({
   } else if (isSpectator) {
     label = 'Sign in to Ask Haiku'
   } else if (!roundPlaying) {
-    label = 'Waiting for active round…'
+    label = roundOver ? 'Round over' : 'Waiting for active round…'
   } else if (waitMs > 0) {
     label = `Ask Haiku (${waitSec}s)`
   }

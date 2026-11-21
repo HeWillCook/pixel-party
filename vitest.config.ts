@@ -23,6 +23,9 @@ export default defineConfig({
   define: {
     ...appIdDefine({ appDir }),
     __DAILY_JUDGE__: JSON.stringify('fake'),
+    // Unit tests cover the debug routes (src/server/daily-routes.test.ts,
+    // daily-debug.test.ts), so the debug surface is always on here.
+    __DEBUG_TOOLS__: JSON.stringify(true),
   },
   resolve: {
     alias: {

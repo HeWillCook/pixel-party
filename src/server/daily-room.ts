@@ -12,6 +12,8 @@ type Operation =
   | { op: 'complete'; userId: string; day: string; outcome: Outcome; hash: string; cells: string; now: number; reservedAt: number }
   | { op: 'end'; userId: string; day: string; cells: string | null; now: number }
   | { op: 'get'; userId: string; day: string; now?: number }
+  // DEV ONLY (__DEBUG_TOOLS__)
+  | { op: 'reset'; userId: string; day: string }
 type PublishOperation = { op: 'publish'; userId: string; day: string; now: number }
 
 export interface AttemptStore {
@@ -21,6 +23,8 @@ export interface AttemptStore {
   end(userId: string, day: string, cells: string | null, now: number): Promise<AttemptRow | null>
   get(userId: string, day: string, now?: number): Promise<AttemptRow | null>
   publish(userId: string, day: string, now: number): Promise<void>
+  // DEV ONLY (__DEBUG_TOOLS__)
+  reset(userId: string, day: string): Promise<void>
 }
 
 function applyOperation(row: AttemptRow | null, body: Operation) {
@@ -32,6 +36,7 @@ function applyOperation(row: AttemptRow | null, body: Operation) {
       return completeGrade(row, body.outcome, body.hash, body.cells, body.now, body.reservedAt)
     case 'end': return { row: row ? endAttempt(row, body.cells, body.now) : null }
     case 'get': return { row: row ? body.now === undefined ? normalizeRow(row) : settleMissedWindows(row, body.now) : null }
+    case 'reset': return { row: null }
   }
 }
 
@@ -54,6 +59,10 @@ export class DailyRoom extends BaseRoom<Env> {
       return Response.json({})
     }
     const result = this.state.storage.transactionSync(() => {
+      if (body.op === 'reset') {
+        this.sql.exec('DELETE FROM attempts WHERE day = ? AND userId = ?', body.day, body.userId)
+        return { row: null }
+      }
       const stored = this.sql.exec<{ row: string }>('SELECT row FROM attempts WHERE day = ? AND userId = ?', body.day, body.userId).toArray()[0]
       const row = stored ? normalizeRow(JSON.parse(stored.row) as AttemptRow) : null
       const result = applyOperation(row, body)
@@ -76,6 +85,7 @@ function makeStore(invoke: (body: Operation | PublishOperation) => Promise<Retur
     end: async (userId, day, cells, now) => (await invoke({ op: 'end', userId, day, cells, now }) as { row: AttemptRow | null }).row,
     get: async (userId, day, now) => (await invoke({ op: 'get', userId, day, now }) as { row: AttemptRow | null }).row,
     publish: async (userId, day, now) => { await invoke({ op: 'publish', userId, day, now }) },
+    reset: async (userId, day) => { await invoke({ op: 'reset', userId, day }) },
   }
 }
 
@@ -98,6 +108,10 @@ export function memoryAttemptStore(tools?: ServerTools): AttemptStore {
       return { row: null }
     }
     const key = JSON.stringify([body.day, body.userId])
+    if (body.op === 'reset') {
+      rows.delete(key)
+      return { row: null }
+    }
     const stored = rows.get(key)
     const result = applyOperation(stored ? normalizeRow(stored) : null, body)
     if ('row' in result && result.row && (body.op !== 'get' || JSON.stringify(result.row) !== JSON.stringify(stored))) rows.set(key, structuredClone(result.row))

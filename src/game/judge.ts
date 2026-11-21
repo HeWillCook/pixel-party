@@ -1,12 +1,13 @@
 import { JUDGE } from './config'
 
-export const JUDGE_SYSTEM = 'You judge a collaborative pixel-art canvas drawn by many people, one pixel at a time. Ignore isolated stray pixels; they are noise.'
-export const JUDGE_USER_TEXT = 'What is this a drawing of? Reply with raw JSON only, no markdown fences: {"guesses": [three short nouns, most likely first], "confidence": number from 0 to 1}. If it is blank or unrecognisable, still give your three best guesses with low confidence.'
+export const JUDGE_SYSTEM = 'You judge a collaborative pixel-art canvas drawn by many people, one pixel at a time. Ignore isolated stray pixels; they are noise. If the canvas is entirely blank (no pixels drawn), the drawing is empty and nothing was drawn.'
+export const JUDGE_USER_TEXT = 'What is this a drawing of? Reply with raw JSON only, no markdown fences: {"guesses": [three short nouns, most likely first], "confidence": number from 0 to 1}. If the image is entirely blank (no pixels drawn), reply with {"guesses": [], "confidence": 0}.'
 
 export function buildJudgeBody(pngBase64: string) {
   return {
     model: JUDGE.model,
     max_tokens: JUDGE.maxTokens,
+    temperature: 0,
     system: JUDGE_SYSTEM,
     messages: [{ role: 'user', content: [
       { type: 'image', source: { type: 'base64', media_type: 'image/png', data: pngBase64 } },

@@ -10,10 +10,11 @@ describe('buildJudgeBody', () => {
     expect(body).toEqual({
       model: JUDGE.model,
       max_tokens: JUDGE.maxTokens,
-      system: 'You judge a collaborative pixel-art canvas drawn by many people, one pixel at a time. Ignore isolated stray pixels; they are noise.',
+      temperature: 0,
+      system: 'You judge a collaborative pixel-art canvas drawn by many people, one pixel at a time. Ignore isolated stray pixels; they are noise. If the canvas is entirely blank (no pixels drawn), the drawing is empty and nothing was drawn.',
       messages: [{ role: 'user', content: [
         { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'image-data' } },
-        { type: 'text', text: 'What is this a drawing of? Reply with raw JSON only, no markdown fences: {"guesses": [three short nouns, most likely first], "confidence": number from 0 to 1}. If it is blank or unrecognisable, still give your three best guesses with low confidence.' },
+        { type: 'text', text: 'What is this a drawing of? Reply with raw JSON only, no markdown fences: {"guesses": [three short nouns, most likely first], "confidence": number from 0 to 1}. If the image is entirely blank (no pixels drawn), reply with {"guesses": [], "confidence": 0}.' },
       ] }],
     })
     expect(JUDGE_SYSTEM).toBe(body.system)
@@ -52,6 +53,6 @@ describe('parseJudgeText', () => {
     expect(parseJudgeText('{"guesses":["a"],"confidence":-1}')).toEqual({ guesses: ['a'], confidence: 0 })
   })
   it('rejects malformed or empty results', () => {
-    for (const text of ["I can't tell", '{}', '{"guesses": []}', '{"guesses":["cat"],"confidence":"bad"}', '{"guesses":[null],"confidence":0.5}']) expect(parseJudgeText(text)).toBeNull()
+    for (const text of ["I can't tell", '{}', '{"guesses": []}', '{"guesses": [], "confidence": 0}', '{"guesses":["cat"],"confidence":"bad"}', '{"guesses":[null],"confidence":0.5}']) expect(parseJudgeText(text)).toBeNull()
   })
 })

@@ -84,12 +84,15 @@ export function applyPlacement(s: RoomState, p: { x: number; y: number; c: numbe
   return { state: { ...s, grid, soloBuckets, version: s.version + 1, lastPlacedAt: { ...lastPlacedAt, [userId]: now } }, events: [{ type: 'pixel', x: p.x, y: p.y, c: p.c, by: userId }] }
 }
 
-export function shouldJudge(s: RoomState, now: number, signedInConnected: number, reason: 'tick' | 'ask'): { ok: true } | { ok: false; why: 'not_playing' | 'unchanged' | 'no_players' | 'too_soon' | 'rate_cap' } {
+export function shouldJudge(s: RoomState, now: number, signedInConnected: number, reason: 'tick' | 'ask'): { ok: true } | { ok: false; why: 'not_playing' | 'unchanged' | 'no_players' | 'too_soon' | 'rate_cap' | 'canvas_blank' } {
   if (s.status !== 'playing' || s.round.state !== 'playing') return { ok: false, why: 'not_playing' }
   if (s.version === s.lastJudgedVersion) return { ok: false, why: 'unchanged' }
   if (signedInConnected < 1) return { ok: false, why: 'no_players' }
   if (now - s.lastJudgedAt < (reason === 'tick' ? JUDGE.tickMs : JUDGE.askMinMs)) return { ok: false, why: 'too_soon' }
   if (s.judgeCalls.filter(time => time > now - 60000 && time <= now).length >= JUDGE.maxPerMinute) return { ok: false, why: 'rate_cap' }
+  // A completely blank board must never reach the AI judge, even after paint-then-erase bumped
+  // `version`: Haiku would otherwise hallucinate a guess off an empty canvas.
+  if (pixelsUsed(s.grid) === 0) return { ok: false, why: 'canvas_blank' }
   return { ok: true }
 }
 
@@ -159,7 +162,10 @@ export function nextAlarmAt(s: RoomState, now: number): number | null {
   if ((s.status === 'paused' || s.status === 'lobby' || s.status === 'intermission') && !s.isDefaultBoard && s.emptySince !== null) deadlines.push(s.emptySince + ROOMS.closeAfterEmptyMs)
   if (s.status === 'playing') {
     deadlines.push(s.round.startedAt + MODES[s.mode].capMs)
-    if (s.version !== s.lastJudgedVersion && !s.judgeInFlight) {
+    // A blank canvas is never judged (shouldJudge reports `canvas_blank` without advancing
+    // lastJudgedVersion or lastJudgedAt), so arming a tick deadline for it would re-arm an already
+    // overdue alarm forever after a paint-then-erase. Only the round cap stays scheduled.
+    if (s.version !== s.lastJudgedVersion && !s.judgeInFlight && pixelsUsed(s.grid) > 0) {
       const calls = s.judgeCalls.filter(time => time > now - 60000 && time <= now).sort((a, b) => a - b)
       const rateReady = calls.length >= JUDGE.maxPerMinute ? calls[calls.length - JUDGE.maxPerMinute] + 60000 : now
       deadlines.push(Math.max(s.lastJudgedAt + JUDGE.tickMs, rateReady))

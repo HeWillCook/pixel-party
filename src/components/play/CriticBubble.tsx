@@ -113,7 +113,7 @@ export function CriticBubble({
         </div>
       </div>
       <div className="critic-bubble__speech">
-        <GuessFeed {...guessProps} />
+        <GuessFeed {...guessProps} roundOver={roundState === 'intermission'} />
       </div>
     </div>
   )

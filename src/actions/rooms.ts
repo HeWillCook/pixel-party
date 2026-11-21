@@ -62,7 +62,7 @@ export async function deleteRoom(tools: ServerTools, userId: string, params: unk
   const closed = await tools.update('rooms', room.recordId, { status: 'closed', playerCount: 0 })
   if (!closed.success) return closed
   try { await close(room) } catch {
-    return { success: false, code: 'close_failed', error: 'Room closed to new joins, but shutdown failed. Retry Delete room.' }
+    return { success: false, code: 'close_failed', error: 'Room closed to new joins, but shutdown failed. Retry Pack up.' }
   }
   return { success: true, data: { roomId: room.recordId } }
 }

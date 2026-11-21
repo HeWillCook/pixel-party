@@ -3,13 +3,16 @@ import { createRoot, hydrateRoot } from 'react-dom/client'
 // the initial bundle for a public top-level route such as `/`.
 import { routes } from '@generouted/react-router/lazy'
 import { createBrowserRouter, RouterProvider } from 'react-router'
-import { installStaleChunkRecovery } from './stale-chunk-recovery'
+import { guardLazyRoutes } from './stale-chunk-recovery'
 import './styles.css'
+
+// Registered before the router's own listener (it adds one when created), so a page can see Back/Forward coming while the
+// page being left is still on screen: listeners on the same target run in registration order.
+window.addEventListener('popstate', () => window.dispatchEvent(new Event('pixel:popstate')))
 
 async function main() {
   const root = document.getElementById('root')!
-  const router = createBrowserRouter(routes)
-  installStaleChunkRecovery(router)
+  const router = createBrowserRouter(guardLazyRoutes(routes))
 
   // Let the router finish loading the first route's code-split module before
   // rendering. Until then it renders only a loading fallback — and on a page

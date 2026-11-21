@@ -1,0 +1,76 @@
+/* Haiku's always-visible bubble on phones: the cat beside a speech bubble, pulsing on each new guess. */
+.haiku-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.haiku-strip__cat {
+  flex: none;
+}
+.haiku-strip__bubble {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  padding: 5px 10px;
+  background: #fff0cc;
+  color: #392a45;
+  border: 3px solid #8e5960;
+  box-shadow: inset 0 0 0 2px #fff0cc, 3px 3px 0 rgba(57, 42, 69, 0.4);
+  font-size: 20px;
+  line-height: 1.05;
+}
+.haiku-strip__bubble::before {
+  content: '';
+  position: absolute;
+  left: -9px;
+  top: 50%;
+  width: 0;
+  height: 0;
+  margin-top: -7px;
+  border-top: 7px solid transparent;
+  border-bottom: 7px solid transparent;
+  border-right: 9px solid #8e5960;
+}
+.haiku-strip__bubble::after {
+  content: '';
+  position: absolute;
+  left: -5px;
+  top: 50%;
+  width: 0;
+  height: 0;
+  margin-top: -5px;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  border-right: 6px solid #fff0cc;
+}
+.haiku-strip__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+}
+.haiku-strip__hint {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 15px;
+  color: #614052;
+}
+.haiku-strip--won .haiku-strip__bubble {
+  background: #ffe29a;
+  border-color: #985c5a;
+}
+.haiku-strip__bubble--new {
+  animation: haiku-strip-pulse 700ms steps(4) 1;
+}
+@keyframes haiku-strip-pulse {
+  0% { transform: scale(0.94); background: #ffe29a; }
+  40% { transform: scale(1.04); background: #ffe29a; }
+  100% { transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .haiku-strip__bubble--new { animation: none; }
+}
