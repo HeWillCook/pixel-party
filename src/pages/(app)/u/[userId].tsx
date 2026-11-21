@@ -6,6 +6,9 @@ import { TempDebugPaintings } from '../../../components/gallery/TempDebugPaintin
 import { WallEmpty } from '../../../components/gallery/WallEmpty'
 import { useGalleryItems } from '../../../components/gallery/useGalleryItems'
 import { useWallPager } from '../../../components/gallery/useWallPager'
+import { Seo } from '../../../components/Seo'
+import { galleryTitle } from '../../../route-titles'
+import { seo } from '../../../seo'
 import { PorchLabels } from '../../../components/porch/PorchLabels'
 import { isPrimaryClick } from '../../../components/porch/returnFlag'
 import { usePorchCloseup } from '../../../components/porch/usePorchCloseup'
@@ -123,6 +126,7 @@ export default function ProfilePage() {
       data-phase={leaving ? 'leaving' : 'active'}
       style={{ '--gallery-nav': `${navHeight}px` } as CSSProperties}
     >
+      <Seo title={galleryTitle(isOwner, name)} description={seo.description} noindex />
       <div
         ref={backdropRef}
         className={leaving ? 'gallery-backdrop' : 'gallery-backdrop gallery-backdrop--dismiss'}

@@ -21,7 +21,8 @@ import { DeepSpaceAuthProvider, useAuthStatus } from 'deepspace'
 import { RecordProvider, RecordScope, AgentTools } from 'deepspace'
 import Navigation from '../../components/Navigation'
 import { useToast } from '@/components/ui'
-import { APP_NAME, SCOPE_ID } from '../../constants'
+import { SCOPE_ID } from '../../constants'
+import { routeTitle } from '../../route-titles'
 import { Seo } from '../../components/Seo'
 import { seo } from '../../seo'
 import { schemas } from '../../schemas'
@@ -38,7 +39,7 @@ export default function AppLayout() {
   return (
     <DeepSpaceAuthProvider>
       {/* The prerendered landing owns the document <title> and React drops it
-          when <Seo> unmounts, so every route without <Seo> sets its own. */}
+          when <Seo> unmounts, so every route sets its own (see routeTitle). */}
       <AppHead />
       <AuthBoot>
         <ShellChrome>
@@ -62,16 +63,19 @@ export default function AppLayout() {
 /**
  * Head tags for the app routes. Per-user and per-room screens only ever show
  * the signed-in player's own data or a room's live state, so they ask crawlers
- * to stay away; the public screens (/scores, /party) keep the plain title.
+ * to stay away; the public screens (/scores, /party) are indexable. Every
+ * screen has its own tab title; a gallery (named after its owner) and the 404
+ * render their own, so this renders nothing for them.
  */
-const NOINDEX_ROUTES = [/^\/home\/?$/, /^\/settings\/?$/, /^\/u\/[^/]+\/?$/, /^\/r\/[^/]+\/?$/]
+const NOINDEX_ROUTES = [/^\/home\/?$/, /^\/settings\/?$/, /^\/r\/[^/]+\/?$/]
 
 function AppHead() {
   const { pathname } = useLocation()
-  const noindex = NOINDEX_ROUTES.some(pattern => pattern.test(pathname))
-  return noindex
-    ? <Seo title={APP_NAME} description={seo.description} noindex />
-    : <title>{APP_NAME}</title>
+  const title = routeTitle(pathname)
+  if (!title) return null
+  return NOINDEX_ROUTES.some(pattern => pattern.test(pathname))
+    ? <Seo title={title} description={seo.description} noindex />
+    : <title>{title}</title>
 }
 
 /** A running Daily attempt owns the screen: a typed URL or a stale link to anywhere else lands back on the easel. */
