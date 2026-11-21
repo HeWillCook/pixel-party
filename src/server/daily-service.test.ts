@@ -321,7 +321,7 @@ describe('daily service', () => {
     expect(deps.judge.peek).not.toHaveBeenCalled()
     // A look that never produced a line gives the peek back.
     expect(await deps.store.get(user.userId, day)).toMatchObject({ peeksUsed: 0 })
-    vi.mocked(deps.judge.peek).mockRejectedValueOnce(new Error('judge down'))
+    vi.mocked(deps.judge.peek!).mockRejectedValueOnce(new Error('judge down'))
     expect(await peekDaily(deps, user, cells)).toEqual({ ok: false, reason: 'judge_resting' })
     expect(await deps.store.get(user.userId, day)).toMatchObject({ peeksUsed: 0 })
   })

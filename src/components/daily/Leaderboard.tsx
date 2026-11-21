@@ -286,8 +286,8 @@ export function Leaderboard({
         <p className="scores-subtitle">
           {offset === 0
             ? ended
-              ? 'Final standings · tap a painter for stats · tap a painting to see it'
-              : 'Live rankings so far · tap a painter for stats · paintings reveal at day end'
+              ? 'Live rankings · tap a painter for stats · tap a painting to see it'
+              : 'Live rankings · tap a painter for stats · finish your Daily to see the paintings'
             : `Standings for ${selectedDay}`}
         </p>
 
