@@ -194,7 +194,7 @@ export async function todaysDrawings(deps: DailyDeps, userId: string): Promise<{
   return { ok: true, drawings: drawings.data }
 }
 
-// TEMP DEBUG: remove before launch
+// DEV ONLY (__DEBUG_TOOLS__)
 export async function resetDaily(deps: DailyDeps, userId: string): Promise<DailyStateView> {
   const now = deps.now()
   const today = utcDay(now)

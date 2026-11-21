@@ -158,8 +158,8 @@ export default function ProfilePage() {
         <h1 className="gallery-hud__title">{heading}</h1>
         <Link to="/home" onClick={onPorchLink} data-testid="gallery-back" className="pp-chip">← Back to the porch</Link>
       </header>
-      {/* TEMP DEBUG: remove before launch */}
-      {isOwner && <TempDebugPaintings />}
+      {/* DEV ONLY (__DEBUG_TOOLS__) */}
+      {__DEBUG_TOOLS__ && isOwner && <TempDebugPaintings />}
     </div>
   )
 }

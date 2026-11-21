@@ -190,7 +190,7 @@
   .gallery-hud { left: 8px; gap: 4px 8px; padding: 4px 8px; }
   .gallery-hud__title { font-size: 18px; }
 }
-/* TEMP DEBUG: remove before launch. Down on the deck boards, clear of the paintings. */
+/* DEV ONLY (__DEBUG_TOOLS__): down on the deck boards, clear of the paintings. */
 .gallery-debug { position: fixed; z-index: 3; left: 8px; bottom: 8px; max-width: calc(100vw - 16px); display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 4px 8px; font-size: 15px; line-height: 1; background: #fff0cc; color: #392a45; border: 3px solid #985c5a; box-shadow: inset 0 0 0 2px #ecd4b0, 3px 3px 0 rgba(57, 42, 69, 0.55); }
 .gallery-debug__label { opacity: 0.7; }
 .gallery-debug .gallery-debug__button { min-height: 32px; padding: 0 10px; font-size: 15px; }

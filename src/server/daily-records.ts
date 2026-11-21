@@ -42,7 +42,7 @@ export function attemptPublisher(read: (userId: string, day: string) => Promise<
   }
 }
 
-// TEMP DEBUG: remove before launch
+// DEV ONLY (__DEBUG_TOOLS__)
 export async function resetAttemptRecords(tools: ServerTools, userId: string, day: string): Promise<void> {
   const emptyCells = encodeCells(new Uint8Array(1024))
   const scores = await tools.query('dailyScores', { where: { day, userId }, limit: 1 })

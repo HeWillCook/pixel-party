@@ -9,16 +9,35 @@ import { prerender } from './prerender.ts'
 
 const appDir = fileURLToPath(new URL('.', import.meta.url))
 
-export default defineConfig(() => {
+export default defineConfig(({ command }) => {
   // Real Haiku vision is the default everywhere, including `deepspace dev
   // start`, so local drawings are judged honestly. Only the Playwright /
   // integration flag (`PIXEL_PARTY_TEST=1`) and Vitest (which supplies its own
   // define) fall back to the fake judge.
   const dailyJudge = process.env.DAILY_JUDGE || (process.env.PIXEL_PARTY_TEST === '1' ? 'fake' : 'real')
+
+  // `deepspace deploy` is the only thing that builds with DEEPSPACE_SITE_ORIGIN
+  // (it runs `npx vite build` and sets it for canonical URLs — see the deploy
+  // command in the CLI). CI's `npm run build` and the offline Playwright build
+  // do not set it, so a test-only flag there is deliberate and allowed.
+  const deployBuild = command === 'build' && Boolean(process.env.DEEPSPACE_SITE_ORIGIN)
+  if (deployBuild && process.env.PIXEL_PARTY_TEST === '1') {
+    throw new Error('[build] PIXEL_PARTY_TEST=1 must not be set for a deploy: it disables every AI call and exposes /api/__test/ready. Unset it and rebuild.')
+  }
+  if (deployBuild && process.env.DAILY_JUDGE) {
+    throw new Error(`[build] DAILY_JUDGE=${process.env.DAILY_JUDGE} is a local/test override and must not be set for a deploy. Unset it and rebuild.`)
+  }
+
   return {
     define: {
       __PIXEL_PARTY_TEST__: JSON.stringify(process.env.PIXEL_PARTY_TEST === '1'),
       __DAILY_JUDGE__: JSON.stringify(dailyJudge),
+      // Debug routes (POST /api/daily/reset, /api/daily/debug-paintings) and the
+      // debug controls on the Daily, gallery and studio screens exist in
+      // `deepspace dev` and in the PIXEL_PARTY_TEST build the Playwright suites
+      // run against. A production `vite build` folds this to false, so Rollup
+      // drops the registrations and the controls from both bundles.
+      __DEBUG_TOOLS__: JSON.stringify(command === 'serve' || process.env.PIXEL_PARTY_TEST === '1'),
     },
     plugins: [
     react(),

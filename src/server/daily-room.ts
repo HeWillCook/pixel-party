@@ -12,7 +12,7 @@ type Operation =
   | { op: 'complete'; userId: string; day: string; outcome: Outcome; hash: string; cells: string; now: number; reservedAt: number }
   | { op: 'end'; userId: string; day: string; cells: string | null; now: number }
   | { op: 'get'; userId: string; day: string; now?: number }
-  // TEMP DEBUG: remove before launch
+  // DEV ONLY (__DEBUG_TOOLS__)
   | { op: 'reset'; userId: string; day: string }
 type PublishOperation = { op: 'publish'; userId: string; day: string; now: number }
 
@@ -23,7 +23,7 @@ export interface AttemptStore {
   end(userId: string, day: string, cells: string | null, now: number): Promise<AttemptRow | null>
   get(userId: string, day: string, now?: number): Promise<AttemptRow | null>
   publish(userId: string, day: string, now: number): Promise<void>
-  // TEMP DEBUG: remove before launch
+  // DEV ONLY (__DEBUG_TOOLS__)
   reset(userId: string, day: string): Promise<void>
 }
 

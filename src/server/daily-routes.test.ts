@@ -152,7 +152,7 @@ describe('daily HTTP routes', () => {
     expect(secondStart.prompt).toBe(firstStart.prompt)
   })
 
-  // TEMP DEBUG: remove with the debug-paintings route before launch
+  // DEV ONLY (__DEBUG_TOOLS__): remove with the debug-paintings route
   it('temporarily adds and clears generated gallery paintings for the signed-in player only', async () => {
     expect((await request('debug-paintings', 'POST', { add: 2 }, null)).status).toBe(401)
     expect((await request('debug-paintings', 'POST', { add: 0 })).status).toBe(400)

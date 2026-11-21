@@ -25,8 +25,8 @@ import { APP_NAME } from './constants'
 declare const __DEEPSPACE_SITE_ORIGIN__: string | undefined
 
 export const seo = {
-  title: `${APP_NAME} — Multiplayer Pixel Canvas & Guessing Game`,
-  description: `Draw pixel art together in real time while Haiku the cat tries to guess the target word in as few pixels as possible.`,
+  title: `${APP_NAME} — Daily 5-Minute Pixel Art, Judged by Claude Haiku`,
+  description: `A new pixel-art prompt every day: draw it in five minutes and Claude Haiku judges your canvas, or paint together with friends in live party rooms.`,
   /** Public origin for canonical URLs, og:url, and the sitemap — no trailing
    *  slash. Replace with the custom domain once one is attached, e.g.
    *  'https://www.example.com'. */
