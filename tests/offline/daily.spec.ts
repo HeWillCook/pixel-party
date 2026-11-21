@@ -1351,3 +1351,39 @@ for (const [name, viewport] of [['1980x1240', { width: 1980, height: 1240 }], ['
     }
   })
 }
+
+// Review finding: Back from an ended Daily close-up (compact 52 px nav) to Scores framed the board from that compact bar and pinned it ~56 px high.
+test('Back from an ended Daily to Scores frames the board like a fresh Scores page', async ({ page }) => {
+  await page.setViewportSize({ width: 1980, height: 1240 })
+  await offlineClient(page, true)
+  const now = Date.now()
+  const day = new Date(now).toISOString().slice(0, 10)
+  let status: 'not_started' | 'playing' | 'ended' = 'not_started'
+  const state = () => ({ day, status, prompt: 'A tree', startedAt: now, endsAt: now + 300_000, autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: status === 'ended', best: 0, windows: [], nextAutoAt: null, serverNow: Date.now() })
+  await page.route('**/api/daily/**', async route => {
+    const path = new URL(route.request().url()).pathname
+    if (path.endsWith('/start')) status = 'playing'
+    if (path.endsWith('/end')) status = 'ended'
+    return route.fulfill({ json: state() })
+  })
+  await page.goto(`${origin}/scores`)
+  await expect(page.getByTestId('scores-chalkboard')).toBeVisible()
+  await page.getByTestId('app-navigation').getByRole('link', { name: 'Daily' }).click()
+  await page.getByTestId('daily-start-button').click()
+  await expect(page.getByTestId('daily-playing')).toBeVisible()
+  await page.getByTestId('daily-done-button').click()
+  await expect(page.getByTestId('daily-ended')).toBeVisible()
+  await expect.poll(async () => (await page.getByTestId('app-navigation').boundingBox())!.height).toBeLessThan(60)
+  await page.goBack()
+  await expect(page).toHaveURL(`${origin}/scores`)
+  const board = page.getByTestId('scores-chalkboard')
+  const settled = async () => {
+    let last = ''
+    await expect.poll(async () => { const box = JSON.stringify(await board.boundingBox()); const same = box === last; last = box; return same }, { timeout: 5000, intervals: [400] }).toBe(true)
+    return (await board.boundingBox())!
+  }
+  const afterBack = await settled()
+  await page.reload()
+  const fresh = await settled()
+  for (const key of ['x', 'y', 'width', 'height'] as const) expect(Math.abs(afterBack[key] - fresh[key]), `board ${key}`).toBeLessThan(2)
+})

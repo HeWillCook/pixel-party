@@ -44,6 +44,7 @@ import {
   type PorchChainDest,
   type SceneNavKind,
 } from './returnFlag'
+import { settledNavHeight } from './navMetrics'
 import './porch.css'
 
 const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect
@@ -78,10 +79,7 @@ export interface PorchSceneProps {
   children?: ReactNode
 }
 
-function measuredNavHeight(): number {
-  if (typeof document === 'undefined') return 72
-  return document.querySelector('[data-testid="app-navigation"]')?.getBoundingClientRect().height || 72
-}
+const measuredNavHeight = settledNavHeight
 
 function Objects({
   moreOpen,

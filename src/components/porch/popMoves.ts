@@ -4,13 +4,14 @@ import { compositionFor } from '../../scene/camera'
 import { porchPose, type PorchPose } from '../../scene/porch/poses'
 import { SCENE_ZOOM_MS } from '../../scene/zoom'
 import { useDailyLock } from '../../hooks/useDailyLock'
+import { settledNavHeight } from './navMetrics'
 import { enableNavMotion, markSceneMove, setZoomHandoff } from './returnFlag'
 import { requestVerticalSceneTransition } from './VerticalSceneTransition'
 
 /** Where a path puts the camera: a pose on the porch, or the studio below it. Rooms and the static landing are not part of these moves. */
 type Place = { kind: 'porch'; pose: PorchPose } | { kind: 'studio' } | null
 
-export function placeOf(pathname: string): Place {
+function placeOf(pathname: string): Place {
   const path = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname
   if (path === '/' || path.startsWith('/r/')) return null
   if (path === '/home') return { kind: 'porch', pose: 'rest' }
@@ -45,7 +46,7 @@ export function usePopMoves(): void {
         if (from.pose === to.pose) return
         const viewport = { w: document.documentElement.clientWidth, h: document.documentElement.clientHeight }
         const composition = compositionFor(viewport.w || 1, viewport.h || 1)
-        const navHeight = document.querySelector('[data-testid="app-navigation"]')?.getBoundingClientRect().height || 72
+        const navHeight = settledNavHeight()
         enableNavMotion()
         markSceneMove()
         setZoomHandoff({

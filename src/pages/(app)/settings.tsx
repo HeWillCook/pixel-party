@@ -14,6 +14,7 @@ import { ArrowLeft } from 'lucide-react'
 import { StudioSprite } from '@/components/play/StudioSprite'
 import { PorchWall } from '@/components/gallery/PorchWall'
 import { PorchLabels } from '@/components/porch/PorchLabels'
+import { settledNavHeight } from '@/components/porch/navMetrics'
 import { useDaily } from '@/hooks/DailyAttemptProvider'
 import { useMute } from '@/hooks/useMute'
 import {
@@ -164,7 +165,7 @@ export default function SettingsPage() {
       return
     }
     const flight = kind === 'scores' || kind === 'gallery' ? kind : 'rest'
-    const target = porchPose(flight, viewport, compositionFor(viewport.w || 1, viewport.h || 1), document.querySelector('[data-testid="app-navigation"]')?.getBoundingClientRect().height || 72)
+    const target = porchPose(flight, viewport, compositionFor(viewport.w || 1, viewport.h || 1), settledNavHeight())
     setExiting(true)
     setExitCamera(target)
     zoomTimer.current = setTimeout(() => {
