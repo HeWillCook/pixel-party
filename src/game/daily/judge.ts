@@ -111,7 +111,12 @@ export function parseBlind(text: string): { guess: string } | null {
   return guess.length > 0 ? { guess } : null
 }
 
-/** Fit a judge reason into `max` characters without cutting a word: keep whole sentences, else cut at a word and add "…". */
+const DANGLING = /(?:^|\s)(?:a|an|the|and|or|but|though|although|while|with|without|of|to|in|on|at|for|from|is|are|was|were|that|which|as|by|could|would|might|needs?)$/i
+
+/**
+ * Fit a judge reason into `max` characters without cutting a word: keep whole sentences, else cut at the last clause (a comma past
+ * the middle) or word and add "…". A cut never ends on a dangling "and", "the", "though" ("…though the puddle and…").
+ */
 export function clampReason(text: string, max: number = DAILY.reasonMaxChars): string {
   const clean = text.replace(/\s+/g, ' ').trim()
   if (clean.length <= max) return clean
@@ -119,8 +124,16 @@ export function clampReason(text: string, max: number = DAILY.reasonMaxChars): s
   const stop = Math.max(head.lastIndexOf('. '), head.lastIndexOf('! '), head.lastIndexOf('? '))
   if (stop >= max * 0.4) return head.slice(0, stop + 1)
   const room = clean.slice(0, max - 1)
+  const comma = room.lastIndexOf(', ')
   const space = room.lastIndexOf(' ')
-  const words = space > 0 && clean[max - 1] !== ' ' ? room.slice(0, space) : room
+  let words = comma >= max * 0.5 ? room.slice(0, comma) : space > 0 && clean[max - 1] !== ' ' ? room.slice(0, space) : room
+  // Drop trailing function words (only while enough text is left to read as a phrase).
+  for (let guard = 0; guard < 4; guard++) {
+    const trimmed = words.replace(/[\s,;:\-–—]+$/, '')
+    const match = DANGLING.exec(trimmed)
+    if (!match || trimmed.length - match[0].length < max * 0.3) { words = trimmed; break }
+    words = trimmed.slice(0, trimmed.length - match[0].length)
+  }
   return `${words.replace(/[\s,;:\-–—]+$/, '')}…`
 }
 

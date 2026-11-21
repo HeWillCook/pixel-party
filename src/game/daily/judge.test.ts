@@ -121,6 +121,13 @@ describe('clampReason', () => {
     expect(text.startsWith(out.slice(0, -1))).toBe(true)
     expect(text[out.length - 1]).toBe(' ')
   })
+  it('cuts at the last clause and never ends on a dangling function word (real Haiku replies, 2026-11-21)', () => {
+    expect(clampReason('A red umbrella with a black handle and blue rain streaks is clearly drawn, though the puddle and ground are simple.')).toBe('A red umbrella with a black handle and blue rain streaks is clearly drawn…')
+    const out = clampReason('A red umbrella with a black handle and blue rain streaks is clearly drawn with a puddle or ground lines below it')
+    expect(out.length).toBeLessThanOrEqual(max)
+    expect(out).not.toMatch(/\b(with|a|or|and|the)…$/)
+    expect(out.endsWith('…')).toBe(true)
+  })
   it('never exceeds the limit, even for a single huge word', () => {
     const out = clampReason('W'.repeat(400))
     expect(out).toHaveLength(max)
