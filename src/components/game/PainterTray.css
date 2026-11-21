@@ -159,7 +159,7 @@
 }
 
 /* Row of paint pots / blobs on the wooden shelf */
-.painter-tray [data-testid="palette"] > div {
+.painter-tray [data-testid="palette"] > .palette-swatches {
   display: grid;
   grid-template-columns: repeat(16, 42px);
   gap: 2px;
@@ -227,7 +227,7 @@
   .room-play .painter-tray__caption {
     display: none;
   }
-  .room-play .painter-tray [data-testid="palette"] > div {
+  .room-play .painter-tray [data-testid="palette"] > .palette-swatches {
     display: grid;
     grid-template-columns: repeat(8, 34px);
     gap: 4px;
@@ -311,7 +311,7 @@
     left: -3px;
     height: 24px;
   }
-  .daily-play .painter-tray [data-testid="palette"] > div {
+  .daily-play .painter-tray [data-testid="palette"] > .palette-swatches {
     display: grid;
     grid-template-columns: repeat(8, 34px);
     gap: 4px;
@@ -329,4 +329,60 @@
   .painter-tray [data-testid="palette"] button span[aria-hidden] {
     transition: none;
   }
+}
+
+/* The wait between pixels: a draining fill on the active swatch and the colour chip, a bar and one line of text. */
+.palette-swatches .swatch-active span[aria-hidden]:first-of-type::before,
+.painter-tray__current::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(57, 42, 69, 0.55);
+  transform-origin: bottom;
+  transform: scaleY(var(--cool, 0));
+  transition: transform 110ms linear;
+  pointer-events: none;
+}
+.painter-tray__current {
+  position: relative;
+  overflow: hidden;
+}
+.palette-note {
+  margin: 0;
+  max-width: 100%;
+  font-size: 15px;
+  line-height: 1.1;
+  text-align: center;
+  color: #fff0cc;
+  text-shadow: 1px 1px 0 #392a45;
+}
+.palette-cooldown-slot {
+  display: flex;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.palette-cooldown-bar {
+  position: relative;
+  width: 72px;
+  height: 8px;
+  overflow: hidden;
+  background: #d1b5a3;
+  border: 2px solid #614052;
+}
+.palette-cooldown-bar > span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: #d86a58;
+  transform-origin: left;
+  transition: transform 110ms linear;
+}
+.palette-cooldown-label {
+  white-space: nowrap;
+  font-size: 15px;
+  line-height: 1;
+  color: #fff0cc;
+  text-shadow: 1px 1px 0 #392a45;
 }

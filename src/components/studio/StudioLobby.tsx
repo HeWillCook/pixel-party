@@ -14,7 +14,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { Globe, Hash, Lock, Plus, Sparkles, Users } from 'lucide-react'
 import { Hotspot } from '../../scene/Hotspot'
 import { PixelScene, SceneComposition } from '../../scene/PixelScene'
-import { cameraForLocal, compositionFor, integerScale, rectToPercent, sceneSize, type Camera, type Rect } from '../../scene/camera'
+import { cameraForLocal, compositionFor, coverCamera, coverZoom, integerScale, rectToPercent, sceneSize, type Camera, type Rect } from '../../scene/camera'
 import { drawStudio } from '../../scene/studio/drawStudio'
 import { studioLayout } from '../../scene/studio/layout'
 import { fitCloseupCamera } from '../../scene/porch/fitCamera'
@@ -69,6 +69,7 @@ export interface StudioRoomItem {
   hostId: string
   status: 'lobby' | 'playing' | 'intermission' | 'paused' | 'closed'
   playerCount: number
+  visibility: 'public' | 'private'
 }
 
 export interface StudioLobbyProps {
@@ -101,6 +102,10 @@ export interface StudioLobbyProps {
   stageRef?: { current: HTMLElement | null }
   /** The magic easel's board in scene units (re-measured when the stage changes), for registering a room's board. */
   onFocus?: (rect: Rect | null) => void
+  /** The smallest board (px) a room must use so the scene covers the viewport once the camera is on it (null: no room open). */
+  onMinBoard?: (px: number | null) => void
+  /** How far the room must slide (px) to stay on the easel when the scene can only cover the screen by moving. */
+  onRoomShift?: (shift: { x: number; y: number }) => void
 }
 
 type HatEffect = 'idle' | 'dropping' | 'sparkle' | 'smoke'
@@ -153,7 +158,7 @@ function CreateEaselForm({
         <Input
           id={compact ? 'room-name-board' : 'room-name'}
           data-testid="create-room-name"
-          placeholder="e.g. Midnight Pixel Club"
+          placeholder="Name your room"
           maxLength={40}
           value={roomName}
           onChange={(e) => onRoomNameChange(e.target.value)}
@@ -198,6 +203,11 @@ function CreateEaselForm({
         </div>
       </div>
 
+      {signedIn && !roomName.trim() && (
+        <p data-testid="create-room-hint" className={compact ? 'studio-order-form__hint' : 'text-sm text-[var(--soft-text)]'}>
+          Name your room to conjure it
+        </p>
+      )}
       {signedIn ? (
         <Button
           type="submit"
@@ -376,6 +386,52 @@ function CorkboardTickets({
   strip?: boolean
   style?: CSSProperties
 }) {
+  // The phone's ticket rail scrolls sideways: say so (a fade and chevron at the edge that still has tickets behind it).
+  const rail = useRef<HTMLDivElement>(null)
+  const [more, setMore] = useState(false)
+  useEffect(() => {
+    const element = rail.current
+    if (!strip || !element) return
+    const update = () => setMore(element.scrollWidth - element.clientWidth - element.scrollLeft > 6)
+    update()
+    element.addEventListener('scroll', update, { passive: true })
+    const observer = new ResizeObserver(update)
+    observer.observe(element)
+    return () => { element.removeEventListener('scroll', update); observer.disconnect() }
+  }, [strip, rooms.length])
+
+  const publicRooms = rooms.filter((room) => room.visibility !== 'private')
+  const yourRooms = rooms.filter((room) => room.visibility === 'private')
+  const ticket = (room: StudioRoomItem) => (
+    <div
+      key={room.recordId}
+      className={`studio-ticket ${selectedCode === room.joinCode ? 'studio-ticket--selected' : ''}`}
+    >
+      <button
+        type="button"
+        data-testid={`room-card-${room.joinCode}`}
+        aria-pressed={selectedCode === room.joinCode}
+        onClick={() => onSelectTicket(room.joinCode)}
+        className="studio-ticket__main"
+      >
+        <span className="truncate studio-ticket__name">{room.name}</span>
+        <span className="studio-ticket__meta">
+          <span className="inline-flex items-center gap-0.5">
+            {room.visibility === 'private' && <Lock className="studio-ticket__user-icon shrink-0" aria-label="Private" />}
+            {room.joinCode}
+          </span>
+          <span className="inline-flex items-center gap-0.5">
+            <Users className="studio-ticket__user-icon shrink-0" aria-hidden />
+            {room.playerCount}
+          </span>
+        </span>
+      </button>
+      {currentUserId === room.hostId && (
+        <div className="studio-pack-wrap">{renderPackUp(room)}</div>
+      )}
+    </div>
+  )
+
   return (
     <div
       data-testid="public-rooms-list"
@@ -387,7 +443,8 @@ function CorkboardTickets({
         <span className="studio-corkboard__count">{rooms.length + 1}</span>
       </div>
 
-      <div className="studio-corkboard__tickets">
+      <div className="studio-corkboard__rail">
+      <div ref={rail} className="studio-corkboard__tickets">
         {/* Gold Public board ticket pinned first */}
         <div
           className={`studio-ticket studio-ticket--gold ${
@@ -426,35 +483,18 @@ function CorkboardTickets({
             {roomsLoading ? 'Looking around…' : 'No custom tickets yet'}
           </p>
         ) : (
-          rooms.map((room) => (
-            <div
-              key={room.recordId}
-              className={`studio-ticket ${
-                selectedCode === room.joinCode ? 'studio-ticket--selected' : ''
-              }`}
-            >
-              <button
-                type="button"
-                data-testid={`room-card-${room.joinCode}`}
-                aria-pressed={selectedCode === room.joinCode}
-                onClick={() => onSelectTicket(room.joinCode)}
-                className="studio-ticket__main"
-              >
-                <span className="truncate studio-ticket__name">{room.name}</span>
-                <span className="studio-ticket__meta">
-                  <span>{room.joinCode}</span>
-                  <span className="inline-flex items-center gap-0.5">
-                    <Users className="studio-ticket__user-icon shrink-0" aria-hidden />
-                    {room.playerCount}
-                  </span>
-                </span>
-              </button>
-              {currentUserId === room.hostId && (
-                <div className="studio-pack-wrap">{renderPackUp(room)}</div>
-              )}
-            </div>
-          ))
+          <>
+            {publicRooms.map(ticket)}
+            {yourRooms.length > 0 && (
+              <>
+                <h3 data-testid="your-rooms-heading" className="studio-corkboard__sub">Your rooms</h3>
+                {yourRooms.map(ticket)}
+              </>
+            )}
+          </>
         )}
+      </div>
+      {strip && more && <span data-testid="ticket-rail-more" className="studio-corkboard__more" aria-hidden="true">›</span>}
       </div>
     </div>
   )
@@ -791,6 +831,13 @@ export function StudioLobby(props: StudioLobbyProps) {
       e.preventDefault()
       const trimmed = props.joinCodeInput.trim()
       if (!trimmed) return
+      if (trimmed.toLowerCase() !== 'play' && !/^[A-Za-z0-9]{4}$/.test(trimmed)) {
+        // Say what is wrong with the code rather than pretending to look for an easel that cannot exist.
+        setHatEffect('idle')
+        setEaselSmoke(null)
+        setHatError('Room codes are 4 letters')
+        return
+      }
       if (hatTimer.current) {
         clearTimeout(hatTimer.current)
         hatTimer.current = null
@@ -862,8 +909,36 @@ export function StudioLobby(props: StudioLobbyProps) {
   useIsomorphicLayoutEffect(() => {
     onFocus?.(room && focusLocal ? { x: focusLocal.x / stageBox.scale, y: focusLocal.y / stageBox.scale, w: focusLocal.w / stageBox.scale, h: focusLocal.h / stageBox.scale } : null)
   }, [onFocus, room, focusLocal, stageBox.scale])
+  // The camera keeps the scene covering the screen. When the easel cannot be centred under the room's board without
+  // showing void at an edge, the room slides by the difference instead, so the board still sits exactly on the easel.
+  const { onMinBoard, onRoomShift } = props
+  const shiftRef = useRef({ x: 0, y: 0 })
+  const boardTop = room?.boardRect?.y
+  const boardCentre = room?.boardRect ? room.boardRect.x + room.boardRect.w / 2 : undefined
+  useIsomorphicLayoutEffect(() => {
+    const report = (px: number | null, shift: { x: number; y: number }) => {
+      onMinBoard?.(px)
+      if (shift.x !== shiftRef.current.x || shift.y !== shiftRef.current.y) {
+        shiftRef.current = shift
+        onRoomShift?.(shift)
+      }
+    }
+    if (!room || room.phase === 'leaving' || !room.boardRect || !focusLocal || !stageBox.w || !stageBox.h) { report(null, { x: 0, y: 0 }); return }
+    const viewport = { w: stageBox.w, h: stageBox.h }
+    // The room reports its board where it would sit without the slide (see `onRoomShift`), so none of this feeds back on itself.
+    const natural = {
+      x: room.boardRect.x - stageOrigin.current.x,
+      y: room.boardRect.y - stageOrigin.current.y,
+      w: room.boardRect.w,
+      h: room.boardRect.h,
+    }
+    const exact = cameraForLocal(focusLocal, natural, viewport, composition)
+    const cover = coverCamera(focusLocal, natural, viewport, composition)
+    const wanted = Math.ceil(focusLocal.w * coverZoom(focusLocal, { ...natural, x: natural.x + natural.w / 2, w: 0 }, viewport, composition))
+    report(wanted, { x: Math.round(cover.x - exact.x), y: Math.round(cover.y - exact.y) })
+  }, [onMinBoard, onRoomShift, room?.phase, Boolean(room), focusLocal, boardTop, boardCentre, room?.boardRect?.w, stageBox.w, stageBox.h, composition])
   const roomCamera: Camera | null = room?.boardRect && focusLocal && stageBox.w && stageBox.h
-    ? cameraForLocal(
+    ? coverCamera(
         focusLocal,
         { x: room.boardRect.x - stageOrigin.current.x, y: room.boardRect.y - stageOrigin.current.y, w: room.boardRect.w, h: room.boardRect.h },
         { w: stageBox.w, h: stageBox.h },

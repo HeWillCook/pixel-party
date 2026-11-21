@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { Outlet, useLocation, useMatch, useNavigate } from 'react-router-dom'
+import { Outlet, useBlocker, useLocation, useMatch, useNavigate } from 'react-router-dom'
 import {
   getAuthToken,
   useAuthProfileReady,
@@ -7,6 +7,7 @@ import {
   useQuery,
 } from 'deepspace'
 import { DeleteRoomButton } from '../../../components/game/DeleteRoomButton'
+import { requestVerticalSceneTransition } from '../../../components/porch/VerticalSceneTransition'
 import { enableNavMotion } from '../../../components/porch/returnFlag'
 import { StudioLobby, type ConjureCodeResult, type StudioRoomItem } from '../../../components/studio/StudioLobby'
 import { StudioWorldContext, type RoomPhase, type RoomSummary, type StudioWorldValue } from '../../../components/studio/StudioWorld'
@@ -52,12 +53,14 @@ export default function StudioLayout() {
   const [signInOpen, setSignInOpen] = useState(false)
   const [deletedRooms, setDeletedRooms] = useState<string[]>([])
 
-  const livePublicRooms: StudioRoomItem[] = rooms
+  // Public rooms for everyone, plus the private rooms this player hosts or has joined (the rooms query only returns
+  // private rooms to their host and members, so any private room that arrives here is "yours").
+  const listedRooms: StudioRoomItem[] = rooms
     .filter(
       (room) =>
         room.data.status !== 'closed' &&
         !deletedRooms.includes(room.recordId) &&
-        room.data.visibility === 'public' &&
+        (room.data.visibility === 'public' || (isSignedIn && room.data.visibility === 'private')) &&
         !room.data.isDefaultBoard &&
         room.data.joinCode !== 'play',
     )
@@ -68,6 +71,7 @@ export default function StudioLayout() {
       hostId: room.data.hostId,
       status: room.data.status,
       playerCount: room.data.playerCount ?? 0,
+      visibility: room.data.visibility,
     }))
 
   const defaultBoardRoom = rooms.find(
@@ -176,6 +180,8 @@ export default function StudioLayout() {
   const normalizedRoomCode = roomCode ? (roomCode.toLowerCase() === 'play' ? 'play' : roomCode.toUpperCase()) : null
   const [boardRect, setBoardRectState] = useState<Rect | null>(null)
   const [summary, setSummaryState] = useState<RoomSummary | null>(null)
+  const [minBoardPx, setMinBoardPx] = useState<number | null>(null)
+  const [roomShift, setRoomShift] = useState({ x: 0, y: 0 })
   const focusRef = useRef<Rect | null>(null)
   const stageRef = useRef<HTMLElement | null>(null)
   const [entering, setEntering] = useState(false)
@@ -201,19 +207,38 @@ export default function StudioLayout() {
 
   useEffect(() => () => { if (leaveTimer.current) clearTimeout(leaveTimer.current) }, [])
 
+  // Stepping back out of a room we walked into from the studio is a real Back (the room's entry is popped, so Forward
+  // walks in again and Back from the studio goes on to the porch). A room opened cold (reload, shared link) has no
+  // studio entry behind it, so there the room's entry is replaced instead of piling a second /party on the stack.
+  const finishLeave = useCallback((path: string) => {
+    const hasStudioBehind = sawParty.current && path === '/party' && ((window.history.state as { idx?: number } | null)?.idx ?? 0) > 0
+    if (hasStudioBehind) navigate(-1)
+    else navigate(path, { replace: true })
+  }, [navigate])
   const leave = useCallback((path = '/party') => {
     if (leaveTimer.current) return
     enableNavMotion()
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      navigate(path, { replace: true })
+      finishLeave(path)
       return
     }
     setLeaving(true)
     leaveTimer.current = setTimeout(() => {
       leaveTimer.current = null
-      navigate(path, { replace: true })
+      finishLeave(path)
     }, SCENE_ZOOM_MS)
-  }, [navigate])
+  }, [finishLeave])
+
+  // Browser Back from the studio to the porch is the same move as the Upstairs sign: the floor pans up. The pop is held for
+  // the instant the pan takes its snapshot of the studio, then let through, so the porch is swapped in under it (and the
+  // history stays honest: Forward walks back down).
+  const upstairsBlocker = useBlocker(({ currentLocation, nextLocation, historyAction }) =>
+    historyAction === 'POP' && currentLocation.pathname === '/party' && nextLocation.pathname === '/home')
+  useEffect(() => {
+    if (upstairsBlocker.state !== 'blocked') return
+    requestVerticalSceneTransition({ source: 'studio', target: 'porch', direction: 'up', path: '/home', navigate: false })
+    upstairsBlocker.proceed()
+  }, [upstairsBlocker])
 
   const phase: RoomPhase = leaving ? 'leaving' : entering ? 'entering' : 'active'
   const setBoardRect = useCallback((rect: Rect | null) => {
@@ -234,11 +259,13 @@ export default function StudioLayout() {
     focus: (_composition: Composition) => focusRef.current ?? { x: 0, y: 0, w: 1, h: 1 },
     setBoardRect,
     setSummary,
+    minBoardPx,
+    roomShift,
     phase,
     signInOpen,
     setSignInOpen,
     leave,
-  }), [phase, signInOpen, leave, setBoardRect, setSummary])
+  }), [phase, signInOpen, leave, setBoardRect, setSummary, minBoardPx, roomShift])
 
   return (
     <StudioWorldContext.Provider value={world}>
@@ -247,7 +274,9 @@ export default function StudioLayout() {
         room={normalizedRoomCode ? { code: normalizedRoomCode, phase, boardRect, summary } : null}
         stageRef={stageRef}
         onFocus={onFocus}
-        rooms={livePublicRooms}
+        onMinBoard={setMinBoardPx}
+        onRoomShift={setRoomShift}
+        rooms={listedRooms}
         roomsLoading={roomsStatus === 'loading'}
         defaultBoardPlayers={defaultBoardRoom?.data.playerCount ?? 0}
         signedIn={!!isSignedIn}

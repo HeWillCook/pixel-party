@@ -22,16 +22,19 @@ import {
   WifiOff,
 } from 'lucide-react'
 import { AskAiButton } from '../../../../components/game/AskAiButton'
+import { CanvasThumb } from '../../../../components/game/CanvasThumb'
 import { DeleteRoomDialog } from '../../../../components/game/DeleteRoomButton'
+import { InvitePlank, useCopyLink } from '../../../../components/game/InvitePlank'
 import { MuteButton } from '../../../../components/game/MuteButton'
 import { PainterTray } from '../../../../components/game/PainterTray'
 import { Palette } from '../../../../components/game/Palette'
 import { PixelCanvas } from '../../../../components/game/PixelCanvas'
 import { PlayerCursors } from '../../../../components/game/PlayerCursors'
-import { PlayersPanel } from '../../../../components/game/PlayersPanel'
+import { orderRoster, PlayersPanel } from '../../../../components/game/PlayersPanel'
 import { ToolBar } from '../../../../components/game/ToolBar'
 import { useGameSounds } from '../../../../components/game/useGameSounds'
 import { CriticBubble } from '../../../../components/play/CriticBubble'
+import { HaikuStrip } from '../../../../components/play/HaikuStrip'
 import { PartyScoreNote } from '../../../../components/play/PartyScoreNote'
 import { PlayLayout } from '../../../../components/play/PlayLayout'
 import '../../../../components/play/room-play.css'
@@ -87,7 +90,7 @@ interface RoundRecord {
 }
 
 // The panels around the board that slide out from behind it as the camera lands (and back in as it leaves).
-const PANEL_SELECTOR = '.play-layout__top > *, .play-layout__left > *, .play-layout__right > *, .play-layout__bottom > *'
+const PANEL_SELECTOR = '.play-layout__top > *, .play-layout__left > *, .play-layout__haiku > *, .play-layout__right > *, .play-layout__bottom > *'
 
 // Vertical chrome around the board + grid gap + bottom margin (already excluding PixelCanvas's own 20px inset).
 const EASEL_AND_TRAY_GAP_PX = 60
@@ -133,7 +136,7 @@ function rejectMessage(reject: RejectMsg | null, now: number): string | null {
 }
 
 function InviteBadge({ code }: { code: string }) {
-  const [copyStatus, setCopyStatus] = useState('Copy link')
+  const { label, copy } = useCopyLink(code)
   return (
     <div className="room-invite-ticket">
       <span
@@ -147,19 +150,10 @@ function InviteBadge({ code }: { code: string }) {
         type="button"
         className="room-invite-ticket__copy inline-flex cursor-pointer items-center gap-1.5 text-base uppercase"
         data-testid="copy-room-link"
-        onClick={async () => {
-          try {
-            await navigator.clipboard.writeText(
-              new URL(`/r/${encodeURIComponent(code)}`, window.location.origin).href,
-            )
-            setCopyStatus('Copied!')
-          } catch {
-            setCopyStatus('Could not copy')
-          }
-        }}
+        onClick={() => void copy()}
       >
         <Copy className="h-3.5 w-3.5 shrink-0" aria-hidden />
-        <span aria-live="polite">{copyStatus}</span>
+        <span aria-live="polite">{label}</span>
       </button>
     </div>
   )
@@ -207,6 +201,13 @@ export default function RoomPage() {
   const trailingCursorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const overlayDialogRef = useRef<HTMLDivElement | null>(null)
 
+  const minBoardRef = useRef(0)
+  minBoardRef.current = world.minBoardPx ?? 0
+  // The room's own slide (see `roomShift`) is not part of the space above the board.
+  const shiftXRef = useRef(0)
+  const shiftYRef = useRef(0)
+  shiftXRef.current = world.roomShift.x
+  shiftYRef.current = world.roomShift.y
   const roomPageRef = useRef<HTMLDivElement | null>(null)
   const headerRef = useRef<HTMLDivElement | null>(null)
   const centerColRef = useRef<HTMLDivElement | null>(null)
@@ -276,6 +277,7 @@ export default function RoomPage() {
   const cooldownTotalMs = cooldownMs(Math.max(1, state.players))
   const cooldownRemainingMs = Math.max(0, effectiveCooldownUntil(state) - now)
   const friendlyReject = rejectMessage(state.lastReject, now)
+  const cooldownFraction = cooldownRemainingMs > 0 && cooldownTotalMs > 0 ? Math.min(1, cooldownRemainingMs / cooldownTotalMs) : 0
 
   useLayoutEffect(() => {
     const measure = () => {
@@ -288,14 +290,17 @@ export default function RoomPage() {
       // Measured with the registration's transform lifted: mid-move the room is scaled onto the easel, and a
       // scaled rect would shrink the board (and re-scale the whole assembly) in the middle of the camera move.
       const topOffset = slot
-        ? untransformedRect(slot).y + (slot.closest('main')?.scrollTop ?? 0)
+        ? untransformedRect(slot).y + (slot.closest('main')?.scrollTop ?? 0) - shiftYRef.current
         : 120
       const paletteH = paletteWrapRef.current
         ? untransformedRect(paletteWrapRef.current).h
         : 104
       const wide = window.innerWidth >= 768
+      // The board is normally capped at 596px; a big screen asks for more (see `minBoardPx`) so the scene behind the room
+      // reaches every edge, as far as the space around the board allows.
+      const wanted = Math.max(596, Math.ceil(minBoardRef.current / 32) * 32 + 20)
       const availHeight = wide
-        ? Math.min(596, Math.max(200, window.innerHeight - topOffset - paletteH - EASEL_AND_TRAY_GAP_PX))
+        ? Math.min(wanted, Math.max(200, window.innerHeight - topOffset - paletteH - EASEL_AND_TRAY_GAP_PX))
         : Math.max(288, availWidth)
       setAvailBox((prev) =>
         prev.width === availWidth && prev.height === availHeight
@@ -321,6 +326,7 @@ export default function RoomPage() {
     isSpectator,
     sessionExpired,
     roomDoc?.data.name,
+    world.minBoardPx,
   ])
 
   const handleHoverCell = useCallback(
@@ -545,7 +551,10 @@ export default function RoomPage() {
   useSceneRegistration({ host: world.hostRef, root: registerRef, anchor: boardRef, focus: world.focus, active: world.phase !== 'active', panelSelector: PANEL_SELECTOR })
   const reportBoard = useCallback(() => {
     const board = boardRef.current
-    if (board) setBoardRect(untransformedRect(board))
+    if (!board) return
+    // Reported without the room's own slide: the studio decides the slide from this rect.
+    const rect = untransformedRect(board)
+    setBoardRect({ ...rect, x: rect.x - shiftXRef.current, y: rect.y - shiftYRef.current })
   }, [setBoardRect])
   // Every commit, not only on resizes: the connecting layout turning into the lobby face moves the board without
   // resizing it, and a stale rect leaves the studio camera (and the exit that starts from it) a few pixels off.
@@ -584,6 +593,7 @@ export default function RoomPage() {
       ? roomDoc.data.name
       : null
 
+  const hostName = (roomDoc?.data.hostId && (roomDoc.data.hostId === user?.id ? 'You' : getName(roomDoc.data.hostId))) || 'The host'
   const effectiveCode = roomDoc?.data.joinCode ?? joinCode
   const inviteTicket =
     effectiveCode !== 'play' ? (
@@ -634,7 +644,7 @@ export default function RoomPage() {
                 </Button>
               }
             />
-            <DropdownMenuContent align="end" className="min-w-[10.5rem]">
+            <DropdownMenuContent side="bottom" align="end" sideOffset={6} className="min-w-[10.5rem]">
               {showPlayingSkip && (
                 <>
                   <DropdownMenuItem
@@ -655,7 +665,7 @@ export default function RoomPage() {
                 className="pp-danger cursor-pointer gap-2 text-base uppercase"
               >
                 <Trash2 className="h-3.5 w-3.5" aria-hidden />
-                Delete room
+                Pack up
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -755,10 +765,10 @@ export default function RoomPage() {
             </div>
             <div className="space-y-1">
               <h1 className="text-2xl uppercase text-[var(--sunset-2)]">
-                {state.closedByHost ? 'This room was closed by the host' : 'This Room Has Closed'}
+                {state.closedByHost ? `${hostName} packed up this room` : 'This Room Has Closed'}
               </h1>
               <p className="text-base text-muted-foreground">
-                Room <span className="text-[var(--sunset-1)]">{joinCode}</span> has been packed up. Head
+                Room <span className="text-[var(--sunset-1)]">{joinCode}</span> is gone. Head
                 back to the studio to join another easel or set up a new one.
               </p>
             </div>
@@ -777,98 +787,96 @@ export default function RoomPage() {
     </>
   ) : null
 
-  const lobbyTop = (
-        <div className="room-top-bar">
-          <span className="room-top-bar__pin" aria-hidden="true" />
-          <div className="flex flex-wrap items-center gap-3">
-            <Link
-              to="/party"
-              data-testid="room-exit"
-              onClick={onRoomExitClick}
-              className="pp-chip inline-flex items-center gap-1.5 text-base uppercase tracking-wider hover:bg-secondary"
-            >
-              <ArrowLeft className="h-4 w-4" aria-hidden />
-              Back to the studio
-            </Link>
-            {inviteTicket}
-            {customRoomName && (
-              <span data-testid="room-name" className="text-xl uppercase text-[var(--soft-text)]">
-                {customRoomName}
-              </span>
-            )}
-          </div>
-          {roomControls}
-        </div>
+  // The ticket stub above the easel, in every state: the way back, the invite code and link, the room's name, and the
+  // host's and sound controls. The room page starts below the nav (see `.room-play`), so none of it sits under it.
+  const topBar = (
+    <div ref={headerRef} data-testid="room-top-bar" className="room-top-bar">
+      <span className="room-top-bar__pin" aria-hidden="true" />
+      <Link
+        to="/party"
+        data-testid="room-exit"
+        onClick={onRoomExitClick}
+        className="room-top-bar__exit pp-chip inline-flex items-center gap-1.5 text-base uppercase tracking-wider hover:bg-secondary"
+      >
+        <ArrowLeft className="h-4 w-4 shrink-0" aria-hidden />
+        <span><span className="room-top-bar__exit-long">Back to the </span>studio</span>
+      </Link>
+      <div className="room-top-bar__who">
+        {inviteTicket}
+        {customRoomName ? (
+          <span data-testid="room-name" className="room-top-bar__name">
+            {customRoomName}
+          </span>
+        ) : (
+          <span className="room-top-bar__name">{joinCode === 'play' ? 'Public Studio Board' : 'Studio room'}</span>
+        )}
+      </div>
+      <div className="room-top-bar__controls">{roomControls}</div>
+    </div>
   )
 
+  const rosterRows = orderRoster(state.roster, roomDoc?.data.hostId)
   const lobbyFace = (
-        <div data-testid="room-lobby" className="pp-panel room-lobby-card space-y-4 p-5">
-          <div className="room-lobby-stage">
-            <div className="room-lobby-easel">
-              <StudioSprite sprite={studioSprites.lobbyEasel} scale={3} />
-              <div className="space-y-1">
-                <h1 className="text-2xl uppercase text-[var(--sunset-2)]">
-                  {roomDoc?.data.name ?? 'Studio Waiting Area'}
-                </h1>
-                <p className="text-base text-muted-foreground">
-                  Share the room link and start painting whenever your crew is seated.
-                </p>
-                <div className="flex flex-wrap items-center gap-3 pt-1">
-                  <h2 data-testid="round-players" className="text-xl text-[var(--sunset-1)]">
-                    {state.players} {state.players === 1 ? 'painter' : 'painters'}
-                  </h2>
-                  <span data-testid="round-watching" className="text-base text-muted-foreground">
-                    {state.watching} watching
-                  </span>
-                </div>
-              </div>
-            </div>
+    <div data-testid="room-lobby" className="room-lobby">
+      <h1 className="room-lobby__title">{roomDoc?.data.name ?? 'Studio Waiting Area'}</h1>
+      {effectiveCode !== 'play' && <InvitePlank code={effectiveCode} />}
+      <div className="room-lobby__status">
+        <h2 data-testid="round-players" className="text-xl text-[var(--sunset-1)]">
+          {state.players} {state.players === 1 ? 'painter' : 'painters'}
+        </h2>
+        <span data-testid="round-watching" className="text-base text-muted-foreground">
+          {state.watching} watching
+        </span>
+      </div>
 
-            {canStart ? (
-              <Button
-                data-testid="host-start-button"
-                disabled={!state.connected}
-                onClick={next}
-                className="pp-btn px-6 py-2 text-xl uppercase"
-              >
-                Start painting
-              </Button>
-            ) : publicSignedOut ? (
-              <div className="flex flex-col items-start gap-2">
-                <p data-testid="public-board-signed-out" className="text-base text-muted-foreground">
-                  Public board is open — sign in to start a round and paint.
-                </p>
-                <Button
-                  data-testid="public-board-sign-in"
-                  onClick={() => setShowAuthModal(true)}
-                  className="pp-btn px-6 py-2 text-xl uppercase"
-                >
-                  Sign in to paint
-                </Button>
-              </div>
-            ) : (
-              <p className="text-base text-muted-foreground">
-                Waiting for the host to start.
-              </p>
-            )}
-          </div>
-
-          <ul className="room-lobby-stools" aria-label="Connected players">
-            {state.roster.map((player) => (
-              <li
-                key={player.userId}
-                data-testid="lobby-stool"
-                className="room-lobby-stool"
-              >
-                <StudioSprite sprite={studioSprites.stool} scale={3} />
-                <span className="room-lobby-stool__name">
-                  {player.name}
-                  {player.userId === roomDoc?.data.hostId ? ' (Host)' : ''}
-                </span>
-              </li>
-            ))}
-          </ul>
+      {canStart ? (
+        <Button
+          data-testid="host-start-button"
+          disabled={!state.connected}
+          onClick={next}
+          className="pp-btn room-lobby__start px-6 py-2 text-xl uppercase"
+        >
+          Start painting
+        </Button>
+      ) : publicSignedOut ? (
+        <div className="flex flex-col items-center gap-2">
+          <p data-testid="public-board-signed-out" className="text-base text-muted-foreground">
+            Public board is open — sign in to start a round and paint.
+          </p>
+          <Button
+            data-testid="public-board-sign-in"
+            onClick={() => setShowAuthModal(true)}
+            className="pp-btn px-6 py-2 text-xl uppercase"
+          >
+            Sign in to paint
+          </Button>
         </div>
+      ) : (
+        <p className="text-base text-muted-foreground">
+          Waiting for the host to start.
+        </p>
+      )}
+
+      <ul className="room-lobby-stools" aria-label="Connected players">
+        {rosterRows.map((player) => (
+          <li
+            key={player.userId}
+            data-testid="lobby-stool"
+            className="room-lobby-stool"
+          >
+            <span className="room-lobby-stool__sprite" aria-hidden="true">
+              <StudioSprite sprite={studioSprites.stool} scale={3} />
+            </span>
+            <span className="room-lobby-stool__name">{player.name}</span>
+            {(player.userId === roomDoc?.data.hostId || player.userId === state.you.userId) && (
+              <span className="room-lobby-stool__tags">
+                {[player.userId === roomDoc?.data.hostId && 'host', player.userId === state.you.userId && 'you'].filter(Boolean).join(' · ')}
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
   )
 
   const remainingMs =
@@ -878,20 +886,7 @@ export default function RoomPage() {
 
   const topSlot = (
     <>
-      <div ref={headerRef} className="room-top-bar">
-        <span className="room-top-bar__pin" aria-hidden="true" />
-        <div className="flex flex-wrap items-center gap-2.5">
-          {inviteTicket}
-          {customRoomName ? (
-            <span data-testid="room-name" className="text-xl uppercase text-[var(--soft-text)]">
-              {customRoomName}
-            </span>
-          ) : (
-            <span className="text-xl uppercase text-[var(--soft-text)]">Public Studio Board</span>
-          )}
-        </div>
-        {roomControls}
-      </div>
+      {topBar}
 
       {sessionExpired && (
         <div
@@ -925,28 +920,6 @@ export default function RoomPage() {
           </Button>
         </div>
       )}
-
-      {friendlyReject && (
-        <div
-          data-testid="reject-notice"
-          role="status"
-          className="pp-panel room-reject-float flex items-center justify-between gap-2 px-3 py-1 text-base text-[var(--sunset-1)]"
-        >
-          <div className="flex items-center gap-2">
-            <AlertCircle className="h-4 w-4 shrink-0 text-[var(--sunset-2)]" aria-hidden />
-            <span>{friendlyReject}</span>
-          </div>
-          {state.lastReject?.reason === 'not_signed_in' && isSpectator && (
-            <button
-              type="button"
-              onClick={() => setShowAuthModal(true)}
-              className="underline hover:text-foreground"
-            >
-              Sign in
-            </button>
-          )}
-        </div>
-      )}
     </>
   )
 
@@ -970,9 +943,14 @@ export default function RoomPage() {
       >
         {state.round ? state.round.word : 'LOADING…'}
       </span>
+      {state.round?.state === 'paused' && (
+        <p data-testid="paused-note" className="m-0 w-full text-base leading-tight text-[#614052]">
+          Paused — waiting for a painter to come back
+        </p>
+      )}
       <div className="flex w-full items-center justify-between gap-2 border-t-2 border-[#d1b5a3] pt-1.5 text-lg leading-none text-[var(--soft-text)]">
         {state.round?.state === 'paused' ? (
-          <span data-testid="round-timer" className="uppercase text-[var(--sunset-1)]">
+          <span data-testid="round-timer" title="Paused — waiting for a painter to come back" className="uppercase text-[var(--sunset-1)]">
             PAUSED
           </span>
         ) : state.round?.state === 'intermission' ? (
@@ -996,19 +974,9 @@ export default function RoomPage() {
       players={state.players}
       roster={state.roster}
       watching={state.watching}
+      hostId={roomDoc?.data.hostId}
+      youId={state.you.userId}
     />
-  )
-
-  const exitSlot = (
-    <Link
-      to="/party"
-      data-testid="room-exit"
-      onClick={onRoomExitClick}
-      className="room-exit room-exit--full"
-    >
-      <ArrowLeft className="h-4 w-4 shrink-0" aria-hidden />
-      <span>Back to the studio</span>
-    </Link>
   )
 
   const canvasSlot = (
@@ -1031,6 +999,28 @@ export default function RoomPage() {
             onHoverCell={handleHoverCell}
           >
             <PlayerCursors peers={peers} width={state.width} height={state.height} />
+
+            {friendlyReject && (
+              <div
+                data-testid="reject-notice"
+                role="status"
+                className="pp-panel room-reject-float flex items-center justify-between gap-2 px-3 py-1 text-base text-[var(--sunset-1)]"
+              >
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="h-4 w-4 shrink-0 text-[var(--sunset-2)]" aria-hidden />
+                  <span>{friendlyReject}</span>
+                </div>
+                {state.lastReject?.reason === 'not_signed_in' && isSpectator && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAuthModal(true)}
+                    className="underline hover:text-foreground"
+                  >
+                    Sign in
+                  </button>
+                )}
+              </div>
+            )}
 
             {/* Win / Timeout Intermission Overlay */}
             {showOverlay && state.round && (
@@ -1089,26 +1079,46 @@ export default function RoomPage() {
                       </h2>
                     </div>
 
-                    <div className="room-results-stats text-sm">
-                      <div className="room-results-stat">
-                        <span className="text-muted-foreground">Score</span>
-                        <span
-                          data-testid="overlay-score"
-                          className="mt-0.5 flex items-center gap-1 text-lg text-[var(--sunset-1)]"
-                        >
-                          <Award className="h-4 w-4" aria-hidden />
-                          {scoreParts.total} pts
-                        </span>
-                      </div>
-                      <div className="room-results-stat">
-                        <span className="text-muted-foreground">Pixels Used</span>
-                        <span className="mt-0.5 text-lg text-foreground">
-                          {roundPixelsUsed} px
-                        </span>
-                      </div>
-                      <div className="col-span-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-0.5 border-t border-[#d1b5a3] pt-1 text-xs text-[var(--soft-text)]">
-                        <span>Pixels saved: {scoreParts.pixels}/500</span>
-                        <span>Time saved: {scoreParts.time}/500</span>
+                    <p data-testid="overlay-guess" className={`room-results-guess${outcome === 'won' ? ' room-results-guess--won' : ''}`}>
+                      {outcome === 'won' ? (
+                        <>Haiku guessed <strong>{(state.guessLog.find((e) => e.matched) ?? state.guessLog[0])?.guesses[0] ?? state.round.word}</strong></>
+                      ) : state.guessLog[0] ? (
+                        <>Haiku&apos;s closest guess: <strong>{state.guessLog[0].guesses.join(', ')}</strong></>
+                      ) : (
+                        <>Haiku never got a guess in.</>
+                      )}
+                    </p>
+
+                    <div className="room-results-main">
+                      <CanvasThumb width={state.width} height={state.height} cells={state.cells} className="room-results-thumb" />
+                      <div className={`room-results-stats text-sm${outcome === 'won' ? '' : ' room-results-stats--solo'}`}>
+                        {outcome === 'won' && (
+                          <div className="room-results-stat">
+                            <span className="text-muted-foreground">Score</span>
+                            <span
+                              data-testid="overlay-score"
+                              className="mt-0.5 flex items-center gap-1 text-lg text-[var(--sunset-1)]"
+                            >
+                              <Award className="h-4 w-4" aria-hidden />
+                              {scoreParts.total} pts
+                            </span>
+                          </div>
+                        )}
+                        <div className="room-results-stat">
+                          <span className="text-muted-foreground">Pixels used</span>
+                          <span className="mt-0.5 text-lg text-foreground">
+                            {roundPixelsUsed} px
+                          </span>
+                        </div>
+                        {outcome === 'won' && (
+                          <div
+                            title="Fewer pixels and a faster guess score higher: each bonus is out of 500"
+                            className="room-results-bonus col-span-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-0.5 border-t border-[#d1b5a3] pt-1 text-xs text-[var(--soft-text)]"
+                          >
+                            <span>Pixel bonus: {scoreParts.pixels}/500</span>
+                            <span>Speed bonus: {scoreParts.time}/500</span>
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -1204,9 +1214,21 @@ export default function RoomPage() {
         roundState={state.round?.state}
         outcome={outcome}
         asking={asking}
+        hasPixels={pixelsCount > 0}
       />
       <PartyScoreNote />
     </div>
+  )
+
+  const haikuStrip = (
+    <HaikuStrip
+      guessLog={state.guessLog}
+      aiResting={state.aiResting}
+      asking={asking}
+      hasPixels={pixelsCount > 0}
+      roundState={state.round?.state}
+      outcome={outcome}
+    />
   )
 
   const actionsSlot = (
@@ -1229,6 +1251,7 @@ export default function RoomPage() {
       trayRef={paletteWrapRef}
       activeColor={activeColor}
       tool={tool}
+      cool={cooldownFraction}
       tools={
         <ToolBar
           tools={PARTY_TOOLS}
@@ -1248,6 +1271,7 @@ export default function RoomPage() {
           disabled={isSpectator}
           cooldownRemainingMs={cooldownRemainingMs}
           cooldownTotalMs={cooldownTotalMs}
+          sharedBrushMs={state.players > 1 ? cooldownTotalMs : undefined}
         />
       }
     />
@@ -1274,16 +1298,22 @@ export default function RoomPage() {
       ref={roomPageRef}
       data-testid="room-page"
       data-play-phase={world.phase}
-      className={`room-play${playing ? '' : ' room-play--face'} mx-auto flex w-full max-w-[1400px] flex-col px-3 py-1 sm:px-5`}
+      style={{
+        // Wider than the usual 1400px when a big screen needs a bigger board (`minBoardPx`); the side panels stay beside it.
+        maxWidth: 1400 + Math.max(0, (world.minBoardPx ?? 0) - 600),
+        ...(world.roomShift.x || world.roomShift.y ? { translate: `${world.roomShift.x}px ${world.roomShift.y}px` } : {}),
+      }}
+      className={`room-play${playing ? '' : ' room-play--face'} mx-auto flex w-full flex-col px-3 py-1 sm:px-5`}
     >
       <div className="play-controls">
         <div ref={registerRef} className="play-register" data-registered="">
           <PlayLayout
-            top={playing ? topSlot : lobby ? lobbyTop : null}
+            top={playing ? topSlot : lobby ? topBar : null}
             prompt={playing ? promptSlot : null}
             // The roster is room data: it does not exist (not even as an empty list) until access is known.
             timeline={playing && !loading ? timelineSlot : null}
-            exit={playing ? exitSlot : null}
+            exit={null}
+            mobileHaiku={playing && !loading ? haikuStrip : null}
             canvas={boardSlot}
             // Haiku and the bell are room data too: they appear with the snapshot, not before it.
             score={playing && !loading ? scoreSlot : null}

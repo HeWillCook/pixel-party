@@ -65,7 +65,7 @@ function roundStateLabel(state?: string): string {
     case 'lobby':
       return 'In lobby'
     case 'intermission':
-      return 'Between rounds'
+      return 'Round over'
     case 'paused':
       return 'Paused'
     default:
@@ -282,6 +282,9 @@ export function MagicEasel({
             <div data-testid="magic-easel-idle" className="studio-magic-easel__idle">
               <div className="studio-magic-easel__shimmer" aria-hidden="true" />
               <Sparkles className="studio-magic-easel__idle-icon" aria-hidden="true" />
+              <p data-testid="studio-howto" className="studio-magic-easel__howto">
+                One secret word, everyone paints, Haiku guesses. Fewer pixels, faster guess, higher score.
+              </p>
               <p className="studio-magic-easel__idle-text">
                 Select a ticket or drop in a code
               </p>
@@ -299,7 +302,9 @@ export function MagicEasel({
       )}
 
       <div className="studio-magic-easel__tray">
-        {selectedCode && !effectiveSmoke ? (
+        {roomView ? (
+          <span data-testid="magic-easel-here" className="studio-magic-easel__here">You&apos;re here</span>
+        ) : selectedCode && !effectiveSmoke ? (
           <Link
             to={`/r/${encodeURIComponent(selectedCode)}`}
             data-testid="magic-easel-step-in"

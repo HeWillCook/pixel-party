@@ -296,7 +296,7 @@ test('capture playing room, lobby, overlay, landing, and home screenshots', asyn
   await page.screenshot({ path: resolve(screenshotsDir, 'room-playing-1440x900.png') })
   await page.getByTestId('host-menu-button').click()
   await page.getByTestId('delete-room-button').click()
-  await expect(page.getByRole('dialog')).toContainText('Delete room QX3J?')
+  await expect(page.getByRole('dialog')).toContainText('Pack up room QX3J?')
   await page.screenshot({ path: resolve(screenshotsDir, 'delete-room-confirm-1440x900.png'), animations: 'disabled' })
   await page.getByRole('button', { name: 'Cancel', exact: true }).click()
 

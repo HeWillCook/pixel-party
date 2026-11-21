@@ -24,9 +24,14 @@ export interface RoundView {
 
 export interface ConnectedPlayer { userId: string; name: string }
 
+/** One of Haiku's recent judgements, replayed to anyone who joins or reloads mid-round (`at` is epoch ms). */
+export interface RecentJudgement { zone: ZoneId; guesses: string[]; confidence: number; matched: boolean; at: number }
+/** How many judgements the room remembers for late joiners. */
+export const RECENT_JUDGEMENTS = 5
+
 export type ServerMsg =
   | { t: 'closed' }
-  | { t: 'snapshot'; mode: Mode; width: number; height: number; cells: string; round: RoundView; you: { userId: string | null; cooldownUntil: number; team?: 'red' | 'blue' }; players: number; roster?: ConnectedPlayer[]; watching?: number; aiResting: boolean }
+  | { t: 'snapshot'; mode: Mode; width: number; height: number; cells: string; round: RoundView; you: { userId: string | null; cooldownUntil: number; team?: 'red' | 'blue' }; players: number; roster?: ConnectedPlayer[]; watching?: number; aiResting: boolean; judgements?: RecentJudgement[] }
   | { t: 'pixel'; x: number; y: number; c: number; by: string }
   | { t: 'noop'; x: number; y: number; id?: number }
   | { t: 'reject'; reason: RejectReason | 'ask_too_soon' | 'not_host' | 'canvas_unchanged' | 'canvas_blank'; retryAt?: number; x?: number; y?: number; id?: number }

@@ -10,6 +10,10 @@ export interface GuessFeedProps {
   guessLog: GuessLogEntry[]
   aiResting: boolean
   roundId?: string
+  /** The board has paint on it (the empty feed must not say "place some pixels" over a painted canvas). */
+  hasPixels?: boolean
+  /** The round has ended (the empty feed must not promise guesses that are no longer coming). */
+  roundOver?: boolean
   children?: ReactNode
 }
 
@@ -20,7 +24,7 @@ function formatRoundClock(atMs: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
-export function GuessFeed({ guesses, guessLog, aiResting, children }: GuessFeedProps) {
+export function GuessFeed({ guesses, guessLog, aiResting, hasPixels = false, roundOver = false, children }: GuessFeedProps) {
   const zoneGuess = guesses.all ?? guesses.red ?? guesses.blue
   const confidence = zoneGuess?.confidence ?? 0
   const matched = (zoneGuess?.matched ?? false) || guessLog.some((e) => e.matched)
@@ -63,8 +67,12 @@ export function GuessFeed({ guesses, guessLog, aiResting, children }: GuessFeedP
       ) : guessLog.length === 0 ? (
         <div className="flex items-center gap-2 py-1 text-base text-muted-foreground">
           <HelpCircle className="h-4 w-4 shrink-0 text-[var(--sunset-3)]" aria-hidden />
-          <span>
-            Place some pixels! Haiku the cat checks the canvas every {JUDGE.tickMs / 1000}s or when you ring the bell.
+          <span data-testid="guess-empty">
+            {roundOver
+              ? 'Haiku did not get a guess in this round.'
+              : hasPixels
+                ? `Haiku is studying the canvas. A guess lands within ${JUDGE.tickMs / 1000}s, or ring the bell.`
+                : `Place some pixels! Haiku the cat checks the canvas every ${JUDGE.tickMs / 1000}s or when you ring the bell.`}
           </span>
         </div>
       ) : (

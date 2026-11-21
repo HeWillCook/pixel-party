@@ -245,7 +245,7 @@ describe('solo placement abuse cap', () => {
   it('keeps multiplayer cooldown within a batch', () => {
     const batch = applyPlacements(room(), [{ x: 0, y: 0, c: 4 }, { x: 1, y: 0, c: 4 }], 'a', 2000, 2)
     expect(batch.events.map(event => event.type)).toEqual(['pixel', 'reject'])
-    expect(batch.events[1]).toMatchObject({ reason: 'cooldown', retryAt: 4000, x: 1, y: 0 })
+    expect(batch.events[1]).toMatchObject({ reason: 'cooldown', retryAt: 2500, x: 1, y: 0 })
   })
 })
 
