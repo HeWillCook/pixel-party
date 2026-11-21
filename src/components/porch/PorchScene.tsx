@@ -439,7 +439,7 @@ export function PorchScene(props: PorchSceneProps) {
         >
           <div role="group" aria-label="More porch actions" className="porch-more-actions">
             <button type="button" ref={(element) => element?.focus()} onClick={() => { closeMore(); openMailbox() }}>{props.signedIn ? 'Account' : 'Sign in'}</button>
-            <a href="/r/play"><span>Open canvas<small>everyone draws</small></span></a>
+            <a href="/r/play" onClick={(event) => { if (!isPrimaryClick(event)) return; event.preventDefault(); closeMore(); navigate('/r/play') }}><span>Open canvas<small>everyone draws</small></span></a>
             <button type="button" onClick={props.onToggleMute}>{props.muted ? 'Unmute sounds' : 'Mute sounds'}</button>
             <button type="button" onClick={() => { closeMore(); openRules() }}>Scoring rules</button>
           </div>

@@ -1967,6 +1967,31 @@ test('a click during a camera move waits and runs when it lands', async ({ page 
   await expect(page).toHaveURL(`${origin}/u/host`, { timeout: 6000 })
 })
 
+// P2-7: the studio's exit latch used to swallow a click queued while the floor pan was still carrying the player down.
+test('a click made during the descent into the basement runs when it lands', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await setup(page)
+  await page.goto(`${origin}/home`)
+  const nav = page.getByTestId('app-navigation')
+  await nav.getByRole('link', { name: 'Party', exact: true }).click()
+  await page.waitForTimeout(250)
+  await nav.getByRole('link', { name: 'Scores', exact: true }).click()
+  await expect(page).toHaveURL(`${origin}/scores`, { timeout: 8000 })
+  await expect(page.getByTestId('scores-chalkboard')).toBeVisible()
+})
+
+// The phone's More sheet used to open the canvas room with a plain link: a full page load, losing the whole scene.
+test('Open canvas in the phone More sheet is a client-side move, not a page load', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 })
+  await setup(page)
+  await page.goto(`${origin}/home`)
+  await page.evaluate(() => { (window as unknown as { __kept: boolean }).__kept = true })
+  await page.getByRole('navigation', { name: 'Porch shortcuts' }).getByRole('button', { name: 'More' }).click()
+  await page.getByRole('dialog', { name: 'More porch actions' }).getByRole('link', { name: /Open canvas/ }).click()
+  await expect(page).toHaveURL(`${origin}/r/play`)
+  expect(await page.evaluate(() => (window as unknown as { __kept?: boolean }).__kept)).toBe(true)
+})
+
 test('Haiku introduces himself, then has something else to say', async ({ page }) => {
   await setup(page)
   await page.goto(`${origin}/home`)
