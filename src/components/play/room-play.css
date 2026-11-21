@@ -468,11 +468,22 @@
     font-size: 20px;
   }
 
-  .room-play [data-testid="round-bar"] > div:last-child {
-    width: 100%;
-    padding-top: 4px;
-    font-size: 15px;
+  /* One band: "Draw FISH" on the left, the clock and the pixel count stacked on the right. */
+  .room-play [data-testid="round-bar"] {
+    flex-wrap: nowrap;
   }
+  .room-play [data-testid="round-bar"] > div:last-child {
+    width: auto;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+    margin-left: auto;
+    padding-top: 0;
+    border-top: 0;
+    font-size: 15px;
+    line-height: 1;
+  }
+  .room-play [data-testid="paused-note"] { order: 5; flex-basis: 100%; }
 
   .room-play .room-exit--full {
     width: auto;
@@ -582,10 +593,14 @@
 }
 @media (max-width: 767px) {
   .room-play[data-testid="room-page"] {
-    --room-top-clear: max(var(--porch-nav-height, 44px), 72px);
+    --room-top-clear: max(var(--porch-nav-height, 44px), 68px);
     padding-top: calc(var(--room-top-clear) + 4px);
   }
 }
+
+/* A little air between the stub and the board under it. */
+.room-play .play-layout__top { padding-bottom: 6px; }
+@media (max-width: 767px) { .room-play .play-layout__top { padding-bottom: 0; } }
 
 /* ---- The ticket stub: way back, invite, name, host and sound -------------------------------------------------------- */
 .room-top-bar__who {
@@ -619,8 +634,8 @@
   .room-top-bar__exit-long { display: none; }
   .room-top-bar__exit { order: 1; }
   .room-top-bar__controls { order: 2; margin-left: auto; }
-  .room-top-bar__who { order: 3; flex-basis: 100%; justify-content: space-between; }
-  .room-top-bar__name { font-size: 16px; }
+  .room-top-bar__who { order: 3; flex: 1 1 100%; flex-wrap: nowrap; justify-content: space-between; gap: 8px; }
+  .room-top-bar__name { flex: 1 1 0; min-width: 0; text-align: right; font-size: 16px; }
 }
 
 /* ---- The room lobby ------------------------------------------------------------------------------------------------ */
@@ -670,6 +685,13 @@
   border: 2px solid #8e5960;
   box-shadow: inset 0 0 0 2px #fff0cc, 2px 2px #614052;
 }
+.room-lobby-stool__tags {
+  font-size: 13px;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #985c5a;
+}
 .room-lobby-stool__name {
   max-width: 100%;
   overflow: hidden;
@@ -682,7 +704,7 @@
 @media (max-width: 767px) {
   .room-lobby { gap: 6px; }
   .room-lobby__title { font-size: 21px; }
-  .room-lobby-stool { flex: 0 1 auto; padding: 1px 8px; box-shadow: none; }
+  .room-lobby-stool { flex: 0 1 auto; flex-direction: row; gap: 6px; padding: 1px 8px; box-shadow: none; }
   .room-lobby-stool__sprite { display: none; }
   .room-lobby-stool__name { font-size: 15px; }
 }
@@ -766,6 +788,7 @@
   text-transform: uppercase;
 }
 .roster-tag--you { background: #ffe29a; color: #392a45; }
+.roster-tags { display: inline-flex; flex: none; gap: 4px; }
 
 /* ---- Round over: what the word was, what Haiku guessed, the picture ----------------------------------------------- */
 .room-results-guess {
@@ -782,10 +805,11 @@
   justify-content: center;
   gap: 10px;
 }
+.room-results-frame .pp-results-icon { display: none; }
 .room-results-thumb {
   flex: none;
-  width: 104px;
-  height: 104px;
+  width: 92px;
+  height: 92px;
   border: 3px solid #8e5960;
   image-rendering: pixelated;
 }
@@ -795,6 +819,8 @@
 @container (max-width: 460px) {
   .room-results-thumb { display: none; }
   .room-results-guess { font-size: 15px; }
+  /* A small board: the word is the headline and Haiku's bubble above already says what it guessed; skip the arithmetic. */
+  .room-results-guess--won, .room-results-bonus { display: none; }
   .room-results-frame .pp-results-word { text-shadow: none; }
 }
 
@@ -808,3 +834,6 @@
   pointer-events: none;
 }
 .room-board .room-reject-float button { pointer-events: auto; }
+
+.room-play [data-testid="roster-row"] { flex-wrap: wrap; }
+.room-play [data-testid="roster-row"] > span:nth-child(2) { flex: 1 1 auto; min-width: 0; }

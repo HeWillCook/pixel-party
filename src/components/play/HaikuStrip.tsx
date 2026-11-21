@@ -36,10 +36,12 @@ export function HaikuStrip({ guessLog, aiResting, asking, hasPixels, roundState,
     state = 'guess'
     text = latest.guesses.join(', ')
     if (previous) hint = `before: ${previous.guesses[0]}`
+  } else if (roundState === 'paused') {
+    text = 'Waiting for painters…'
   } else if (over) {
     text = 'No guesses this round'
   } else if (hasPixels) {
-    text = 'Looking at your canvas…'
+    text = 'Taking a look…'
   } else {
     text = 'Paint something and I will guess!'
   }

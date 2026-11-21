@@ -867,11 +867,12 @@ export default function RoomPage() {
             <span className="room-lobby-stool__sprite" aria-hidden="true">
               <StudioSprite sprite={studioSprites.stool} scale={3} />
             </span>
-            <span className="room-lobby-stool__name">
-              {player.name}
-              {player.userId === roomDoc?.data.hostId ? ' (host)' : ''}
-              {player.userId === state.you.userId ? ' (you)' : ''}
-            </span>
+            <span className="room-lobby-stool__name">{player.name}</span>
+            {(player.userId === roomDoc?.data.hostId || player.userId === state.you.userId) && (
+              <span className="room-lobby-stool__tags">
+                {[player.userId === roomDoc?.data.hostId && 'host', player.userId === state.you.userId && 'you'].filter(Boolean).join(' · ')}
+              </span>
+            )}
           </li>
         ))}
       </ul>
@@ -1078,7 +1079,7 @@ export default function RoomPage() {
                       </h2>
                     </div>
 
-                    <p data-testid="overlay-guess" className="room-results-guess">
+                    <p data-testid="overlay-guess" className={`room-results-guess${outcome === 'won' ? ' room-results-guess--won' : ''}`}>
                       {outcome === 'won' ? (
                         <>Haiku guessed <strong>{(state.guessLog.find((e) => e.matched) ?? state.guessLog[0])?.guesses[0] ?? state.round.word}</strong></>
                       ) : state.guessLog[0] ? (

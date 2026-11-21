@@ -353,7 +353,8 @@
   font-size: 15px;
   line-height: 1.1;
   text-align: center;
-  color: #614052;
+  color: #fff0cc;
+  text-shadow: 1px 1px 0 #392a45;
 }
 .palette-cooldown-slot {
   display: flex;
@@ -382,5 +383,6 @@
   white-space: nowrap;
   font-size: 15px;
   line-height: 1;
-  color: #985c5a;
+  color: #fff0cc;
+  text-shadow: 1px 1px 0 #392a45;
 }

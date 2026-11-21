@@ -22,8 +22,12 @@ export function PlayersPanel({ players, roster, watching, hostId, youId }: Playe
         <p key={player.userId} data-testid="roster-row" className="my-1 flex items-baseline gap-1.5 text-foreground">
           <span aria-hidden="true" className="text-[var(--sunset-3)]">•</span>
           <span className="truncate uppercase">{player.name}</span>
-          {player.userId === hostId && <span className="roster-tag">host</span>}
-          {player.userId === youId && <span className="roster-tag roster-tag--you">you</span>}
+          {(player.userId === hostId || player.userId === youId) && (
+            <span className="roster-tags">
+              {player.userId === hostId && <span className="roster-tag">host</span>}
+              {player.userId === youId && <span className="roster-tag roster-tag--you">you</span>}
+            </span>
+          )}
         </p>
       ))}
       <p data-testid="round-watching" className="my-1 text-foreground opacity-60">

@@ -65,7 +65,7 @@ function roundStateLabel(state?: string): string {
     case 'lobby':
       return 'In lobby'
     case 'intermission':
-      return 'Between rounds'
+      return 'Round over'
     case 'paused':
       return 'Paused'
     default:
