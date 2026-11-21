@@ -70,8 +70,12 @@ export function PorchPresenceSign() {
   const [pinned, setPinned] = useState(false)
   if (!summary) return null
   const easel = porchLayout[composition].easel
-  // A strip across the top of the easel, where the plank hangs from its crossbar.
-  const anchor = { x: easel.x, y: easel.y - 11, w: easel.w, h: 10 }
+  // A strip across the top of the easel, where the plank hangs from its crossbar. A phone's easel is a narrow column hard against the house
+  // wall (its note, mailbox and the lighthouse are all beside it), so there the plank hangs under the lantern in the open sky instead.
+  const lantern = porchLayout[composition].lantern
+  const anchor = composition === 'portrait'
+    ? { x: lantern.x - 18, y: lantern.y + lantern.h - 9, w: 52, h: 10 }
+    : { x: easel.x, y: easel.y - 11, w: easel.w, h: 10 }
   const listed = hover || focus || pinned
   const hearing = summary.names.length ? ` Here now: ${summary.names.join(', ')}${summary.more ? ` and ${summary.more} more` : ''}.` : ''
   return (

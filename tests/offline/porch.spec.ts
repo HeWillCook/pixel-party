@@ -2018,6 +2018,38 @@ for (const viewport of [{ width: 1980, height: 1240 }, { width: 1440, height: 90
   })
 }
 
+// The tally plank on a phone hangs from the lantern in the open sky: it used to straddle the house-rules note and the lighthouse.
+test('the presence plank on a phone overlaps nothing painted or interactive', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 })
+  await setup(page)
+  const peers = [
+    { userId: 'u-ada', userName: 'Ada', joinedAt: new Date().toISOString(), state: { name: 'Ada', painting: true } },
+    { userId: 'anon-1', userName: 'Anonymous', joinedAt: new Date().toISOString(), state: {} },
+  ]
+  await page.routeWebSocket('**/ws/presence/**', (socket) => { socket.send(JSON.stringify({ type: 'presence.sync', payload: { peers } })) })
+  await page.goto(`${origin}/home`)
+  const sign = page.getByTestId('porch-presence')
+  await expect(sign).toContainText('3 on the porch')
+  await sign.hover()
+  const result = await page.evaluate(() => {
+    const plank = document.querySelector('[data-testid="porch-presence"]')!.getBoundingClientRect()
+    const hits = [...document.querySelectorAll('.porch-world .pixel-hotspot, .porch-world .porch-dock, .porch-world .porch-more-ticket, .porch-nav a, .porch-nav button')]
+      .filter(element => !element.closest('.porch-presence'))
+      .filter((element) => {
+        const box = element.getBoundingClientRect()
+        return box.width > 0 && Math.min(plank.right, box.right) > Math.max(plank.left, box.left) && Math.min(plank.bottom, box.bottom) > Math.max(plank.top, box.top)
+      })
+      .map(element => element.getAttribute('aria-label') ?? element.className)
+    // The painted house-rules note, mailbox, gallery sign and lighthouse all stand left of and below the easel's top: the plank is clear of them when it is
+    // right of the easel altogether (it used to hang over the easel's top strip and spill left across them).
+    const easel = document.querySelector('.porch-world [aria-label="Start Daily Challenge"]')!.getBoundingClientRect()
+    return { hits, inside: plank.left >= 0 && plank.right <= innerWidth && plank.top >= 0 && plank.bottom <= innerHeight, rightOfEasel: plank.left >= easel.right }
+  })
+  expect(result.hits).toEqual([])
+  expect(result.inside).toBe(true)
+  expect(result.rightOfEasel).toBe(true)
+})
+
 test('Haiku introduces himself, then has something else to say', async ({ page }) => {
   await setup(page)
   await page.goto(`${origin}/home`)
