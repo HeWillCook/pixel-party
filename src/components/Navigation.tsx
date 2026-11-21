@@ -205,20 +205,28 @@ function useNavHeightVar() {
   useEffect(() => {
     const nav = ref.current
     const shell = nav?.closest<HTMLElement>('.porch-shell')
-    // The bar itself, not the phone menu that drops below it when open.
     const row = nav?.querySelector<HTMLElement>('.porch-nav__row')
     if (!nav || !shell || !row) return
     let last = ''
+    let barHeight = 0
+    // The phone menu drops below the bar. `--porch-nav-height` stays the bar's own height; `--porch-nav-bottom` is the lowest edge of
+    // the bar or the open menu, so scene pages that sit under the bar (the gallery's header card) can step down clear of the menu.
     const publish = () => {
-      const value = `${Math.round(row.getBoundingClientRect().height)}px`
+      const drawer = nav.querySelector('.porch-nav__mobile')?.getBoundingClientRect()
+      if (!drawer) barHeight = Math.round(nav.getBoundingClientRect().height)
+      const bar = barHeight || Math.round(row.getBoundingClientRect().height)
+      const bottom = Math.round(drawer ? drawer.bottom : bar)
+      const value = `${bar} ${bottom}`
       if (value === last) return
       last = value
-      shell.style.setProperty('--porch-nav-height', value)
+      shell.style.setProperty('--porch-nav-height', `${bar}px`)
+      shell.style.setProperty('--porch-nav-bottom', `${bottom}px`)
     }
     const observer = new ResizeObserver(publish)
     observer.observe(row)
+    observer.observe(nav)
     publish()
-    return () => { observer.disconnect(); shell.style.removeProperty('--porch-nav-height') }
+    return () => { observer.disconnect(); shell.style.removeProperty('--porch-nav-height'); shell.style.removeProperty('--porch-nav-bottom') }
   }, [])
   return ref
 }

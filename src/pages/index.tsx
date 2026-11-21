@@ -32,7 +32,7 @@ export default function Landing() {
           onSignOut={() => navigate('/home')}
           onToggleMute={toggle}
         />
-        <section className="porch-landing-copy pp-panel">
+        <section className="sr-only">
           <h1>Draw together at Pixel Party</h1>
           <p>Paint a daily prompt in five minutes, or join friends on a shared pixel canvas. Haiku the cat guesses your art and scores your best drawing.</p>
         </section>

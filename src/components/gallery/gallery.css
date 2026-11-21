@@ -172,7 +172,8 @@
   position: fixed;
   z-index: 3;
   left: 16px;
-  top: calc(var(--gallery-nav, 76px) + 8px);
+  /* The phone menu drops over the wall below the bar; the card steps down under it instead of being cut by it. */
+  top: calc(max(var(--gallery-nav, 76px), var(--porch-nav-bottom, 0px)) + 8px);
   display: flex;
   flex-wrap: wrap;
   align-items: center;

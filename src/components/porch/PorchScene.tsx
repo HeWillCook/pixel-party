@@ -98,25 +98,23 @@ function Objects({
 }) {
   const composition = useContext(SceneComposition)
   const rect = porchLayout[composition]
+  // Tab order is the reading order of the scene: the house on the left (rules, mailbox, gallery), the easel, the board, the radio, the hatch.
   return <>
-    <Hotspot rect={rect.easel} label={props.easelLabel} href={props.landing ? '/home' : undefined} onClick={props.landing ? undefined : props.onEasel} testId={props.easelTestId} disabled={props.easelDisabled}><span className={props.easelState === 'finished' ? 'porch-easel-copy porch-easel-copy--tag' : 'porch-easel-copy'}>{props.easelText}</span></Hotspot>
-    <Hotspot rect={rect.chalkboard} label="Today's scores" href="/scores" onClick={onScores} />
-    {!props.landing && <ChalkboardBoard />}
-    <Hotspot rect={rect.basement} label="Basement studio" href="/party" onClick={onParty} testId={props.landing ? 'landing-browse-lobby' : undefined}>
-      <span className="porch-basement-sign-copy" style={signCopyStyle(composition)}>Basement studio ↓</span>
-    </Hotspot>
-    <Hotspot rect={rect.mailbox} label={props.signedIn ? 'Account menu' : 'Sign in'} onClick={onMailbox} />
+    {composition === 'landscape' && <Hotspot rect={rect.note} label="Scoring rules" onClick={onRules}>
+      <span className="porch-note-title" aria-hidden="true">House rules</span>
+    </Hotspot>}
+    <Hotspot rect={rect.mailbox} label={props.signedIn ? 'Account menu' : 'Sign in at the mailbox'} onClick={onMailbox} />
     <Hotspot rect={rect.gallery} label="Your gallery" href={props.signedIn ? props.galleryHref : undefined} onClick={props.signedIn ? onGallery : props.landing ? props.onSignIn : onMailbox}>
       <span className="porch-gallery-sign-copy" aria-hidden="true">Gallery</span>
     </Hotspot>
-    {composition === 'landscape' ? <>
-      <Hotspot rect={rect.radio} label={props.muted ? 'Unmute sounds' : 'Mute sounds'} pressed={props.muted} onClick={props.onToggleMute} />
-      <Hotspot rect={rect.note} label="Scoring rules" onClick={onRules}>
-        <span className="porch-note-title" aria-hidden="true">House rules</span>
-      </Hotspot>
-    </> : <>
-      <button type="button" className="porch-more-ticket" style={rectToPercent(rect.more, composition)} aria-expanded={moreOpen} onClick={onToggleMore}>More</button>
-    </>}
+    <Hotspot rect={rect.easel} label={props.easelLabel} href={props.landing ? '/home' : undefined} onClick={props.landing ? undefined : props.onEasel} testId={props.easelTestId} disabled={props.easelDisabled}><span className={props.easelState === 'finished' ? 'porch-easel-copy porch-easel-copy--tag' : 'porch-easel-copy'}>{props.easelText}</span></Hotspot>
+    <Hotspot rect={rect.chalkboard} label="Today's scores" href="/scores" onClick={onScores} />
+    {!props.landing && <ChalkboardBoard />}
+    {composition === 'landscape' && <Hotspot rect={rect.radio} label={props.muted ? 'Unmute sounds' : 'Mute sounds'} pressed={props.muted} onClick={props.onToggleMute} />}
+    <Hotspot rect={rect.basement} label="Basement studio" href="/party" onClick={onParty} testId={props.landing ? 'landing-browse-lobby' : undefined}>
+      <span className="porch-basement-sign-copy" style={signCopyStyle(composition)}>Basement studio ↓</span>
+    </Hotspot>
+    {composition !== 'landscape' && <button type="button" className="porch-more-ticket" style={rectToPercent(rect.more, composition)} aria-expanded={moreOpen} onClick={onToggleMore}>More</button>}
   </>
 }
 
@@ -414,10 +412,10 @@ export function PorchScene(props: PorchSceneProps) {
   return <div ref={root} className={[props.landing ? 'porch-world porch-world--landing' : 'porch-world', transition || local ? 'porch-world--transitioning' : '', transition?.kind === 'scores' ? 'porch-world--to-scores' : '', overlayFade ? 'porch-world--returning' : '', verticalArrival ? 'porch-world--vertical-arrival' : ''].filter(Boolean).join(' ')}>
     <PixelScene draw={draw} className="porch-world__scene" camera={camera} zoomMs={activeZoomMs} instant={Boolean(continuedCamera)} syncScale>{props.wall ?? <PorchWall />}<Objects {...props} moreOpen={moreOpen} onToggleMore={toggleMore} onParty={onParty} onScores={onScores} onGallery={onGallery} onRules={openRules} onMailbox={openMailbox} /></PixelScene>
     <nav className="porch-dock" aria-label="Porch shortcuts">
+      <button type="button" disabled={props.easelDisabled} onClick={props.onEasel}><span aria-hidden="true">✎</span>Daily</button>
       <a href="/scores" onClick={onScores}><span aria-hidden="true">★</span>Scores</a>
-      {props.signedIn && props.galleryHref ? <a href={props.galleryHref} onClick={onGallery}><span aria-hidden="true">▣</span>Gallery</a> : <button type="button" onClick={props.landing ? props.onSignIn : openMailbox}><span aria-hidden="true">▣</span>Gallery</button>}
       <a href="/party" onClick={onParty}><span aria-hidden="true">♫</span>Party</a>
-      <button type="button" onClick={openMailbox}><span aria-hidden="true">✉</span>Account</button>
+      {props.signedIn && props.galleryHref ? <a href={props.galleryHref} onClick={onGallery}><span aria-hidden="true">▣</span>Gallery</a> : <button type="button" onClick={props.landing ? props.onSignIn : openMailbox}><span aria-hidden="true">▣</span>Gallery</button>}
       <button type="button" aria-expanded={moreOpen} onClick={toggleMore}><span aria-hidden="true">⋯</span>More</button>
     </nav>
     {moreOpen && viewport.w > 0 && createPortal((() => {
@@ -434,10 +432,10 @@ export function PorchScene(props: PorchSceneProps) {
           onKeyDown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); closeMore() } }}
         >
           <div role="group" aria-label="More porch actions" className="porch-more-actions">
-            <a href="/r/play" ref={(element) => element?.focus()}>Public board</a>
+            <button type="button" ref={(element) => element?.focus()} onClick={() => { closeMore(); openMailbox() }}>{props.signedIn ? 'Account' : 'Sign in'}</button>
+            <a href="/r/play"><span>Open canvas<small>everyone draws</small></span></a>
             <button type="button" onClick={props.onToggleMute}>{props.muted ? 'Unmute sounds' : 'Mute sounds'}</button>
             <button type="button" onClick={() => { closeMore(); openRules() }}>Scoring rules</button>
-            <button type="button" onClick={closeMore}>Close</button>
           </div>
         </div>
       </>
