@@ -86,13 +86,16 @@ export interface PlayerStatsCardProps {
   userId: string
   /** `plaque` is the wall-side card on a player's page; `dialog` sits inside the Scores dialog. */
   variant?: 'plaque' | 'dialog'
+  /** The name the page already knows, shown while stats load or when a visitor can't read them. */
+  name?: string | null
 }
 
 /** A player's daily and party numbers, with loading, empty, signed-out and error states. */
-export function PlayerStatsCard({ userId, variant = 'dialog' }: PlayerStatsCardProps) {
+export function PlayerStatsCard({ userId, variant = 'dialog', name }: PlayerStatsCardProps) {
   const titleId = useId()
   const { status, stats, retry } = usePlayerStats(userId)
-  const initial = Array.from(stats?.name?.trim() || 'P')[0] ?? 'P'
+  const displayName = stats?.name?.trim() || name?.trim() || 'Player'
+  const initial = Array.from(displayName)[0] ?? 'P'
 
   return (
     <article
@@ -109,7 +112,7 @@ export function PlayerStatsCard({ userId, variant = 'dialog' }: PlayerStatsCardP
         </Avatar>
         <div className="pstats-id">
           <h2 id={titleId} className="pstats-name" data-testid="player-stats-name">
-            {stats?.name?.trim() || 'Player'}
+            {displayName}
           </h2>
           <p className="pstats-tagline">
             {status === 'ready' && stats

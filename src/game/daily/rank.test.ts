@@ -24,4 +24,13 @@ describe('rankScores', () => {
       { userId: 'known', score: 700, startedAt: 200_000 },
     ])).toEqual([{ userId: 'known', rank: 1 }, { userId: 'unknown', rank: 2 }])
   })
+
+  it('keeps the stored medal order of a closed day on a tie', () => {
+    expect(rankScores([
+      { userId: 'earlier', score: 837, startedAt: 100, medal: 2 },
+      { userId: 'gold', score: 837, startedAt: 900, medal: 1 },
+      { userId: 'third', score: 819, startedAt: 50, medal: 3 },
+      { userId: 'none', score: 700, startedAt: 10, medal: 0 },
+    ]).map((row) => row.userId)).toEqual(['gold', 'earlier', 'third', 'none'])
+  })
 })
