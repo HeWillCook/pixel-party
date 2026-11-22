@@ -36,6 +36,7 @@ import { PorchPresenceProvider } from '../../components/porch/PorchPresence'
 import { ReducedMotionNotice } from '../../components/ReducedMotionNotice'
 import { prefetchAllRoutes } from '../../prefetch-routes'
 import { warmSceneArt } from '../../scene/warm-art'
+import { setSignedInHint } from '../../lib/signed-in-hint'
 // The scores page's stylesheet (and the porch's `--to-scores` backdrop it owns) is needed on the porch before the first Scores visit.
 import './scores'
 
@@ -128,7 +129,11 @@ function RouteCurtain() {
  * check is one round-trip, and in-flow placeholders read as a layout jump.
  */
 function AuthBoot({ children }: { children: ReactNode }) {
-  const { isLoaded } = useAuthStatus()
+  const { isLoaded, isSignedIn } = useAuthStatus()
+  // Lets a new tab on the static landing skip straight to the porch (see signed-in-hint.ts).
+  useEffect(() => {
+    if (isLoaded) setSignedInHint(isSignedIn)
+  }, [isLoaded, isSignedIn])
   // Warm the other route chunks once the shell is interactive, so a nav click never waits on
   // a network fetch inside its camera move.
   useEffect(() => {
