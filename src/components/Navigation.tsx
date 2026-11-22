@@ -433,7 +433,7 @@ export default function Navigation() {
       <CompactRoof />
       <div className="porch-nav__row">
         {locked ? (
-          <span aria-label="Pixel Party" className="porch-nav__logo" data-testid="nav-logo-locked">
+          <span aria-label="Pixle" className="porch-nav__logo" data-testid="nav-logo-locked">
             <SpriteImage sprite={logoSign} className="porch-nav__logo-full" />
             <SpriteImage sprite={compactLogoSign} className="porch-nav__logo-compact" />
           </span>
