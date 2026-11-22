@@ -37,6 +37,11 @@ export interface PorchOptions {
  * and the eave's shadow beneath it. Authored on the detail grid (`ctx` is scaled by DETAIL); it spans 18 scene
  * units, and `width` is the scene width to cover. Detail rows 24-25 are the fascia's lit lip; from row 36 down it is transparent.
  */
+/** The easel's and chalkboard's idle hover, in scene pixels. PorchScene mirrors it onto the DOM writing on them (`--porch-bob`). */
+export function porchBob(frame: number): number {
+  return [0, 0, 1, 1, 0, 0, -1, -1][Math.floor(frame / 5) % 8]
+}
+
 export function drawPorchRoof(ctx: CanvasRenderingContext2D, roofTop: number, width = ctx.canvas.width): void {
   const W = width * DETAIL, Y = roofTop * DETAIL
   const R = (x: number, y: number, w: number, h: number, c: string) => dRect(ctx, x, Y + y, w, h, c)
@@ -176,7 +181,7 @@ function drawPorchFront(ctx: CanvasRenderingContext2D, frame: number, opts: Porc
 
   if (!opts.hideEasel) {
     const easel = layout.easel
-    const bob = opts.bob ? [0, 0, 1, 1, 0, 0, -1, -1][Math.floor(frame / 5) % 8] : 0
+    const bob = opts.bob ? porchBob(frame) : 0
     const ex = easel.x, ey = easel.y
     const cellColour = (c: number, p: number) => c === 0 ? EMPTY_CANVAS[p % 2] : (PALETTE[c] ?? EMPTY_CANVAS[p % 2])
     drawEasel(ctx, ex, ey, bob, opts.easelState, opts.easelCells, cellColour)
@@ -187,7 +192,7 @@ function drawPorchFront(ctx: CanvasRenderingContext2D, frame: number, opts: Porc
   }
   if (!opts.hideChalkboard) {
     const board = layout.chalkboard
-    const boardBob = opts.bob ? [0, 0, 1, 1, 0, 0, -1, -1][Math.floor(frame / 5) % 8] : 0
+    const boardBob = opts.bob ? porchBob(frame) : 0
     drawChalkboard(ctx, board, boardBob, portrait ? 3 : 5)
     for (const offset of [8, Math.floor(board.w / 2) - 4, board.w - 16]) {
       drawThruster(ctx, board.x + offset, board.y + boardBob + board.h - 12, frame + Math.round(offset), false, opts.flare?.target === 'chalkboard' ? opts.flare.boost : 0)

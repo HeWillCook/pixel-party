@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { PixelScene, SceneComposition } from '../../scene/PixelScene'
 import { Hotspot } from '../../scene/Hotspot'
-import { drawPorch, type PorchOptions } from '../../scene/porch/drawPorch'
+import { drawPorch, porchBob, type PorchOptions } from '../../scene/porch/drawPorch'
 import { porchHatch, porchLayout, type PorchObject } from '../../scene/porch/layout'
 import { porchPose, type PorchPose } from '../../scene/porch/poses'
 import { compositionFor, projectRect, rectToPercent, type Camera, type Composition } from '../../scene/camera'
@@ -206,6 +206,7 @@ export function PorchScene(props: PorchSceneProps) {
   const initialReturnRef = useRef(returnFrom)
   const [viewport, setViewport] = useState({ w: 0, h: 0 })
   const root = useRef<HTMLDivElement>(null)
+  const bobRef = useRef(0)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Bumped when a move is cancelled or the page goes away, so a swap still waiting on its chunk never fires late.
   const moveToken = useRef(0)
@@ -400,6 +401,9 @@ export function PorchScene(props: PorchSceneProps) {
     const scale = Math.max(2, Math.ceil(Math.max(width / ctx.canvas.width, height / ctx.canvas.height)))
     const roofTop = Math.max(0, Math.floor((ctx.canvas.height - height / scale) / 2))
     drawPorch(ctx, frame, { easelState: props.easelState, bob: !transition, soundOn: !props.muted, signedIn: props.signedIn, roofTop, easelCells: props.easelCells })
+    // The leaderboard and the easel card are DOM laid over the canvas: hand them the same hover so they ride with their boards.
+    const bob = transition ? 0 : porchBob(frame)
+    if (root.current && bobRef.current !== bob) { bobRef.current = bob; root.current.style.setProperty('--porch-bob', String(bob)) }
   }, [props.easelState, props.muted, props.signedIn, props.easelCells, transition])
 
   const composition = viewport.w && viewport.h ? compositionFor(viewport.w, viewport.h) : 'landscape'
