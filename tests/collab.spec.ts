@@ -16,6 +16,7 @@
  * cleanup. No need to manage browser contexts manually.
  */
 import { test, expect, loadAllTestAccounts } from 'deepspace/testing'
+import { onboard } from './helpers/onboard'
 
 // A machine that has never created test accounts is the normal state of a
 // fresh checkout, and there `users()` throws — turning "you have no pool yet"
@@ -33,6 +34,8 @@ test.skip(
 
 test('each browser renders its own signed-in account', async ({ users }) => {
   const [a, b] = await users(2)
+  // A first sign-in would otherwise open the username pop-up over the nav.
+  await Promise.all([onboard(a.context, 'collaba'), onboard(b.context, 'collabb')])
 
   // /home is dynamic (under src/pages/(app)/), so it mounts the nav shell;
   // '/' is the static landing and has no navigation.

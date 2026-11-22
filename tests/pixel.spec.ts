@@ -1,5 +1,6 @@
 import { test, expect, loadAllTestAccounts } from 'deepspace/testing'
 import type { Page } from '@playwright/test'
+import { onboard } from './helpers/onboard'
 
 test.skip(loadAllTestAccounts().length < 2, 'Needs two usable DeepSpace test accounts')
 
@@ -13,8 +14,16 @@ async function clickCell(page: Page, x: number, y: number) {
   await canvas.click({ position: { x: box.width * (x + 0.5) / 32, y: box.height * (y + 0.5) / 32 } })
 }
 
-test('two painters sync, respect cooldown, and allow spectators', async ({ users, page }) => {
-  const [a, b] = await users(2)
+test('two painters sync, paint back-to-back pixels, and allow spectators', async ({ users, page }) => {
+  // The rooms API suite fills the first account's five-room quota, so the second account hosts.
+  const [b, a] = await users(2)
+  await Promise.all([onboard(a.context, 'painta'), onboard(b.context, 'paintb')])
+  // There is no always-on public board any more: a player hosts a public room.
+  const tokenResponse = await a.context.request.post('/api/auth/token')
+  const bearer = (await tokenResponse.json() as { token: string }).token
+  const created = await (await a.context.request.post('/api/actions/createRoom', { headers: { Authorization: `Bearer ${bearer}` }, data: { name: 'Pixel sync test', mode: 'coop', visibility: 'public' } })).json() as { success: boolean; data: { joinCode: string } }
+  expect(created.success).toBe(true)
+  const roomPath = `/r/${created.data.joinCode}`
   const spectatorPlacements: string[] = []
   page.on('websocket', socket => {
     if (socket.url().includes('/api/pixel/')) socket.on('framesent', frame => {
@@ -31,11 +40,7 @@ test('two painters sync, respect cooldown, and allow spectators', async ({ users
       }
     })
   })
-  await a.page.addInitScript(() => {
-    const original = Date.now
-    Date.now = () => original() + (Number(sessionStorage.getItem('clockOffset')) || 0)
-  })
-  await Promise.all([a.page.goto('/r/play'), b.page.goto('/r/play'), page.goto('/r/play')])
+  await Promise.all([a.page.goto(roomPath), b.page.goto(roomPath), page.goto(roomPath)])
   for (const p of [a.page, b.page]) await expect(p.getByTestId('round-players')).toHaveText('2 painters', { timeout: 15000 })
   // The shared board may be new or waiting on results; every start is explicit.
   const start = a.page.getByTestId('host-start-button')
@@ -46,16 +51,13 @@ test('two painters sync, respect cooldown, and allow spectators', async ({ users
   await clickCell(a.page, 4, 4)
   await firstConfirmed
   const synced = expect.poll(() => color(b.page, 4, 4), { timeout: 2000 }).toEqual(red)
-  // Simulate a fast client clock to exercise authoritative rejection and rollback. The server's window with two painters is only
-  // 500 ms: the click follows the confirmation straight away (a machine that stalls longer than that between the two would be accepted,
-  // not rejected). The second click cannot go earlier: before the confirmation the client has no server cooldown to answer to.
-  await a.page.evaluate(() => sessionStorage.setItem('clockOffset', '5000'))
+  // No per-pixel cooldown with friends: a second pixel straight after the first lands for everyone.
   await clickCell(a.page, 6, 6)
-  await expect(a.page.getByTestId('reject-notice')).toContainText('Brush cooling down')
   await synced
   await expect.poll(() => color(page, 4, 4), { timeout: 2000 }).toEqual(red)
-  await expect.poll(() => color(a.page, 6, 6)).toEqual([243, 234, 216, 255])
-  await expect.poll(() => color(b.page, 6, 6)).toEqual([243, 234, 216, 255])
+  await expect.poll(() => color(b.page, 6, 6), { timeout: 2000 }).toEqual(red)
+  await expect.poll(() => color(page, 6, 6), { timeout: 2000 }).toEqual(red)
+  await expect(a.page.getByTestId('reject-notice')).toHaveCount(0)
   const spectatorBefore = await color(page, 5, 5)
   const painterBefore = await color(a.page, 5, 5)
   expect(painterBefore).toEqual(spectatorBefore)
@@ -71,6 +73,7 @@ test('two painters sync, respect cooldown, and allow spectators', async ({ users
 test('private room invite requires sign-in and admits the invited painter', async ({ users, page }) => {
   // The rooms API suite fills the first account's five-room quota.
   const [b, a] = await users(2)
+  await Promise.all([onboard(a.context, 'privatea'), onboard(b.context, 'privateb')])
   await a.page.goto('/party')
   await a.page.getByTestId('create-room-name').fill('Private pixel test')
   await a.page.getByTestId('visibility-private').click()
