@@ -385,6 +385,8 @@ test('camera centers the porch board on the measured drawing canvas with 1:1 pro
 
 test('reduced motion: clicking the scene around a graded result returns to the porch at once', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' })
+  // The reduced-motion notice sits bottom-left, where this test clicks the scene; a player dismisses it once.
+  await page.addInitScript(() => localStorage.setItem('pixle:reduced-motion-notice-dismissed', '1'))
   await page.setViewportSize({ width: 1440, height: 900 })
   await endedFixture(page)
   await page.goto(`${origin}/home`)
