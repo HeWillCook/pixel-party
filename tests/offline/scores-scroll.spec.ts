@@ -96,3 +96,45 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 375, height: 812 
     await page.screenshot({ path: resolve(shotsDir, `scores-scrolled-${viewport.width}x${viewport.height}.png`) })
   })
 }
+
+// The rows must keep one size while the camera zooms porch -> scores -> porch: only the camera scale
+// changes. A frame strip of untransformed sizes (offsetHeight/offsetWidth ignore the camera's scale)
+// catches a row that snaps between a compact and a full size mid-move.
+for (const viewport of [{ width: 1440, height: 900 }, { width: 375, height: 812 }]) {
+  test(`scores rows keep one size through the zoom in and out at ${viewport.width}x${viewport.height}`, async ({ page }) => {
+    await page.setViewportSize(viewport)
+    await setup(page, query => (query.collection === 'dailyScores' ? many.slice(0, 8) : []))
+    // A finished player: today's paintings arrive from the gated route a beat after the board, mid-zoom.
+    const cells = samplePaintingBase64()
+    await page.route('**/api/daily/me', route => route.fulfill({
+      json: { day: '2026-11-17', status: 'ended', prompt: 'A lighthouse', autoUsed: 1, finalUsed: true, best: 990, windows: [], nextAutoAt: null, serverNow: Date.now(), lastCells: cells },
+    }))
+    await page.route('**/api/daily/today/drawings', async route => {
+      await new Promise(resolve => setTimeout(resolve, 600))
+      await route.fulfill({ json: { drawings: many.slice(0, 8).map(row => ({ data: { userId: row.data.userId, cells, guess: 'lighthouse' } })) } })
+    })
+    await page.goto(`${origin}/home`)
+    await page.evaluate(() => {
+      const samples: string[] = []
+      ;(window as Window & { __rowSamples?: string[] }).__rowSamples = samples
+      const tick = () => {
+        // The /scores board (the porch's own chalkboard face is a separate, smaller board).
+        const row = document.querySelector<HTMLElement>('.scores-page .scores-list > li')
+        const slot = row?.querySelector<HTMLElement>('.scores-avatar')
+        if (row && row.offsetHeight > 0) samples.push(`${row.offsetHeight}x${slot?.offsetWidth ?? 0}`)
+        requestAnimationFrame(tick)
+      }
+      requestAnimationFrame(tick)
+    })
+    await page.getByRole('link', { name: 'Scores', exact: true }).first().click()
+    await expect(page).toHaveURL(`${origin}/scores`)
+    await expect(page.locator('.scores-page .scores-list > li')).toHaveCount(8)
+    await page.waitForTimeout(1500)
+    await page.getByTestId('scores-porch-button').click()
+    await expect(page).toHaveURL(`${origin}/home`)
+    await page.waitForTimeout(1500)
+    const samples = await page.evaluate(() => (window as Window & { __rowSamples?: string[] }).__rowSamples ?? [])
+    expect(samples.length).toBeGreaterThan(10)
+    expect([...new Set(samples)]).toHaveLength(1)
+  })
+}
