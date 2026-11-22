@@ -1,7 +1,7 @@
 import { JUDGE, type Zone, type ZoneId } from './config'
 import { parseJudgeText, type JudgeResult } from './judge'
 import { shouldJudge, type RoomState } from './room-logic'
-import { matchGuess } from './words'
+import { matchGuess, spellsAny } from './words'
 
 export type JudgeDeps = {
   now(): number
@@ -56,8 +56,10 @@ export async function runJudge(deps: JudgeDeps, s: RoomState, reason: 'tick' | '
     if (!result) return { kind: 'failed' }
     after.lastJudgedVersion = version
     // A canvas that spells the answer is not a drawing of it: the guess never counts, however exact.
-    const matched = !result.text && matchGuess(result.guesses[0], after.wordEntry)
-    return { kind: 'judged', zone: zone.id, result, matched }
+    // Other writing (a clock's numerals, a sign) is just part of the picture.
+    const spelled = spellsAny(result.writing, [after.wordEntry.word, ...after.wordEntry.synonyms])
+    const matched = !spelled && matchGuess(result.guesses[0], after.wordEntry)
+    return { kind: 'judged', zone: zone.id, result: { ...result, text: spelled }, matched }
   } catch {
     const current = deps.getState()
     if (current.round.id !== roundId || current.status !== 'playing' || current.round.state !== 'playing') return { kind: 'stale' }

@@ -62,7 +62,7 @@ describe('daily service', () => {
     const { deps, records, at } = setup()
     await startDaily(deps, user)
     at(HALFWAY)
-    vi.mocked(deps.judge.blind).mockResolvedValueOnce({ guess: 'a lighthouse', text: true })
+    vi.mocked(deps.judge.blind).mockResolvedValueOnce({ guess: 'a lighthouse', writing: promptForDay(day).subject.toUpperCase() })
     vi.mocked(deps.judge.score).mockResolvedValueOnce({ match: 90, recognition: 100, quality: 80, reason: 'A tidy lighthouse.' })
     const result = await gradeDaily(deps, user, 'auto', cells, day, 0)
     expect(result).toMatchObject({ ok: true, grade: { guess: 'a lighthouse', recognition: 0, reason: NO_SPELLING_REASON } })
@@ -72,6 +72,16 @@ describe('daily service', () => {
     expect(result.grade.total).toBeLessThanOrEqual(300)
     expect(onlyRow(records, 'dailyScores')).toMatchObject({ recognition: 0, score: result.grade.total })
     expect(onlyRow(records, 'dailyDrawings')).toMatchObject({ guess: 'a lighthouse', reason: NO_SPELLING_REASON })
+  })
+
+  it('other writing on the canvas is part of the picture and keeps its recognition', async () => {
+    const { deps, at } = setup()
+    await startDaily(deps, user)
+    at(HALFWAY)
+    vi.mocked(deps.judge.blind).mockResolvedValueOnce({ guess: 'a clock', writing: '12 3 6 9' })
+    vi.mocked(deps.judge.score).mockResolvedValueOnce({ match: 90, recognition: 100, quality: 80, reason: 'A tidy clock.' })
+    const result = await gradeDaily(deps, user, 'auto', cells, day, 0)
+    expect(result).toMatchObject({ ok: true, grade: { recognition: 100, reason: 'A tidy clock.' } })
   })
 
   it('auto on blank cells skips without the judge', async () => {
@@ -341,7 +351,7 @@ describe('daily service', () => {
 
   it('ignores stale successful completions after a replacement reservation', async () => {
     const { deps, records, at } = setup()
-    let resolveBlind!: (value: { guess: string; text: boolean }) => void
+    let resolveBlind!: (value: { guess: string; writing: string }) => void
     vi.mocked(deps.judge.blind).mockImplementationOnce(() => new Promise(resolve => { resolveBlind = resolve }))
     await startDaily(deps, user)
     at(HALFWAY)
@@ -351,7 +361,7 @@ describe('daily service', () => {
     const replacement = await gradeDaily(deps, user, 'final', otherCells)
     expect(replacement.ok).toBe(true)
     const saved = { ...onlyRow(records, 'dailyScores') }
-    resolveBlind({ guess: 'stale', text: false })
+    resolveBlind({ guess: 'stale', writing: '' })
     expect(await pending).toMatchObject({ ok: false, reason: 'stale' })
     expect(onlyRow(records, 'dailyScores')).toEqual(saved)
     expect(onlyRow(records, 'dailyDrawings').cells).toBe(otherCells)

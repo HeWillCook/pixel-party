@@ -22,10 +22,10 @@ export type ScoreKind = 'halfway' | 'final'
 export const PEEK_MAX_CHARS = 90
 
 export const BLIND_SYSTEM =
-  'You are guessing a 32x32 pixel-art drawing made by one person for a guessing game. Ignore isolated stray pixels; they may be noise. If the image is entirely blank (no colored pixels drawn), reply with {"guess": "", "text": false}. Also report whether the image contains written letters, words or numbers: spelling the answer is not drawing it, so a spelled image must never count as a guess. Reply with raw JSON only, no markdown fences: {"guess": "short phrase", "text": true or false}.'
+  'You are guessing a 32x32 pixel-art drawing made by one person for a guessing game. Ignore isolated stray pixels; they may be noise. If the image is entirely blank (no colored pixels drawn), reply with {"guess": "", "writing": ""}. Also report any letters, words or numbers written in the image, exactly as written (spelling the answer is not drawing it), or an empty string when there are none. Reply with raw JSON only, no markdown fences: {"guess": "short phrase", "writing": "text as written, or empty"}.'
 
 export const BLIND_USER_TEXT =
-  'What is this a drawing of? Reply with raw JSON only: {"guess": "short phrase", "text": true or false}, where "text" is true when the image contains written letters, words or numbers.'
+  'What is this a drawing of? Reply with raw JSON only: {"guess": "short phrase", "writing": "any letters, words or numbers written in the image, exactly as written, or empty"}.'
 
 /** The verdict shown when a Daily drawing spells its answer: the guess is read, but it never scores. */
 export const NO_SPELLING_REASON = 'No spelling — letters and numbers do not count. Draw it!'
@@ -149,12 +149,12 @@ function parseClampedPercent(raw: unknown): number | null {
  * A blind guess plus whether Haiku saw written letters, words or numbers. `text` is parsed
  * defensively: anything but a boolean `true` (or the string "true") is treated as a drawing.
  */
-export function parseBlind(text: string): { guess: string; text: boolean } | null {
+export function parseBlind(text: string): { guess: string; writing: string } | null {
   const parsed = extractJsonObject(text)
   if (!parsed || typeof parsed.guess !== 'string') return null
   const guess = parsed.guess.trim()
   if (guess.length === 0) return null
-  return { guess, text: parsed.text === true || parsed.text === 'true' }
+  return { guess, writing: typeof parsed.writing === 'string' ? parsed.writing.trim().slice(0, 80) : '' }
 }
 
 const DANGLING = /(?:^|\s)(?:a|an|the|and|or|but|though|although|while|with|without|of|to|in|on|at|for|from|is|are|was|were|that|which|as|by|could|would|might|needs?)$/i

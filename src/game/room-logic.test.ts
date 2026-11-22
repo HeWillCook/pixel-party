@@ -5,7 +5,7 @@ import { WORDS } from './words'
 import { createGrid, pixelsUsed } from './grid'
 
 const room = () => newRoomState({ roomId: 'room', mode: 'coop' }, 1000, () => 0)
-const judged = { kind: 'judged' as const, zone: 'all' as const, result: { guesses: ['house'], confidence: 0.9, text: false }, matched: true }
+const judged = { kind: 'judged' as const, zone: 'all' as const, result: { guesses: ['house'], confidence: 0.9, writing: '', text: false }, matched: true }
 
 describe('room logic', () => {
   it('counts distinct normalized signed-in identities', () => {
@@ -166,7 +166,7 @@ describe('room logic', () => {
   })
   it('preserves last guesses for a timeout and clears them for the next round', () => {
     const s = room()
-    const seen = applyJudgeOutcome(s, { ...judged, result: { guesses: ['tree', 'plant'], confidence: 0.2, text: false }, matched: false }, 3000).state
+    const seen = applyJudgeOutcome(s, { ...judged, result: { guesses: ['tree', 'plant'], confidence: 0.2, writing: '', text: false }, matched: false }, 3000).state
     expect(seen.lastGuesses).toEqual(['tree', 'plant'])
     const timeout = advance(seen, s.round.startedAt + MODES.coop.capMs, 1, () => 0)
     expect(timeout.events).toContainEqual(expect.objectContaining({ type: 'roundEnded', event: expect.objectContaining({ finalGuesses: ['tree', 'plant'] }) }))

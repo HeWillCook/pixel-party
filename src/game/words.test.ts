@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { matchGuess, normalizeGuess, pickWord, WORDS, type WordEntry } from './words'
+import { matchGuess, normalizeGuess, pickWord, spellsAny, WORDS, type WordEntry } from './words'
 
 const FORBIDDEN_PROMPT_WORDS = ['pixel', 'canvas', 'noise', 'drawing', 'art', 'blank', 'guess']
 
@@ -133,5 +133,23 @@ describe('words', () => {
     expect(share('medium')).toBeLessThan(0.49)
     expect(share('hard')).toBeGreaterThan(0.31)
     expect(share('hard')).toBeLessThan(0.39)
+  })
+})
+
+describe('spellsAny', () => {
+  it('flags writing that spells the answer, ignoring case, spacing and punctuation', () => {
+    expect(spellsAny('CLOCK', ['clock'])).toBe(true)
+    expect(spellsAny('c l o c k!', ['clock'])).toBe(true)
+    expect(spellsAny('LIGHT HOUSE', ['lighthouse'])).toBe(true)
+    expect(spellsAny('my house', ['house', 'home'])).toBe(true)
+    expect(spellsAny('HAMMERS', ['hammers'])).toBe(true)
+  })
+  it('lets other writing be part of the picture', () => {
+    expect(spellsAny('12 3 6 9', ['clock', 'watch'])).toBe(false)
+    expect(spellsAny('STORY', ['book', 'novel'])).toBe(false)
+    expect(spellsAny('', ['clock'])).toBe(false)
+    expect(spellsAny(undefined, ['clock'])).toBe(false)
+    // Names under three letters are too short to call a spelling.
+    expect(spellsAny('SUBWAY', ['sb'])).toBe(false)
   })
 })

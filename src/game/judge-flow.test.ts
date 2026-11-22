@@ -78,9 +78,15 @@ describe('runJudge', () => {
   })
   it('never matches a guess that was read off spelled letters', async () => {
     const { state, deps } = setup()
-    deps.callJudge.mockResolvedValueOnce('{"guesses":["home"],"confidence":1,"text":true}')
+    deps.callJudge.mockResolvedValueOnce('{"guesses":["home"],"confidence":1,"writing":"HOUSE"}')
     const outcome = await runJudge(deps, state, 'tick', 1, zone)
     expect(outcome).toMatchObject({ kind: 'judged', matched: false, result: { guesses: ['home'], text: true } })
+  })
+  it('still matches when the writing is part of the picture, not the answer', async () => {
+    const { state, deps } = setup()
+    deps.callJudge.mockResolvedValueOnce('{"guesses":["home"],"confidence":1,"writing":"No. 12"}')
+    const outcome = await runJudge(deps, state, 'tick', 1, zone)
+    expect(outcome).toMatchObject({ kind: 'judged', matched: true, result: { text: false } })
   })
   it('marks only the rendered version as judged when the grid changes mid-call', async () => {
     const { state, deps } = setup()

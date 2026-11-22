@@ -137,6 +137,23 @@ export const WORDS: WordEntry[] = [
  * (e.g., "glass" or "glasses" vs "houses"). Plural variants are handled solely
  * inside `matchGuess`'s candidate set.
  */
+/**
+ * Whether the writing on a canvas spells the answer. Writing by itself is fine (a clock's numerals,
+ * a shop sign, a book's title): it only counts as cheating when it spells the word, or one of its
+ * names (three letters or more), with spacing and punctuation ignored.
+ */
+export function spellsAny(writing: unknown, terms: readonly string[]): boolean {
+  if (typeof writing !== 'string') return false
+  const squash = (value: string) => normalizeGuess(value).replace(/\s+/g, '')
+  const written = squash(writing)
+  if (!written) return false
+  return terms.some(term => {
+    const target = squash(term)
+    if (target.length < 3) return false
+    return written.includes(target) || (target.endsWith('s') && written.includes(target.slice(0, -1)))
+  })
+}
+
 export function normalizeGuess(s: string): string {
   return s
     .toLowerCase()

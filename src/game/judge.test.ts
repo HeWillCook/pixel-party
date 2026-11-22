@@ -44,17 +44,17 @@ describe('extractText', () => {
 describe('parseJudgeText', () => {
   it('parses raw, fenced, and surrounded JSON', () => {
     const json = '{"guesses":["cat","dog","bird"],"confidence":0.7}'
-    const result = { guesses: ['cat', 'dog', 'bird'], confidence: 0.7, text: false }
+    const result = { guesses: ['cat', 'dog', 'bird'], confidence: 0.7, writing: '', text: false }
     for (const text of [json, `\`\`\`json\n${json}\n\`\`\``, `Here: ${json} done.`]) expect(parseJudgeText(text)).toEqual(result)
   })
   it('truncates guesses and coerces or clamps confidence', () => {
-    expect(parseJudgeText('{"guesses":["a","b","c","d"],"confidence":"0.7"}')).toEqual({ guesses: ['a', 'b', 'c'], confidence: 0.7, text: false })
-    expect(parseJudgeText('{"guesses":["a"],"confidence":2}')).toEqual({ guesses: ['a'], confidence: 1, text: false })
-    expect(parseJudgeText('{"guesses":["a"],"confidence":-1}')).toEqual({ guesses: ['a'], confidence: 0, text: false })
+    expect(parseJudgeText('{"guesses":["a","b","c","d"],"confidence":"0.7"}')).toEqual({ guesses: ['a', 'b', 'c'], confidence: 0.7, writing: '', text: false })
+    expect(parseJudgeText('{"guesses":["a"],"confidence":2}')).toEqual({ guesses: ['a'], confidence: 1, writing: '', text: false })
+    expect(parseJudgeText('{"guesses":["a"],"confidence":-1}')).toEqual({ guesses: ['a'], confidence: 0, writing: '', text: false })
   })
   it('reads the spelling flag, and treats a missing or malformed flag as drawn art', () => {
-    expect(parseJudgeText('{"guesses":["sun"],"confidence":1,"text":true}')).toMatchObject({ text: true })
-    expect(parseJudgeText('{"guesses":["sun"],"confidence":1,"text":false}')).toMatchObject({ text: false })
+    expect(parseJudgeText('{"guesses":["sun"],"confidence":1,"writing":" SUN "}')).toMatchObject({ writing: 'SUN', text: false })
+    expect(parseJudgeText('{"guesses":["sun"],"confidence":1,"writing":""}')).toMatchObject({ writing: '' })
     for (const flag of ['"true"', '1', 'null', '{}', '"yes"']) {
       expect(parseJudgeText(`{"guesses":["sun"],"confidence":1,"text":${flag}}`)).toMatchObject({ text: false })
     }

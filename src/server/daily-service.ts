@@ -3,6 +3,7 @@ import { autoWindowAt, cellsHash, isBlankCells, isEnded } from '../game/daily/at
 import type { AttemptRow, AutoWindowStatus, GradeKind, GradeReject, GradeResult } from '../game/daily/attempt'
 import { promptForDay } from '../game/daily/prompts'
 import { NO_SPELLING_REASON } from '../game/daily/judge'
+import { spellsAny } from '../game/words'
 import { blankGradeParts, gradeScore } from '../game/daily/scoring'
 import { decodeCells } from '../game/grid'
 import type { DailyJudge } from './daily-judge'
@@ -157,9 +158,9 @@ export async function gradeDaily(deps: DailyDeps, user: DailyUser, kind: GradeKi
         const prompt = promptForDay(day)
         const scored = await judgeCall(deps, ownsReservation, () => deps.judge.score(png, prompt.prompt, prompt.subject, blind.guess, kind === 'final' ? 'final' : 'halfway'))
         if (scored) {
-          // Spelling the answer is not drawing it: the blind guess was read off letters, so it can never
-          // count as recognition (the score formula then caps the prompt part at 30).
-          const verdict = blind.text ? { ...scored, recognition: 0, reason: NO_SPELLING_REASON } : scored
+          // Spelling the answer is not drawing it: a guess read off the subject's letters can never count
+          // as recognition (the score formula then caps the prompt part at 30). Other writing is fine.
+          const verdict = spellsAny(blind.writing, [prompt.subject]) ? { ...scored, recognition: 0, reason: NO_SPELLING_REASON } : scored
           grade = { guess: blind.guess, reason: verdict.reason, ...gradeScore(verdict), elapsedMs }
         }
       }

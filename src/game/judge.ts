@@ -1,7 +1,7 @@
 import { JUDGE } from './config'
 
 export const JUDGE_SYSTEM = 'You judge a collaborative pixel-art canvas drawn by many people, one pixel at a time. Ignore isolated stray pixels; they are noise. If the canvas is entirely blank (no pixels drawn), the drawing is empty and nothing was drawn. Also report whether the image contains written letters, words or numbers: spelling the answer is not drawing it.'
-export const JUDGE_USER_TEXT = 'What is this a drawing of? Reply with raw JSON only, no markdown fences: {"guesses": [three short nouns, most likely first], "confidence": number from 0 to 1, "text": true or false}. Set "text" to true when the image contains written letters, words or numbers (a spelled word, a label, digits), and false when it is only drawn shapes. If the image is entirely blank (no pixels drawn), reply with {"guesses": [], "confidence": 0, "text": false}.'
+export const JUDGE_USER_TEXT = 'What is this a drawing of? Reply with raw JSON only, no markdown fences: {"guesses": [three short nouns, most likely first], "confidence": number from 0 to 1, "writing": "any letters, words or numbers written in the image, exactly as written, or an empty string"}. Report writing even when it is part of the drawing (a sign or a label). If the image is entirely blank (no pixels drawn), reply with {"guesses": [], "confidence": 0, "writing": ""}.'
 
 export function buildJudgeBody(pngBase64: string) {
   return {
@@ -34,13 +34,15 @@ export function extractText(payload: unknown): string | null {
 export interface JudgeResult {
   guesses: string[]
   confidence: number
-  /** The drawing spells letters, words or numbers. A spelled answer never counts as a match. */
+  /** Whatever is written on the canvas, as the judge read it ("" when nothing is). */
+  writing: string
+  /** The writing spells the answer (set by the room, which knows the word). A spelled answer never counts. */
   text: boolean
 }
 
-/** A missing or malformed `text` is `false`: an unreadable flag must never invent a spelling offence. */
-export function parseJudgeTextFlag(raw: unknown): boolean {
-  return raw === true
+/** A missing or malformed `writing` is "": an unreadable field must never invent a spelling offence. */
+export function parseJudgeWriting(raw: unknown): string {
+  return typeof raw === 'string' ? raw.trim().slice(0, 80) : ''
 }
 
 export function parseJudgeText(text: string): JudgeResult | null {
@@ -57,7 +59,8 @@ export function parseJudgeText(text: string): JudgeResult | null {
     return {
       guesses: result.guesses.slice(0, 3),
       confidence: Math.max(0, Math.min(1, confidence)),
-      text: 'text' in result ? parseJudgeTextFlag(result.text) : false,
+      writing: 'writing' in result ? parseJudgeWriting(result.writing) : '',
+      text: false,
     }
   } catch {
     return null

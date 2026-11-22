@@ -16,7 +16,7 @@ export function configuredJudgeMode(): 'fake' | 'local' | 'real' {
 
 export interface ScoredGrade { match: number; recognition: number; quality: number; reason: string }
 export interface DailyJudge {
-  blind(png: string): Promise<{ guess: string; text: boolean } | null>
+  blind(png: string): Promise<{ guess: string; writing: string } | null>
   score(png: string, prompt: string, subject: string, guess: string, kind?: ScoreKind): Promise<ScoredGrade | null>
   /** A silent, non-scoring look: one playful line, never a score. */
   peek?(png: string, prompt: string): Promise<{ line: string } | null>
@@ -57,7 +57,7 @@ export function fakeDailyJudge(): DailyJudge {
     async blind(png: string) {
       const hash = parseInt(cellsHash(png), 16)
       // The fake judge never reads letters: every fake drawing is art, so spelling tests drive the rule directly.
-      return { guess: CANNED_GUESSES[hash % CANNED_GUESSES.length], text: false }
+      return { guess: CANNED_GUESSES[hash % CANNED_GUESSES.length], writing: '' }
     },
     async score(png: string, _prompt: string, subject: string, guess: string) {
       const hash = parseInt(cellsHash(png), 16)
