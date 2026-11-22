@@ -338,7 +338,10 @@ export function Leaderboard({
                     title={playerName}
                   >
                     <span className="scores-rank">{rank}</span>
-                    {hasCells && <span className="scores-thumb-slot" aria-hidden="true" />}
+                    {/* The slot is reserved for every row while the board shows paintings, even before that
+                        player's drawing has arrived: a row that grows a thumbnail slot after the fact would
+                        make the whole board's rows jump size while the camera is still zooming in. */}
+                    {showDrawings && <span className="scores-thumb-slot" aria-hidden="true" />}
                     <span className="scores-player-stats" data-player-stats>
                       <Avatar className="scores-avatar">
                         <AvatarImage src={score.avatarUrl || undefined} />
