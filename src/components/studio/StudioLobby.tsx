@@ -1013,7 +1013,7 @@ export function StudioLobby(props: StudioLobbyProps) {
         </nav>
         {/* DEV ONLY (__DEBUG_TOOLS__) */}
         {__DEBUG_TOOLS__ && props.onDebugRoom && !room && (
-          <button type="button" data-testid="temp-debug-room" className="pp-chip studio-debug-room" disabled={props.creating} onClick={props.onDebugRoom} title="Temporary testing button: create a room with a generated name and go in">
+          <button type="button" data-testid="dev-debug-room" className="pp-chip studio-debug-room" disabled={props.creating} onClick={props.onDebugRoom} title="Dev-only testing button: create a room with a generated name and go in">
             Debug: new room
           </button>
         )}

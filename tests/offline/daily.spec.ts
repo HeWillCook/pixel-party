@@ -1442,8 +1442,8 @@ test('temporary retry daily debug button resets attempt with the same prompt', a
   })
 
   await page.goto(`${origin}/home`)
-  await expect(page.getByTestId('temp-retry-daily')).toBeVisible()
-  await page.getByTestId('temp-retry-daily').click()
+  await expect(page.getByTestId('dev-retry-daily')).toBeVisible()
+  await page.getByTestId('dev-retry-daily').click()
   await expect.poll(() => resetCalls).toBe(1)
   await expect(page.getByTestId('daily-playing')).toBeVisible()
   await expect(page.getByTestId('daily-prompt')).toHaveText('A lighthouse')

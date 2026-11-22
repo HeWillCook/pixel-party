@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { getAuthToken } from 'deepspace'
 
 /** Adds or clears generated paintings on the signed-in player's own wall, to test a full gallery without painting dozens. */
-export function TempDebugPaintings() {
+export function DevDebugPaintings() {
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState('')
   const run = async (body: { add: number } | { clear: true }) => {
@@ -35,7 +35,7 @@ export function TempDebugPaintings() {
     }
   }
   return (
-    <div className="gallery-debug" data-testid="temp-debug-paintings" title="Temporary testing buttons: add generated paintings to your wall">
+    <div className="gallery-debug" data-testid="dev-debug-paintings" title="Dev-only testing buttons: add generated paintings to your wall">
       <span className="gallery-debug__label">Debug paintings</span>
       {[1, 10, 100].map(count => (
         <button key={count} type="button" disabled={busy} onClick={() => void run({ add: count })} className="pp-chip gallery-debug__button">+{count}</button>
