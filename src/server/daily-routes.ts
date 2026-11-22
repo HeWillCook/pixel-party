@@ -75,7 +75,10 @@ export function registerDailyRoutes(app: Hono<AppContext>): void {
   })
   daily.get('/me', async c => c.json(await dailyState(dependencies(c.env), c.get('dailyUser').userId)))
   daily.get('/today/drawings', async c => {
-    const result = await todaysDrawings(dependencies(c.env), c.get('dailyUser').userId)
+    // `userId` narrows today's gallery to one player (a friend's wall); anything else in it is a bad request, not a guess.
+    const filterUserId = c.req.query('userId')
+    if (filterUserId !== undefined && (filterUserId.length === 0 || filterUserId.length > 128)) return c.json({ error: 'bad_request' }, 400)
+    const result = await todaysDrawings(dependencies(c.env), c.get('dailyUser').userId, filterUserId)
     return c.json(result, result.ok ? 200 : 403)
   })
   app.route('/api/daily', daily)

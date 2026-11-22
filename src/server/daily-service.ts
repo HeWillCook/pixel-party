@@ -234,12 +234,16 @@ export async function endDaily(deps: DailyDeps, user: DailyUser, cells: string |
   return readState(deps, user.userId, day)
 }
 
-export async function todaysDrawings(deps: DailyDeps, userId: string): Promise<{ ok: true; drawings: unknown[] } | { ok: false }> {
+/**
+ * Today's drawings, only for a caller whose own attempt has ended. `filterUserId` narrows it to one player (a friend's wall),
+ * which is still gated on the caller: the day stays hidden from anyone who has not finished it.
+ */
+export async function todaysDrawings(deps: DailyDeps, userId: string, filterUserId?: string): Promise<{ ok: true; drawings: unknown[] } | { ok: false }> {
   const now = deps.now()
   const day = utcDay(now)
   const row = await deps.store.get(userId, day)
   if (!row || !isEnded(row, now)) return { ok: false }
-  const drawings = await roomRecords(deps.tools, 'dailyDrawings', { day })
+  const drawings = await roomRecords(deps.tools, 'dailyDrawings', filterUserId ? { day, userId: filterUserId } : { day })
   if (!drawings.success) throw new Error(drawings.error)
   return { ok: true, drawings: drawings.data }
 }

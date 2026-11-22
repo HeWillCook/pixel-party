@@ -85,6 +85,41 @@
   border: 0 !important;
   background: #fff0cc;
 }
+/* Today's frame on someone else's wall while the viewer has not finished: an unpainted canvas with the reason on it. */
+.wall-frame--empty {
+  border-style: dashed;
+  background: #d9c6a6;
+  box-shadow: inset 0 0 0 calc(var(--px) * 0.7) #f6e6c6, calc(var(--px) * 1.4) calc(var(--px) * 1.4) 0 rgba(57, 42, 69, 0.35);
+}
+.wall-frame__gate {
+  display: grid;
+  justify-items: center;
+  gap: calc(var(--px) * 1.2);
+  text-align: center;
+}
+.wall-frame__gate-line {
+  margin: 0;
+  font-size: max(10px, calc(var(--px) * 2.8));
+  font-weight: 700;
+  line-height: 1.15;
+}
+.wall-frame__gate-paint {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 0 max(8px, calc(var(--px) * 1.6));
+  border: calc(var(--px) * 0.6) solid #985c5a;
+  background: #fff0cc;
+  color: #392a45;
+  font-size: max(10px, calc(var(--px) * 2.6));
+  font-weight: 700;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+  box-shadow: calc(var(--px) * 0.7) calc(var(--px) * 0.7) 0 rgba(57, 42, 69, 0.5);
+}
+.wall-frame__gate-paint:hover { background: #ffe6b0; }
 
 .wall-card,
 .wall-note {

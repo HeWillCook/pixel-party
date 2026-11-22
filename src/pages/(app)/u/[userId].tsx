@@ -162,7 +162,7 @@ export default function ProfilePage() {
             loading={status === 'loading'}
             failed={status === 'error'}
             onRetry={retry}
-            empty={<WallEmpty onPaint={onPorchLink} />}
+            empty={<WallEmpty isOwner={isOwner} ownerName={name} onPaint={onPorchLink} />}
           />
         </PixelScene>
       </div>

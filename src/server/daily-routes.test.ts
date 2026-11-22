@@ -116,6 +116,30 @@ describe('daily HTTP routes', () => {
     expect(await drawings.json()).toMatchObject({ ok: true, drawings: [{ data: { userId: 'alice', displayName: 'Alice' } }] })
   })
 
+  it('serves today\'s drawings for one player on request and refuses a caller who has not ended', async () => {
+    vi.useFakeTimers()
+    const start = Date.UTC(2026, 10, 17, 12)
+    vi.setSystemTime(start)
+    const records = createServerTools(env)
+    await records.create('dailyDrawings', { day: day(), userId: 'bob', cells: paintedCells, score: 700 })
+    await records.create('dailyDrawings', { day: day(), userId: 'carol', cells: paintedCells, score: 800 })
+    // A friend's wall asks for one player: the gate is still the caller's own ended attempt.
+    await request('start', 'POST')
+    expect((await request('today/drawings?userId=bob')).status).toBe(403)
+    expect((await request('today/drawings')).status).toBe(403)
+    vi.setSystemTime(start + 300_000)
+    await request('end', 'POST', { day: day(), cells })
+    const one = await request('today/drawings?userId=bob')
+    expect(one.status).toBe(200)
+    const body = await one.json() as { ok: boolean; drawings: { data: { userId: string } }[] }
+    expect(body.drawings.map(record => record.data.userId)).toEqual(['bob'])
+    const all = await (await request('today/drawings')).json() as { drawings: { data: { userId: string } }[] }
+    expect(all.drawings.map(record => record.data.userId).sort()).toEqual(['alice', 'bob', 'carol'])
+    // An empty filter is a bad request, not "everyone".
+    expect((await request('today/drawings?userId=')).status).toBe(400)
+    expect((await request(`today/drawings?userId=${'x'.repeat(129)}`)).status).toBe(400)
+  })
+
   it('returns business rejections at 200 and accepts an early end', async () => {
     vi.useFakeTimers()
     const start = Date.UTC(2026, 10, 17, 12)
