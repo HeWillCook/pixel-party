@@ -104,6 +104,8 @@ npm run build && npx playwright test --config tests/offline.playwright.config.ts
 
 CI runs `verify` and the offline browser suite on every push and pull request.
 
+If your OS has reduced motion turned on, Pixle skips its camera moves between scenes (everything still works); turn it off to see the transitions.
+
 ## How it was built
 
 Built over five days with coding agents: Claude Code planned and reviewed, and Codex, Gemini and OpenCode models did

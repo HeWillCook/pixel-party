@@ -1,0 +1,20 @@
+/* A small corner note; never a modal. Bottom-left on desktop, above the bottom dock on phones. */
+.rm-notice {
+  --px: 3px;
+  position: fixed;
+  z-index: 30;
+  left: 16px;
+  bottom: 16px;
+  width: min(340px, calc(100vw - 32px));
+  padding: 12px 14px;
+  color: #392a45;
+  font-family: 'VT323', monospace;
+}
+.rm-notice__title { margin: 0 0 4px; font-size: 22px; line-height: 1.1; }
+.rm-notice__body { margin: 0 0 10px; font-size: 18px; line-height: 1.2; }
+.rm-notice__button { min-height: 36px; padding: 2px 14px; font-size: 20px; }
+.rm-notice__button:focus-visible { outline: var(--px) solid #392a45; outline-offset: var(--px); }
+@media (max-width: 640px) {
+  .rm-notice { --px: 2px; left: 16px; right: 16px; width: auto; bottom: 84px; }
+  .rm-notice__body { font-size: 17px; }
+}
