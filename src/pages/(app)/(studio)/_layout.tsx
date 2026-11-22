@@ -82,7 +82,8 @@ export default function StudioLayout() {
   }, [loadRooms])
 
   const listedRooms: StudioRoomItem[] = rooms
-    .filter((room) => room.status !== 'closed' && !deletedRooms.includes(room.id))
+    // Co-op is the only mode for now: an old team room is never listed.
+    .filter((room) => room.status !== 'closed' && room.mode !== 'team' && !deletedRooms.includes(room.id))
     .map((room) => ({
       recordId: room.id,
       name: room.name,

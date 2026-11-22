@@ -312,6 +312,8 @@
   display: flex;
   align-items: center;
   flex-shrink: 0;
+  /* Room between the player count and the host's Pack up button, and off the ticket's right edge. */
+  margin: 0 calc(var(--px) * 0.8) 0 calc(var(--px) * 1.2);
 }
 
 .studio-pack-wrap button {
@@ -575,6 +577,14 @@
   align-items: center;
   justify-content: space-between;
   gap: calc(var(--px) * 0.75);
+}
+
+.studio-order-form__modes {
+  margin: calc(var(--px) * -0.2) 0 0;
+  font-size: calc(var(--px) * 2.3);
+  line-height: 1.1;
+  color: #8e5960;
+  text-align: right;
 }
 
 .studio-order-form__title {

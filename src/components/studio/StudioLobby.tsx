@@ -150,6 +150,7 @@ function CreateEaselForm({
           Co-op 32×32
         </Badge>
       </div>
+      <p className="studio-order-form__modes" data-testid="more-modes-note">More modes to come later</p>
 
       <div className={compact ? 'studio-order-form__field' : 'space-y-0.5'}>
         <Label
@@ -366,7 +367,7 @@ function JoinCodeForm({
 
 /** One line under the name: mode, players, and whether the game is waiting in its lobby. */
 function roomMeta(room: StudioRoomItem): string[] {
-  const parts = [room.mode === 'team' ? 'Teams' : 'Co-op']
+  const parts = ['Co-op']
   parts.push(`${room.playerCount} ${room.playerCount === 1 ? 'painter' : 'painters'}`)
   if (room.status === 'lobby') parts.push('waiting')
   return parts

@@ -16,7 +16,7 @@ const token = `fixture.${Buffer.from(JSON.stringify({ sub: user.id, name: user.n
 const rooms = [
   { id: 'r-1', name: "Will's Studio", hostId: 'host', mode: 'coop', status: 'playing', playerCount: 3, visibility: 'public', joinCode: 'QX3J' },
   { id: 'r-2', name: 'Sunset Cove', hostId: 'u2', mode: 'coop', status: 'lobby', playerCount: 2, visibility: 'public', joinCode: 'M9K2' },
-  { id: 'r-3', name: 'Night Owls', hostId: 'u3', mode: 'team', status: 'playing', playerCount: 4, visibility: 'public', joinCode: 'P4W8' },
+  { id: 'r-3', name: 'Night Owls', hostId: 'u3', mode: 'coop', status: 'playing', playerCount: 4, visibility: 'public', joinCode: 'P4W8' },
   { id: 'r-4', name: 'Secret Club', hostId: 'u4', mode: 'coop', status: 'lobby', playerCount: 1, visibility: 'private', joinCode: null },
 ]
 

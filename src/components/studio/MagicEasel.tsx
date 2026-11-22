@@ -286,7 +286,7 @@ export function MagicEasel({
                 One secret word, everyone paints, Haiku guesses. Draw it — spelled letters do not count.
               </p>
               <p className="studio-magic-easel__idle-text">
-                Pick a game on the left, or drop in a code
+                Pick an open game, or drop in a code
               </p>
             </div>
           )}
