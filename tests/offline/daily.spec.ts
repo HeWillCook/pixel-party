@@ -969,6 +969,23 @@ async function offlineClient(page: Page, signedIn = false) {
   return errors
 }
 
+test('signed-out easel opens a client-only guest sketch; submit asks for sign-in and keeps the sketch', async ({ page }) => {
+  await offlineClient(page)
+  const serverCalls: string[] = []
+  page.on('request', request => { if (/\/api\/daily\/(start|grade|peek|end|canvas)/.test(request.url())) serverCalls.push(request.url()) })
+  await page.goto(`${origin}/home`)
+  await page.getByTestId('daily-sign-in-button').click()
+  await expect(page.getByTestId('daily-guest')).toBeVisible()
+  await expect(page.getByTestId('guest-note').first()).toBeVisible()
+  await expect(page.getByTestId('daily-timer').first()).toBeVisible()
+  const saved = await page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('pixle:guest-sketch:')))
+  expect(saved).toHaveLength(1)
+  await page.getByTestId('guest-submit-button').first().click()
+  await page.getByTestId('daily-submit-confirm').click()
+  await expect(page.getByTestId('guest-sign-in')).toBeVisible()
+  expect(serverCalls).toEqual([])
+})
+
 test('signed-out home shows chalkboard hotspot and sign-in without revealing a prompt', async ({ page }) => {
   const errors = await offlineClient(page)
   let meRequests = 0

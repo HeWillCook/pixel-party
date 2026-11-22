@@ -11,7 +11,7 @@ import { useDailySounds } from '../../components/daily/useDailySounds'
 import { NeutralPorchLoading, PorchScene } from '../../components/porch/PorchScene'
 import { EaselFaceText } from '../../components/porch/EaselFace'
 import { OwnGalleryWall } from '../../components/gallery/OwnGalleryWall'
-import { dispatchSceneNavigation, enableNavMotion, isPrimaryClick, requestSignIn, SCENE_NAV_EVENT, setZoomHandoff, type PorchChainDest, type SceneNavKind } from '../../components/porch/returnFlag'
+import { dispatchSceneNavigation, enableNavMotion, isPrimaryClick, SCENE_NAV_EVENT, setZoomHandoff, type PorchChainDest, type SceneNavKind } from '../../components/porch/returnFlag'
 import type { Camera } from '../../scene/camera'
 import { readCameraTransform, REST_CAMERA, SCENE_ZOOM_CHAIN_MS, SCENE_ZOOM_MS, zoomHandoffAt } from '../../scene/zoom'
 import { DailyTimer } from '../../components/daily/DailyTimer'
@@ -34,6 +34,8 @@ import { PlayBackdrop, type PlayTransition } from '../../components/play/PlayBac
 import { studioSprites } from '../../scene/studio/sprites'
 import { untransformedRect, useSceneRegistration } from '../../scene/registration'
 import { porchEaselBoardRect } from '../../scene/porch/layout'
+import { GuestDaily } from '../../components/daily/GuestDaily'
+import { clearGuestSketch, loadGuestSketch, type GuestSketch } from '../../game/daily/guestSketch'
 import { Badge, Button, Modal } from '../../components/ui'
 import { DAILY, MAX_COLOR } from '../../game/config'
 import { canPaintDaily } from '../../game/daily/client-schedule'
@@ -271,6 +273,18 @@ export default function DailyHomePage() {
   const [history, setHistory] = useState<History>(() => emptyHistory())
   const [strokeActive, setStrokeActive] = useState(false)
   const [starting, setStarting] = useState(false)
+  // Signed-out "paint first": the guest easel is open, or a guest sketch is waiting to be judged now that the player is signed in.
+  const [guestOpen, setGuestOpen] = useState(false)
+  const [guestSketch, setGuestSketch] = useState<GuestSketch | null>(null)
+  useEffect(() => {
+    if (!isLoaded) return
+    if (!isSignedIn) { setGuestSketch(null); return }
+    if (!state.loaded) return
+    // Only a player who has not started today's attempt can use the sketch; anyone else just drops it.
+    const saved = loadGuestSketch()
+    if (saved && state.status === 'not_started' && saved.day === state.day) setGuestSketch(saved)
+    else { if (saved) clearGuestSketch(); setGuestSketch(null) }
+  }, [isLoaded, isSignedIn, state.loaded, state.status, state.day])
   // One camera move for both the playing and the graded close-up: entering zooms onto the easel, leaving zooms back out.
   const [phase, setPhase] = useState<PlayTransition>('active')
   // While the camera is moving the whole close-up is glued to the porch easel's board and the panels slide out
@@ -484,6 +498,32 @@ export default function DailyHomePage() {
     }
   }
 
+  // The guest sketch's verdict: the normal start, then the sketch goes onto the board and the normal submit judges it.
+  const handleSketchVerdict = async () => {
+    const sketch = guestSketch
+    if (!sketch) return
+    enableNavMotion()
+    setStarting(true)
+    const fadeMs = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : PORCH_TEXT_FADE_MS
+    if (fadeMs) setPorchLeaving(true)
+    try {
+      const [started] = await Promise.all([start(), new Promise(resolve => setTimeout(resolve, fadeMs))])
+      if (started) {
+        setResultDay(state.day)
+        replaceCells(sketch.cells)
+        clearGuestSketch()
+        setGuestSketch(null)
+      }
+      setPhase(started ? 'entering' : 'active')
+      if (started) void submit()
+    } catch {
+      setPhase('active')
+    } finally {
+      setPorchLeaving(false)
+      setStarting(false)
+    }
+  }
+
   const openEnded = async () => {
     enableNavMotion()
     const fadeMs = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : PORCH_TEXT_FADE_MS
@@ -527,21 +567,26 @@ export default function DailyHomePage() {
     return <div data-testid="daily-page" className="porch-home"><NeutralPorchLoading /></div>
   }
 
+  if (!isSignedIn && guestOpen) {
+    return <GuestDaily muted={muted} onExit={() => { enableNavMotion(); setGuestOpen(false) }} />
+  }
+
   const inCloseup = Boolean(isSignedIn) && !porchLeaving && (state.status === 'playing' || (state.status === 'ended' && resultDay === state.day))
   if (!inCloseup) {
     const ended = isSignedIn && state.status === 'ended'
     const signedOut = !isSignedIn
+    const sketchReady = Boolean(isSignedIn) && !ended && guestSketch !== null
     return <div data-testid="daily-page" className="porch-home">
       <section className={porchLeaving ? 'porch-home__scene porch-home__scene--leaving' : 'porch-home__scene'} data-testid={signedOut ? 'daily-signed-out' : ended ? 'daily-ended' : 'daily-not-started'}>
-        <PorchScene easelState={signedOut ? 'signin' : ended ? 'finished' : 'cover'} easelLabel={signedOut ? 'Sign in to paint' : ended ? 'View result' : 'Start Daily Challenge'}
-          easelTestId={signedOut ? 'daily-sign-in-button' : ended ? undefined : 'daily-start-button'} easelDisabled={starting}
+        <PorchScene easelState={signedOut ? 'signin' : ended ? 'finished' : 'cover'} easelLabel={signedOut ? 'Try it as a guest' : ended ? 'View result' : sketchReady ? 'Get Haiku’s verdict' : 'Start Daily Challenge'}
+          easelTestId={signedOut ? 'daily-sign-in-button' : ended ? undefined : sketchReady ? 'daily-sketch-verdict-button' : 'daily-start-button'} easelDisabled={starting}
           easelCells={ended ? endedCells : undefined}
-          easelText={<EaselFaceText mode={signedOut ? 'signin' : ended ? 'finished' : 'cover'} best={endedScore} />}
+          easelText={<EaselFaceText mode={signedOut ? 'signin' : ended ? 'finished' : 'cover'} best={endedScore} action={signedOut ? 'Paint as a guest' : sketchReady ? 'Get Haiku’s verdict' : undefined} />}
           signedIn={!!isSignedIn} galleryHref={`/u/${encodeURIComponent(userId)}`} muted={muted} haikuFacts={haikuFacts}
           wall={isSignedIn && userId ? <OwnGalleryWall userId={userId} /> : undefined}
           pendingChain={pendingChain}
           onConsumePendingChain={() => setPendingChain(null)}
-          onEasel={() => { if (signedOut) requestSignIn(); else if (ended) void openEnded(); else void handleStart() }}
+          onEasel={() => { if (signedOut) setGuestOpen(true); else if (ended) void openEnded(); else if (sketchReady) void handleSketchVerdict(); else void handleStart() }}
           onSignOut={() => signOut()} onToggleMute={toggleMute}>
           {state.lastError && <p className="porch-error pp-panel" role="status">{state.lastError}</p>}
           {/* DEV ONLY (__DEBUG_TOOLS__) */}

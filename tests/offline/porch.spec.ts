@@ -174,7 +174,7 @@ test('signed-out porch offers sign-in on easel and mailbox', async ({ page }) =>
   await setup(page, true)
   await page.goto(`${origin}/home`)
   const scene = page.locator('.porch-world')
-  await expect(scene.getByRole('button', { name: 'Sign in to paint' })).toBeVisible()
+  await expect(scene.getByRole('button', { name: 'Try it as a guest' })).toBeVisible()
   await expect(scene.getByRole('button', { name: 'Sign in at the mailbox', exact: true })).toBeVisible()
 })
 
