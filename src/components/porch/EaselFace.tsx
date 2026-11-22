@@ -9,7 +9,7 @@ export type EaselFaceMode = 'signin' | 'finished' | 'cover'
 export function EaselFaceText({ mode, best }: { mode: EaselFaceMode; best: number }) {
   if (mode === 'signin') return <span className="porch-easel-action">Sign in to paint</span>
   if (mode === 'finished') return <span className="porch-easel-tag" data-testid="porch-easel-tag">Today&apos;s painting · {best}/1000</span>
-  return <><strong>Today’s prompt</strong><span>5 minutes · your best grade counts</span><span className="porch-easel-action">Start painting</span></>
+  return <><strong>Today’s prompt</strong><span>Up to 5 minutes · submit whenever you&rsquo;re happy</span><span className="porch-easel-action">Start painting</span></>
 }
 
 /**

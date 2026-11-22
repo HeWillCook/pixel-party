@@ -116,7 +116,7 @@ describe('client-schedule', () => {
     expect(afterSecond.best).toBe(800)
   })
 
-  it('handles grade_rejected with judge_resting, silent rejections, and the too-early final', () => {
+  it('handles grade_rejected with judge_resting and silent rejections', () => {
     const initial: DailyClientState = {
       ...initialDailyClientState('2026-11-17'),
       ...baseState,
@@ -137,9 +137,6 @@ describe('client-schedule', () => {
       expect(silent.lastError).toBeNull()
       expect(silent.best).toBe(620)
     }
-
-    const tooEarly = dailyReducer(resting, { type: 'grade_rejected', reason: 'too_early' })
-    expect(tooEarly.lastError).toBe('The full five minutes first — keep painting')
   })
 
   it('backs off failed auto grades and stops retrying missed windows', () => {
@@ -197,6 +194,15 @@ describe('client-schedule', () => {
     expect(st.endFailed).toBe(true)
     expect(st.lastError).toBe('Could not finish attempt. Retrying…')
     expect(canPaintDaily(st, s + 56_000)).toBe(false)
+
+    // An early submit whose verdict never landed gives the canvas back
+    const resumed = dailyReducer(
+      dailyReducer({ ...initialDailyClientState('2026-11-17'), ...baseState, startedAt: s, endsAt: s + 300_000 }, { type: 'finalize_start' }),
+      { type: 'finalize_aborted' },
+    )
+    expect(resumed.finalizing).toBe(false)
+    expect(resumed.grading).toBe(false)
+    expect(canPaintDaily(resumed, s + 56_000)).toBe(true)
 
     // When the server confirms the end, state transitions to 'ended' and clears finalizing
     st = dailyReducer(st, {

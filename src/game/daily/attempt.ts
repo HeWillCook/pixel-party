@@ -1,7 +1,7 @@
 import { DAILY } from '../config'
 
 export type GradeKind = 'auto' | 'final'
-export type GradeReject = 'not_started' | 'ended' | 'time_up' | 'too_soon' | 'too_early' | 'window_missed' | 'no_auto_left' | 'final_used' | 'busy' | 'stale' | 'invalid_day'
+export type GradeReject = 'not_started' | 'ended' | 'time_up' | 'too_soon' | 'window_missed' | 'no_auto_left' | 'final_used' | 'busy' | 'stale' | 'invalid_day'
 export type PeekReject = 'not_started' | 'ended' | 'time_up' | 'no_peeks_left'
 export type AutoWindowStatus = 'pending' | 'graded' | 'skipped_unchanged' | 'skipped_blank' | 'missed' | 'not_reached'
 export interface AutoWindowRecord { index: number; status: AutoWindowStatus; resolvedAt: number | null; score: number | null; late: boolean }
@@ -68,9 +68,9 @@ function elapsedFor(row: AttemptRow, now: number): number {
 
 function timeReject(row: AttemptRow, kind: GradeKind, now: number): GradeReject | null {
   const elapsedMs = elapsedFor(row, now)
+  // The final verdict ends the attempt, so it may be called any time after the start; the halfway
+  // judgement is bound to its 2:30 window instead.
   if (elapsedMs > DAILY.attemptMs + DAILY.graceMs || (kind !== 'final' && elapsedMs > DAILY.attemptMs)) return 'time_up'
-  // The attempt is a full five minutes: no early finish, with a small tolerance for clock skew.
-  if (kind === 'final' && elapsedMs < DAILY.attemptMs - DAILY.endToleranceMs) return 'too_early'
   return null
 }
 

@@ -82,7 +82,6 @@ async function allowedDay(deps: DailyDeps, userId: string, day: string, now: num
 }
 
 export class InvalidAttemptDay extends Error {}
-export class AttemptEndTooEarly extends Error {}
 
 function validCells(cells: string): boolean {
   try {
@@ -227,9 +226,8 @@ export async function saveDailyCanvas(deps: DailyDeps, user: DailyUser, cells: s
 export async function endDaily(deps: DailyDeps, user: DailyUser, cells: string | null, day = utcDay(deps.now())): Promise<DailyStateView> {
   const now = deps.now()
   if (!await allowedDay(deps, user.userId, day, now)) throw new InvalidAttemptDay('invalid_attempt_day')
-  const current = await deps.store.get(user.userId, day)
-  // The attempt is a full five minutes: an end before then (bar the clock-skew tolerance) is refused.
-  if (current && current.endedAt === null && now - current.startedAt < DAILY.attemptMs - DAILY.endToleranceMs) throw new AttemptEndTooEarly('too_early')
+  // The player may finish at any time after the start (the final verdict does); every other guard
+  // still applies through the store's own end/reserve rules.
   const row = await deps.store.end(user.userId, day, cells !== null && validCells(cells) ? cells : null, now)
   if (!row) return readState(deps, user.userId, day)
   await deps.store.publish(user.userId, day, now)

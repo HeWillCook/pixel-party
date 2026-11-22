@@ -106,9 +106,9 @@ describe('daily attempt', () => {
     expect(reserveGrade(graded, 'auto', 'other', now + 200_000)).toEqual({ ok: false, reason: 'no_auto_left' })
   })
 
-  it('refuses the final before the full five minutes (bar the tolerance)', () => {
-    expect(reserveGrade(initial(), 'final', 'h', now + 297_000)).toEqual({ ok: false, reason: 'too_early' })
-    expect(reserveGrade(initial(), 'final', 'h', now + 298_000).ok).toBe(true)
+  it('the final may be reserved at any time after the start', () => {
+    expect(reserveGrade(initial(), 'final', 'h', now).ok).toBe(true)
+    expect(reserveGrade(initial(), 'final', 'h', now + 149_000).ok).toBe(true)
     expect(reserveGrade(initial(), 'final', 'h', now + 300_000).ok).toBe(true)
   })
 

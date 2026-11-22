@@ -6,7 +6,7 @@ import { blankGradeParts, gradeScore } from '../game/daily/scoring'
 import { encodeCells } from '../game/grid'
 import { fakeDailyJudge } from './daily-judge'
 import { memoryAttemptStore } from './daily-room'
-import { AttemptEndTooEarly, dailyState, endDaily, gradeDaily, peekDaily, saveDailyCanvas, startDaily, todaysDrawings } from './daily-service'
+import { dailyState, endDaily, gradeDaily, peekDaily, saveDailyCanvas, startDaily, todaysDrawings } from './daily-service'
 import type { DailyDeps } from './daily-service'
 import { memoryTools } from './room-test-tools'
 
@@ -190,15 +190,60 @@ describe('daily service', () => {
     expect(final.grade.reason).toBeTruthy()
   })
 
-  it('rejects the final before five minutes and refuses an early end', async () => {
+  it('an early final before 2:30 ends the attempt with its single judgement', async () => {
+    const { deps, records, at } = setup()
+    await startDaily(deps, user)
+    at(startedAt + 60_000)
+    const final = await gradeDaily(deps, user, 'final', cells)
+    if (final.ok !== true) throw new Error('final failed')
+    expect(final.state).toMatchObject({ status: 'ended', finalUsed: true, best: final.grade.total, lastCells: cells })
+    // The halfway window was never reached, so the final is the only judgement.
+    expect((await deps.store.get(user.userId, day))?.windows.map(window => window.status)).toEqual(['not_reached'])
+    expect(onlyRow(records, 'dailyScores')).toMatchObject({ ended: 1, score: final.grade.total })
+    expect(deps.judge.blind).toHaveBeenCalledTimes(1)
+    expect(deps.judge.score).toHaveBeenCalledTimes(1)
+  })
+
+  it('an early final after 2:30 keeps the better of the two judgements', async () => {
+    const { deps, at } = setup()
+    vi.mocked(deps.judge.score)
+      .mockResolvedValueOnce({ match: 100, recognition: 100, quality: 100, reason: 'halfway winner' })
+      .mockResolvedValueOnce({ match: 5, recognition: 100, quality: 10, reason: 'final, quieter' })
+    await startDaily(deps, user)
+    at(HALFWAY)
+    const halfway = await gradeDaily(deps, user, 'auto', cells, day, 0)
+    if (halfway.ok !== true) throw new Error('halfway failed')
+    at(HALFWAY + 30_000)
+    const final = await gradeDaily(deps, user, 'final', otherCells)
+    if (final.ok !== true) throw new Error('final failed')
+    expect(halfway.grade.total).toBe(1000)
+    expect(final.grade.total).toBeLessThan(1000)
+    // Score = the better (halfway), image = the latest canvas (the final one).
+    expect(final.state).toMatchObject({ status: 'ended', best: 1000, lastCells: otherCells })
+    expect((await deps.store.get(user.userId, day))).toMatchObject({
+      endedAt: HALFWAY + 30_000,
+      bestGrade: { cells },
+      lastGrade: { cells: otherCells },
+    })
+  })
+
+  it('refuses a second final and a peek once the attempt has ended', async () => {
     const { deps, at } = setup()
     await startDaily(deps, user)
-    at(FINAL - DAILY.endToleranceMs - 1)
-    expect(await gradeDaily(deps, user, 'final', cells)).toMatchObject({ ok: false, reason: 'too_early' })
-    await expect(endDaily(deps, user, cells)).rejects.toBeInstanceOf(AttemptEndTooEarly)
-    at(FINAL - DAILY.endToleranceMs)
-    expect((await gradeDaily(deps, user, 'final', cells)).ok).toBe(true)
+    at(startedAt + 60_000)
+    expect(await gradeDaily(deps, user, 'final', cells)).toMatchObject({ ok: true, state: { status: 'ended' } })
+    expect(await gradeDaily(deps, user, 'final', otherCells)).toMatchObject({ ok: false, reason: 'ended' })
+    expect(await peekDaily(deps, user, cells)).toMatchObject({ ok: false, reason: 'ended' })
     expect(deps.judge.blind).toHaveBeenCalledTimes(1)
+  })
+
+  it('ends an ungraded attempt early with its canvas and a zero score', async () => {
+    const { deps, records, at } = setup()
+    await startDaily(deps, user)
+    at(startedAt + 30_000)
+    expect(await endDaily(deps, user, cells)).toMatchObject({ status: 'ended', lastCells: cells, best: 0 })
+    expect(onlyRow(records, 'dailyScores')).toMatchObject({ ended: 1, score: 0 })
+    expect(deps.judge.blind).not.toHaveBeenCalled()
   })
 
   it('enforces the time limits and allows the final through the grace window', async () => {

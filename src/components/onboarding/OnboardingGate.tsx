@@ -32,8 +32,8 @@ interface TourStep {
 const TOUR: TourStep[] = [
   {
     title: 'Daily',
-    body: 'One prompt a day on a 32x32 canvas, and the full 5 minutes to paint it. Haiku peeks in at the halfway point with a guess, then gives a final verdict at the end. Your score is mostly how well you matched the prompt, with an art-quality bonus on top.',
-    bubble: 'One prompt. Five minutes. No pressure.',
+    body: 'One prompt a day on a 32x32 canvas, and up to 5 minutes to paint it — submit whenever you’re happy. Haiku peeks in at the halfway point with a guess, then gives a final verdict. Your score is mostly how well you matched the prompt, with an art-quality bonus on top.',
+    bubble: 'One prompt. Up to five minutes. Submit whenever.',
   },
   {
     title: 'Leaderboard',

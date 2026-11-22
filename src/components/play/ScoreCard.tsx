@@ -128,7 +128,7 @@ export function ScoreCard({ latest, best, grading, lastError, notice, sheet = fa
 
           {!sheet && (
             <p className="daily-chalkboard__hint" data-testid="daily-chalkboard-hint">
-              Haiku looks at 2:30, then gives the final verdict at 5:00 &middot; your best judgement counts
+              Up to 5 minutes — submit whenever you&rsquo;re happy &middot; your best judgement counts
             </p>
           )}
         </div>

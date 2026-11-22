@@ -102,6 +102,8 @@ export function useDailyAttempt(): {
   paint(x: number, y: number, color: number): void
   replaceCells(next: Uint8Array): void
   start(): Promise<boolean>
+  /** Submits early: the final verdict runs now and the attempt ends. Resolves true once ended. */
+  submit(): Promise<boolean>
   tick(): void
   /** Haiku's live, non-scoring voice and the final verdict choreography. */
   voice: DailyVoice
@@ -503,13 +505,20 @@ export function useDailyAttempt(): {
           await sendGrade('final', frozenCells)
         }
         if (stateRef.current.day !== day || stateRef.current.stale) return
-        if (stateRef.current.status !== 'ended') {
-          // The final judgement always ends the attempt server-side. If the response was lost or
-          // the server was busy, re-read the authoritative state and let a later tick retry.
-          loadMeRef.current?.()
-        } else {
+        if (stateRef.current.status === 'ended') {
           finalizingRef.current = false
           frozenFinalCellsRef.current = null
+          return
+        }
+        // The final did not land. Re-read the authoritative state; when the player still has time,
+        // give the canvas back so they can keep painting or submit again (the automatic final at
+        // 5:00 keeps its retry on the next tick).
+        loadMeRef.current?.()
+        const startedAt = stateRef.current.startedAt
+        if (startedAt === undefined || !shouldFinalGrade(Date.now(), startedAt, stateRef.current.clockOffsetMs)) {
+          finalizingRef.current = false
+          frozenFinalCellsRef.current = null
+          dispatch({ type: 'finalize_aborted' })
         }
       } finally {
         finishPromiseRef.current = null
@@ -519,6 +528,15 @@ export function useDailyAttempt(): {
     finishPromiseRef.current = promise
     return promise
   }, [dispatch, sendGrade])
+
+  /** The player's early finish. Reuses the final's single-fire refs, so a double click is one verdict. */
+  const submit = useCallback(async (): Promise<boolean> => {
+    const cur = stateRef.current
+    if (cur.status !== 'playing' || cur.stale || cur.finalUsed) return false
+    if (finalizingRef.current || cur.finalizing || finishPromiseRef.current) return false
+    await finishAttempt()
+    return stateRef.current.status === 'ended'
+  }, [finishAttempt])
 
   const tick = useCallback(() => {
     if (!userIdRef.current || loadedUserIdRef.current !== userIdRef.current) return
@@ -545,7 +563,7 @@ export function useDailyAttempt(): {
 
     if (shouldFinalGrade(now, cur.startedAt, cur.clockOffsetMs)) {
       if (!finishPromiseRef.current) {
-        // The final lands even on an untouched canvas: the attempt always runs its five minutes.
+        // The final lands even on an untouched canvas: if the player never submits, it fires at 5:00.
         const localCells = readLocalCells(cur.day, userIdRef.current)
         void finishAttempt(localCells ?? undefined)
       }
@@ -696,5 +714,5 @@ export function useDailyAttempt(): {
   }, [dispatch, resetVoice])
 
   const exposedVoice = voice
-  return { state: isSignedIn && (!userId || loadedUserId !== userId) ? { ...state, loaded: false } : state, cells, paint, replaceCells, start, tick, voice: exposedVoice, reset }
+  return { state: isSignedIn && (!userId || loadedUserId !== userId) ? { ...state, loaded: false } : state, cells, paint, replaceCells, start, submit, tick, voice: exposedVoice, reset }
 }
