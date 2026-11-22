@@ -267,6 +267,9 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  /* The list, not the scene behind it, owns a swipe: no rubber-banding the porch or the page. */
+  overscroll-behavior: contain;
+  touch-action: pan-y;
   /* A handful of entries should read as a full chalkboard, not as a list with an empty lower half. */
   justify-content: space-between;
   scrollbar-width: none;
@@ -539,12 +542,19 @@
 }
 
 
-@media (max-width: 640px) {
-  .board-face__stage { --px: 2px; }
+/* The compact board: a phone (or a short landscape window) has no room for the slate at the fixed camera
+   framing — 186 px tall at 375x812, before the header, subtitle, list and ledge. The board keeps the width
+   the camera gives the slate but runs on below it, down to the bottom of the scene, so the list (with its
+   drawn scrollbar and bottom fade) is what scrolls, not the scene. The height is a slice of the viewport:
+   the stage is scaled 1/zoom inside the camera, so one of its pixels is one screen pixel once the close-up
+   lands, and — unlike a measured height — it cannot change while the camera zooms in or out. */
+@media (max-width: 640px), (max-height: 520px) and (max-width: 959px) {
+  .board-face__stage { --px: 2px; --scores-board-h: 64dvh; }
 
   .scores-chalkboard {
-    height: auto;
-    max-height: none;
+    height: var(--scores-board-h, 64dvh);
+    min-height: var(--scores-board-h, 64dvh);
+    max-height: var(--scores-board-h, 64dvh);
     padding: calc(var(--px, 2px) * 6) calc(var(--px, 2px) * 5);
   }
 
@@ -619,6 +629,77 @@
     padding: calc(var(--px, 2px) * 3) calc(var(--px, 2px) * 4);
   }
 
+}
+
+/* A phone held sideways is all height and only ~220 px of board: the header, pager and subtitle step down a size
+   so the list still gets a readable row or two, and the board takes almost all of the height the camera leaves. */
+@media (max-height: 520px) and (max-width: 959px) {
+  .board-face__stage { --scores-board-h: calc((100dvh - 72px) * 0.9); }
+
+  .scores-chalkboard {
+    gap: calc(var(--px, 2px) * 2);
+    padding: calc(var(--px, 2px) * 4);
+  }
+
+  .scores-board-header {
+    gap: calc(var(--px, 2px) * 2);
+    padding-bottom: calc(var(--px, 2px) * 2);
+  }
+
+  .scores-board-title {
+    font-size: 20px;
+  }
+
+  .scores-pager {
+    gap: 2px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .scores-porch-btn {
+    font-size: 16px;
+    padding: 2px calc(var(--px, 2px) * 2);
+  }
+
+  .scores-arrow {
+    min-width: 40px;
+    padding: 2px;
+    font-size: 18px;
+  }
+
+  .scores-day-label {
+    min-width: 0;
+    font-size: 16px;
+  }
+
+  .scores-subtitle {
+    font-size: 15px;
+    line-height: 1.1;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+  }
+
+  .scores-ledge {
+    min-height: 52px;
+    padding-top: calc(var(--px, 2px) * 2);
+    padding-bottom: calc(var(--px, 2px) * 2);
+  }
+
+  .scores-thumb {
+    width: 40px !important;
+    height: 40px !important;
+  }
+
+  .scores-thumb-slot {
+    width: 44px;
+    height: 44px;
+  }
+
+  .scores-thumb-button {
+    left: calc(var(--px, 2px) * 6 + 20px);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
