@@ -9,6 +9,24 @@ const fixtureUser = { id: 'host', name: 'Offline host', email: 'host@example.tes
 // Deliberately unsigned fixture, consumed only by the intercepted client APIs.
 const fixtureToken = `fixture.${Buffer.from(JSON.stringify({ sub: fixtureUser.id, name: fixtureUser.name, exp: 4_000_000_000 })).toString('base64url')}.unsigned`
 
+/** The lobby route's row: a private room's code only reaches people who host or joined it. */
+function partyRoom(record: { recordId: string; data: Record<string, unknown> }) {
+  const data = record.data
+  const viewer = 'host'
+  const members = Array.isArray(data.memberIds) ? data.memberIds as string[] : []
+  const privateRoom = data.visibility === 'private'
+  return {
+    id: record.recordId,
+    name: data.name,
+    hostId: data.hostId,
+    mode: data.mode ?? 'coop',
+    status: data.status,
+    playerCount: data.playerCount ?? 0,
+    visibility: data.visibility ?? 'public',
+    joinCode: privateRoom && data.hostId !== viewer && !members.includes(viewer) ? null : data.joinCode,
+  }
+}
+
 async function clientFixture(page: Page, options: { signedIn?: boolean; hostId?: string; preflight?: () => Promise<void>; rooms?: { recordId: string; data: Record<string, unknown> }[] } = {}) {
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
@@ -22,6 +40,13 @@ async function clientFixture(page: Page, options: { signedIn?: boolean; hostId?:
     if (url.pathname === '/api/daily/me') {
       const now = Date.now()
       return route.fulfill({ json: { day: new Date(now).toISOString().slice(0, 10), status: 'not_started', autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: null, serverNow: now } })
+    }
+    if (url.pathname === '/api/party/rooms') {
+      const rooms = options.rooms ?? [{ recordId: 'room', data: {
+        name: 'Offline party', mode: 'coop', visibility: 'private', joinCode: 'AB2Z', hostId: options.hostId ?? 'host', status: 'lobby',
+        playerCount: 1, lastActiveAt: 1000, memberIds: [options.hostId ?? 'host'],
+      } }]
+      return route.fulfill({ json: { rooms: rooms.map(partyRoom) } })
     }
     if (url.pathname.startsWith('/api/pixel/')) {
       await options.preflight?.()
@@ -43,7 +68,7 @@ async function clientFixture(page: Page, options: { signedIn?: boolean; hostId?:
       if (message.type !== 'core.subscribe') return
       const { subscriptionId, query } = message.payload
       const records = query.collection === 'rooms' ? (options.rooms ?? [{ recordId: 'room', data: {
-        name: 'Offline party', mode: 'coop', visibility: 'private', joinCode: 'AB2Z', hostId: options.hostId ?? 'host', status: 'lobby', isDefaultBoard: false,
+        name: 'Offline party', mode: 'coop', visibility: 'private', joinCode: 'AB2Z', hostId: options.hostId ?? 'host', status: 'lobby',
       } }]) : []
       socket.send(JSON.stringify({ type: 'core.query_result', payload: { subscriptionId, records } }))
     })
@@ -446,16 +471,16 @@ test('public spectators retain click-to-sign-in and never send placements', asyn
   expect(errors).toEqual([])
 })
 
-test('switching from a public board to a private invite clears the previous room before effects resolve', async ({ page }) => {
+test('switching from a public game to a private invite clears the previous room before effects resolve', async ({ page }) => {
   let release!: () => void
   const preflight = new Promise<void>(resolve => { release = resolve })
   const errors = await clientFixture(page, { preflight: () => preflight })
   await page.routeWebSocket('**/api/pixel/**', socket => {
-    if (new URL(socket.url()).pathname.includes('/play/')) {
+    if (new URL(socket.url()).pathname.includes('/QX3J/')) {
       socket.send(JSON.stringify({ ...snapshot('playing'), you: { userId: null } }))
     } else socket.close({ code: 1008 })
   })
-  await page.goto(`${origin}/r/play`)
+  await page.goto(`${origin}/r/QX3J`)
   await expect(page.getByTestId('pixel-canvas')).toBeVisible()
   // Same mounted route component: exercise its identity/scope reset without reloading the app.
   await page.evaluate(() => {
@@ -753,24 +778,22 @@ test('a pace-limited reject rolls the cell back to a peer pixel without an error
 })
 
 for (const viewport of [{ width: 1280, height: 720 }, { width: 1366, height: 768 }]) {
-  test(`studio corkboard tickets conjure Magic Easel and step into room at ${viewport.width}x${viewport.height}`, async ({ page }) => {
+  test(`the games list joins the game you click at ${viewport.width}x${viewport.height}`, async ({ page }) => {
     await page.setViewportSize(viewport)
     const errors = await clientFixture(page, {
       signedIn: true,
       rooms: [
-        { recordId: 'r-play', data: { name: 'Pixle', mode: 'coop', visibility: 'public', joinCode: 'play', hostId: 'system', status: 'playing', playerCount: 4, lastActiveAt: 5000, isDefaultBoard: true } },
-        { recordId: 'r-1', data: { name: "Will's Studio", mode: 'coop', visibility: 'public', joinCode: 'QX3J', hostId: 'host', status: 'playing', playerCount: 3, lastActiveAt: 4000, isDefaultBoard: false } },
-        { recordId: 'r-2', data: { name: 'Sunset Sketch', mode: 'coop', visibility: 'public', joinCode: 'M9K2', hostId: 'other', status: 'lobby', playerCount: 2, lastActiveAt: 3000, isDefaultBoard: false } },
-        { recordId: 'r-3', data: { name: 'Late Night', mode: 'coop', visibility: 'public', joinCode: 'P4W8', hostId: 'other', status: 'playing', playerCount: 1, lastActiveAt: 2000, isDefaultBoard: false } },
-        { recordId: 'r-4', data: { name: 'Overflow Easel', mode: 'coop', visibility: 'public', joinCode: 'Z7T1', hostId: 'other', status: 'lobby', playerCount: 1, lastActiveAt: 1000, isDefaultBoard: false } },
+        { recordId: 'r-1', data: { name: "Will's Studio", mode: 'coop', visibility: 'public', joinCode: 'QX3J', hostId: 'host', status: 'playing', playerCount: 3, lastActiveAt: 4000 } },
+        { recordId: 'r-2', data: { name: 'Sunset Sketch', mode: 'coop', visibility: 'public', joinCode: 'M9K2', hostId: 'other', status: 'lobby', playerCount: 2, lastActiveAt: 3000 } },
+        { recordId: 'r-3', data: { name: 'Late Night', mode: 'coop', visibility: 'public', joinCode: 'P4W8', hostId: 'other', status: 'playing', playerCount: 1, lastActiveAt: 2000 } },
+        { recordId: 'r-4', data: { name: 'Overflow Easel', mode: 'coop', visibility: 'public', joinCode: 'Z7T1', hostId: 'other', status: 'lobby', playerCount: 1, lastActiveAt: 1000 } },
       ],
     })
     await page.goto(`${origin}/party`)
     await expect(page.locator('.studio-world .pixel-scene__canvas')).toBeVisible()
     await expect(page.getByTestId('magic-easel')).toHaveAttribute('data-easel-state', 'idle')
-    await expect(page.getByTestId('magic-easel-idle')).toBeVisible()
 
-    const list = page.getByTestId('public-rooms-list')
+    const list = page.getByTestId('games-list')
     await expect(list.getByTestId('room-card-QX3J')).toContainText("Will's Studio")
     const packUp = page.getByRole('button', { name: 'Pack up', exact: true })
     await expect(packUp).toBeVisible()
@@ -783,12 +806,8 @@ for (const viewport of [{ width: 1280, height: 720 }, { width: 1366, height: 768
     expect(corkBox.y + corkBox.height).toBeLessThanOrEqual(viewport.height)
     expect(mailBox.x + mailBox.width).toBeLessThanOrEqual(viewport.width)
 
+    // A public game needs no preview step: the click walks straight in.
     await overflowTicket.click()
-    await expect(page.getByTestId('magic-easel')).toHaveAttribute('data-easel-state', 'preview')
-    await expect(page.getByTestId('magic-easel-room-name')).toContainText('Overflow Easel')
-    const stepIn = page.getByTestId('magic-easel-step-in')
-    await expect(stepIn).toHaveAttribute('href', '/r/Z7T1')
-    await stepIn.click()
     await expect(page).toHaveURL(`${origin}/r/Z7T1`)
     expect(errors).toEqual([])
   })
@@ -810,7 +829,7 @@ for (const viewport of [
     await clientFixture(page, { signedIn: true })
     await page.goto(`${origin}/party`)
     await expect(page.getByTestId('lobby-page')).toHaveAttribute('data-measured', '1')
-    await expect(page.getByTestId('public-rooms-list')).toBeVisible()
+    await expect(page.getByTestId('games-list')).toBeVisible()
     const upstairsSign = page.locator('.studio-world .pixel-hotspot[aria-label="Upstairs"]')
     if (viewport.width <= 600) {
       await expect(upstairsSign).toBeHidden()
@@ -858,10 +877,9 @@ test('portrait tablet 1024x1366 keeps create, join, corkboard, Magic Easel, and 
   const errors = await clientFixture(page, {
     signedIn: true,
     rooms: [
-      { recordId: 'r-play', data: { name: 'Pixle', mode: 'coop', visibility: 'public', joinCode: 'play', hostId: 'system', status: 'playing', playerCount: 4, lastActiveAt: 5000, isDefaultBoard: true } },
-      { recordId: 'r-1', data: { name: "Will's Studio", mode: 'coop', visibility: 'public', joinCode: 'QX3J', hostId: 'host', status: 'playing', playerCount: 3, lastActiveAt: 4000, isDefaultBoard: false } },
-      { recordId: 'r-2', data: { name: 'Sunset Sketch', mode: 'coop', visibility: 'public', joinCode: 'M9K2', hostId: 'other', status: 'lobby', playerCount: 2, lastActiveAt: 3000, isDefaultBoard: false } },
-      { recordId: 'r-3', data: { name: 'Overflow Easel', mode: 'coop', visibility: 'public', joinCode: 'Z7T1', hostId: 'other', status: 'lobby', playerCount: 1, lastActiveAt: 1000, isDefaultBoard: false } },
+      { recordId: 'r-1', data: { name: "Will's Studio", mode: 'coop', visibility: 'public', joinCode: 'QX3J', hostId: 'host', status: 'playing', playerCount: 3, lastActiveAt: 4000 } },
+      { recordId: 'r-2', data: { name: 'Sunset Sketch', mode: 'coop', visibility: 'public', joinCode: 'M9K2', hostId: 'other', status: 'lobby', playerCount: 2, lastActiveAt: 3000 } },
+      { recordId: 'r-3', data: { name: 'Overflow Easel', mode: 'coop', visibility: 'public', joinCode: 'Z7T1', hostId: 'other', status: 'lobby', playerCount: 1, lastActiveAt: 1000 } },
     ],
   })
   await page.goto(`${origin}/party`)
@@ -873,24 +891,20 @@ test('portrait tablet 1024x1366 keeps create, join, corkboard, Magic Easel, and 
   await expect(page.getByTestId('create-room-form')).toBeVisible()
   await page.getByTestId('join-room-form').scrollIntoViewIfNeeded()
   await expect(page.getByTestId('join-room-form')).toBeVisible()
-  await expect(page.getByTestId('public-rooms-list')).toBeVisible()
+  await expect(page.getByTestId('games-list')).toBeVisible()
   await expect(page.getByTestId('room-card-Z7T1')).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1024)
   expect(errors).toEqual([])
 })
 
-test('gold Public board ticket conjures Magic Easel and Play opens play room', async ({ page }) => {
+test('the only way into a game is a hosted one: no always-live public board', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 })
-  await clientFixture(page, { signedIn: true })
+  await clientFixture(page, { signedIn: true, rooms: [] })
   await page.goto(`${origin}/party`)
   await expect(page.locator('.studio-world .pixel-scene__canvas')).toBeVisible()
-  await expect(page.getByTestId('lobby-play-now')).toHaveAttribute('href', '/r/play')
-  await page.getByTestId('room-card-play').click()
-  await expect(page.getByTestId('magic-easel')).toHaveAttribute('data-easel-state', 'preview')
-  await expect(page.getByTestId('magic-easel-room-name')).toHaveText('Public board')
-  await expect(page.getByTestId('magic-easel-step-in')).toHaveAttribute('href', '/r/play')
-  await page.getByTestId('lobby-play-now').click()
-  await expect(page).toHaveURL(`${origin}/r/play`)
+  await expect(page.getByTestId('games-empty')).toHaveText('No games right now — host one!')
+  await expect(page.getByTestId('room-card-play')).toHaveCount(0)
+  await expect(page.getByText('Public board', { exact: true })).toHaveCount(0)
 })
 
 test('top hat conjures room by code onto Magic Easel and smoke shows on invalid code', async ({ page }) => {
@@ -928,7 +942,7 @@ test('magic easel streams live spectator preview without revealing secret word',
   const errors = await clientFixture(page, {
     signedIn: true,
     rooms: [
-      { recordId: 'r-1', data: { name: 'Sky Studio', mode: 'coop', visibility: 'public', joinCode: 'QX3J', hostId: 'host', status: 'playing', playerCount: 3, lastActiveAt: 4000, isDefaultBoard: false } },
+      { recordId: 'r-1', data: { name: 'Sky Studio', mode: 'coop', visibility: 'public', joinCode: 'QX3J', hostId: 'host', status: 'playing', playerCount: 3, lastActiveAt: 4000 } },
     ],
   })
   const cells = Buffer.alloc(1024)
@@ -944,8 +958,10 @@ test('magic easel streams live spectator preview without revealing secret word',
       round: { ...snap.round, word: 'HOUSE' },
     }))
   })
+  await page.route('**/api/actions/joinRoom', route => route.fulfill({ json: { success: true } }))
   await page.goto(`${origin}/party`)
-  await page.getByTestId('room-card-QX3J').click()
+  await page.getByTestId('join-code-input').fill('qx3j')
+  await page.getByTestId('join-code-submit').click()
   await expect(page.getByTestId('magic-easel-canvas')).toBeVisible()
   await expect(page.getByTestId('magic-easel-painters')).toContainText('3 painters')
   await expect(page.getByTestId('magic-easel-state')).toContainText('Playing')
@@ -1003,15 +1019,12 @@ test('375 lobby no horizontal scroll and primary controls stay reachable', async
   const errors = await clientFixture(page, {
     signedIn: true,
     rooms: [
-      { recordId: 'r-play', data: { name: 'Pixle', mode: 'coop', visibility: 'public', joinCode: 'play', hostId: 'system', status: 'playing', playerCount: 4, lastActiveAt: 5000, isDefaultBoard: true } },
-      { recordId: 'r-1', data: { name: 'A Very Long Studio Room Name That Must Truncate Cleanly', mode: 'coop', visibility: 'public', joinCode: 'QX3J', hostId: 'host', status: 'playing', playerCount: 3, lastActiveAt: 4000, isDefaultBoard: false } },
+      { recordId: 'r-1', data: { name: 'A Very Long Studio Room Name That Must Truncate Cleanly', mode: 'coop', visibility: 'public', joinCode: 'QX3J', hostId: 'host', status: 'playing', playerCount: 3, lastActiveAt: 4000 } },
     ],
   })
   await page.goto(`${origin}/party`)
   await expect(page.locator('.studio-world .pixel-scene__canvas')).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375)
-  await expect(page.getByTestId('room-card-play')).toBeVisible()
-  await expect(page.getByTestId('lobby-play-now')).toBeVisible()
   const card = page.getByTestId('room-card-QX3J')
   const roomName = card.locator('.truncate')
   await expect(roomName).toBeVisible()
@@ -1064,7 +1077,6 @@ test('room exit zooms back out of the studio easel on the same scene', async ({ 
   await page.goto(`${origin}/r/AB2Z`)
   await expect(page.getByTestId('pixel-canvas')).toBeVisible()
   await expect(page.getByTestId('critic-bubble')).toBeVisible()
-  await expect(page.getByTestId('party-score-note')).toHaveText('Bigger drawings score higher: size is 60%, speed the other 40%.')
   const exit = page.getByTestId('room-exit')
   await expect(exit).toBeVisible()
   await expect(exit).toHaveText(/Back to the studio/)
@@ -1088,21 +1100,20 @@ test('opening a room from the studio pushes the camera into the easel and regist
   await expect(page.getByTestId('lobby-page')).toBeVisible()
   const scene = page.locator('.studio-world .pixel-scene__camera')
   const before = await scene.evaluate(element => getComputedStyle(element).transform)
-  await page.getByTestId('lobby-play-now').click()
-  await expect(page).toHaveURL(`${origin}/r/play`)
+  await page.getByTestId('room-card-AB2Z').click()
+  await expect(page).toHaveURL(`${origin}/r/AB2Z`)
   await expect(page.getByTestId('room-page')).toHaveAttribute('data-play-phase', 'entering')
   // Same scene, same canvas: only its camera moves (nothing is mounted over it, nothing dissolves).
   await expect(page.locator('.studio-world .pixel-scene__canvas')).toHaveCount(1)
   await expect(page.getByTestId('vertical-scene-transition')).toHaveCount(0)
   await expect(page.getByTestId('room-page')).toHaveAttribute('data-play-phase', 'active')
   await expect.poll(() => scene.evaluate(element => getComputedStyle(element).transform)).not.toBe(before)
-  // At rest the room's board sits exactly on the easel's board.
-  const sits = await page.evaluate(() => {
+  // At rest the room's board sits exactly on the easel's board (the registration lands on the frame after the phase flips).
+  await expect.poll(() => page.evaluate(() => {
     const easel = document.querySelector('.studio-magic-easel__board-wrap')!.getBoundingClientRect()
     const board = document.querySelector('.room-board')!.getBoundingClientRect()
     return Math.max(Math.abs(easel.x - board.x), Math.abs(easel.y - board.y), Math.abs(easel.width - board.width), Math.abs(easel.height - board.height))
-  })
-  expect(sits).toBeLessThan(3)
+  })).toBeLessThan(3)
   expect(errors).toEqual([])
 })
 
@@ -1112,8 +1123,8 @@ test('browser back from a room plays the same easel zoom-out', async ({ page }) 
   await page.routeWebSocket('**/api/pixel/**', socket => socket.send(JSON.stringify(snapshot('playing'))))
   await page.goto(`${origin}/party`)
   await expect(page.getByTestId('lobby-page')).toBeVisible()
-  await page.getByTestId('lobby-play-now').click()
-  await expect(page).toHaveURL(`${origin}/r/play`)
+  await page.getByTestId('room-card-AB2Z').click()
+  await expect(page).toHaveURL(`${origin}/r/AB2Z`)
   await expect(page.getByTestId('pixel-canvas')).toBeVisible()
   await page.goBack()
   await expect(page.getByTestId('room-page')).toHaveAttribute('data-play-phase', 'leaving')
@@ -1196,16 +1207,19 @@ test('results show pixels and time saved and exclude unconfirmed pending pixels'
       startedAt: now - 60_000,
       endedAt: now,
       askAvailableAt: 0,
-      result: { outcome: 'won', score: 520, contributorCount: 2 },
+      result: { outcome: 'won', contributorCount: 2 },
     },
   }))
   const overlay = page.getByTestId('round-overlay')
   await expect(overlay).toBeVisible()
-  await expect(overlay).toContainText('256 px')
-  await expect(overlay).toContainText('Size bonus: 200/600')
-  await expect(overlay).toContainText('Speed bonus: 320/400')
-  await expect(page.getByTestId('overlay-score')).toContainText('520')
+  await expect(overlay).toContainText('LIGHTHOUSE')
+  await expect(page.getByTestId('overlay-guess')).toContainText('Haiku guessed')
+  await expect(page.getByTestId('overlay-duration')).toContainText('1:00')
+  await expect(page.getByTestId('overlay-contributors')).toBeVisible()
+  await expect(page.getByTestId('overlay-score')).toHaveCount(0)
+  await expect(overlay).not.toContainText('Size bonus')
   await expect(page.locator('#overlay-heading')).toHaveText('Haiku Guessed It!')
+  await expect(page.getByTestId('overlay-next')).toBeVisible()
   expect(errors).toEqual([])
 })
 
@@ -1303,7 +1317,7 @@ test('magic easel sends spectate=1 and preserves it on private room token retry'
   const errors = await clientFixture(page, {
     signedIn: true,
     rooms: [
-      { recordId: 'r-1', data: { name: 'Sky Studio', mode: 'coop', visibility: 'public', joinCode: 'QX3J', hostId: 'host', status: 'playing', playerCount: 2, lastActiveAt: 4000, isDefaultBoard: false } },
+      { recordId: 'r-1', data: { name: 'Sky Studio', mode: 'coop', visibility: 'public', joinCode: 'QX3J', hostId: 'host', status: 'playing', playerCount: 2, lastActiveAt: 4000 } },
     ],
   })
   const wsUrls: string[] = []
@@ -1329,7 +1343,8 @@ test('magic easel sends spectate=1 and preserves it on private room token retry'
   })
 
   await page.goto(`${origin}/party`)
-  await page.getByTestId('room-card-QX3J').click()
+  await page.getByTestId('join-code-input').fill('qx3j')
+  await page.getByTestId('join-code-submit').click()
   await expect(page.getByTestId('magic-easel-canvas')).toBeVisible()
   expect(wsUrls.length).toBe(1)
   const pubUrl = new URL(wsUrls[0]!)
@@ -1357,13 +1372,13 @@ test('narrow landscape studio lobby fits corkboard without left cutoff', async (
   const errors = await clientFixture(page, {
     signedIn: true,
     rooms: [
-      { recordId: 'r-play', data: { name: 'Public board', mode: 'coop', visibility: 'public', joinCode: 'play', hostId: 'system', status: 'playing', playerCount: 1, lastActiveAt: 5000, isDefaultBoard: true } },
+      { recordId: 'r-1', data: { name: 'Narrow Studio', mode: 'coop', visibility: 'public', joinCode: 'QX3J', hostId: 'host', status: 'playing', playerCount: 1, lastActiveAt: 5000 } },
     ],
   })
   await page.goto(`${origin}/party`)
   const corkboard = page.locator('.studio-corkboard')
   await expect(corkboard).toBeVisible()
-  const playCard = page.getByTestId('room-card-play')
+  const playCard = page.getByTestId('room-card-QX3J')
   await expect(playCard).toBeVisible()
 
   await expect.poll(async () => {
@@ -1455,7 +1470,7 @@ test('phones always show Haiku\'s latest guess, and a late joiner sees the recen
   await expect(page.getByTestId('guess-empty')).toHaveCount(0)
 })
 
-test('with friends painting is a drag: a live size meter replaces the brush wait', async ({ page }) => {
+test('with friends painting is a drag: no brush wait and no size meter', async ({ page }) => {
   await clientFixture(page, { signedIn: true })
   const state = snapshot('playing')
   let server!: WebSocketRoute
@@ -1466,33 +1481,24 @@ test('with friends painting is a drag: a live size meter replaces the brush wait
     }))
   })
   await page.goto(`${origin}/r/AB2Z`)
-  const meter = page.getByTestId('party-size-meter')
-  await expect(meter).toBeVisible()
-  await expect(meter).toHaveAttribute('title', /Bigger drawings score more/)
-  await expect(page.getByTestId('party-size-value')).toHaveText('0%')
+  await expect(page.getByTestId('party-size-meter')).toHaveCount(0)
+  await expect(page.getByTestId('party-score-note')).toHaveCount(0)
   await expect(page.getByTestId('palette-cooldown')).toHaveCount(0)
   await expect(page.getByTestId('shared-brush-note')).toHaveCount(0)
-  await expect(page.getByTestId('party-score-note')).toContainText('Bigger drawings score higher')
-  // A big shape on the canvas fills the meter: the same function the score uses.
-  const big = Buffer.alloc(1024)
-  for (let y = 4; y < 28; y++) for (let x = 4; x < 28; x++) big[y * 32 + x] = 4
-  server.send(JSON.stringify({ ...state, players: 2, cells: big.toString('base64') }))
-  await expect(page.getByTestId('party-size-value')).toHaveText('100%')
   const roster = page.getByTestId('roster-row')
   await expect(roster.first()).toContainText('Offline host')
   await expect(roster.first()).toContainText('host')
   await expect(roster.first()).toContainText('you')
 })
 
-test('studio lobby: short codes are named, Conjure says why it waits, private rooms stay listed, first-timers get the how-to', async ({ page }) => {
+test('studio lobby: short codes are named, private games stay listed behind a lock, first-timers get the how-to', async ({ page }) => {
   await clientFixture(page, { signedIn: true, rooms: [
-    { recordId: 'mine', data: { name: 'Secret club', mode: 'coop', visibility: 'private', joinCode: 'PRV8', hostId: 'host', status: 'lobby', isDefaultBoard: false, playerCount: 0 } },
-    { recordId: 'open', data: { name: 'Open house', mode: 'coop', visibility: 'public', joinCode: 'PUB4', hostId: 'someone', status: 'lobby', isDefaultBoard: false, playerCount: 2 } },
+    { recordId: 'mine', data: { name: 'Secret club', mode: 'coop', visibility: 'private', joinCode: 'PRV8', hostId: 'host', status: 'lobby', playerCount: 0 } },
+    { recordId: 'open', data: { name: 'Open house', mode: 'coop', visibility: 'public', joinCode: 'PUB4', hostId: 'someone', status: 'lobby', playerCount: 2 } },
   ] })
   await page.goto(`${origin}/party`)
   await expect(page.getByTestId('studio-howto')).toContainText('One secret word, everyone paints, Haiku guesses.')
   await expect(page.getByTestId('create-room-hint')).toHaveText('Name your room to conjure it')
-  await expect(page.getByTestId('your-rooms-heading')).toBeVisible()
   await expect(page.getByTestId('room-card-PRV8')).toBeVisible()
   await expect(page.getByTestId('room-card-PUB4')).toBeVisible()
   await page.getByTestId('join-code-input').fill('ab')
@@ -1522,7 +1528,6 @@ test('browser Back from a room returns to the studio in one press, and Forward w
   await page.locator('a[href="/party"]').first().click()
   await expect(page).toHaveURL(`${origin}/party`)
   await page.getByTestId('room-card-AB2Z').click()
-  await page.getByTestId('magic-easel-step-in').click()
   await expect(page).toHaveURL(`${origin}/r/AB2Z`)
   await expect(page.getByTestId('room-lobby')).toBeVisible()
   await page.goBack()
@@ -1547,7 +1552,6 @@ for (const how of ['exit link then Back', 'Back twice']) {
     await page.locator('a[href="/party"]').first().click()
     await expect(page).toHaveURL(`${origin}/party`)
     await page.getByTestId('room-card-AB2Z').click()
-    await page.getByTestId('magic-easel-step-in').click()
     await expect(page).toHaveURL(`${origin}/r/AB2Z`)
     await expect(page.getByTestId('room-lobby')).toBeVisible()
     await expect(page.getByTestId('room-page')).toHaveAttribute('data-play-phase', 'active')
@@ -1566,7 +1570,7 @@ for (const how of ['exit link then Back', 'Back twice']) {
   })
 }
 
-test('after a round the ask button says "Round over" and the size meter only shows while painting', async ({ page }) => {
+test('after a round the ask button says "Round over" and the celebration takes over', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   await clientFixture(page, { signedIn: true })
   let server!: WebSocketRoute
@@ -1576,12 +1580,12 @@ test('after a round the ask button says "Round over" and the size meter only sho
     socket.send(JSON.stringify({ ...state, players: 2, roster: [{ userId: 'host', name: 'Offline host' }, { userId: 'pal', name: 'Pal' }] }))
   })
   await page.goto(`${origin}/r/AB2Z`)
-  await expect(page.getByTestId('party-size-meter')).toBeVisible()
+  await expect(page.getByTestId('party-size-meter')).toHaveCount(0)
   await expect(page.getByTestId('ask-ai-button')).toContainText('Ask Haiku')
   server.send(JSON.stringify({ t: 'round', round: { ...state.round, state: 'intermission', endsAt: null, endedAt: Date.now(), result: { outcome: 'timeout' } } }))
   await expect(page.getByTestId('ask-ai-button')).toContainText('Round over')
   await expect(page.getByTestId('ask-ai-button')).not.toContainText('Waiting for active round')
-  await expect(page.getByTestId('party-size-meter')).toHaveCount(0)
+  await expect(page.getByTestId('round-overlay')).toContainText("Time's Up!")
 })
 
 // Opening a room used to paint its first frames with the board ~100 px smaller than it settles at (the free height was measured from the
@@ -1604,7 +1608,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1980, height: 124
       }
       requestAnimationFrame(tick)
     })
-    await page.getByTestId('lobby-play-now').click()
+    await page.getByTestId('room-card-AB2Z').click()
     await expect(page.getByTestId('room-page')).toHaveAttribute('data-play-phase', 'active')
     await page.waitForTimeout(400)
     const sizes = await page.evaluate(() => [...(window as unknown as { __sizes: Set<string> }).__sizes])
@@ -1619,7 +1623,7 @@ test('leaving a room never re-sizes the board while the camera pulls back at 198
   const errors = await clientFixture(page, { signedIn: true })
   await page.routeWebSocket('**/api/pixel/**', socket => socket.send(JSON.stringify(snapshot('playing'))))
   await page.goto(`${origin}/party`)
-  await page.getByTestId('lobby-play-now').click()
+  await page.getByTestId('room-card-AB2Z').click()
   await expect(page.getByTestId('room-page')).toHaveAttribute('data-play-phase', 'active')
   await page.waitForTimeout(300)
   await page.evaluate(() => {

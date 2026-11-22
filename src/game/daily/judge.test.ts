@@ -79,8 +79,8 @@ describe('daily judge bodies', () => {
 
 describe('parseBlind', () => {
   it('parses raw and fenced JSON guesses and rejects invalid text', () => {
-    expect(parseBlind('```json\n{"guess":"a candle"}\n```')).toEqual({ guess: 'a candle' })
-    expect(parseBlind('  {"guess": "  a lighthouse  "}  ')).toEqual({ guess: 'a lighthouse' })
+    expect(parseBlind('```json\n{"guess":"a candle"}\n```')).toEqual({ guess: 'a candle', text: false })
+    expect(parseBlind('  {"guess": "  a lighthouse  "}  ')).toEqual({ guess: 'a lighthouse', text: false })
     expect(parseBlind('nope')).toBeNull()
     expect(parseBlind('{}')).toBeNull()
     expect(parseBlind('{"guess":""}')).toBeNull()

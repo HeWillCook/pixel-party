@@ -17,6 +17,19 @@ async function setup(page: Page, signedOut = false, records: RecordSource = []) 
     if (url.pathname === '/api/auth/get-session') return route.fulfill({ json: signedOut ? null : { user, session: { id: 'offline', userId: user.id, expiresAt: '2096-01-01T00:00:00Z' } } })
     if (url.pathname === '/api/auth/token') return route.fulfill({ json: { token } })
     if (url.pathname === '/api/daily/me') return route.fulfill({ json: { day: '2026-11-17', status: 'not_started', autoUsed: 0, asksUsed: 0, asksLeft: 3, finalUsed: false, best: 0, windows: [], nextAutoAt: null, serverNow: Date.now() } })
+    if (url.pathname === '/api/party/rooms') {
+      const list = typeof records === 'function' ? records({ collection: 'rooms' }) : records
+      const rooms = (Array.isArray(list) ? list : [])
+        .filter((record): record is { recordId: string; data: Record<string, unknown> } => Boolean(record && typeof record === 'object' && 'data' in record))
+        .filter(record => typeof record.data.joinCode === 'string' && record.data.status !== 'closed' && Boolean(record.data.hostId))
+        .map(record => {
+          const data = record.data
+          const members = Array.isArray(data.memberIds) ? data.memberIds as string[] : []
+          const locked = data.visibility === 'private' && data.hostId !== user.id && !members.includes(user.id)
+          return { id: record.recordId, name: data.name, hostId: data.hostId, mode: data.mode ?? 'coop', status: data.status, playerCount: data.playerCount ?? 0, visibility: data.visibility ?? 'public', joinCode: locked ? null : data.joinCode }
+        })
+      return route.fulfill({ json: { rooms } })
+    }
     if (url.pathname.startsWith('/api/')) return route.fulfill({ json: {} })
     const asset = url.pathname.startsWith('/assets/')
     const path = asset ? resolve(clientDir, `.${url.pathname}`) : resolve(clientDir, '_spa.html')
@@ -342,8 +355,8 @@ test('portrait porch keeps every object in view and tappable', async ({ page }) 
   await expect(page.locator('.porch-nav__mail-art')).toBeHidden()
   await more.click()
   const menu = page.getByRole('group', { name: 'More porch actions' })
-  // Account, the open canvas (the public board, named for a newcomer), sound and the rules: compact planks, all on screen.
-  for (const item of [menu.getByRole('button', { name: 'Account' }), menu.getByRole('link', { name: /Open canvas/ }), menu.getByRole('button', { name: 'Mute sounds' }), menu.getByRole('button', { name: 'Scoring rules' })]) {
+  // Account, sound and the rules: compact planks, all on screen (the old "Open canvas" shortcut went with the public board).
+  for (const item of [menu.getByRole('button', { name: 'Account' }), menu.getByRole('button', { name: 'Mute sounds' }), menu.getByRole('button', { name: 'Scoring rules' })]) {
     await expect(item).toBeVisible()
     const bounds = (await item.boundingBox())!
     expect(bounds.y).toBeGreaterThanOrEqual(0)
@@ -476,11 +489,10 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720
     test.skip(process.env.SCREENSHOTS !== '1')
     await page.setViewportSize(viewport)
     await setup(page, false, [
-      { recordId: 'r-play', data: { name: 'Pixle', mode: 'coop', visibility: 'public', joinCode: 'play', hostId: 'system', status: 'playing', playerCount: 5, lastActiveAt: 5000, isDefaultBoard: true } },
-      { recordId: 'r-1', data: { name: "Will's Studio", mode: 'coop', visibility: 'public', joinCode: 'QX3J', hostId: 'host', status: 'playing', playerCount: 3, lastActiveAt: 4000, isDefaultBoard: false } },
-      { recordId: 'r-2', data: { name: 'Sunset Cove', mode: 'coop', visibility: 'public', joinCode: 'M9K2', hostId: 'other', status: 'lobby', playerCount: 2, lastActiveAt: 3000, isDefaultBoard: false } },
-      { recordId: 'r-3', data: { name: 'Night Owls', mode: 'coop', visibility: 'public', joinCode: 'P4W8', hostId: 'other', status: 'playing', playerCount: 4, lastActiveAt: 2000, isDefaultBoard: false } },
-      { recordId: 'r-4', data: { name: 'Extra Easel', mode: 'coop', visibility: 'public', joinCode: 'Z7T1', hostId: 'other', status: 'lobby', playerCount: 1, lastActiveAt: 1000, isDefaultBoard: false } },
+      { recordId: 'r-1', data: { name: "Will's Studio", mode: 'coop', visibility: 'public', joinCode: 'QX3J', hostId: 'host', status: 'playing', playerCount: 3, lastActiveAt: 4000 } },
+      { recordId: 'r-2', data: { name: 'Sunset Cove', mode: 'coop', visibility: 'public', joinCode: 'M9K2', hostId: 'other', status: 'lobby', playerCount: 2, lastActiveAt: 3000 } },
+      { recordId: 'r-3', data: { name: 'Night Owls', mode: 'coop', visibility: 'public', joinCode: 'P4W8', hostId: 'other', status: 'playing', playerCount: 4, lastActiveAt: 2000 } },
+      { recordId: 'r-4', data: { name: 'Extra Easel', mode: 'coop', visibility: 'public', joinCode: 'Z7T1', hostId: 'other', status: 'lobby', playerCount: 1, lastActiveAt: 1000 } },
     ])
     await page.goto(`${origin}/party`)
     await expect(page.getByTestId('app-navigation')).toBeVisible()
@@ -625,7 +637,7 @@ test('capture studio room states across viewports', async ({ page }) => {
   const now = Date.now()
 
   await setup(page, false, [
-    { recordId: 'room', data: { name: "Will's Studio", mode: 'coop', visibility: 'private', joinCode: 'QX3J', hostId: 'host', status: 'playing', playerCount: 3, isDefaultBoard: false } },
+    { recordId: 'room', data: { name: "Will's Studio", mode: 'coop', visibility: 'private', joinCode: 'QX3J', hostId: 'host', status: 'playing', playerCount: 3 } },
   ])
   let server!: WebSocketRoute
   await page.routeWebSocket('**/api/pixel/**', (socket) => {
@@ -814,11 +826,10 @@ test('capture Task 6 remaining screens across viewports', async ({ page }) => {
 
   // Studio overflow at 1366x768 and portrait tablet at 1024x1366
   await setup(page, false, [
-    { recordId: 'r-play', data: { name: 'Pixle', mode: 'coop', visibility: 'public', joinCode: 'play', hostId: 'system', status: 'playing', playerCount: 5, lastActiveAt: 5000, isDefaultBoard: true } },
-    { recordId: 'r-1', data: { name: "Will's Studio", mode: 'coop', visibility: 'public', joinCode: 'QX3J', hostId: 'host', status: 'playing', playerCount: 3, lastActiveAt: 4000, isDefaultBoard: false } },
-    { recordId: 'r-2', data: { name: 'Sunset Cove', mode: 'coop', visibility: 'public', joinCode: 'M9K2', hostId: 'other', status: 'lobby', playerCount: 2, lastActiveAt: 3000, isDefaultBoard: false } },
-    { recordId: 'r-3', data: { name: 'Night Owls', mode: 'coop', visibility: 'public', joinCode: 'P4W8', hostId: 'other', status: 'playing', playerCount: 4, lastActiveAt: 2000, isDefaultBoard: false } },
-    { recordId: 'r-4', data: { name: 'Extra Easel', mode: 'coop', visibility: 'public', joinCode: 'Z7T1', hostId: 'other', status: 'lobby', playerCount: 1, lastActiveAt: 1000, isDefaultBoard: false } },
+    { recordId: 'r-1', data: { name: "Will's Studio", mode: 'coop', visibility: 'public', joinCode: 'QX3J', hostId: 'host', status: 'playing', playerCount: 3, lastActiveAt: 4000 } },
+    { recordId: 'r-2', data: { name: 'Sunset Cove', mode: 'coop', visibility: 'public', joinCode: 'M9K2', hostId: 'other', status: 'lobby', playerCount: 2, lastActiveAt: 3000 } },
+    { recordId: 'r-3', data: { name: 'Night Owls', mode: 'coop', visibility: 'public', joinCode: 'P4W8', hostId: 'other', status: 'playing', playerCount: 4, lastActiveAt: 2000 } },
+    { recordId: 'r-4', data: { name: 'Extra Easel', mode: 'coop', visibility: 'public', joinCode: 'Z7T1', hostId: 'other', status: 'lobby', playerCount: 1, lastActiveAt: 1000 } },
   ])
   for (const vp of [{ width: 1366, height: 768 }, { width: 1024, height: 1366 }]) {
     await page.setViewportSize(vp)
@@ -1994,16 +2005,14 @@ test('a click made during the descent into the basement runs when it lands', asy
   await expect(page.getByTestId('scores-chalkboard')).toBeVisible()
 })
 
-// The phone's More sheet used to open the canvas room with a plain link: a full page load, losing the whole scene.
-test('Open canvas in the phone More sheet is a client-side move, not a page load', async ({ page }) => {
+// The public board is gone: the phone's More sheet offers Account, sound and the rules, and no canvas shortcut.
+test('the phone More sheet has no always-live canvas shortcut', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 })
   await setup(page)
   await page.goto(`${origin}/home`)
-  await page.evaluate(() => { (window as unknown as { __kept: boolean }).__kept = true })
   await page.getByRole('navigation', { name: 'Porch shortcuts' }).getByRole('button', { name: 'More' }).click()
-  await page.getByRole('dialog', { name: 'More porch actions' }).getByRole('link', { name: /Open canvas/ }).click()
-  await expect(page).toHaveURL(`${origin}/r/play`)
-  expect(await page.evaluate(() => (window as unknown as { __kept?: boolean }).__kept)).toBe(true)
+  const menu = page.getByRole('dialog', { name: 'More porch actions' })
+  await expect(menu.getByRole('link', { name: /Open canvas/ })).toHaveCount(0)
 })
 
 // The painted sign labels (Basement, Gallery, House rules) sit inside their planks at every window size, including a short wide window where the 11px floor

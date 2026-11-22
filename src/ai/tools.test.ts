@@ -223,23 +223,23 @@ describe('agent tools', () => {
     const { records, tools } = setup()
     records.rows('rooms').set('public', {
       name: 'Painting party', joinCode: 'ABCD', visibility: 'public', status: 'lobby',
-      playerCount: 3, lastActiveAt: 100, isDefaultBoard: 0,
+      playerCount: 3, lastActiveAt: 100, hostId: 'host',
     })
     records.rows('rooms').set('busy', {
       name: 'Busy room', joinCode: 'EFGH', visibility: 'public', status: 'playing',
-      playerCount: 5, lastActiveAt: 200, isDefaultBoard: 0,
+      playerCount: 5, lastActiveAt: 200, hostId: 'host',
     })
     records.rows('rooms').set('private', {
       name: 'Secret room', joinCode: 'IJKL', visibility: 'private', status: 'lobby',
-      playerCount: 2, lastActiveAt: 300, isDefaultBoard: 0,
+      playerCount: 2, lastActiveAt: 300, hostId: 'host',
     })
     records.rows('rooms').set('closed', {
       name: 'Packed up', joinCode: 'MNOP', visibility: 'public', status: 'closed',
-      playerCount: 0, lastActiveAt: 400, isDefaultBoard: 0,
+      playerCount: 0, lastActiveAt: 400, hostId: 'host',
     })
-    records.rows('rooms').set('default', {
-      name: 'Porch board', joinCode: 'PLAY', visibility: 'public', status: 'lobby',
-      playerCount: 0, lastActiveAt: 500, isDefaultBoard: 1,
+    records.rows('rooms').set('orphan', {
+      name: 'Old board', joinCode: 'PLAY', visibility: 'public', status: 'lobby',
+      playerCount: 0, lastActiveAt: 500, hostId: '',
     })
 
     expect(await run(tools, 'live_rooms', {})).toEqual({

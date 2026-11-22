@@ -1,7 +1,7 @@
 import { JUDGE } from './config'
 
-export const JUDGE_SYSTEM = 'You judge a collaborative pixel-art canvas drawn by many people, one pixel at a time. Ignore isolated stray pixels; they are noise. If the canvas is entirely blank (no pixels drawn), the drawing is empty and nothing was drawn.'
-export const JUDGE_USER_TEXT = 'What is this a drawing of? Reply with raw JSON only, no markdown fences: {"guesses": [three short nouns, most likely first], "confidence": number from 0 to 1}. If the image is entirely blank (no pixels drawn), reply with {"guesses": [], "confidence": 0}.'
+export const JUDGE_SYSTEM = 'You judge a collaborative pixel-art canvas drawn by many people, one pixel at a time. Ignore isolated stray pixels; they are noise. If the canvas is entirely blank (no pixels drawn), the drawing is empty and nothing was drawn. Also report whether the image contains written letters, words or numbers: spelling the answer is not drawing it.'
+export const JUDGE_USER_TEXT = 'What is this a drawing of? Reply with raw JSON only, no markdown fences: {"guesses": [three short nouns, most likely first], "confidence": number from 0 to 1, "text": true or false}. Set "text" to true when the image contains written letters, words or numbers (a spelled word, a label, digits), and false when it is only drawn shapes. If the image is entirely blank (no pixels drawn), reply with {"guesses": [], "confidence": 0, "text": false}.'
 
 export function buildJudgeBody(pngBase64: string) {
   return {
@@ -34,6 +34,13 @@ export function extractText(payload: unknown): string | null {
 export interface JudgeResult {
   guesses: string[]
   confidence: number
+  /** The drawing spells letters, words or numbers. A spelled answer never counts as a match. */
+  text: boolean
+}
+
+/** A missing or malformed `text` is `false`: an unreadable flag must never invent a spelling offence. */
+export function parseJudgeTextFlag(raw: unknown): boolean {
+  return raw === true
 }
 
 export function parseJudgeText(text: string): JudgeResult | null {
@@ -47,7 +54,11 @@ export function parseJudgeText(text: string): JudgeResult | null {
     if (typeof raw !== 'number' && (typeof raw !== 'string' || raw.trim() === '')) return null
     const confidence = Number(raw)
     if (!Number.isFinite(confidence)) return null
-    return { guesses: result.guesses.slice(0, 3), confidence: Math.max(0, Math.min(1, confidence)) }
+    return {
+      guesses: result.guesses.slice(0, 3),
+      confidence: Math.max(0, Math.min(1, confidence)),
+      text: 'text' in result ? parseJudgeTextFlag(result.text) : false,
+    }
   } catch {
     return null
   }

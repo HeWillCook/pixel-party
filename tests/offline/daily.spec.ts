@@ -688,7 +688,7 @@ test('timeout on party uses the latest stored canvas', async ({ page }) => {
     return route.fulfill({ json: playing })
   })
   await page.goto(`${origin}/party`)
-  await expect(page.getByRole('heading', { name: 'Room tickets' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Open games' })).toBeVisible()
   const latest = await page.evaluate(() => {
     const cells = new Uint8Array(1024).fill(7)
     const encoded = btoa(String.fromCharCode(...cells))
@@ -826,7 +826,7 @@ test('a running attempt owns the screen: no exits, back is a no-op, other routes
   await page.setViewportSize({ width: 1440, height: 900 })
   await playFixture(page)
   await page.goto(`${origin}/party`)
-  await expect(page.getByRole('heading', { name: 'Room tickets' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Open games' })).toBeVisible()
   await page.getByTestId('app-navigation').getByRole('link', { name: 'Daily' }).click()
   await page.getByTestId('daily-start-button').click()
   await expect(page.getByTestId('daily-playing')).toBeVisible()
@@ -854,6 +854,7 @@ async function offlineClient(page: Page, signedIn = false) {
     if (url.origin !== origin) return route.abort()
     if (url.pathname === '/api/auth/get-session') return route.fulfill({ json: signedIn ? { user: { id: 'host', name: 'Will', email: 'will@example.test' }, session: { id: 'offline', userId: 'host', expiresAt: '2096-01-01T00:00:00Z' } } : null })
     if (url.pathname === '/api/auth/token') return route.fulfill({ json: { token: signedIn ? `fixture.${Buffer.from(JSON.stringify({ sub: 'host', exp: 4_000_000_000 })).toString('base64url')}.unsigned` : null } })
+    if (url.pathname === '/api/party/rooms') return route.fulfill({ json: { rooms: [] } })
     if (url.pathname.startsWith('/api/')) return route.fulfill({ json: {} })
     const asset = url.pathname.startsWith('/assets/')
     const path = asset ? resolve(clientDir, `.${url.pathname}`) : resolve(clientDir, '_spa.html')
@@ -896,11 +897,11 @@ test('signed-out profile renders its heading and empty state without errors', as
   expect(errors).toEqual([])
 })
 
-test('party route still renders the lobby', async ({ page }) => {
+test('party route still renders the lobby, with no games until someone hosts one', async ({ page }) => {
   const errors = await offlineClient(page)
   await page.goto(`${origin}/party`)
-  await expect(page.getByRole('heading', { name: 'Room tickets' })).toBeVisible()
-  await expect(page.getByTestId('lobby-play-now')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Open games' })).toBeVisible()
+  await expect(page.getByTestId('games-empty')).toHaveText('No games right now — host one!')
   expect(errors).toEqual([])
 })
 

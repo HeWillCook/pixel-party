@@ -4,8 +4,8 @@ import { applyPlacements, applyJudgeOutcome, applyPlacement, advance, countPlaye
 import { WORDS } from './words'
 import { createGrid, pixelsUsed } from './grid'
 
-const room = () => newRoomState({ roomId: 'room', mode: 'coop', isDefaultBoard: false }, 1000, () => 0)
-const judged = { kind: 'judged' as const, zone: 'all' as const, result: { guesses: ['house'], confidence: 0.9 }, matched: true }
+const room = () => newRoomState({ roomId: 'room', mode: 'coop' }, 1000, () => 0)
+const judged = { kind: 'judged' as const, zone: 'all' as const, result: { guesses: ['house'], confidence: 0.9, text: false }, matched: true }
 
 describe('room logic', () => {
   it('counts distinct normalized signed-in identities', () => {
@@ -71,11 +71,10 @@ describe('room logic', () => {
     expect(resumed.state.status).toBe('playing')
     expect(s.status).toBe('playing')
   })
-  it('closes empty non-default rooms and leaves default rooms unscheduled', () => {
+  it('closes empty rooms after the timeout', () => {
     const paused = advance(room(), 2000, 0, () => 0).state
     expect(nextAlarmAt(paused, 2000)).toBe(2000 + ROOMS.closeAfterEmptyMs)
     expect(advance(paused, 2000 + ROOMS.closeAfterEmptyMs, 0, () => 0).state.status).toBe('closed')
-    expect(nextAlarmAt({ ...paused, isDefaultBoard: true }, 2000)).toBeNull()
   })
   it('preserves the paused round after a long absence', () => {
     const paused = advance(room(), 2000, 0, () => 0).state
@@ -107,11 +106,10 @@ describe('room logic', () => {
     expect(next.events).toContainEqual({ type: 'cleared' })
     expect(startNextRound(next.state, 400000, () => 0).state.round.id).not.toBe(next.state.round.id)
   })
-  it('scores wins and includes contributors and final guesses', () => {
+  it('ends a won round without a score and includes contributors and final guesses', () => {
     const s = applyPlacement(room(), { x: 1, y: 1, c: 2, userId: 'a' }, 2000, 1).state
     const result = applyJudgeOutcome(s, judged, 4000)
-    // One lonely pixel spans 1/32 of each axis, so size barely counts; the fast guess carries it.
-    expect(result.state.round.result).toEqual({ outcome: 'won', score: 397, contributorCount: 1 })
+    expect(result.state.round.result).toEqual({ outcome: 'won', contributorCount: 1 })
     expect(result.events).toContainEqual(expect.objectContaining({ type: 'roundEnded', event: expect.objectContaining({ contributorIds: ['a'], finalGuesses: ['house'], pixelsUsed: 1 }) }))
     expect(result.state.intermissionEndsAt).toBeNull()
     expect(s.status).toBe('playing')
@@ -168,18 +166,17 @@ describe('room logic', () => {
   })
   it('preserves last guesses for a timeout and clears them for the next round', () => {
     const s = room()
-    const seen = applyJudgeOutcome(s, { ...judged, result: { guesses: ['tree', 'plant'], confidence: 0.2 }, matched: false }, 3000).state
+    const seen = applyJudgeOutcome(s, { ...judged, result: { guesses: ['tree', 'plant'], confidence: 0.2, text: false }, matched: false }, 3000).state
     expect(seen.lastGuesses).toEqual(['tree', 'plant'])
     const timeout = advance(seen, s.round.startedAt + MODES.coop.capMs, 1, () => 0)
     expect(timeout.events).toContainEqual(expect.objectContaining({ type: 'roundEnded', event: expect.objectContaining({ finalGuesses: ['tree', 'plant'] }) }))
     expect(startNextRound(timeout.state, 400000, () => 0).state.lastGuesses).toEqual([])
   })
-  it('uses grid size for score and the winning judgement for final guesses', () => {
+  it('keeps the winning judgement as the final guesses', () => {
     const s = room(); s.grid = createGrid(2, 2)
     const placed = applyPlacement(s, { x: 0, y: 0, c: 1, userId: 'a' }, 2000, 1).state
     const result = applyJudgeOutcome(placed, judged, 1000)
-    // One cell on a 2x2 board spans 2/3 of each axis: (2/3 / 0.75)^2 = 0.444, full speed.
-    expect(result.state.round.result?.score).toBe(667)
+    expect(result.state.round.result?.outcome).toBe('won')
     expect(result.state.lastGuesses).toEqual(['house'])
     expect(result.events).toContainEqual(expect.objectContaining({ type: 'roundEnded', event: expect.objectContaining({ finalGuesses: ['house'] }) }))
   })
@@ -274,7 +271,7 @@ describe('paint pace per painter', () => {
 })
 
 describe('private waiting room', () => {
-  const lobby = () => newRoomState({ roomId: 'private', mode: 'coop', isDefaultBoard: false, startsInLobby: true }, 1000, () => 0)
+  const lobby = () => newRoomState({ roomId: 'private', mode: 'coop', startsInLobby: true }, 1000, () => 0)
   it('has no word or timer, refuses painting and judging, and starts on command', () => {
     const state = lobby()
     expect(state.status).toBe('lobby')
@@ -308,7 +305,6 @@ describe('explicit next permissions', () => {
     const state = { ...room(), status: 'playing' as const }
     expect(nextRoundRejection(state, 'host', 'host', ['host', 'guest'])).toBeNull()
     expect(nextRoundRejection(state, 'guest', 'host', ['guest'])).toBe('not_host')
-    expect(nextRoundRejection({ ...state, isDefaultBoard: true }, 'guest', null, ['guest'])).toBe('not_host')
   })
 
   it.each(['lobby', 'intermission'] as const)('requires a connected signed-in caller in %s', status => {
@@ -318,7 +314,6 @@ describe('explicit next permissions', () => {
     expect(nextRoundRejection(state, 'guest', 'host', ['host', 'guest'])).toBe('not_host')
     expect(nextRoundRejection(state, 'host', 'host', ['host', 'guest'])).toBeNull()
     expect(nextRoundRejection(state, 'guest', 'host', ['guest'])).toBeNull()
-    expect(nextRoundRejection({ ...state, isDefaultBoard: true }, 'guest', null, ['guest'])).toBeNull()
     expect(nextRoundRejection(state, 'guest', null, ['guest'])).toBe('not_host')
   })
 })

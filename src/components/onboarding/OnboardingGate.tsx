@@ -42,7 +42,7 @@ const TOUR: TourStep[] = [
   },
   {
     title: 'Party',
-    body: 'Make a room, invite friends with a code, and everyone paints the same canvas live while the AI guesses. Bigger drawings score more.',
+    body: 'Make a room, invite friends with a code, and everyone paints the same canvas live while the AI guesses. Draw it — spelled letters do not count.',
     bubble: 'Bring a friend. Or three.',
   },
   {

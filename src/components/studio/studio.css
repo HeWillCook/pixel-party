@@ -1419,3 +1419,77 @@
   color: #985c5a;
   text-align: center;
 }
+
+/* A locked game asks for its code in a small pixel-paper dialog over the basement. */
+.studio-locked-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(57, 42, 69, 0.72);
+}
+.studio-locked {
+  display: flex;
+  width: min(340px, 100%);
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  text-align: center;
+}
+.studio-locked__title {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.1;
+  color: #392a45;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+.studio-locked__copy {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.2;
+  color: #614052;
+}
+.studio-locked__input {
+  width: 100%;
+  min-height: 42px;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 20px;
+  letter-spacing: 0.18em;
+  text-align: center;
+  text-transform: uppercase;
+  color: #392a45;
+  background: #fff0cc;
+  border: 3px solid #392a45;
+}
+.studio-locked__input:focus-visible {
+  outline: 3px solid #985c5a;
+  outline-offset: 2px;
+}
+.studio-locked__error {
+  margin: 0;
+  font-size: 14px;
+  color: #8e2f2f;
+}
+.studio-locked__actions {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+.studio-locked__cancel,
+.studio-locked__submit {
+  min-height: 38px;
+  padding: 0 14px;
+  font-size: 16px;
+  text-transform: uppercase;
+}
+.studio-locked__submit {
+  cursor: pointer;
+}
+.studio-locked__submit:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}

@@ -21,17 +21,17 @@ import { getUsername } from './usernames'
 import { utcDay, withTimeout } from './room-time'
 import type { RoomData } from './rooms'
 
-type RoomInit = Pick<RoomState, 'roomId' | 'mode' | 'isDefaultBoard'>
+type RoomInit = Pick<RoomState, 'roomId' | 'mode'>
 type SavedRoom = { room_id: string; mode: string; is_default: number; state: string; resting_day: string | null; host_id: string }
 const finite = z.number().finite()
 const roomStateSchema = z.object({
-  roomId: z.string().min(1), isDefaultBoard: z.boolean(), mode: z.enum(['coop', 'team']),
+  roomId: z.string().min(1), mode: z.enum(['coop', 'team']),
   grid: z.object({ width: z.number().int().positive(), height: z.number().int().positive(), cells: z.instanceof(Uint8Array), placedBy: z.array(z.string()) }),
   version: finite.int().nonnegative(), lastJudgedVersion: finite.int().nonnegative(),
   round: z.object({
     id: z.string().min(1), word: z.string(), state: z.enum(['lobby', 'playing', 'intermission', 'paused']),
     startedAt: finite, endsAt: finite.nullable(), askAvailableAt: finite, endedAt: finite.optional(),
-    result: z.object({ outcome: z.enum(['won', 'timeout', 'teamWin']), score: finite.optional(), contributorCount: finite.int().nonnegative().optional(), winningTeam: z.enum(['red', 'blue', 'draw']).optional() }).optional(),
+    result: z.object({ outcome: z.enum(['won', 'timeout', 'teamWin']), contributorCount: finite.int().nonnegative().optional(), winningTeam: z.enum(['red', 'blue', 'draw']).optional() }).optional(),
   }),
   wordEntry: z.object({ word: z.string().min(1), synonyms: z.array(z.string()), tier: z.enum(['easy', 'medium', 'hard']) }),
   recentWords: z.array(z.string()), lastGuesses: z.array(z.string()), roundCounter: finite.int().nonnegative(),
@@ -101,7 +101,7 @@ export class PixelRoom extends BaseRoom<Env> {
     if (!columns.some(column => column.name === 'host_id')) this.sql.exec("ALTER TABLE pixel_state ADD COLUMN host_id TEXT NOT NULL DEFAULT ''")
     const saved = this.sql.exec<SavedRoom>('SELECT room_id, mode, is_default, state, resting_day, host_id FROM pixel_state WHERE id = 1').toArray()[0]
     if (saved) {
-      this.game = restorePixelState(saved.state, { roomId: saved.room_id, mode: saved.mode === 'team' ? 'team' : 'coop', isDefaultBoard: saved.is_default === 1 }, Date.now(), Math.random)
+      this.game = restorePixelState(saved.state, { roomId: saved.room_id, mode: saved.mode === 'team' ? 'team' : 'coop' }, Date.now(), Math.random)
       this.restingDay = saved.resting_day
       this.hostUserId = saved.host_id
       this.persist()
@@ -114,15 +114,14 @@ export class PixelRoom extends BaseRoom<Env> {
     if ((request.headers.get('Upgrade') === 'websocket' || closing) && !this.game) {
       const roomId = request.headers.get('X-Room-Id')
       const mode = request.headers.get('X-Room-Mode')
-      const isDefault = request.headers.get('X-Room-Default')
       const hostId = request.headers.get('X-Room-Host')
-      if (!roomId || hostId === null || (mode !== 'coop' && mode !== 'team') || (isDefault !== 'true' && isDefault !== 'false')) return new Response('Missing room configuration', { status: 400 })
-      this.hostUserId = isDefault === 'true' ? '' : hostId
-      this.game = newRoomState({ roomId, mode: mode as Mode, isDefaultBoard: isDefault === 'true', startsInLobby: true }, Date.now(), Math.random)
+      if (!roomId || hostId === null || (mode !== 'coop' && mode !== 'team')) return new Response('Missing room configuration', { status: 400 })
+      this.hostUserId = hostId
+      this.game = newRoomState({ roomId, mode: mode as Mode, startsInLobby: true }, Date.now(), Math.random)
       this.persist()
     }
     if (closing) {
-      if (!this.game || this.game.isDefaultBoard || !this.hostUserId || request.headers.get('X-Room-Host') !== this.hostUserId || request.headers.get('X-Room-Id') !== this.game.roomId) return new Response('Forbidden', { status: 403 })
+      if (!this.game || !this.hostUserId || request.headers.get('X-Room-Host') !== this.hostUserId || request.headers.get('X-Room-Id') !== this.game.roomId) return new Response('Forbidden', { status: 403 })
       this.game = { ...this.game, status: 'closed', intermissionEndsAt: null, judgeInFlight: false }
       this.persist()
       this.broadcastGame({ t: 'closed' })
@@ -232,17 +231,10 @@ export class PixelRoom extends BaseRoom<Env> {
     const room = await tools.get<RoomData>('rooms', result.roomId)
     if (!room.success) throw new Error('Room lookup failed')
     const { hostId, memberIds, visibility } = room.data.record.data
-    const round = await tools.create('rounds', { ...result, score: result.score ?? 0, winningTeam: result.winningTeam ?? null, snapshotFileIds: [], hostId, memberIds, visibility }, `${result.roomId}:${result.roundId}`)
+    // player stats: record the round here — result carries roomId, mode, contributorIds, outcome and word,
+    // and the room row above adds hostId (plus memberIds/visibility for the history row).
+    const round = await tools.create('rounds', { ...result, winningTeam: result.winningTeam ?? null, snapshotFileIds: [], hostId, memberIds, visibility }, `${result.roomId}:${result.roundId}`)
     if (!round.success) throw new Error('Round write failed')
-    if (result.outcome !== 'won') return
-    for (const userId of new Set(result.contributorIds)) {
-      if (!signedInId(userId)) continue
-      const existing = await tools.get<{ totalPoints: number; roundsWon: number }>('scores', userId)
-      if (!existing.success && existing.error !== 'Record not found') throw new Error('Score lookup failed')
-      const previous = existing.success ? existing.data.record.data : { totalPoints: 0, roundsWon: 0 }
-      const score = await tools.create('scores', { userId, totalPoints: previous.totalPoints + (result.score ?? 0), roundsWon: previous.roundsWon + 1 }, userId)
-      if (!score.success) throw new Error('Score write failed')
-    }
   }
 
   protected async onRoomStatus(status: RoomStatusEvent): Promise<void> {
@@ -331,7 +323,8 @@ export class PixelRoom extends BaseRoom<Env> {
       this.paintPersistDirty = false
       return
     }
-    this.sql.exec('INSERT OR REPLACE INTO pixel_state (id, room_id, mode, is_default, state, resting_day, host_id) VALUES (1, ?, ?, ?, ?, ?, ?)', this.game.roomId, this.game.mode, Number(this.game.isDefaultBoard), serializeRoomState(this.game), this.restingDay, this.hostUserId)
+    // `is_default` is retired (party has no public board) but stays in the table so existing rooms keep restoring.
+    this.sql.exec('INSERT OR REPLACE INTO pixel_state (id, room_id, mode, is_default, state, resting_day, host_id) VALUES (1, ?, ?, 0, ?, ?, ?)', this.game.roomId, this.game.mode, serializeRoomState(this.game), this.restingDay, this.hostUserId)
     this.paintPersistDirty = false
   }
 

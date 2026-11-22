@@ -72,7 +72,7 @@ export function GuessFeed({ guesses, guessLog, aiResting, hasPixels = false, rou
               ? 'Haiku did not get a guess in this round.'
               : hasPixels
                 ? `Haiku is studying the canvas. A guess lands within ${JUDGE.tickMs / 1000}s, or ring the bell.`
-                : `Place some pixels! Haiku the cat checks the canvas every ${JUDGE.tickMs / 1000}s or when you ring the bell.`}
+                : `Place some pixels! Haiku checks every ${JUDGE.tickMs / 1000}s. Draw it — no letters, words or numbers.`}
           </span>
         </div>
       ) : (
@@ -83,17 +83,20 @@ export function GuessFeed({ guesses, guessLog, aiResting, hasPixels = false, rou
           {guessLog.map((entry) => (
             <p
               key={entry.id}
+              data-testid={entry.text ? 'guess-text-notice' : undefined}
               className={cn(
                 'm-0 leading-snug',
                 entry.matched
                   ? 'border border-[var(--sunset-1)] bg-secondary/80 px-1.5 py-0.5 text-[var(--sunset-1)]'
-                  : 'text-foreground',
+                  : entry.text
+                    ? 'border border-dashed border-[var(--sunset-3)] px-1.5 py-0.5 text-[var(--sunset-2)]'
+                    : 'text-foreground',
               )}
             >
               <span className="mr-1.5 text-[var(--sunset-3)]">
                 {formatRoundClock(entry.atMs)}
               </span>
-              <span>{entry.guesses.join(', ')}</span>
+              <span>{entry.text ? 'Haiku spotted letters — no spelling, draw it!' : entry.guesses.join(', ')}</span>
             </p>
           ))}
         </div>

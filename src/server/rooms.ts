@@ -12,7 +12,6 @@ export type RoomData = Record<string, unknown> & {
   currentRoundId: string
   playerCount: number
   lastActiveAt: number
-  isDefaultBoard: boolean | 0 | 1
 }
 export type RoomRecord = { recordId: string; data: RoomData }
 
@@ -20,7 +19,7 @@ export const joinCodePattern = /^[A-Za-z0-9_-]{1,64}$/
 
 export async function findRoom(tools: ServerTools, joinCode: string): Promise<ActionResult<RoomRecord | null>> {
   const normalized = joinCode.toUpperCase()
-  const result = await tools.query<RoomData>('rooms', { where: { joinCode: normalized === 'PLAY' ? 'play' : normalized }, limit: 1 })
+  const result = await tools.query<RoomData>('rooms', { where: { joinCode: normalized }, limit: 1 })
   if (!result.success) return result
   if (result.data.records[0]) return { success: true, data: result.data.records[0] }
   // Legacy room codes were not normalized at storage time. Page only on a canonical miss.
@@ -41,6 +40,51 @@ export async function roomRecords(tools: ServerTools, collection: string, where:
     if (result.data.nextOffset <= offset) return { success: false, error: 'Room query pagination did not advance' }
     offset = result.data.nextOffset
   }
+}
+
+/**
+ * One row per open game for the lobby list. Private rooms are listed by name only: their join code is
+ * included just when the viewer hosts or has joined them, so a locked room can never be walked into.
+ */
+export interface OpenRoomSummary {
+  id: string
+  name: string
+  /** The host's user id, so the lobby can offer its own host controls. */
+  hostId: string
+  mode: 'coop' | 'team'
+  status: RoomData['status']
+  playerCount: number
+  visibility: 'public' | 'private'
+  /** Null on a private room the viewer may not enter without typing its code. */
+  joinCode: string | null
+}
+
+export async function openRooms(tools: ServerTools, viewerId: string | null): Promise<ActionResult<OpenRoomSummary[]>> {
+  const all = await roomRecords(tools, 'rooms', {})
+  if (!all.success) return all
+  const rows = all.data
+    .filter(record => {
+      const data = record.data as Partial<RoomData>
+      // Closed rooms are gone, and a room with no host can never be started: it is not a game.
+      return data.status !== 'closed' && typeof data.hostId === 'string' && data.hostId !== ''
+    })
+    .sort((left, right) => Number(right.data.lastActiveAt ?? 0) - Number(left.data.lastActiveAt ?? 0))
+    .slice(0, 50)
+    .map(record => {
+      const data = record.data as unknown as RoomData
+      const member = Boolean(viewerId) && (data.hostId === viewerId || (Array.isArray(data.memberIds) && data.memberIds.includes(viewerId!)))
+      return {
+        id: record.recordId,
+        name: typeof data.name === 'string' ? data.name : 'Studio room',
+        hostId: data.hostId,
+        mode: data.mode === 'team' ? 'team' as const : 'coop' as const,
+        status: data.status,
+        playerCount: typeof data.playerCount === 'number' ? data.playerCount : 0,
+        visibility: data.visibility === 'private' ? 'private' as const : 'public' as const,
+        joinCode: data.visibility === 'private' && !member ? null : (typeof data.joinCode === 'string' ? data.joinCode : null),
+      }
+    })
+  return { success: true, data: rows }
 }
 
 export async function addRoomMember(tools: ServerTools, room: RoomRecord, userId: string): Promise<ActionResult<{ roomId: string }>> {

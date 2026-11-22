@@ -31,7 +31,7 @@ export async function createRoom(tools: ServerTools, userId: string, params: unk
     if (existing.data) continue
     const result = await tools.create('rooms', {
       ...parsed.data, joinCode, hostId: userId, memberIds: [userId], status: 'lobby',
-      currentRoundId: '', playerCount: 0, lastActiveAt: Date.now(), isDefaultBoard: false,
+      currentRoundId: '', playerCount: 0, lastActiveAt: Date.now(),
     })
     if (result.success) return { success: true, data: { roomId: result.data.recordId, joinCode } }
     // The RecordRoom's unique index also handles concurrent creators racing the pre-check.
@@ -57,7 +57,6 @@ export async function deleteRoom(tools: ServerTools, userId: string, params: unk
   if (!result.success) return result
   const room = result.data
   if (!room) return { success: false, code: 'not_found', error: 'Room not found' }
-  if (room.data.isDefaultBoard || room.data.joinCode.toLowerCase() === 'play') return { success: false, code: 'default_board', error: 'The public board cannot be deleted' }
   if (room.data.hostId !== userId) return { success: false, code: 'not_host', error: 'Only the host can delete this room' }
   const closed = await tools.update('rooms', room.recordId, { status: 'closed', playerCount: 0 })
   if (!closed.success) return closed

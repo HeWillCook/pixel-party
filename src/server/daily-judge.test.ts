@@ -111,7 +111,7 @@ describe('createDailyJudge', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     const judge = createDailyJudge({} as Env, 'local')
-    expect(await judge.blind('png-1')).toEqual({ guess: 'a candle' })
+    expect(await judge.blind('png-1')).toEqual({ guess: 'a candle', text: false })
     expect(await judge.score('png-1', 'a lighthouse in a storm', 'lighthouse', 'a candle')).toEqual({
       match: 75,
       recognition: 40,
@@ -153,7 +153,7 @@ describe('createDailyJudge', () => {
     } as unknown as Env
 
     const judge = createDailyJudge(env, 'real')
-    expect(await judge.blind('png-real')).toEqual({ guess: 'a lighthouse' })
+    expect(await judge.blind('png-real')).toEqual({ guess: 'a lighthouse', text: false })
     expect(await judge.score('png-real', 'a lighthouse in a storm', 'lighthouse', 'a lighthouse')).toEqual({
       match: 88,
       recognition: 100,
