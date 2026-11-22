@@ -730,7 +730,7 @@ test('party empty erase noops and the next paint on that cell sends immediately'
   await canvas.dispatchEvent('pointerup', { pointerId: 1, pointerType: 'mouse' })
   await expect.poll(() => sent.flat()).toContainEqual({ x: 4, y: 4, c: 4, id: 2 })
   await expect.poll(() => pixelColor(page, 4, 4)).toEqual([239, 68, 68, 255])
-  expect(page.getByTestId('reject-notice')).toHaveCount(0)
+  await expect(page.getByTestId('reject-notice')).toHaveCount(0)
   expect(errors).toEqual([])
 })
 
