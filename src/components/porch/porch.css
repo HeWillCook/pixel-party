@@ -141,3 +141,6 @@
 .porch-presence__detail { color: #8e3f4c; }
 .porch-presence__names { display: grid; gap: calc(var(--px) * 0.3); margin-top: calc(var(--px) * 0.6); padding-top: calc(var(--px) * 0.8); border-top: 1px dashed #985c5a; font-size: max(11px, calc(var(--px) * 2.5)); }
 .porch-world--transitioning .porch-presence { pointer-events: none; }
+/* The canvas easel and chalkboard hover a scene pixel up and down; the writing on them (the prompt card, the top five)
+   follows the same step, which PorchScene's draw loop publishes as --porch-bob. */
+.porch-world .board-face, .porch-world .porch-easel-copy { transform: translateY(calc(var(--porch-bob, 0) * var(--px))); }
