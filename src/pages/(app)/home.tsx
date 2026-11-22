@@ -24,6 +24,8 @@ import { PixelCanvas } from '../../components/game/PixelCanvas'
 import { ToolBar } from '../../components/game/ToolBar'
 import { PlayLayout } from '../../components/play/PlayLayout'
 import { HoverEasel } from '../../components/play/HoverEasel'
+import { ShareResultButton } from '../../components/daily/ShareResultButton'
+import { buildShareText } from '../../game/daily/shareText'
 import { ScoreCard } from '../../components/play/ScoreCard'
 import { SubmitConfirm } from '../../components/play/SubmitConfirm'
 import { StudioSprite } from '../../components/play/StudioSprite'
@@ -458,6 +460,11 @@ export default function DailyHomePage() {
     return null
   }, [scoreDoc, drawingDoc, state.latest, endedScore])
 
+  const sharePrompt = state.prompt ?? drawingDoc?.prompt
+  const shareButton = state.status === 'ended' && endedScore > 0 && sharePrompt ? (
+    <ShareResultButton text={buildShareText({ day: state.day, prompt: sharePrompt, guess: endedGrade?.guess, score: endedScore })} />
+  ) : null
+
   const handleStart = async () => {
     enableNavMotion()
     setStarting(true)
@@ -785,7 +792,7 @@ export default function DailyHomePage() {
                     </div>
                   ) : (
                     <div className="daily-right-stage">
-                      <GradePanel latest={endedGrade} best={endedScore} grading={state.grading} lastError={state.lastError} ended stage={voice.verdict} />
+                      <GradePanel latest={endedGrade} best={endedScore} grading={state.grading} lastError={state.lastError} ended stage={voice.verdict} actions={shareButton} />
                     </div>
                   )
                 ) : (
@@ -867,7 +874,7 @@ export default function DailyHomePage() {
                   </div>
                   <Modal open={mobileScoreOpen} onClose={() => setMobileScoreOpen(false)} aria-label="How you were scored" hideClose className="daily-chalk-sheet-modal">
                     <div className="daily-chalk-sheet">
-                      <GradePanel latest={endedGrade} best={endedScore} grading={state.grading} lastError={state.lastError} ended stage={voice.verdict} />
+                      <GradePanel latest={endedGrade} best={endedScore} grading={state.grading} lastError={state.lastError} ended stage={voice.verdict} actions={shareButton} />
                       <AutoGradeTimeline embedded windows={state.windows} now={serverNow} startedAt={state.startedAt} finalUsed={state.finalUsed} ended={ended} />
                       <button type="button" onClick={() => setMobileScoreOpen(false)} className="pp-btn daily-chalk-sheet__close" aria-label="Close score breakdown">Close</button>
                     </div>

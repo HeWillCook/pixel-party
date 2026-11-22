@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { AlertCircle, Award, Cat, FlaskConical, Sparkles } from 'lucide-react'
 import type { GradeView } from '../../server/daily-service'
 import type { VerdictStage } from '../../hooks/useDailyAttempt'
@@ -23,6 +24,7 @@ export interface GradePanelProps {
   ended?: boolean
   /** The final verdict reveal: suspense line, then the guess, then the score. */
   stage?: VerdictStage | null
+  actions?: ReactNode
 }
 
 export function GradePanel({
@@ -32,6 +34,7 @@ export function GradePanel({
   lastError,
   ended = false,
   stage = null,
+  actions,
 }: GradePanelProps) {
   const showScore = stage === null || stage === 'score'
   const showGuess = stage === null || stage === 'guess' || stage === 'score'
@@ -148,6 +151,7 @@ export function GradePanel({
           </span>
         </div>
       )}
+      {actions}
     </div>
   )
 }
