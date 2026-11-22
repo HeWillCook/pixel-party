@@ -171,6 +171,7 @@ export function Leaderboard({
   // A name or avatar opens the player's stats card; the row's artwork still opens the painting. Keyboard
   // activation of the row link (`detail === 0`) opens the same card, and the card links on to the gallery.
   const [statsUserId, setStatsUserId] = useState<string | null>(null)
+  const [statsName, setStatsName] = useState<string | null>(null)
   const closeStats = useCallback(() => {
     const userId = statsUserId
     setStatsUserId(null)
@@ -328,6 +329,7 @@ export function Leaderboard({
                       const onPlayer = event.detail === 0 || (event.target as Element).closest('[data-player-stats]') !== null
                       if (onPlayer) {
                         event.preventDefault()
+                        setStatsName(playerName)
                         setStatsUserId(score.userId)
                         return
                       }
@@ -423,6 +425,7 @@ export function Leaderboard({
       {statsUserId !== null && (
         <PlayerStatsDialog
           userId={statsUserId}
+          name={statsName}
           onClose={closeStats}
           finalFocus={() => rowLinkRefs.current.get(statsUserId) ?? null}
           onSeeGallery={onSelectPainter

@@ -176,7 +176,7 @@ export default function ProfilePage() {
         style={{ maxHeight: `${statsMaxHeight}px` }}
         onClick={(event) => event.stopPropagation()}
       >
-        <PlayerStatsCard userId={userId} variant="plaque" />
+        <PlayerStatsCard userId={userId} variant="plaque" name={name} />
       </aside>
       {/* DEV ONLY (__DEBUG_TOOLS__) */}
       {__DEBUG_TOOLS__ && isOwner && <TempDebugPaintings />}

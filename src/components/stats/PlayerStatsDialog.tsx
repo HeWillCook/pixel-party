@@ -6,6 +6,8 @@ import './stats.css'
 
 export interface PlayerStatsDialogProps {
   userId: string
+  /** The name the board shows for this player, until the stats arrive (or for a signed-out visitor). */
+  name?: string | null
   onClose: () => void
   /** Where focus goes after the dialog closes (usually the name that opened it). */
   finalFocus?: () => HTMLElement | null
@@ -18,7 +20,7 @@ export interface PlayerStatsDialogProps {
  * capture phase and stopped there: on `/scores` Escape is also the way back to the porch, and a
  * key that puts the card away must not also retire from the board (the DrawingViewer does the same).
  */
-export function PlayerStatsDialog({ userId, onClose, finalFocus, onSeeGallery }: PlayerStatsDialogProps) {
+export function PlayerStatsDialog({ userId, name, onClose, finalFocus, onSeeGallery }: PlayerStatsDialogProps) {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
@@ -41,7 +43,7 @@ export function PlayerStatsDialog({ userId, onClose, finalFocus, onSeeGallery }:
         finalFocus={finalFocus}
       >
         <h2 id="player-stats-dialog-title" className="pstats-dialog__title">Player stats</h2>
-        <PlayerStatsCard userId={userId} variant="dialog" />
+        <PlayerStatsCard userId={userId} variant="dialog" name={name} />
         <div className="pstats-dialog__actions">
           <Link
             to={href}

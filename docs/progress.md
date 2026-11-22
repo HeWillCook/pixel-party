@@ -3,6 +3,21 @@
 Running record of design decisions, findings, and status for the DeepSpace build exercise.
 Newest entries at the bottom of each section. This doubles as source material for the final submission note.
 
+## Current state (as shipped, 2026-11-22)
+
+This log is chronological, so older entries describe rules that later changed. What is live now:
+
+- **Daily:** one 5-minute attempt per UTC day. Haiku judges once at 2:30 and gives a final verdict on Submit (or at 5:00).
+  Score out of 1000 = prompt match (0–500, 60/40 with the blind guess, capped low when the guess misses) plus an art
+  bonus (0–500) paid in proportion to the match. No speed component, no player "Ask" grades. Ties go to the earlier start.
+- **Party:** hosted rooms only (no always-on public board), co-op only (team mode is dormant in the code), click-and-drag
+  painting with a per-painter token bucket, no score: the round ends when Haiku guesses the word.
+- **Players:** server-written usernames (unique), a first-sign-in tour, player stats, galleries and top-3 medals at day close
+  (cron, 00:10 UTC).
+
+Entries below that mention speed scoring, minute 1–4 grades, Ask grades, the public board, cooldowns or team rounds are
+history: see the 2026-11-21 player-feedback round (PR #18) for the change.
+
 ## Brief (from the exercise)
 
 Build and deploy a small, finished full-stack app on DeepSpace within five days. Judged on scope judgment,
