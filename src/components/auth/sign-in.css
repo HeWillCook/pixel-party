@@ -19,6 +19,14 @@
 .sign-in-card * {
   border-radius: 0 !important;
 }
+/* Public email signup is closed platform-wide (the auth worker 403s it), so the SDK's always-rendered email form only
+   works for @deepspace.test accounts. Real players can't use it, so hide the toggle and the "or" divider before it. */
+.sign-in-card [data-testid='auth-email-toggle'] {
+  display: none !important;
+}
+.sign-in-card [data-testid='auth-overlay'] > div > div:has(+ [data-testid='auth-email-toggle']) {
+  display: none !important;
+}
 
 /* A slip pinned to a scene object: it starts hidden behind that object (--slip-hide) and slides out to rest. */
 .sign-in-slip {
