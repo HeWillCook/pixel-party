@@ -892,7 +892,9 @@ test('signed-out profile renders its heading and empty state without errors', as
   const errors = await offlineClient(page)
   await page.goto(`${origin}/u/offline-player`)
   await expect(page.getByRole('heading', { name: 'Gallery' })).toBeVisible()
-  await expect(page.getByText('Your first painting hangs here')).toBeVisible()
+  // Somebody else's bare wall: it never speaks to the viewer as if the wall were theirs.
+  await expect(page.getByText("They haven't hung a painting yet")).toBeVisible()
+  await expect(page.getByText('Your first painting hangs here')).toHaveCount(0)
   expect(errors).toEqual([])
 })
 

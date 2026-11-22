@@ -251,6 +251,25 @@ describe('daily service', () => {
     expect(result.drawings).not.toContainEqual(expect.objectContaining({ data: expect.objectContaining({ userId: 'old' }) }))
   })
 
+  it('narrows today\'s drawings to one player on request, still gated on the caller having ended', async () => {
+    const { deps, records, at } = setup()
+    await records.tools.create('dailyDrawings', { day, userId: 'bob', cells: otherCells, score: 700 })
+    await records.tools.create('dailyDrawings', { day, userId: 'carol', cells: otherCells, score: 800 })
+    expect(await todaysDrawings(deps, user.userId, 'bob')).toEqual({ ok: false })
+    await startDaily(deps, user)
+    expect(await todaysDrawings(deps, user.userId, 'bob')).toEqual({ ok: false })
+    at(FINAL)
+    await endDaily(deps, user, cells)
+    const bob = await todaysDrawings(deps, user.userId, 'bob')
+    expect(bob.ok).toBe(true)
+    if (!bob.ok) throw new Error('drawings denied')
+    expect(bob.drawings).toHaveLength(1)
+    expect(bob.drawings[0]).toMatchObject({ data: { userId: 'bob', score: 700 } })
+    // The unfiltered call the leaderboard makes is unchanged: everyone's today.
+    const all = await todaysDrawings(deps, user.userId)
+    expect(all.ok && all.drawings).toHaveLength(3)
+  })
+
   it('does not start an attempt implicitly when grading or ending', async () => {
     const { deps, records } = setup()
     expect(await gradeDaily(deps, user, 'auto', cells, day, 0)).toMatchObject({ ok: false, reason: 'not_started' })
