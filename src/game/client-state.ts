@@ -17,6 +17,8 @@ export interface GuessLogEntry {
   atMs: number
   guesses: string[]
   matched: boolean
+  /** Haiku saw letters, words or numbers: the guess is shown as a playful "no spelling" notice, never as a match. */
+  text?: boolean
 }
 
 export interface ClientState {
@@ -295,18 +297,21 @@ export function applyServerMsg(s: ClientState, m: ServerMsg, now: number = Date.
 /** Adds one of Haiku's judgements to the feed (and the latest-guess slot); `at` is when it was made. */
 function logJudgement(
   s: ClientState,
-  m: { zone: ZoneId; guesses: string[]; confidence: number; matched: boolean },
+  m: { zone: ZoneId; guesses: string[]; confidence: number; matched: boolean; text?: boolean },
   at: number,
 ): ClientState {
   const loggedGuesses = new Set(s.guessLog.flatMap(entry => entry.guesses.map(guess => guess.trim().toLowerCase())))
   const hasNewGuess = m.guesses.some(guess => !loggedGuesses.has(guess.trim().toLowerCase()))
+  // A spelling notice is its own line even when Haiku's guesses repeat the ones already in the feed.
+  const hasNewSpelling = Boolean(m.text) && !s.guessLog.some(entry => entry.text)
   const hasNewMatch = m.matched && !s.guessLog.some(entry => entry.matched)
-  const guessLog = hasNewGuess || hasNewMatch
+  const guessLog = hasNewGuess || hasNewSpelling || hasNewMatch
     ? [{
         id: (s.guessLog[0]?.id ?? 0) + 1,
         atMs: s.round ? Math.max(0, at - s.round.startedAt) : 0,
         guesses: m.guesses,
         matched: m.matched,
+        ...(m.text ? { text: true } : {}),
       }, ...s.guessLog].slice(0, 50)
     : s.guessLog
   return {

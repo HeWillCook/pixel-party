@@ -18,7 +18,7 @@ import { memoryTools } from './room-test-tools'
 const { integration, recordTools } = vi.hoisted(() => ({ integration: vi.fn(), recordTools: vi.fn() }))
 vi.mock('./server-tools', () => ({ createServerTools: () => ({ ...recordTools(), integration }) }))
 
-const init = { roomId: 'test', mode: 'coop' as const, isDefaultBoard: false }
+const init = { roomId: 'test', mode: 'coop' as const }
 type TestDatabase = {
   exec(query: string): void
   prepare(query: string): {
@@ -90,11 +90,10 @@ describe('next authorization seam', () => {
     expect(nextCommandRejection(state, null)).toBe('not_signed_in')
     expect(nextCommandRejection(state, 'anon-socket')).toBe('not_signed_in')
   })
-  it('denies unknown hosts, allows default-board players and recovers when a host leaves', () => {
+  it('denies unknown hosts and recovers when the host leaves', () => {
     const state = { ...newRoomState(init, 100, () => 0), status: 'intermission' as const }
     expect(nextCommandRejection(state, 'owner', null, ['owner'])).toBe('not_host')
-    expect(nextCommandRejection({ ...state, isDefaultBoard: true }, 'owner', null, ['owner'])).toBeNull()
-    expect(nextCommandRejection({ ...state, isDefaultBoard: true }, 'owner', 'owner', ['owner'])).toBeNull()
+    expect(nextCommandRejection(state, 'owner', 'owner', ['owner'])).toBeNull()
     expect(nextCommandRejection(state, 'other', 'owner', ['owner', 'other'])).toBe('not_host')
     expect(nextCommandRejection(state, 'owner', 'owner', ['owner'])).toBeNull()
     expect(nextCommandRejection(state, 'other', 'owner', ['other'])).toBeNull()
@@ -153,14 +152,14 @@ class TestPixelRoom extends PixelRoom {
   writeStatus(event: import('../game/room-logic').RoomStatusEvent) { return super.onRoomStatus(event) }
 }
 
-function roomHarness(isDefaultBoard = false, configure: (state: RoomState) => RoomState = state => state) {
+function roomHarness(configure: (state: RoomState) => RoomState = state => state) {
   const database = new DatabaseSync(':memory:')
   const sockets: WebSocket[] = []
   const durable = durableState(database, sockets)
   const env = { BUDGET_ROOMS: { idFromName: vi.fn(() => 'global'), get: () => ({ fetch: reserve }) } } as unknown as Env
-  const initial = configure(newRoomState({ ...init, isDefaultBoard }, Date.now(), () => 0))
+  const initial = configure(newRoomState(init, Date.now(), () => 0))
   database.exec('CREATE TABLE pixel_state (id INTEGER PRIMARY KEY, room_id TEXT, mode TEXT, is_default INTEGER, state TEXT, resting_day TEXT)')
-  database.prepare('INSERT INTO pixel_state VALUES (1, ?, ?, ?, ?, NULL)').run(init.roomId, init.mode, Number(isDefaultBoard), serializeRoomState(initial))
+  database.prepare('INSERT INTO pixel_state VALUES (1, ?, ?, 0, ?, NULL)').run(init.roomId, init.mode, serializeRoomState(initial))
   const makeRoom = () => new TestPixelRoom(durable as unknown as DurableObjectState, env)
   const room = makeRoom()
   const saved = () => {
@@ -330,27 +329,18 @@ describe('durable room boundaries', () => {
     harness.database.close()
   })
 
-  it('cannot close the default board', async () => {
-    const harness = roomHarness(true)
-    expect((await harness.room.fetch(new Request('https://pixel/close', { method: 'POST', headers: { 'X-Room-Id': 'test', 'X-Room-Host': 'host' } }))).status).toBe(403)
-    expect(harness.saved().status).not.toBe('closed')
+  it('lets a connected guest start when the host is absent', async () => {
+    const harness = roomHarness(state => ({ ...state, status: 'intermission', intermissionEndsAt: 1, round: { ...state.round, state: 'intermission' } }))
+    harness.database.prepare('UPDATE pixel_state SET host_id = ?').run('host')
+    const room = harness.makeRoom()
+    const guest = await harness.connect('guest', room)
+    await room.tick()
+    expect(harness.saved().status).toBe('intermission')
+    expect(harness.durable.storage.deleteAlarm).toHaveBeenCalled()
+    await room.command(guest.connection, { t: 'next' })
+    expect(harness.saved().status).toBe('playing')
+    expect(harness.saved().roundCounter).toBe(1)
     harness.database.close()
-  })
-
-  it('lets a connected guest start when the host is absent, and lets any default-board player start', async () => {
-    for (const isDefault of [false, true]) {
-      const harness = roomHarness(isDefault, state => ({ ...state, status: 'intermission', intermissionEndsAt: 1, round: { ...state.round, state: 'intermission' } }))
-      harness.database.prepare('UPDATE pixel_state SET host_id = ?').run('host')
-      const room = harness.makeRoom()
-      const guest = await harness.connect('guest', room)
-      await room.tick()
-      expect(harness.saved().status).toBe('intermission')
-      expect(harness.durable.storage.deleteAlarm).toHaveBeenCalled()
-      await room.command(guest.connection, { t: 'next' })
-      expect(harness.saved().status).toBe('playing')
-      expect(harness.saved().roundCounter).toBe(1)
-      harness.database.close()
-    }
   })
 
   it('batches solo cells into one durable write and keeps the abuse cap after wake', async () => {
@@ -373,7 +363,7 @@ describe('durable room boundaries', () => {
   })
 
   it.each([1, 2])('keeps a private lobby inert and lets only its host start with %s players', async count => {
-    const harness = roomHarness(false, () => newRoomState({ ...init, startsInLobby: true }, Date.now(), () => 0))
+    const harness = roomHarness(() => newRoomState({ ...init, startsInLobby: true }, Date.now(), () => 0))
     harness.database.prepare('UPDATE pixel_state SET host_id = ?').run('host')
     const restored = harness.makeRoom()
     const host = await harness.connect('host', restored)
@@ -415,19 +405,16 @@ describe('durable room boundaries', () => {
     harness.database.close()
   })
 
-  it('writes complete private round history and awards only won contributors', async () => {
+  it('writes complete private round history without touching a score collection', async () => {
     const memory = memoryTools()
     recordTools.mockReturnValue(memory.tools)
     memory.rows('rooms').set('test', { hostId: 'host', visibility: 'private', memberIds: ['host', 'guest'] })
-    memory.rows('scores').set('host', { userId: 'host', totalPoints: 10, roundsWon: 2 })
     const harness = roomHarness()
-    const event = { roomId: 'test', roundId: 'round1', mode: 'coop' as const, word: 'cat', startedAt: 100, endedAt: 200, outcome: 'won' as const, score: 50, pixelsUsed: 12, durationMs: 100, contributorIds: ['host', 'guest'], finalGuesses: ['cat'] }
+    const event = { roomId: 'test', roundId: 'round1', mode: 'coop' as const, word: 'cat', startedAt: 100, endedAt: 200, outcome: 'won' as const, pixelsUsed: 12, durationMs: 100, contributorIds: ['host', 'guest'], finalGuesses: ['cat'] }
     await harness.room.writeRound(event)
     expect([...memory.rows('rounds').values()][0]).toMatchObject({ ...event, visibility: 'private', memberIds: ['host', 'guest'], snapshotFileIds: [] })
-    expect(memory.rows('scores').get('host')).toMatchObject({ totalPoints: 60, roundsWon: 3 })
-    expect(memory.rows('scores').get('guest')).toMatchObject({ totalPoints: 50, roundsWon: 1 })
     await harness.room.writeRound({ ...event, roundId: 'round2', outcome: 'timeout' })
-    expect(memory.rows('scores').get('host')!.roundsWon).toBe(3)
+    expect([...memory.rows('rounds').values()]).toHaveLength(2)
     const status = { roomId: 'test', status: 'paused' as const, playerCount: 0, lastActiveAt: 300, currentRoundId: 'round2' }
     await harness.room.writeStatus(status)
     expect(memory.rows('rooms').get('test')).toMatchObject({ status: 'paused', playerCount: 0, lastActiveAt: 300, currentRoundId: 'round2' })
@@ -489,13 +476,13 @@ describe('durable room boundaries', () => {
     harness.database.close()
   })
 
-  it('pauses the default board when its last signed-in socket closes even with spectators', async () => {
-    const harness = roomHarness(true)
+  it('pauses when its last signed-in socket closes even with spectators', async () => {
+    const harness = roomHarness()
     const owner = await harness.connect('owner')
     await harness.connect('anon-spectator')
     await harness.room.disconnect(owner.connection)
     expect(harness.saved()).toMatchObject({ status: 'paused', round: { state: 'paused' }, judgeInFlight: false })
-    expect(harness.durable.storage.deleteAlarm).toHaveBeenCalled()
+    expect(harness.durable.storage.setAlarm).toHaveBeenCalled()
     const fresh = await harness.connect('anon-fresh', harness.makeRoom())
     expect(messages(fresh).find(message => message.t === 'snapshot')).toMatchObject({ players: 0, round: { state: 'paused' } })
     harness.database.close()
@@ -609,7 +596,7 @@ describe('durable room boundaries', () => {
     integration.mockResolvedValue({ success: true, data: { content: [{ type: 'text', text: '{"guesses":["sun"],"confidence":0.9}' }] } })
     await vi.advanceTimersByTimeAsync(JUDGE.askMinMs)
     await harness.room.command(owner.connection, { t: 'ask' })
-    expect(messages(owner)).toContainEqual({ t: 'judgement', zone: 'all', guesses: ['sun'], confidence: 0.9, matched: false })
+    expect(messages(owner)).toContainEqual({ t: 'judgement', zone: 'all', guesses: ['sun'], confidence: 0.9, matched: false, text: false })
     expect(vi.getTimerCount()).toBe(0)
     harness.database.close()
   })
@@ -729,7 +716,7 @@ describe('durable room boundaries', () => {
   })
 
   it('returns 410 before upgrading a persisted closed room', async () => {
-    const harness = roomHarness(false, state => ({ ...state, status: 'closed', round: { ...state.round, state: 'paused' } }))
+    const harness = roomHarness(state => ({ ...state, status: 'closed', round: { ...state.round, state: 'paused' } }))
     const response = await harness.room.fetch(new Request('https://room/ws', { headers: { Upgrade: 'websocket' } }))
     expect(response.status).toBe(410)
     harness.database.close()
@@ -748,7 +735,7 @@ describe('durable room boundaries', () => {
   })
 
   it.each(['unchanged', 'too_soon', 'rate_cap', 'not_playing'])('always replies to a skipped ask: %s', async reason => {
-    const harness = roomHarness(false, state => ({
+    const harness = roomHarness(state => ({
       ...state,
       version: reason === 'unchanged' ? 0 : 1,
       lastJudgedAt: reason === 'rate_cap' ? Date.now() - JUDGE.askMinMs : Date.now(),
@@ -782,7 +769,7 @@ describe('durable room boundaries', () => {
   })
 
   it('excludes lobby spectate previews from player/watcher counts, unpausing, and room commands', async () => {
-    const harness = roomHarness(false, state => ({
+    const harness = roomHarness(state => ({
       ...state,
       status: 'paused',
       pausedAt: Date.now() - 5000,

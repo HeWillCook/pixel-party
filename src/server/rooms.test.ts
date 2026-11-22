@@ -2,11 +2,11 @@ import { canCreate, canDelete, canRead, canUpdate } from 'deepspace/worker'
 import { describe, expect, it, vi } from 'vitest'
 import { schemas } from '../schemas'
 import { createRoom, deleteRoom, joinRoom } from '../actions/rooms'
-import { ensureDefaultBoard } from './default-board'
+import { openRooms } from './rooms'
 import { memoryTools } from './room-test-tools'
 
 describe('game collection permissions', () => {
-  it.each(['rooms', 'rounds', 'teamMembers', 'scores'])('denies every client write to %s, including admins', name => {
+  it.each(['rooms', 'rounds', 'teamMembers'])('denies every client write to %s, including admins', name => {
     const schema = schemas.find(schema => schema.name === name)!
     expect(schema).toBeDefined()
     for (const role of ['*', 'viewer', 'member', 'admin']) {
@@ -24,10 +24,6 @@ describe('game collection permissions', () => {
     }
     expect(canRead(schema, 'member', { createdBy: 'server', data: { visibility: 'private', hostId: 'host', memberIds: ['host', 'guest'] } }, 'guest')).toBe(true)
   })
-
-  it('exposes scores to anonymous readers', () => {
-    expect(canRead(schemas.find(schema => schema.name === 'scores')!, '*', { createdBy: 'server', data: {} }, '')).toBe(true)
-  })
 })
 
 describe('room actions', () => {
@@ -39,7 +35,7 @@ describe('room actions', () => {
       if (!result.success) throw new Error(result.error)
       expect(result.data.joinCode).toMatch(/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}$/)
       expect(rows('rooms').get(result.data.roomId)!.status).toBe('lobby')
-      expect(rows('rooms').get(result.data.roomId)).toMatchObject({ visibility, hostId: 'host', memberIds: ['host'], playerCount: 0, currentRoundId: '', isDefaultBoard: false })
+      expect(rows('rooms').get(result.data.roomId)).toMatchObject({ visibility, hostId: 'host', memberIds: ['host'], playerCount: 0, currentRoundId: '' })
     }
     expect(new Set([...rows('rooms').values()].map(room => room.joinCode)).size).toBe(2)
   })
@@ -112,13 +108,30 @@ describe('room actions', () => {
     expect(await joinRoom(tools, 'guest', { joinCode: '../bad' })).toMatchObject({ success: false, code: 'invalid_params' })
   })
 
-  it('does not overwrite an existing default board', async () => {
-    const { tools, rows, create } = memoryTools()
-    expect(await ensureDefaultBoard(tools)).toMatchObject({ success: true, data: { recordId: 'default-board', data: { joinCode: 'play', visibility: 'public', isDefaultBoard: true, hostId: '' } } })
-    rows('rooms').get('default-board')!.currentRoundId = 'existing'
-    expect(await ensureDefaultBoard(tools)).toMatchObject({ success: true, data: { recordId: 'default-board', data: { currentRoundId: 'existing' } } })
-    expect(create).toHaveBeenCalledTimes(1)
-    expect(rows('rooms').get('default-board')).toMatchObject({ joinCode: 'play', visibility: 'public', isDefaultBoard: true, hostId: '', currentRoundId: 'existing' })
+  it('lists every open game, but only hands a private code to its host or members', async () => {
+    const { tools, rows } = memoryTools()
+    rows('rooms').set('open', { name: 'Open house', joinCode: 'PUB4', visibility: 'public', status: 'playing', hostId: 'someone', memberIds: ['someone'], playerCount: 2, lastActiveAt: 3000 })
+    rows('rooms').set('locked', { name: 'Secret club', joinCode: 'PRV8', visibility: 'private', status: 'lobby', hostId: 'other', memberIds: ['other'], playerCount: 0, lastActiveAt: 4000 })
+    rows('rooms').set('mine', { name: 'My club', joinCode: 'MINE', visibility: 'private', status: 'lobby', hostId: 'host', memberIds: ['host'], playerCount: 1, lastActiveAt: 2000 })
+    rows('rooms').set('joined', { name: 'Friend club', joinCode: 'FRND', visibility: 'private', status: 'playing', hostId: 'other', memberIds: ['other', 'host'], playerCount: 1, lastActiveAt: 1000 })
+    rows('rooms').set('closed', { name: 'Gone', joinCode: 'GONE', visibility: 'public', status: 'closed', hostId: 'someone', memberIds: ['someone'], playerCount: 0, lastActiveAt: 9000 })
+    rows('rooms').set('orphan', { name: 'Old board', joinCode: 'PLAY', visibility: 'public', status: 'playing', hostId: '', memberIds: [], playerCount: 0, lastActiveAt: 10000 })
+
+    const anonymous = await openRooms(tools, null)
+    expect(anonymous).toMatchObject({ success: true })
+    if (!anonymous.success) throw new Error(anonymous.error)
+    expect(anonymous.data.map(room => room.id)).toEqual(['locked', 'open', 'mine', 'joined'])
+    expect(anonymous.data.find(room => room.id === 'open')).toMatchObject({ joinCode: 'PUB4', visibility: 'public', mode: 'coop', playerCount: 2 })
+    expect(anonymous.data.find(room => room.id === 'locked')).toMatchObject({ joinCode: null, visibility: 'private' })
+    // A hostless room can never be started: it is not a game.
+    expect(anonymous.data.some(room => room.id === 'orphan')).toBe(false)
+    expect(anonymous.data.some(room => room.id === 'closed')).toBe(false)
+
+    const signedIn = await openRooms(tools, 'host')
+    if (!signedIn.success) throw new Error(signedIn.error)
+    expect(signedIn.data.find(room => room.id === 'locked')?.joinCode).toBeNull()
+    expect(signedIn.data.find(room => room.id === 'mine')?.joinCode).toBe('MINE')
+    expect(signedIn.data.find(room => room.id === 'joined')?.joinCode).toBe('FRND')
   })
 })
 
@@ -156,7 +169,7 @@ it('retries a unique-index collision from a concurrent creator but returns other
 
 it('only lets the host close a custom room, reserves its code, and frees an active slot', async () => {
   const { tools, rows, update } = memoryTools()
-  for (let i = 0; i < 5; i++) rows('rooms').set(`room${i}`, { joinCode: `ABC${i}`, hostId: 'host', status: 'playing', isDefaultBoard: false })
+  for (let i = 0; i < 5; i++) rows('rooms').set(`room${i}`, { joinCode: `ABC${i}`, hostId: 'host', status: 'playing' })
   const close = vi.fn(async () => {})
   expect(await deleteRoom(tools, 'guest', { joinCode: 'ABC0' }, close)).toMatchObject({ success: false, code: 'not_host' })
   expect(update).not.toHaveBeenCalled()
@@ -168,13 +181,11 @@ it('only lets the host close a custom room, reserves its code, and frees an acti
   expect(close).toHaveBeenCalledWith(expect.objectContaining({ recordId: 'room0' }))
   expect(await joinRoom(tools, 'host', { joinCode: 'ABC0' })).toMatchObject({ success: false, code: 'not_found' })
   expect(await createRoom(tools, 'host', { name: 'Replacement', mode: 'coop', visibility: 'public' })).toMatchObject({ success: true })
-  rows('rooms').set('default-board', { joinCode: 'play', hostId: 'host', status: 'playing', isDefaultBoard: true })
-  expect(await deleteRoom(tools, 'host', { joinCode: 'PLAY' }, close)).toMatchObject({ success: false, code: 'default_board' })
 })
 
 it('reports storage and shutdown failures and lets hosts retry an already closed room', async () => {
   const { tools, rows, update } = memoryTools()
-  rows('rooms').set('room', { joinCode: 'AB2Z', hostId: 'host', status: 'playing', isDefaultBoard: false })
+  rows('rooms').set('room', { joinCode: 'AB2Z', hostId: 'host', status: 'playing' })
   const close = vi.fn<() => Promise<void>>(async () => { throw new Error('offline') })
   update.mockResolvedValueOnce({ success: false, error: 'storage offline' } as never)
   expect(await deleteRoom(tools, 'host', { joinCode: 'AB2Z' }, close)).toMatchObject({ success: false, error: 'storage offline' })

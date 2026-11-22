@@ -14,6 +14,5 @@ export const roomsSchema: CollectionSchema = {
     { name: 'currentRoundId', storage: 'text', interpretation: 'plain' },
     { name: 'playerCount', storage: 'number', interpretation: 'plain' },
     { name: 'lastActiveAt', storage: 'number', interpretation: { kind: 'datetime' } },
-    { name: 'isDefaultBoard', storage: 'number', interpretation: { kind: 'boolean' } },
   ],
 }

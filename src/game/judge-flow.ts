@@ -55,7 +55,9 @@ export async function runJudge(deps: JudgeDeps, s: RoomState, reason: 'tick' | '
     const result = text === null ? null : parseJudgeText(text)
     if (!result) return { kind: 'failed' }
     after.lastJudgedVersion = version
-    return { kind: 'judged', zone: zone.id, result, matched: matchGuess(result.guesses[0], after.wordEntry) }
+    // A canvas that spells the answer is not a drawing of it: the guess never counts, however exact.
+    const matched = !result.text && matchGuess(result.guesses[0], after.wordEntry)
+    return { kind: 'judged', zone: zone.id, result, matched }
   } catch {
     const current = deps.getState()
     if (current.round.id !== roundId || current.status !== 'playing' || current.round.state !== 'playing') return { kind: 'stale' }

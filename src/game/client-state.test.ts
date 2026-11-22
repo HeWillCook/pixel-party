@@ -304,7 +304,7 @@ describe('client-state', () => {
     // Same round id (e.g., askAvailableAt or state transition to intermission) preserves guesses
     s = applyServerMsg(s, {
       t: 'round',
-      round: { ...makeRound('r1', 'mushroom'), state: 'intermission', result: { outcome: 'won', score: 180 } },
+      round: { ...makeRound('r1', 'mushroom'), state: 'intermission', result: { outcome: 'won', contributorCount: 2 } },
     })
     expect(s.guesses.all?.guesses).toEqual(['cap', 'stem'])
 

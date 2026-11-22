@@ -76,6 +76,12 @@ async function setupClient(page: Page, options: { signedOut?: boolean; dailyStat
       })
     }
     if (url.pathname === '/api/auth/token') return route.fulfill({ json: { token: options.signedOut ? null : fixtureToken } })
+    if (url.pathname === '/api/party/rooms') {
+      return route.fulfill({ json: { rooms: [
+        { id: 'room', name: "Will's Room", hostId: 'host', mode: 'coop', status: 'playing', playerCount: 3, visibility: 'public', joinCode: 'QX3J' },
+        { id: 'locked', name: 'Secret Club', hostId: 'u2', mode: 'coop', status: 'lobby', playerCount: 0, visibility: 'private', joinCode: null },
+      ] } })
+    }
     if (url.pathname.startsWith('/api/')) return route.fulfill({ json: {} })
     const asset = url.pathname.startsWith('/assets/')
     const path = asset ? resolve(clientDir, `.${url.pathname}`) : resolve(clientDir, '_spa.html')
@@ -125,21 +131,6 @@ async function setupClient(page: Page, options: { signedOut?: boolean; dailyStat
               status: 'playing',
               playerCount: 3,
               lastActiveAt: Date.now(),
-              isDefaultBoard: false,
-            },
-          },
-          {
-            recordId: 'default-board',
-            data: {
-              name: 'Pixle',
-              mode: 'coop',
-              visibility: 'public',
-              joinCode: 'play',
-              hostId: 'system',
-              status: 'playing',
-              playerCount: 5,
-              lastActiveAt: Date.now() - 1000,
-              isDefaultBoard: true,
             },
           },
         ]

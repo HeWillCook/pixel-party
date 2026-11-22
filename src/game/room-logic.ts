@@ -3,12 +3,10 @@ import { contributors, createGrid, decodeCells, encodeCells, pixelsUsed, setPixe
 import type { JudgeOutcome } from './judge-flow'
 import type { Placement, RoundView } from './protocol'
 import { consumePaintToken, paintRate, validatePlacement, type RejectReason, type TokenBucket } from './rules'
-import { coopScore } from './scoring'
 import { pickWord, type WordEntry } from './words'
 
 export interface RoomState {
   roomId: string
-  isDefaultBoard: boolean
   mode: Mode
   grid: Grid
   version: number
@@ -32,7 +30,7 @@ export interface RoomState {
 
 export type RoundEndedEvent = {
   roomId: string; roundId: string; mode: Mode; word: string; startedAt: number; endedAt: number
-  outcome: 'won' | 'timeout' | 'teamWin'; score?: number; winningTeam?: 'red' | 'blue' | 'draw'
+  outcome: 'won' | 'timeout' | 'teamWin'; winningTeam?: 'red' | 'blue' | 'draw'
   pixelsUsed: number; durationMs: number; contributorIds: string[]; finalGuesses: string[]
 }
 export type RoomStatusEvent = { roomId: string; status: RoomState['status']; playerCount: number; lastActiveAt: number; currentRoundId: string }
@@ -40,7 +38,7 @@ export type RoomEvent =
   | { type: 'pixel'; x: number; y: number; c: number; by: string }
   | { type: 'noop'; x: number; y: number; id?: number }
   | { type: 'reject'; reason: RejectReason; retryAt?: number; x?: number; y?: number; id?: number }
-  | { type: 'judgement'; zone: ZoneId; guesses: string[]; confidence: number; matched: boolean }
+  | { type: 'judgement'; zone: ZoneId; guesses: string[]; confidence: number; matched: boolean; text?: boolean }
   | { type: 'round'; round: RoundView }
   | { type: 'cleared' }
   | { type: 'ai_resting' }
@@ -52,12 +50,12 @@ export function countPlayers(connections: Array<{ userId: string | null }>): num
   return new Set(connections.map(connection => connection.userId).filter((id): id is string => id !== null)).size
 }
 
-export function newRoomState(init: { roomId: string; mode: Mode; isDefaultBoard: boolean; startsInLobby?: boolean }, now: number, rng: () => number): RoomState {
+export function newRoomState(init: { roomId: string; mode: Mode; startsInLobby?: boolean }, now: number, rng: () => number): RoomState {
   const config = MODES[init.mode]
   const wordEntry = pickWord(rng, [])
   const lobby = init.startsInLobby === true
   return {
-    roomId: init.roomId, mode: init.mode, isDefaultBoard: init.isDefaultBoard, grid: createGrid(config.width, config.height), version: 0,
+    roomId: init.roomId, mode: init.mode, grid: createGrid(config.width, config.height), version: 0,
     round: { id: `${now}-0`, word: lobby ? '' : wordEntry.word, state: lobby ? 'lobby' : 'playing', startedAt: lobby ? 0 : now, endsAt: lobby ? null : now + config.capMs, askAvailableAt: now + JUDGE.askMinMs },
     wordEntry, recentWords: lobby ? [] : [wordEntry.word], lastGuesses: [], roundCounter: 0, paintBuckets: {}, judgeCalls: [],
     lastJudgedVersion: 0, lastJudgedAt: now, judgeInFlight: false, emptySince: lobby ? now : null,
@@ -98,21 +96,18 @@ export function shouldJudge(s: RoomState, now: number, signedInConnected: number
 function endRound(s: RoomState, now: number, outcome: 'won' | 'timeout', guesses: string[]): RoomTransition {
   const used = pixelsUsed(s.grid)
   const durationMs = now - s.round.startedAt
-  const score = outcome === 'won'
-    ? coopScore({ cells: s.grid.cells, width: s.grid.width, height: s.grid.height, durationMs, capMs: MODES[s.mode].capMs })
-    : undefined
   const contributorCount = contributors(s.grid).length
-  const result: RoundView['result'] = score === undefined ? { outcome, contributorCount } : { outcome, score, contributorCount }
+  const result: RoundView['result'] = { outcome, contributorCount }
   const round: RoundView = { ...s.round, state: 'intermission', endedAt: now, result }
   const state: RoomState = { ...s, round, status: 'intermission', intermissionEndsAt: null }
-  const event: RoundEndedEvent = { roomId: s.roomId, roundId: round.id, mode: s.mode, word: round.word, startedAt: round.startedAt, endedAt: now, outcome, ...(score === undefined ? {} : { score }), pixelsUsed: used, durationMs, contributorIds: contributors(s.grid), finalGuesses: guesses }
+  const event: RoundEndedEvent = { roomId: s.roomId, roundId: round.id, mode: s.mode, word: round.word, startedAt: round.startedAt, endedAt: now, outcome, pixelsUsed: used, durationMs, contributorIds: contributors(s.grid), finalGuesses: guesses }
   return { state, events: [{ type: 'round', round }, { type: 'roundEnded', event }] }
 }
 
 export function applyJudgeOutcome(s: RoomState, outcome: JudgeOutcome, now: number): RoomTransition {
   if (outcome.kind === 'resting') return { state: s, events: [{ type: 'ai_resting' }] }
   if (outcome.kind !== 'judged' || s.status !== 'playing' || s.round.state !== 'playing') return { state: s, events: [] }
-  const judgement: RoomEvent = { type: 'judgement', zone: outcome.zone, guesses: outcome.result.guesses, confidence: outcome.result.confidence, matched: outcome.matched }
+  const judgement: RoomEvent = { type: 'judgement', zone: outcome.zone, guesses: outcome.result.guesses, confidence: outcome.result.confidence, matched: outcome.matched, text: outcome.result.text }
   // runJudge advances lastJudgedVersion to the rendered version; doing so here could mark newer pixels as judged.
   const state = { ...s, lastGuesses: [...outcome.result.guesses] }
   if (!outcome.matched) return { state, events: [judgement] }
@@ -135,7 +130,7 @@ function statusEvent(s: RoomState, now: number, playerCount: number): RoomEvent 
 
 export function advance(s: RoomState, now: number, signedInConnected: number, _rng: () => number): RoomTransition {
   if (s.status === 'closed') return { state: s, events: [] }
-  if (signedInConnected === 0 && !s.isDefaultBoard && (s.status === 'paused' || s.status === 'lobby' || s.status === 'intermission') && s.emptySince !== null && now - s.emptySince >= ROOMS.closeAfterEmptyMs) {
+  if (signedInConnected === 0 && (s.status === 'paused' || s.status === 'lobby' || s.status === 'intermission') && s.emptySince !== null && now - s.emptySince >= ROOMS.closeAfterEmptyMs) {
     const state: RoomState = { ...s, status: 'closed' }
     return { state, events: [statusEvent(state, now, signedInConnected)] }
   }
@@ -160,7 +155,7 @@ export function advance(s: RoomState, now: number, signedInConnected: number, _r
 
 export function nextAlarmAt(s: RoomState, now: number): number | null {
   const deadlines: number[] = []
-  if ((s.status === 'paused' || s.status === 'lobby' || s.status === 'intermission') && !s.isDefaultBoard && s.emptySince !== null) deadlines.push(s.emptySince + ROOMS.closeAfterEmptyMs)
+  if ((s.status === 'paused' || s.status === 'lobby' || s.status === 'intermission') && s.emptySince !== null) deadlines.push(s.emptySince + ROOMS.closeAfterEmptyMs)
   if (s.status === 'playing') {
     deadlines.push(s.round.startedAt + MODES[s.mode].capMs)
     // A blank canvas is never judged (shouldJudge reports `canvas_blank` without advancing
@@ -198,9 +193,10 @@ export function applyPlacements(state: RoomState, cells: Placement[], userId: st
 /** Identities are normalized by the socket boundary; only live players can start. */
 export function nextRoundRejection(state: RoomState, userId: string | null, hostId: string | null, connectedIds: string[]): 'not_signed_in' | 'not_host' | null {
   if (!userId || !connectedIds.includes(userId)) return 'not_signed_in'
-  if (userId === hostId && !state.isDefaultBoard) return null
-  // Skipping a live round wipes everyone's canvas: host only (nobody on the default board).
+  if (userId === hostId) return null
+  // Skipping a live round wipes everyone's canvas: host only.
   if (state.status === 'playing') return 'not_host'
-  if (state.isDefaultBoard || (hostId && !connectedIds.includes(hostId))) return null
+  // The host is away: any connected painter may start the next game.
+  if (hostId && !connectedIds.includes(hostId)) return null
   return 'not_host'
 }

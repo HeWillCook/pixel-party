@@ -202,9 +202,7 @@ export function buildTools(executor: UserToolExecutor, context: AgentToolContext
         .filter(({ data }) =>
           text(data, 'visibility') === 'public'
           && text(data, 'status') !== 'closed'
-          && data.isDefaultBoard !== true
-          && data.isDefaultBoard !== 1
-          && text(data, 'joinCode') !== 'play')
+          && text(data, 'hostId') !== '')
         .sort((left, right) => numberValue(right.data, 'lastActiveAt') - numberValue(left.data, 'lastActiveAt'))
         .map(({ data }) => ({
           code: text(data, 'joinCode'),

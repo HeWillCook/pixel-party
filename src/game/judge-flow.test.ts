@@ -4,7 +4,7 @@ import { runJudge } from './judge-flow'
 import { advance, countPlayers, newRoomState, nextAlarmAt, shouldJudge } from './room-logic'
 
 function setup() {
-  const state = newRoomState({ roomId: 'r', mode: 'coop', isDefaultBoard: false }, 0, () => 0)
+  const state = newRoomState({ roomId: 'r', mode: 'coop' }, 0, () => 0)
   state.version = 1
   state.grid.cells[0] = 1 // non-blank so runJudge proceeds past the blank-canvas gate
   let now = 15000
@@ -75,6 +75,12 @@ describe('runJudge', () => {
     deps.callJudge.mockImplementationOnce(async () => { state.status = 'intermission'; state.round.state = 'intermission'; return '{"guesses":["home"],"confidence":1}' })
     expect(await runJudge(deps, state, 'tick', 1, zone)).toEqual({ kind: 'stale' })
     expect(state.lastJudgedVersion).toBe(0)
+  })
+  it('never matches a guess that was read off spelled letters', async () => {
+    const { state, deps } = setup()
+    deps.callJudge.mockResolvedValueOnce('{"guesses":["home"],"confidence":1,"text":true}')
+    const outcome = await runJudge(deps, state, 'tick', 1, zone)
+    expect(outcome).toMatchObject({ kind: 'judged', matched: false, result: { guesses: ['home'], text: true } })
   })
   it('marks only the rendered version as judged when the grid changes mid-call', async () => {
     const { state, deps } = setup()

@@ -9,7 +9,6 @@ import {
 import {
   AlertCircle,
   ArrowLeft,
-  Award,
   ChevronDown,
   Clock,
   Copy,
@@ -35,8 +34,6 @@ import { ToolBar } from '../../../../components/game/ToolBar'
 import { useGameSounds } from '../../../../components/game/useGameSounds'
 import { CriticBubble } from '../../../../components/play/CriticBubble'
 import { HaikuStrip } from '../../../../components/play/HaikuStrip'
-import { PartyScoreNote } from '../../../../components/play/PartyScoreNote'
-import { PartySizeMeter } from '../../../../components/play/PartySizeMeter'
 import { PlayLayout } from '../../../../components/play/PlayLayout'
 import '../../../../components/play/room-play.css'
 import { StudioSprite } from '../../../../components/play/StudioSprite'
@@ -59,7 +56,6 @@ import {
 import { roomAccessView, type RejectMsg } from '../../../../game/client-state'
 import { MODES } from '../../../../game/config'
 import { contributorLabel } from '../../../../game/contributor-label'
-import { coopScoreParts } from '../../../../game/scoring'
 import { PARTY_TOOLS, pickAt, type Tool } from '../../../../game/tools'
 import { boardCellSize } from '../../../../game/board-size'
 import { usePixelRoom } from '../../../../hooks/usePixelRoom'
@@ -75,7 +71,6 @@ interface RoomRecord {
   joinCode: string
   hostId: string
   status: 'lobby' | 'playing' | 'intermission' | 'paused' | 'closed'
-  isDefaultBoard: boolean
 }
 
 interface RoundRecord {
@@ -83,7 +78,6 @@ interface RoundRecord {
   roundId: string
   word: string
   outcome: 'won' | 'timeout' | 'teamWin'
-  score?: number
   pixelsUsed?: number
   durationMs?: number
   contributorIds?: string[]
@@ -159,9 +153,8 @@ function InviteBadge({ code }: { code: string }) {
 }
 
 export default function RoomPage() {
-  const { code = 'play' } = useParams<{ code: string }>()
-  const rawCode = code.trim() || 'play'
-  const joinCode = rawCode.toLowerCase() === 'play' ? 'play' : rawCode.toUpperCase()
+  const { code = '' } = useParams<{ code: string }>()
+  const joinCode = code.trim().toUpperCase()
 
   const { isSignedIn, user } = useAuthProfileReady({ requireUser: false })
   const { getName } = useUserLookup()
@@ -369,28 +362,16 @@ export default function RoomPage() {
     return count
   }, [state.cells, state.pending])
 
-  // Scoring reads the confirmed canvas: a pixel still in flight must not inflate the result overlay.
-  const confirmedCells = useMemo(() => {
-    if (state.pending.size === 0) return state.cells
-    const cells = state.cells.slice()
-    for (const [idx, previous] of state.pending) cells[idx] = previous
-    return cells
-  }, [state.cells, state.pending])
-
   const isHost =
     Boolean(user?.id) &&
     Boolean(roomDoc?.data.hostId) &&
-    !roomDoc?.data.isDefaultBoard &&
-    joinCode !== 'play' &&
     roomDoc?.data.hostId === user?.id
 
   const hostConnected = state.roster.some((player) => player.userId === roomDoc?.data.hostId)
+  // The host starts while connected; if the host is away, any connected painter can start the next game.
   const canStart =
     Boolean(state.connected && state.you.userId) &&
-    (joinCode === 'play' || isHost || (Boolean(roomDoc?.data.hostId) && !hostConnected))
-  // The public board has no host, so a signed-out visitor must be offered sign-in
-  // instead of a permanently disabled "waiting for the host" message.
-  const publicSignedOut = joinCode === 'play' && !state.you.userId
+    (isHost || (Boolean(roomDoc?.data.hostId) && !hostConnected))
 
   const handlePlace = useCallback(
     (x: number, y: number, color: number) => {
@@ -452,8 +433,9 @@ export default function RoomPage() {
     state.round.result != null &&
     dismissedOverlayRoundId !== state.round.id
   const outcome = state.round?.result?.outcome
+  const winningTeam = state.round?.result?.winningTeam
+  const matchedGuess = (state.guessLog.find((entry) => entry.matched) ?? state.guessLog[0])?.guesses[0] ?? state.round?.word ?? ''
 
-  const roundPixelsUsed = currentRoundDoc?.data.pixelsUsed ?? confirmedPixelsCount
   const roundDurationMs = useMemo(() => {
     if (currentRoundDoc?.data.durationMs != null) return currentRoundDoc.data.durationMs
     const round = state.round
@@ -461,33 +443,6 @@ export default function RoomPage() {
     if (round.endedAt != null) return Math.max(0, round.endedAt - round.startedAt)
     return MODES[state.mode].capMs
   }, [currentRoundDoc?.data.durationMs, state.mode, state.round])
-
-  const baseParts = useMemo(() => {
-    if (outcome !== 'won') return { size: 0, time: 0, total: 0 }
-    return coopScoreParts({
-      cells: confirmedCells,
-      width: state.width,
-      height: state.height,
-      durationMs: roundDurationMs,
-      capMs: MODES[state.mode].capMs,
-    })
-  }, [outcome, confirmedCells, state.width, state.height, roundDurationMs, state.mode])
-
-  const shownTotal =
-    outcome === 'won'
-      ? (state.round?.result?.score ?? baseParts.total)
-      : (state.round?.result?.score ?? 0)
-
-  const scoreParts = useMemo(() => {
-    if (outcome !== 'won') return { size: 0, time: 0, total: shownTotal }
-    if (shownTotal === baseParts.total) return baseParts
-    // The server's total came from the final grid; the local canvas may lag by a pending pixel.
-    const size = Math.max(
-      Math.max(0, shownTotal - 400),
-      Math.min(600, Math.min(shownTotal, baseParts.size)),
-    )
-    return { size, time: shownTotal - size, total: shownTotal }
-  }, [outcome, shownTotal, baseParts])
 
   useToolShortcuts({
     tools: PARTY_TOOLS,
@@ -607,18 +562,7 @@ export default function RoomPage() {
 
   const hostName = (roomDoc?.data.hostId && (roomDoc.data.hostId === user?.id ? 'You' : getName(roomDoc.data.hostId))) || 'The host'
   const effectiveCode = roomDoc?.data.joinCode ?? joinCode
-  const inviteTicket =
-    effectiveCode !== 'play' ? (
-      <InviteBadge code={effectiveCode} />
-    ) : (
-      <span
-        data-testid="room-code"
-        className="pp-chip uppercase"
-        aria-label={`Room code ${effectiveCode}`}
-      >
-        ROOM {effectiveCode}
-      </span>
-    )
+  const inviteTicket = <InviteBadge code={effectiveCode} />
 
   const showIntermissionNext = canStart && state.round?.state === 'intermission'
   const showPlayingSkip =
@@ -820,7 +764,7 @@ export default function RoomPage() {
             {customRoomName}
           </span>
         ) : (
-          <span className="room-top-bar__name">{joinCode === 'play' ? 'Public Studio Board' : 'Studio room'}</span>
+          <span className="room-top-bar__name">Studio room</span>
         )}
       </div>
       <div className="room-top-bar__controls">{roomControls}</div>
@@ -831,7 +775,7 @@ export default function RoomPage() {
   const lobbyFace = (
     <div data-testid="room-lobby" className="room-lobby">
       <h1 className="room-lobby__title">{roomDoc?.data.name ?? 'Studio Waiting Area'}</h1>
-      {effectiveCode !== 'play' && <InvitePlank code={effectiveCode} />}
+      <InvitePlank code={effectiveCode} />
       <div className="room-lobby__status">
         <h2 data-testid="round-players" className="text-xl text-[var(--sunset-1)]">
           {state.players} {state.players === 1 ? 'painter' : 'painters'}
@@ -850,19 +794,6 @@ export default function RoomPage() {
         >
           Start painting
         </Button>
-      ) : publicSignedOut ? (
-        <div className="flex flex-col items-center gap-2">
-          <p data-testid="public-board-signed-out" className="text-base text-muted-foreground">
-            Public board is open — sign in to start a round and paint.
-          </p>
-          <Button
-            data-testid="public-board-sign-in"
-            onClick={() => setShowAuthModal(true)}
-            className="pp-btn px-6 py-2 text-xl uppercase"
-          >
-            Sign in to paint
-          </Button>
-        </div>
       ) : (
         <p className="text-base text-muted-foreground">
           Waiting for the host to start.
@@ -1052,7 +983,7 @@ export default function RoomPage() {
               >
                 <div className="pp-panel room-results-frame my-auto flex max-h-full min-h-0 w-full max-w-sm flex-col overflow-hidden">
                   <div className="pp-results-body flex min-h-0 flex-col items-center gap-2 overflow-y-auto p-4">
-                    {outcome === 'won' ? (
+                    {outcome === 'won' || outcome === 'teamWin' ? (
                       <>
                         <div className="pp-results-icon pp-chip flex h-10 w-10 shrink-0 items-center justify-center">
                           <Trophy className="h-5 w-5 text-[var(--sunset-1)]" aria-hidden />
@@ -1061,7 +992,11 @@ export default function RoomPage() {
                           id="overlay-heading"
                           className="pp-chip px-2.5 py-0.5 text-sm uppercase tracking-widest"
                         >
-                          Haiku Guessed It!
+                          {outcome === 'teamWin'
+                            ? winningTeam === 'draw'
+                              ? 'A Draw'
+                              : `${winningTeam === 'blue' ? 'Blue' : 'Red'} Team Wins`
+                            : 'Haiku Guessed It!'}
                         </span>
                       </>
                     ) : (
@@ -1073,7 +1008,7 @@ export default function RoomPage() {
                           id="overlay-heading"
                           className="pp-chip px-2.5 py-0.5 text-sm uppercase tracking-widest"
                         >
-                          Time&apos;s Up!
+                          Time's Up!
                         </span>
                       </>
                     )}
@@ -1092,7 +1027,7 @@ export default function RoomPage() {
 
                     <p data-testid="overlay-guess" className={`room-results-guess${outcome === 'won' ? ' room-results-guess--won' : ''}`}>
                       {outcome === 'won' ? (
-                        <>Haiku guessed <strong>{(state.guessLog.find((e) => e.matched) ?? state.guessLog[0])?.guesses[0] ?? state.round.word}</strong></>
+                        <>Haiku guessed <strong>{matchedGuess}</strong></>
                       ) : state.guessLog[0] ? (
                         <>Haiku&apos;s closest guess: <strong>{state.guessLog[0].guesses.join(', ')}</strong></>
                       ) : (
@@ -1100,36 +1035,20 @@ export default function RoomPage() {
                       )}
                     </p>
 
+                    {/* A celebration, not a scoreboard: the word, Haiku's guess, how long it took, and who painted. */}
                     <div className="room-results-main">
                       <CanvasThumb width={state.width} height={state.height} cells={state.cells} className="room-results-thumb" />
-                      <div className={`room-results-stats text-sm${outcome === 'won' ? '' : ' room-results-stats--solo'}`}>
-                        {outcome === 'won' && (
-                          <div className="room-results-stat">
-                            <span className="text-muted-foreground">Score</span>
-                            <span
-                              data-testid="overlay-score"
-                              className="mt-0.5 flex items-center gap-1 text-lg text-[var(--sunset-1)]"
-                            >
-                              <Award className="h-4 w-4" aria-hidden />
-                              {scoreParts.total} pts
-                            </span>
-                          </div>
-                        )}
+                      <div className="room-results-stats text-sm">
                         <div className="room-results-stat">
-                          <span className="text-muted-foreground">Pixels used</span>
-                          <span className="mt-0.5 text-lg text-foreground">
-                            {roundPixelsUsed} px
+                          <span className="text-muted-foreground">Time taken</span>
+                          <span
+                            data-testid="overlay-duration"
+                            className="mt-0.5 flex items-center gap-1 text-lg text-foreground"
+                          >
+                            <Clock className="h-4 w-4" aria-hidden />
+                            {formatTimer(roundDurationMs)}
                           </span>
                         </div>
-                        {outcome === 'won' && (
-                          <div
-                            title="Bigger drawings and a faster guess score higher: size is out of 600, speed out of 400"
-                            className="room-results-bonus col-span-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-0.5 border-t border-[#d1b5a3] pt-1 text-xs text-[var(--soft-text)]"
-                          >
-                            <span>Size bonus: {scoreParts.size}/600</span>
-                            <span>Speed bonus: {scoreParts.time}/400</span>
-                          </div>
-                        )}
                       </div>
                     </div>
 
@@ -1161,24 +1080,9 @@ export default function RoomPage() {
                   </div>
                   <div className="pp-results-footer flex w-full shrink-0 flex-col items-center gap-1.5 border-t border-border p-2.5 text-xs text-muted-foreground">
                     <span>
-                      {canStart
-                        ? 'Ready when you are.'
-                        : publicSignedOut
-                          ? 'Public board is open — sign in to start a round and paint.'
-                          : 'Waiting for the host to start a new game.'}
+                      {canStart ? 'Ready when you are.' : 'Waiting for the host to start a new game.'}
                     </span>
                     <div className="flex items-center gap-2">
-                      {publicSignedOut && (
-                        <Button
-                          type="button"
-                          size="sm"
-                          data-testid="public-board-sign-in-overlay"
-                          onClick={() => setShowAuthModal(true)}
-                          className="pp-btn h-8 px-3 text-sm uppercase"
-                        >
-                          Sign in to paint
-                        </Button>
-                      )}
                       <Button
                         type="button"
                         variant="secondary"
@@ -1227,7 +1131,6 @@ export default function RoomPage() {
         asking={asking}
         hasPixels={pixelsCount > 0}
       />
-      <PartyScoreNote />
     </div>
   )
 
@@ -1281,11 +1184,6 @@ export default function RoomPage() {
           }}
           disabled={isSpectator}
         />
-      }
-      meter={
-        roundPlaying
-          ? <PartySizeMeter cells={state.cells} width={state.width} height={state.height} />
-          : undefined
       }
     />
   )

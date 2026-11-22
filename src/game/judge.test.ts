@@ -11,10 +11,10 @@ describe('buildJudgeBody', () => {
       model: JUDGE.model,
       max_tokens: JUDGE.maxTokens,
       temperature: 0,
-      system: 'You judge a collaborative pixel-art canvas drawn by many people, one pixel at a time. Ignore isolated stray pixels; they are noise. If the canvas is entirely blank (no pixels drawn), the drawing is empty and nothing was drawn.',
+      system: JUDGE_SYSTEM,
       messages: [{ role: 'user', content: [
         { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'image-data' } },
-        { type: 'text', text: 'What is this a drawing of? Reply with raw JSON only, no markdown fences: {"guesses": [three short nouns, most likely first], "confidence": number from 0 to 1}. If the image is entirely blank (no pixels drawn), reply with {"guesses": [], "confidence": 0}.' },
+        { type: 'text', text: JUDGE_USER_TEXT },
       ] }],
     })
     expect(JUDGE_SYSTEM).toBe(body.system)
@@ -44,13 +44,20 @@ describe('extractText', () => {
 describe('parseJudgeText', () => {
   it('parses raw, fenced, and surrounded JSON', () => {
     const json = '{"guesses":["cat","dog","bird"],"confidence":0.7}'
-    const result = { guesses: ['cat', 'dog', 'bird'], confidence: 0.7 }
+    const result = { guesses: ['cat', 'dog', 'bird'], confidence: 0.7, text: false }
     for (const text of [json, `\`\`\`json\n${json}\n\`\`\``, `Here: ${json} done.`]) expect(parseJudgeText(text)).toEqual(result)
   })
   it('truncates guesses and coerces or clamps confidence', () => {
-    expect(parseJudgeText('{"guesses":["a","b","c","d"],"confidence":"0.7"}')).toEqual({ guesses: ['a', 'b', 'c'], confidence: 0.7 })
-    expect(parseJudgeText('{"guesses":["a"],"confidence":2}')).toEqual({ guesses: ['a'], confidence: 1 })
-    expect(parseJudgeText('{"guesses":["a"],"confidence":-1}')).toEqual({ guesses: ['a'], confidence: 0 })
+    expect(parseJudgeText('{"guesses":["a","b","c","d"],"confidence":"0.7"}')).toEqual({ guesses: ['a', 'b', 'c'], confidence: 0.7, text: false })
+    expect(parseJudgeText('{"guesses":["a"],"confidence":2}')).toEqual({ guesses: ['a'], confidence: 1, text: false })
+    expect(parseJudgeText('{"guesses":["a"],"confidence":-1}')).toEqual({ guesses: ['a'], confidence: 0, text: false })
+  })
+  it('reads the spelling flag, and treats a missing or malformed flag as drawn art', () => {
+    expect(parseJudgeText('{"guesses":["sun"],"confidence":1,"text":true}')).toMatchObject({ text: true })
+    expect(parseJudgeText('{"guesses":["sun"],"confidence":1,"text":false}')).toMatchObject({ text: false })
+    for (const flag of ['"true"', '1', 'null', '{}', '"yes"']) {
+      expect(parseJudgeText(`{"guesses":["sun"],"confidence":1,"text":${flag}}`)).toMatchObject({ text: false })
+    }
   })
   it('rejects malformed or empty results', () => {
     for (const text of ["I can't tell", '{}', '{"guesses": []}', '{"guesses": [], "confidence": 0}', '{"guesses":["cat"],"confidence":"bad"}', '{"guesses":[null],"confidence":0.5}']) expect(parseJudgeText(text)).toBeNull()
