@@ -270,8 +270,9 @@
   /* The list, not the scene behind it, owns a swipe: no rubber-banding the porch or the page. */
   overscroll-behavior: contain;
   touch-action: pan-y;
-  /* A handful of entries should read as a full chalkboard, not as a list with an empty lower half. */
-  justify-content: space-between;
+  /* Rows stack from the top: spreading two players to the board's top and bottom read as a gap
+     in the standings. The slate's ruled lines fill the rest. */
+  justify-content: flex-start;
   scrollbar-width: none;
 }
 

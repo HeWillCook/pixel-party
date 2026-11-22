@@ -66,7 +66,8 @@ export async function openRooms(tools: ServerTools, viewerId: string | null): Pr
     .filter(record => {
       const data = record.data as Partial<RoomData>
       // Closed rooms are gone, and a room with no host can never be started: it is not a game.
-      return data.status !== 'closed' && typeof data.hostId === 'string' && data.hostId !== ''
+      // Co-op is the only mode for now: an old team room is not listed.
+      return data.status !== 'closed' && data.mode !== 'team' && typeof data.hostId === 'string' && data.hostId !== ''
     })
     .sort((left, right) => Number(right.data.lastActiveAt ?? 0) - Number(left.data.lastActiveAt ?? 0))
     .slice(0, 50)

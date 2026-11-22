@@ -422,6 +422,23 @@ describe('durable room boundaries', () => {
     harness.database.close()
   })
 
+  it('records each contributor\'s party stats at round end, once per round', async () => {
+    const memory = memoryTools()
+    recordTools.mockReturnValue(memory.tools)
+    memory.rows('rooms').set('test', { hostId: 'host', visibility: 'public', memberIds: ['host', 'guest'] })
+    const harness = roomHarness()
+    const event = { roomId: 'test', roundId: 'round1', mode: 'coop' as const, word: 'cat', startedAt: 100, endedAt: 200, outcome: 'won' as const, pixelsUsed: 12, durationMs: 100, contributorIds: ['host', 'guest'], finalGuesses: ['cat'] }
+    await harness.room.writeRound(event)
+    await harness.room.writeRound(event)
+    const stats = new Map([...memory.rows('playerStats').values()].map(row => [row.userId as string, row]))
+    expect(stats.get('host')).toMatchObject({ partyRounds: 1, partyGuessed: 1, gamesHosted: 1 })
+    expect(stats.get('guest')).toMatchObject({ partyRounds: 1, partyGuessed: 1, gamesHosted: 0 })
+    await harness.room.writeRound({ ...event, roundId: 'round2', outcome: 'timeout', contributorIds: ['guest'] })
+    const after = new Map([...memory.rows('playerStats').values()].map(row => [row.userId as string, row]))
+    expect(after.get('guest')).toMatchObject({ partyRounds: 2, partyGuessed: 1 })
+    harness.database.close()
+  })
+
   it('surfaces tool failure to the existing caught hook boundary, without resetting scores', async () => {
     const memory = memoryTools()
     recordTools.mockReturnValue(memory.tools)

@@ -77,7 +77,7 @@ const many = Array.from({ length: 30 }, (_, index) => ({
   data: { day: '2026-11-17', userId: `u${index}`, displayName: `Painter ${String(index + 1).padStart(2, '0')}`, avatarUrl: '', score: 990 - index * 20, startedAt: index },
 }))
 
-for (const viewport of [{ width: 1440, height: 900 }, { width: 375, height: 812 }]) {
+for (const viewport of [{ width: 1440, height: 900 }, { width: 375, height: 812 }, { width: 375, height: 667 }, { width: 812, height: 375 }, { width: 1980, height: 1240 }]) {
   test(`the scores board scrolls to the last of 30 players at ${viewport.width}x${viewport.height}`, async ({ page }) => {
     await page.setViewportSize(viewport)
     await setup(page, query => (query.collection === 'dailyScores' ? many : []))
@@ -138,3 +138,28 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 375, height: 812 
     expect([...new Set(samples)]).toHaveLength(1)
   })
 }
+
+test('a finger swipe scrolls the phone board to the last of 30 players', async ({ browser }) => {
+  const context = await browser.newContext({ viewport: { width: 375, height: 812 }, hasTouch: true, isMobile: true })
+  const page = await context.newPage()
+  await setup(page, query => (query.collection === 'dailyScores' ? many : []))
+  await page.goto(`${origin}/scores`)
+  await expect(page.locator('.scores-page .scores-list > li')).toHaveCount(30)
+  const last = page.getByText('Painter 30', { exact: true })
+  await expect(last).not.toBeInViewport()
+  const box = (await page.locator('.scores-page .scores-list').boundingBox())!
+  const cdp = await context.newCDPSession(page)
+  const x = box.x + box.width / 2
+  for (let swipe = 0; swipe < 12 && !(await last.isVisible() && await last.evaluate(el => { const r = el.getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight })); swipe++) {
+    const top = box.y + 20
+    const bottom = box.y + box.height - 20
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y: bottom, id: 1 }] })
+    for (let step = 1; step <= 8; step++) {
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: bottom - ((bottom - top) * step) / 8, id: 1 }] })
+    }
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+    await page.waitForTimeout(150)
+  }
+  await expect(last).toBeInViewport()
+  await context.close()
+})
