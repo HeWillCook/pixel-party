@@ -88,7 +88,7 @@ src/schemas/              Collection schemas and permissions
 tests/                    Playwright: offline browser suite and real-worker specs
 docs/progress.md          Running log of decisions, findings and verification
 docs/superpowers/         Design specs and implementation plans
-docs/screenshots/         README images (captured from the live site)
+docs/screenshots/         README images (captured from the live site, other players' names replaced)
 ```
 
 ## Running it
@@ -99,10 +99,11 @@ Requires Node 22, 24 or 26 and npm 11.6+.
 npm install
 npm run dev          # local dev server (Vite + Miniflare); uses a fake judge, so no paid AI calls
 npm run verify       # lint, type-check, unit tests, build
-npm run build && npx playwright test --config tests/offline.playwright.config.ts   # offline browser suite
+PIXLE_TEST=1 npm run build && npx playwright test --config tests/offline.playwright.config.ts   # offline browser suite
 ```
 
-CI runs `verify` and the offline browser suite on every push and pull request.
+`PIXLE_TEST=1` keeps the dev-only controls the offline suite drives; a production build strips them. CI runs `verify`
+and the offline browser suite on every push and pull request.
 
 If your OS has reduced motion turned on, Pixle skips its camera moves between scenes (everything still works); turn it off to see the transitions.
 

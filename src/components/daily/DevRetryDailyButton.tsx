@@ -4,7 +4,7 @@ import { RotateCcw } from 'lucide-react'
 import { useDaily } from '../../hooks/DailyAttemptProvider'
 import { Button } from '../ui'
 
-export function TempRetryDailyButton({
+export function DevRetryDailyButton({
   onAfterReset,
   autoStart = true,
   compact = false,
@@ -36,11 +36,11 @@ export function TempRetryDailyButton({
       type="button"
       variant="secondary"
       size="sm"
-      data-testid="temp-retry-daily"
+      data-testid="dev-retry-daily"
       disabled={busy}
       onClick={() => void handleClick()}
       className={`pp-chip gap-1.5 uppercase ${compact ? 'min-h-[30px] px-2 text-xs' : 'min-h-[36px] px-3 text-sm'} ${className}`.trim()}
-      title="Temporary testing button: reset today's attempt using the same prompt"
+      title="Dev-only testing button: reset today's attempt using the same prompt"
     >
       <RotateCcw className="h-3.5 w-3.5 shrink-0" aria-hidden />
       <span>{busy ? 'Resetting…' : 'Retry daily (debug)'}</span>

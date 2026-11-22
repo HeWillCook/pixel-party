@@ -17,7 +17,7 @@ import { readCameraTransform, REST_CAMERA, SCENE_ZOOM_CHAIN_MS, SCENE_ZOOM_MS, z
 import { DailyTimer } from '../../components/daily/DailyTimer'
 import { GradePanel } from '../../components/daily/GradePanel'
 import { AutoGradeTimeline } from '../../components/daily/AutoGradeTimeline'
-import { TempRetryDailyButton } from '../../components/daily/TempRetryDailyButton'
+import { DevRetryDailyButton } from '../../components/daily/DevRetryDailyButton'
 import { Haiku, type HaikuState } from '../../components/haiku/Haiku'
 import { Palette } from '../../components/game/Palette'
 import { PixelCanvas } from '../../components/game/PixelCanvas'
@@ -539,7 +539,7 @@ export default function DailyHomePage() {
           {/* DEV ONLY (__DEBUG_TOOLS__) */}
           {__DEBUG_TOOLS__ && isSignedIn && state.loaded && ended && (
             <div className="porch-retry-debug">
-              <TempRetryDailyButton autoStart={false} onAfterReset={() => void handleStart()} />
+              <DevRetryDailyButton autoStart={false} onAfterReset={() => void handleStart()} />
             </div>
           )}
         </PorchScene>
@@ -649,7 +649,7 @@ export default function DailyHomePage() {
   const exitCloseup = () => { enableNavMotion(); setPhase('leaving') }
   // DEV ONLY (__DEBUG_TOOLS__)
   const retryButton = __DEBUG_TOOLS__ ? (
-    <TempRetryDailyButton compact autoStart={false} onAfterReset={() => void handleStart()} className="w-full" />
+    <DevRetryDailyButton compact autoStart={false} onAfterReset={() => void handleStart()} className="w-full" />
   ) : null
 
   return (
@@ -992,7 +992,7 @@ export default function DailyHomePage() {
                         ended={ended}
                       />
                       {/* DEV ONLY (__DEBUG_TOOLS__) */}
-                      {__DEBUG_TOOLS__ && <TempRetryDailyButton compact onAfterReset={() => setMobileScoreOpen(false)} />}
+                      {__DEBUG_TOOLS__ && <DevRetryDailyButton compact onAfterReset={() => setMobileScoreOpen(false)} />}
                     </div>
                   </Modal>
                 </div>

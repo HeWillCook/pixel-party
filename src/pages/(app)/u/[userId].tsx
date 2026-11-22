@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, type CSSProperties, type Mouse
 import { Link, useParams } from 'react-router-dom'
 import { useAuthProfileReady } from 'deepspace'
 import { GalleryWall } from '../../../components/gallery/GalleryWall'
-import { TempDebugPaintings } from '../../../components/gallery/TempDebugPaintings'
+import { DevDebugPaintings } from '../../../components/gallery/DevDebugPaintings'
 import { WallEmpty } from '../../../components/gallery/WallEmpty'
 import { useGalleryItems } from '../../../components/gallery/useGalleryItems'
 import { useWallPager } from '../../../components/gallery/useWallPager'
@@ -179,7 +179,7 @@ export default function ProfilePage() {
         <PlayerStatsCard userId={userId} variant="plaque" name={name} />
       </aside>
       {/* DEV ONLY (__DEBUG_TOOLS__) */}
-      {__DEBUG_TOOLS__ && isOwner && <TempDebugPaintings />}
+      {__DEBUG_TOOLS__ && isOwner && <DevDebugPaintings />}
     </div>
   )
 }

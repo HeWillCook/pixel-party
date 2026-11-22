@@ -1,10 +1,11 @@
-import { createContext, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { createContext, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
 import { cameraTransform, compositionFor, integerScale, sceneSize, type Camera, type Composition } from './camera'
 import { SceneCanvas } from './SceneCanvas'
 import './scene.css'
 
 export const SceneComposition = createContext<Composition>('landscape')
 const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect
+const noSubscribe = () => () => {}
 
 type Draw = (ctx: CanvasRenderingContext2D, frame: number, composition: Composition) => void
 
@@ -21,10 +22,15 @@ export function PixelScene({ draw, camera = { x: 0, y: 0, zoom: 1 }, zoomMs = 60
   'data-testid'?: string
 }) {
   const root = useRef<HTMLDivElement>(null)
+  // True only while React hydrates prerendered HTML (the landing page): React
+  // reads the server snapshot then, and the client one on every other render.
+  const hydrating = useSyncExternalStore(noSubscribe, () => false, () => true)
   // Seed from the window so the very first paint never falls back to the minimum
   // integer scale; the layout effect below measures the real box before paint.
+  // While hydrating, start from the same 0x0 (landscape) the prerender used, or
+  // a phone's portrait first render would not match the static HTML.
   const [viewport, setViewport] = useState(() => (
-    typeof window === 'undefined' ? { w: 0, h: 0 } : { w: window.innerWidth, h: window.innerHeight }
+    hydrating || typeof window === 'undefined' ? { w: 0, h: 0 } : { w: window.innerWidth, h: window.innerHeight }
   ))
   const [moving, setMoving] = useState(false)
   // A full-page transition (the vertical floor stack) moves this scene by
