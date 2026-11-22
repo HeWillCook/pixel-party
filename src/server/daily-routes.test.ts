@@ -116,7 +116,7 @@ describe('daily HTTP routes', () => {
     expect(await drawings.json()).toMatchObject({ ok: true, drawings: [{ data: { userId: 'alice', displayName: 'Alice' } }] })
   })
 
-  it('returns business rejections at 200 and refuses an early end', async () => {
+  it('returns business rejections at 200 and accepts an early end', async () => {
     vi.useFakeTimers()
     const start = Date.UTC(2026, 10, 17, 12)
     vi.setSystemTime(start)
@@ -124,9 +124,10 @@ describe('daily HTTP routes', () => {
     const grade = await request('grade', 'POST', { day: day(), kind: 'auto', cells: 'bad', window: 0 })
     expect(grade.status).toBe(200)
     expect(await grade.json()).toMatchObject({ ok: false, reason: 'bad_cells' })
-    expect((await request('end', 'POST', { day: day() })).status).toBe(400)
+    // A player may finish as soon as they have started.
+    expect(await (await request('end', 'POST', { day: day() })).json()).toMatchObject({ status: 'ended' })
     vi.setSystemTime(start + 120_000)
-    expect((await request('end', 'POST', { day: day() })).status).toBe(400)
+    expect(await (await request('end', 'POST', { day: day() })).json()).toMatchObject({ status: 'ended' })
     vi.setSystemTime(start + 300_000)
     expect((await request('end', 'POST', { day: day() })).status).toBe(200)
   })

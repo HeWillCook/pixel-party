@@ -37,6 +37,7 @@ export type DailyAction =
       now?: number
     }
   | { type: 'finalize_start' }
+  | { type: 'finalize_aborted' }
   | { type: 'end_failed'; message: string }
   | { type: 'error'; message: string; kind?: GradeKind; now?: number }
   | { type: 'clear_error' }
@@ -136,8 +137,6 @@ function rejectErrorMessage(reason: DailyRejectReason): string | null {
     case 'time_up':
     case 'ended':
       return 'Attempt has ended'
-    case 'too_early':
-      return 'The full five minutes first — keep painting'
     case 'not_started':
       return 'Start the daily challenge first'
     case 'bad_cells':
@@ -203,6 +202,13 @@ export function dailyReducer(state: DailyClientState, action: DailyAction): Dail
         ...state,
         finalizing: true,
         endFailed: false,
+      }
+    case 'finalize_aborted':
+      // An early submit whose final never landed: the player keeps their canvas and can try again.
+      return {
+        ...state,
+        grading: false,
+        finalizing: false,
       }
     case 'end_failed':
       return {

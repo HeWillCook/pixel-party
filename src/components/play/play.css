@@ -692,6 +692,49 @@
   background: #c6c38e !important;
 }
 
+/* The early-finish confirm: the same paper as the rules note, with two plain answers. */
+.daily-submit-modal {
+  gap: 10px !important;
+  max-width: min(420px, calc(100vw - 32px)) !important;
+}
+.daily-submit-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  color: #392a45;
+}
+.daily-submit-confirm__title {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.1;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.daily-submit-confirm__body {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.2;
+}
+.daily-submit-confirm__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+}
+.daily-submit-confirm__answer {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 44px;
+  padding: 6px 10px;
+  font-size: 16px;
+  white-space: nowrap;
+}
+.daily-submit-confirm__yes {
+  background: #a2c1ae !important;
+}
+.daily-submit-confirm__keep {
+  background: #ecd4b0 !important;
+}
+
 /* Desktop right column sizing */
 @media (min-width: 768px) {
   .play-layout__right {

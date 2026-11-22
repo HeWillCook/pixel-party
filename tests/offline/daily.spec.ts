@@ -154,14 +154,16 @@ test('mobile painter tray and grading strip fit without scrolling', async ({ pag
   await expect(lastSwatch).toHaveAttribute('aria-pressed', 'true')
   const haikuBox = (await page.getByTestId('daily-mobile-haiku').boundingBox())!
   const scoreBox = (await page.getByTestId('daily-mobile-score-trigger').boundingBox())!
+  const submitBox = (await page.getByTestId('daily-done-button').boundingBox())!
   expect(haikuBox.x + haikuBox.width).toBeLessThanOrEqual(scoreBox.x)
-  for (const bounds of [haikuBox, scoreBox]) {
+  expect(scoreBox.x + scoreBox.width).toBeLessThanOrEqual(submitBox.x)
+  for (const bounds of [haikuBox, scoreBox, submitBox]) {
     expect(bounds.x).toBeGreaterThanOrEqual(0)
     expect(bounds.x + bounds.width).toBeLessThanOrEqual(375)
     expect(bounds.y + bounds.height).toBeLessThanOrEqual(812)
   }
-  // There is no early finish any more: the strip holds only Haiku and the score drawer.
-  await expect(page.getByTestId('daily-done-button')).toHaveCount(0)
+  // The strip holds Haiku, the score drawer and the early Submit; manual grades are gone.
+  await expect(page.getByTestId('daily-done-button')).toBeVisible()
   await expect(page.getByTestId('daily-ask-button')).toHaveCount(0)
   await page.getByTestId('daily-mobile-score-trigger').click()
   await expect(page.getByTestId('daily-auto-timeline')).toBeVisible()
@@ -221,9 +223,9 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720
     await expect(page.getByTestId('grade-match')).toHaveText('430 / 500')
     await expect(page.getByTestId('grade-quality')).toHaveText('301 / 500')
     await expect(haiku).toHaveAttribute('data-haiku-state', 'correct')
-    // The chalkboard hangs no plaques now (no manual grades, no early finish), and no thruster sprites sit under it.
+    // The chalkboard hangs the early Submit plaque (no manual grades), and no thruster sprites sit under it.
     await expect(page.getByTestId('daily-ask-button')).toHaveCount(0)
-    await expect(page.getByTestId('daily-done-button')).toHaveCount(0)
+    await expect(page.getByTestId('daily-done-button')).toBeVisible()
     await expect(page.getByTestId('daily-chalkboard-boosters')).toHaveCount(0)
     const panel = (await page.getByTestId('grade-panel').boundingBox())!
     expect(panel.y + panel.height).toBeLessThanOrEqual(viewport.height)
@@ -476,6 +478,95 @@ test('the final verdict plays a suspense beat, then the guess, then the score', 
   await expect(page.getByTestId('grade-total')).toHaveCount(0)
   await page.clock.fastForward(1_500)
   await expect(page.getByTestId('grade-total')).toHaveText('496 / 1000')
+})
+
+test('Submit asks first, then runs the final verdict early and ends the attempt', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.clock.install({ time: new Date('2026-11-17T12:00:00Z') })
+  await offlineClient(page, true)
+  const startedAt = Date.parse('2026-11-17T12:00:00Z')
+  const playing = { day: '2026-11-17', status: 'playing', prompt: 'A tree', startedAt, endsAt: startedAt + 300_000, autoUsed: 0, finalUsed: false, best: 0, windows: [], serverNow: startedAt, nextAutoAt: startedAt + 150_000 }
+  const kinds: string[] = []
+  let release!: () => void
+  const gate = new Promise<void>(resolve => { release = resolve })
+  await page.route('**/api/daily/**', async route => {
+    const path = new URL(route.request().url()).pathname
+    if (path.endsWith('/me')) return route.fulfill({ json: playing })
+    if (path.endsWith('/grade')) {
+      const body = route.request().postDataJSON() as { kind: string }
+      kinds.push(body.kind)
+      await gate
+      return route.fulfill({ json: { ok: true, grade: { guess: 'tree', reason: 'The tree stands, and so does the verdict.', match: 75, recognition: 80, quality: 60, matchPoints: 310, qualityBonus: 186, total: 496, elapsedMs: 60_000 }, state: { ...playing, status: 'ended', finalUsed: true, best: 496, nextAutoAt: null } } })
+    }
+    return route.fulfill({ json: {} })
+  })
+  await page.goto(`${origin}/home`)
+  await expect(page.getByTestId('daily-playing')).toBeVisible()
+
+  await page.getByTestId('daily-done-button').click()
+  const dialog = page.getByRole('dialog', { name: 'Submit your painting' })
+  await expect(dialog).toBeVisible()
+  await expect(dialog).toContainText('Submit now?')
+  await expect(dialog).toContainText('Haiku will give the final verdict.')
+
+  await page.getByTestId('daily-submit-confirm').click()
+  // One final, and the button cannot fire a second while it is in flight.
+  await expect.poll(() => kinds).toEqual(['final'])
+  await expect(page.getByTestId('daily-done-button')).toBeDisabled()
+  expect(kinds).toEqual(['final'])
+
+  release()
+  await expect(page.getByTestId('daily-ended')).toBeVisible()
+  // The same choreography as the 5:00 final: suspense, a beat, the guess, then the score.
+  await expect(page.getByTestId('haiku-bubble')).toContainText('The paint is dry. I have reached… a verdict.')
+  await expect(page.getByTestId('grade-total')).toHaveCount(0)
+  await page.clock.fastForward(2_600)
+  await expect(page.getByTestId('daily-latest-guess')).toContainText('Haiku thinks: tree')
+  await page.clock.fastForward(1_500)
+  await expect(page.getByTestId('grade-total')).toHaveText('496 / 1000')
+  // The halfway judgement never gets a turn: the attempt is over.
+  await page.clock.fastForward(160_000)
+  expect(kinds).toEqual(['final'])
+})
+
+test('Keep painting cancels an early submit, and Escape closes the confirm', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.clock.install({ time: new Date('2026-11-17T12:00:00Z') })
+  await offlineClient(page, true)
+  const startedAt = Date.parse('2026-11-17T12:00:00Z')
+  const playing = { day: '2026-11-17', status: 'playing', prompt: 'A tree', startedAt, endsAt: startedAt + 300_000, autoUsed: 0, finalUsed: false, best: 0, windows: [], serverNow: startedAt, nextAutoAt: startedAt + 150_000 }
+  const kinds: string[] = []
+  await page.route('**/api/daily/**', async route => {
+    const path = new URL(route.request().url()).pathname
+    if (path.endsWith('/me')) return route.fulfill({ json: playing })
+    if (path.endsWith('/grade')) {
+      kinds.push((route.request().postDataJSON() as { kind: string }).kind)
+      return route.fulfill({ json: { ok: false, reason: 'busy', state: playing } })
+    }
+    return route.fulfill({ json: {} })
+  })
+  await page.goto(`${origin}/home`)
+  await expect(page.getByTestId('daily-playing')).toBeVisible()
+
+  // A real button: focus it and press Enter.
+  await page.getByTestId('daily-done-button').focus()
+  await page.keyboard.press('Enter')
+  const dialog = page.getByRole('dialog', { name: 'Submit your painting' })
+  await expect(dialog).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
+
+  // Keep painting closes it too, and nothing was graded.
+  await page.getByTestId('daily-done-button').click()
+  await expect(dialog).toBeVisible()
+  await page.getByTestId('daily-submit-cancel').click()
+  await expect(dialog).toHaveCount(0)
+  await page.clock.fastForward(10_000)
+  expect(kinds).toEqual([])
+  await expect(page.getByTestId('daily-playing')).toBeVisible()
+  await page.getByTestId('swatch-7').click()
+  await page.getByTestId('pixel-canvas').click({ position: { x: 8, y: 8 } })
+  await expect(page.getByTestId('tool-undo')).toBeEnabled()
 })
 
 test('ended user never sees start', async ({ page }) => {

@@ -5,7 +5,7 @@ import { reserveBudget } from './budget'
 import { createDailyJudge, renderCellsPng } from './daily-judge'
 import { registerDailyDebugRoutes } from './daily-debug-routes'
 import { doAttemptStore } from './daily-room'
-import { AttemptEndTooEarly, dailyState, endDaily, gradeDaily, InvalidAttemptDay, peekDaily, saveDailyCanvas, startDaily, todaysDrawings } from './daily-service'
+import { dailyState, endDaily, gradeDaily, InvalidAttemptDay, peekDaily, saveDailyCanvas, startDaily, todaysDrawings } from './daily-service'
 import type { DailyDeps, DailyUser } from './daily-service'
 import { resolveAuth } from './http-routes'
 import { createServerTools } from './server-tools'
@@ -70,7 +70,6 @@ export function registerDailyRoutes(app: Hono<AppContext>): void {
       return c.json(await endDaily(dependencies(c.env), c.get('dailyUser'), body.cells as string | undefined ?? null, body.day))
     } catch (error) {
       if (error instanceof InvalidAttemptDay) return c.json({ error: error.message }, 400)
-      if (error instanceof AttemptEndTooEarly) return c.json({ error: error.message }, 400)
       throw error
     }
   })

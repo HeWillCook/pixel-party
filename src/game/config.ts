@@ -79,12 +79,10 @@ export const BUDGET = {
 export const DAILY = {
   attemptMs: 300_000,
   graceMs: 15_000,
-  /** The single automatic judgement: the halfway verdict at 2:30. The final verdict lands at 5:00. */
+  /** The single automatic judgement: the halfway verdict at 2:30 (skipped if the player submits first). The final verdict lands at 5:00 or the moment the player submits. */
   autoWindowsMs: [150_000] as const,
   autoLateMs: 5_000,
   autoMissAfterMs: 30_000,
-  /** Final/end are refused until this close to the end, absorbing client/server clock skew. */
-  endToleranceMs: 2_000,
   /** Haiku's two silent peeks at the canvas (one playful line each, never a score). */
   peekWindowsMs: [75_000, 225_000] as const,
   maxPeeks: 2,

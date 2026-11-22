@@ -125,7 +125,7 @@ test('daily cover and account name remain legible', async ({ page }) => {
   await page.goto(`${origin}/home`)
   const cover = page.getByTestId('daily-start-button')
   await expect(cover).toContainText('Today’s prompt')
-  await expect(cover).toContainText('5 minutes · your best grade counts')
+  await expect(cover).toContainText('Up to 5 minutes · submit whenever you’re happy')
   await expect(cover).toContainText('Start painting')
   const name = page.getByTestId('nav-user-name')
   await expect(name).toHaveText('Offline host')

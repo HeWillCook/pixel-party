@@ -3,6 +3,7 @@ import { Link, useBlocker } from 'react-router-dom'
 import { signOut, useAuthProfileReady, useQuery } from 'deepspace'
 import {
   ArrowLeft,
+  CheckCircle2,
   Volume2,
   VolumeX,
 } from 'lucide-react'
@@ -24,6 +25,7 @@ import { ToolBar } from '../../components/game/ToolBar'
 import { PlayLayout } from '../../components/play/PlayLayout'
 import { HoverEasel } from '../../components/play/HoverEasel'
 import { ScoreCard } from '../../components/play/ScoreCard'
+import { SubmitConfirm } from '../../components/play/SubmitConfirm'
 import { StudioSprite } from '../../components/play/StudioSprite'
 import { PainterTray } from '../../components/game/PainterTray'
 import { PlayBackdrop, type PlayTransition } from '../../components/play/PlayBackdrop'
@@ -89,7 +91,7 @@ const PORCH_TEXT_FADE_MS = 120
 
 export default function DailyHomePage() {
   const { isLoaded, isSignedIn, user } = useAuthProfileReady({ requireUser: false })
-  const { state, cells, paint, replaceCells, start, voice } = useDaily()
+  const { state, cells, paint, replaceCells, start, submit, voice } = useDaily()
   const { muted, toggleMute } = useDailySounds(state)
   // A callback ref (not a mutable ref) so the measuring effect re-runs the first time the
   // board actually mounts. It mounts a commit after `state.status` flips to 'playing' (the
@@ -120,11 +122,13 @@ export default function DailyHomePage() {
   }), [])
   const [mobileScoreOpen, setMobileScoreOpen] = useState(false)
   const [mobileHaikuOpen, setMobileHaikuOpen] = useState(false)
+  const [submitConfirmOpen, setSubmitConfirmOpen] = useState(false)
 
   useEffect(() => {
     if (state.status !== 'playing') {
       setMobileScoreOpen(false)
       setMobileHaikuOpen(false)
+      setSubmitConfirmOpen(false)
     }
   }, [state.status])
 
@@ -305,6 +309,15 @@ export default function DailyHomePage() {
   }, [state.status])
 
   const canDraw = isSignedIn && canPaintDaily(state, now)
+
+  // The early finish: the confirm is a real dialog, and the final itself is single-fire inside the
+  // hook (finishPromiseRef), so a fast double click can never send two verdicts.
+  const submitLocked = state.finalizing || state.finalUsed
+  const submitLabel = state.endFailed ? 'Retry submit' : state.finalizing ? 'Finishing…' : 'Submit'
+  const confirmSubmit = useCallback(() => {
+    setSubmitConfirmOpen(false)
+    void submit()
+  }, [submit])
 
   useEffect(() => {
     if (canDraw) return
@@ -627,7 +640,7 @@ export default function DailyHomePage() {
   ) : (
     <span className="daily-haiku__speech">
       <strong className="daily-haiku__headline">Paint away!</strong>
-      <span className="daily-haiku__reason">I look at 2:30, and deliver the verdict at 5:00.</span>
+      <span className="daily-haiku__reason">I look at 2:30, or give the verdict when you submit.</span>
     </span>
   )
 
@@ -791,6 +804,19 @@ export default function DailyHomePage() {
                       grading={state.grading}
                       lastError={state.lastError}
                       notice={state.notice}
+                      actions={
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          data-testid="daily-done-button"
+                          disabled={submitLocked}
+                          onClick={() => setSubmitConfirmOpen(true)}
+                          className="pp-btn daily-plaque daily-plaque--submit gap-1.5 px-3 py-1.5 text-base uppercase tracking-wider"
+                        >
+                          <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden />
+                          <span>{submitLabel}</span>
+                        </Button>
+                      }
                     />
                   </div>
                 )
@@ -916,6 +942,19 @@ export default function DailyHomePage() {
                       </span>
                       <span className="daily-mobile-strip__auto">{nextAutoLabel}</span>
                     </button>
+                    <button
+                      type="button"
+                      data-testid="daily-done-button"
+                      disabled={submitLocked}
+                      onClick={() => {
+                        setMobileHaikuOpen(false)
+                        setMobileScoreOpen(false)
+                        setSubmitConfirmOpen(true)
+                      }}
+                      className="pp-btn daily-mobile-strip__btn daily-mobile-strip__btn--submit"
+                    >
+                      <span>{submitLabel}</span>
+                    </button>
                   </div>
                   <Modal
                     open={mobileScoreOpen}
@@ -961,6 +1000,14 @@ export default function DailyHomePage() {
             />
           </div>
         </div>
+        {!ended && (
+          <SubmitConfirm
+            open={submitConfirmOpen}
+            disabled={submitLocked}
+            onCancel={() => setSubmitConfirmOpen(false)}
+            onConfirm={confirmSubmit}
+          />
+        )}
       </div>
 
     </div>
