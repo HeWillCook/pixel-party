@@ -461,7 +461,8 @@ export default function DailyHomePage() {
   }, [scoreDoc, drawingDoc, state.latest, endedScore])
 
   const sharePrompt = state.prompt ?? drawingDoc?.prompt
-  const shareButton = state.status === 'ended' && endedScore > 0 && sharePrompt ? (
+  const verdictShown = voice.verdict === null || voice.verdict === 'score'
+  const shareButton = state.status === 'ended' && verdictShown && endedScore > 0 && sharePrompt ? (
     <ShareResultButton text={buildShareText({ day: state.day, prompt: sharePrompt, guess: endedGrade?.guess, score: endedScore })} />
   ) : null
 
