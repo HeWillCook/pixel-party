@@ -13,6 +13,15 @@
       type="font/woff2"
       crossorigin
     />
+    <script>
+      // A signed-in player opening a new tab on the static landing goes straight
+      // to the porch, before the signed-out page paints (src/lib/signed-in-hint.ts).
+      try {
+        if (location.pathname === '/' && localStorage.getItem('pixle:signed-in') === '1') {
+          location.replace('/home' + location.search + location.hash)
+        }
+      } catch (e) {}
+    </script>
     <style>
       html { background-color: #f6bd91; color-scheme: light; }
       html[data-theme="porch"] { background-color: #f6bd91; color-scheme: light; }
