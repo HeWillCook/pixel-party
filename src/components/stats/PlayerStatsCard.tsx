@@ -72,8 +72,8 @@ function PartyBlock({ stats }: { stats: PlayerStats }) {
       <dl className="pstats-grid pstats-grid--party">
         <Stat label="Rounds" testId="stats-party-rounds">{value(party.partyRounds)}</Stat>
         <Stat label="Guessed" testId="stats-party-guessed">{value(party.partyGuessed)}</Stat>
-        <Stat label="Team wins" testId="stats-team-wins">{value(party.teamWins)}</Stat>
-        <Stat label="Hosted" testId="stats-games-hosted">{value(party.gamesHosted)}</Stat>
+        {/* Team rounds end as an ordinary win or timeout today, so there is no team win to count yet. */}
+        <Stat label="Rounds hosted" testId="stats-games-hosted">{value(party.gamesHosted)}</Stat>
       </dl>
       {party.partyRounds === 0 && party.gamesHosted === 0 && (
         <p className="pstats-note">No party rounds yet.</p>

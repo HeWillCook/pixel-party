@@ -125,7 +125,7 @@ test('a name on the scores board opens the stats card, and the thumbnail still o
   await expect(dialog.getByTestId('stats-medal-gold')).toContainText('2')
   await expect(dialog.getByTestId('stats-best-day')).toContainText('Nov 17, 2026')
   await expect(dialog.getByTestId('stats-party-rounds')).toHaveText('9')
-  await expect(dialog.getByTestId('stats-team-wins')).toHaveText('2')
+  await expect(dialog.getByTestId('stats-team-wins')).toHaveCount(0)
   await expect(dialog.getByRole('link', { name: 'See their gallery' })).toHaveAttribute('href', '/u/u1')
 
   // Escape closes the card and does not also leave the Scores page; the row has focus again.

@@ -172,7 +172,7 @@
     column-gap: calc(var(--px, 3px) * 4);
   }
   .pstats-card--plaque .pstats-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
-  .pstats-card--plaque .pstats-grid--party { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .pstats-card--plaque .pstats-grid--party { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .pstats-card--plaque .pstats-note,
   .pstats-card--plaque .pstats-status { grid-column: 1 / -1; }
 }
@@ -180,14 +180,14 @@
 /* The dialog is wide enough for one row of daily numbers from tablet width up. */
 @media (min-width: 520px) {
   .pstats-card--dialog .pstats-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
-  .pstats-card--dialog .pstats-grid--party { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .pstats-card--dialog .pstats-grid--party { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
 /* A phone keeps all six daily numbers on one row too, without the "/1000" suffix, so the plaque
    fits the deck boards instead of scrolling. */
 @media (max-width: 639px) {
   .pstats-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
-  .pstats-grid--party { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .pstats-grid--party { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .pstats-max { display: none; }
   .pstats-card { gap: calc(var(--px, 3px) * 1); padding: calc(var(--px, 3px) * 2) calc(var(--px, 3px) * 2.4); }
   .pstats-avatar.pstats-avatar { width: 40px !important; height: 40px !important; }

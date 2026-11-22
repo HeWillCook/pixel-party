@@ -18,6 +18,7 @@ import { reserveBudget } from './budget'
 import { configuredJudgeMode } from './daily-judge'
 import { createServerTools } from './server-tools'
 import { getUsername } from './usernames'
+import { recordPartyRound } from './player-stats'
 import { utcDay, withTimeout } from './room-time'
 import type { RoomData } from './rooms'
 
@@ -231,10 +232,15 @@ export class PixelRoom extends BaseRoom<Env> {
     const room = await tools.get<RoomData>('rooms', result.roomId)
     if (!room.success) throw new Error('Room lookup failed')
     const { hostId, memberIds, visibility } = room.data.record.data
-    // player stats: record the round here — result carries roomId, mode, contributorIds, outcome and word,
-    // and the room row above adds hostId (plus memberIds/visibility for the history row).
     const round = await tools.create('rounds', { ...result, winningTeam: result.winningTeam ?? null, snapshotFileIds: [], hostId, memberIds, visibility }, `${result.roomId}:${result.roundId}`)
     if (!round.success) throw new Error('Round write failed')
+    // Player stats (rounds played, words guessed, rounds hosted). Idempotent per room+round, and a
+    // stats hiccup must never break the round itself.
+    try {
+      await recordPartyRound(this.env, { roomId: result.roomId, roundId: result.roundId, mode: result.mode, contributorIds: result.contributorIds, outcome: result.outcome, hostId })
+    } catch (error) {
+      console.error('party stats write failed', error)
+    }
   }
 
   protected async onRoomStatus(status: RoomStatusEvent): Promise<void> {
