@@ -83,7 +83,7 @@ AI image generation (the point is humans draw), ElevenLabs announcer (gimmick).
 | Vision judging | `anthropic/chat-completion` integration proxy via `createServerTools` | `src/server/daily-judge.ts`; production mode calls the integration server-side. Fake judging is the default in dev/tests. |
 | Atomic one-attempt-per-day and grade caps | `DailyRoom`, a `BaseRoom` Durable Object using SQLite | `src/server/daily-room.ts` serializes state operations by UTC day; it uses HTTP operations, not a WebSocket. |
 | Gallery and leaderboard | `dailyDrawings` and `dailyScores` collections with server-write/public-read permissions | Profiles and boards read records through the normal collection API; drawings are private until the daily close. |
-| Close day and award top-three medals | DeepSpace cron through `AppCronRoom` | `src/cron.ts` runs at 00:15 UTC and `src/server/daily-close.ts` reveals eligible drawings and records medals. |
+| Close day and award top-three medals | DeepSpace cron through `AppCronRoom` | `src/cron.ts` runs at 00:10 UTC and `src/server/daily-close.ts` reveals eligible drawings and records medals. |
 | Shared daily AI cap | Existing `BudgetRoom` | Shared with party mode; `BUDGET.dailyCalls` is 1000. |
 
 Realtime sync/presence, messaging, payments, and file storage are not used for daily play. The local `claude -p` helper
