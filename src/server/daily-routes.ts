@@ -10,6 +10,8 @@ import type { DailyDeps, DailyUser } from './daily-service'
 import { resolveAuth } from './http-routes'
 import { createServerTools } from './server-tools'
 import { getUsername } from './usernames'
+import { utcDay } from './room-time'
+import { promptForDay } from '../game/daily/prompts'
 
 function dependencies(env: Env): DailyDeps {
   return {
@@ -31,6 +33,14 @@ function dayBody(value: unknown): value is string {
 }
 
 export function registerDailyRoutes(app: Hono<AppContext>): void {
+  // Public and free (no AI call): only today's prompt, so a signed-out guest can sketch it before signing in.
+  // Registered on `app` ahead of the authenticated sub-app so its sign-in middleware never sees it.
+  app.get('/api/daily/prompt', c => {
+    const day = utcDay(Date.now())
+    c.header('Cache-Control', 'public, max-age=60')
+    return c.json({ day, prompt: promptForDay(day).prompt })
+  })
+
   const daily = new Hono<AppContext & { Variables: { dailyUser: DailyUser } }>()
   daily.use('*', async (c, next) => {
     const auth = await resolveAuth(c.req.raw, c.env)

@@ -52,7 +52,7 @@ flowchart LR
   W --> DR[(DailyRoom DO<br/>one attempt per day,<br/>grade limits)]
   W --> J[daily-judge.ts]
   PR --> J
-  J --> BR[(BudgetRoom DO<br/>1,000 AI calls/day)]
+  J --> BR[(BudgetRoom DO<br/>2,000 AI calls/day)]
   J -- server-side --> AI[DeepSpace integration<br/>anthropic/chat-completion]
   W --> RC[(Collections<br/>scores, drawings, rooms)]
   CR[(CronRoom<br/>00:10 UTC)] --> RC

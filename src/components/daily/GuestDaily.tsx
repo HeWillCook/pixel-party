@@ -24,8 +24,24 @@ import { useToolShortcuts } from '../../hooks/useToolShortcuts'
 
 const GRID = 32
 const NOTE = "Guest sketch: sign in to get Haiku's verdict"
-// Today's prompt is server-only (never shipped to a signed-out client), so the guest board has none to show.
-const PROMPT_HIDDEN = 'Revealed when you sign in'
+const PROMPT_LOADING = '…'
+const PROMPT_UNAVAILABLE = 'Draw anything'
+
+/** Today's prompt from the public, AI-free `GET /api/daily/prompt` (the prompt list itself never ships to the client). */
+function useTodayPrompt(day: string): string | null | undefined {
+  const [prompt, setPrompt] = useState<string | null | undefined>(undefined)
+  useEffect(() => {
+    let live = true
+    fetch('/api/daily/prompt')
+      .then(res => (res.ok ? res.json() as Promise<{ day?: unknown; prompt?: unknown }> : null))
+      .then((data: { day?: unknown; prompt?: unknown } | null) => {
+        if (live) setPrompt(data && data.day === day && typeof data.prompt === 'string' ? data.prompt : null)
+      })
+      .catch(() => { if (live) setPrompt(null) })
+    return () => { live = false }
+  }, [day])
+  return prompt
+}
 const noop = () => {}
 
 export function GuestDaily({ onExit, muted = false }: { onExit: () => void; muted?: boolean }) {
@@ -33,6 +49,8 @@ export function GuestDaily({ onExit, muted = false }: { onExit: () => void; mute
   // Resume today's saved sketch (and its original clock) if there is one; otherwise this press starts the guest clock.
   const initial = useMemo(() => loadGuestSketch(day) ?? { day, startedAt: Date.now(), cells: new Uint8Array(GRID * GRID) }, [day])
   const startedAt = initial.startedAt
+  const todayPrompt = useTodayPrompt(day)
+  const promptText = todayPrompt === undefined ? PROMPT_LOADING : todayPrompt ?? PROMPT_UNAVAILABLE
   const [cells, setCells] = useState<Uint8Array>(initial.cells)
   const cellsRef = useRef(cells)
   const [history, setHistory] = useState<History>(() => emptyHistory())
@@ -214,8 +232,8 @@ export function GuestDaily({ onExit, muted = false }: { onExit: () => void; mute
               variant="daily"
               prompt={
                 <div className="play-prompt daily-clipboard__prompt">
-                  <span className="play-prompt__heading">Free sketch</span>
-                  <span data-testid="daily-prompt" className="pp-word text-xl uppercase tracking-wide text-[var(--sunset-1)] sm:text-2xl">{PROMPT_HIDDEN}</span>
+                  <span className="play-prompt__heading">Today&rsquo;s prompt</span>
+                  <span data-testid="daily-prompt" className="pp-word text-xl uppercase tracking-wide text-[var(--sunset-1)] sm:text-2xl">{promptText}</span>
                   {timer}
                 </div>
               }
@@ -230,7 +248,7 @@ export function GuestDaily({ onExit, muted = false }: { onExit: () => void; mute
                 <div className="daily-mobile-top">
                   <div className="daily-mobile-top__prompt">
                     <span className="daily-mobile-top__label">Prompt</span>
-                    <span data-testid="daily-prompt" className="pp-word daily-mobile-top__word">{PROMPT_HIDDEN}</span>
+                    <span data-testid="daily-prompt" className="pp-word daily-mobile-top__word">{promptText}</span>
                   </div>
                   <div className="daily-mobile-top__right">{timer}</div>
                 </div>
