@@ -73,7 +73,7 @@ export const JUDGE = {
 } as const
 
 export const BUDGET = {
-  dailyCalls: 1000,
+  dailyCalls: 2000,
 } as const
 
 export const DAILY = {
