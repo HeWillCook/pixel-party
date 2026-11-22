@@ -244,6 +244,17 @@ test('a player who already finished onboarding is not interrupted', async ({ pag
   await expect(dialog(page)).toHaveCount(0)
 })
 
+test('Settings shows the current username once the profile loads, with nothing to save yet', async ({ page }) => {
+  await setup(page, { profile: { userId: user.id, username: 'PixelWill', onboardedAt: Date.now(), usernameChangedAt: 0 } })
+  await page.goto(`${origin}/settings`)
+  const input = page.getByTestId('username-input')
+  await expect(input).toHaveValue('PixelWill')
+  await expect(page.getByTestId('username-status')).toHaveText('Your current name')
+  await expect(input).not.toHaveAttribute('aria-invalid', 'true')
+  await input.fill('PixelWill2')
+  await expect(page.getByTestId('username-status')).toHaveText('Available')
+})
+
 test('the dialog stays inside a phone viewport without sideways scrolling', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 })
   await setup(page)

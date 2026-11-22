@@ -44,6 +44,12 @@ export function UsernameForm({
   const [availability, setAvailability] = useState<Availability>({ status: 'idle' })
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
+  // The profile often answers after the first render (Settings): until the player types, follow it,
+  // so the field shows their current name instead of an empty, "invalid" box.
+  const [edited, setEdited] = useState(false)
+  useEffect(() => {
+    if (!edited) setValue(initialValue)
+  }, [initialValue, edited])
 
   const validation = useMemo(() => validateUsername(value), [value])
   // The key changes only when the meaning changes, so typing trailing spaces
@@ -86,19 +92,21 @@ export function UsernameForm({
   // Ready only after a positive answer (or an unreachable check, where the
   // server's answer on submit is the final word).
   const checkedIn = availability.status === 'ok' || (availability.status === 'error' && availability.code === 'unknown')
-  const canSubmit = validation.ok && checkedIn && !knownBad && !submitting
+  // Settings: re-saving the name you already have is not a change.
+  const unchanged = Boolean(currentUsername) && validation.ok && validation.username === currentUsername
+  const canSubmit = validation.ok && checkedIn && !knownBad && !submitting && !unchanged
 
   const message = !validation.ok
     ? validation.message
     : availability.status === 'checking'
       ? 'Checking that name…'
       : availability.status === 'ok'
-        ? 'Available'
+        ? unchanged ? 'Your current name' : 'Available'
         : availability.status === 'error'
           ? availability.message
           : null
 
-  const messageTone = !validation.ok || knownBad ? 'error' : availability.status === 'ok' ? 'ok' : 'idle'
+  const messageTone = (!validation.ok && (touched || value.length > 0)) || knownBad ? 'error' : availability.status === 'ok' ? 'ok' : 'idle'
   const showMessage = !validation.ok ? touched || value.length > 0 : Boolean(message)
 
   async function submit(event: FormEvent) {
@@ -123,7 +131,7 @@ export function UsernameForm({
       data-testid="username-input"
       className="username-form__input"
       value={value}
-      onChange={(event) => { setValue(event.target.value); setSubmitError(null) }}
+      onChange={(event) => { setEdited(true); setValue(event.target.value); setSubmitError(null) }}
       onBlur={() => setTouched(true)}
       maxLength={USERNAME_MAX_LENGTH + 8}
       autoComplete="off"
@@ -131,7 +139,7 @@ export function UsernameForm({
       autoCorrect="off"
       spellCheck={false}
       autoFocus={autoFocus}
-      aria-invalid={!validation.ok || knownBad || undefined}
+      aria-invalid={(!validation.ok && (touched || value.length > 0)) || knownBad || undefined}
       aria-describedby={statusId}
     />
   )
@@ -172,18 +180,23 @@ export function UsernameForm({
         <>
           <label htmlFor={inputId} className="username-form__label">Username</label>
           {field}
+          {/* The name's check and the rules belong to the field, so they sit under it, above the button. */}
+          {status}
+          <p className="username-form__rules">
+            3-16 characters. Letters, numbers, _ and -.
+          </p>
+          {submitError && submitError !== message && (
+            <p className="username-form__status username-form__status--error" role="alert" data-testid="username-submit-error">
+              {submitError}
+            </p>
+          )}
           {button}
         </>
       )}
-      {status}
-      {submitError && submitError !== message && (
+      {compact && status}
+      {compact && submitError && submitError !== message && (
         <p className="username-form__status username-form__status--error" role="alert" data-testid="username-submit-error">
           {submitError}
-        </p>
-      )}
-      {!compact && (
-        <p className="username-form__rules">
-          3-16 characters. Letters, numbers, _ and -.
         </p>
       )}
     </form>

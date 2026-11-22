@@ -148,7 +148,7 @@ function OnboardingModal({ profile, onSaved }: { profile: ProfileView | null; on
       }}
     >
       <header className="onboarding__host">
-        <Haiku state={step === 'username' ? 'idle' : 'thinking'} scale={2} bubble={step === 'username' ? 'Hi! I’m Haiku.' : tourStep?.bubble} stackBubble />
+        <Haiku state={step === 'username' ? 'idle' : 'thinking'} scale={2} bubble={step === 'username' ? 'Hi! I’m Haiku.' : tourStep?.bubble} />
         <div className="onboarding__head">
           <p className="onboarding__eyebrow">Pixle</p>
           <h2 className="onboarding__title">
