@@ -27,6 +27,8 @@ import { Seo } from '../../components/Seo'
 import { seo } from '../../seo'
 import { schemas } from '../../schemas'
 import { DailyAttemptProvider } from '../../hooks/DailyAttemptProvider'
+import { ProfileProvider } from '../../hooks/useProfile'
+import { OnboardingGate } from '../../components/onboarding/OnboardingGate'
 import { useDailyLock } from '../../hooks/useDailyLock'
 import { VerticalSceneTransition } from '../../components/porch/VerticalSceneTransition'
 import { usePopMoves } from '../../components/porch/popMoves'
@@ -151,7 +153,14 @@ function AuthBoot({ children }: { children: ReactNode }) {
     >
       <RecordScope roomId={SCOPE_ID} schemas={schemas}>
         <AgentTools />
-        <DailyAttemptProvider><PorchPresenceProvider>{children}</PorchPresenceProvider></DailyAttemptProvider>
+        <ProfileProvider>
+          <DailyAttemptProvider>
+            <PorchPresenceProvider>
+              {children}
+              <OnboardingGate />
+            </PorchPresenceProvider>
+          </DailyAttemptProvider>
+        </ProfileProvider>
       </RecordScope>
     </RecordProvider>
   )

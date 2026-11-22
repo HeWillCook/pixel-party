@@ -67,7 +67,9 @@ export interface StudioRoomView {
 export interface StudioRoomItem {
   recordId: string
   name: string
-  joinCode: string
+  mode: 'coop' | 'team'
+  /** Null on a private room you have not joined: the lobby lists it, but never hands out its code. */
+  joinCode: string | null
   hostId: string
   status: 'lobby' | 'playing' | 'intermission' | 'paused' | 'closed'
   playerCount: number
@@ -77,7 +79,6 @@ export interface StudioRoomItem {
 export interface StudioLobbyProps {
   rooms: StudioRoomItem[]
   roomsLoading: boolean
-  defaultBoardPlayers: number
   signedIn: boolean
   currentUserId?: string
   mutationsReady: boolean
@@ -149,6 +150,7 @@ function CreateEaselForm({
           Co-op 32×32
         </Badge>
       </div>
+      <p className="studio-order-form__modes" data-testid="more-modes-note">More modes to come later</p>
 
       <div className={compact ? 'studio-order-form__field' : 'space-y-0.5'}>
         <Label
@@ -363,30 +365,34 @@ function JoinCodeForm({
   )
 }
 
+/** One line under the name: mode, players, and whether the game is waiting in its lobby. */
+function roomMeta(room: StudioRoomItem): string[] {
+  const parts = ['Co-op']
+  parts.push(`${room.playerCount} ${room.playerCount === 1 ? 'painter' : 'painters'}`)
+  if (room.status === 'lobby') parts.push('waiting')
+  return parts
+}
+
 function CorkboardTickets({
   rooms,
   roomsLoading,
-  defaultBoardPlayers,
   selectedCode,
   currentUserId,
   renderPackUp,
-  onSelectTicket,
-  onEnterRoom,
+  onSelectRoom,
   mobile = false,
   strip = false,
   style,
 }: {
   rooms: StudioRoomItem[]
   roomsLoading: boolean
-  defaultBoardPlayers: number
   selectedCode: string | null
   currentUserId?: string
   renderPackUp: (room: StudioRoomItem) => ReactNode
-  onSelectTicket: (code: string) => void
-  onEnterRoom: (path: string, event: MouseEvent) => void
+  onSelectRoom: (room: StudioRoomItem) => void
+  style?: CSSProperties
   mobile?: boolean
   strip?: boolean
-  style?: CSSProperties
 }) {
   // The phone's ticket rail scrolls sideways: say so (a fade and chevron at the edge that still has tickets behind it).
   const rail = useRef<HTMLDivElement>(null)
@@ -402,101 +408,60 @@ function CorkboardTickets({
     return () => { element.removeEventListener('scroll', update); observer.disconnect() }
   }, [strip, rooms.length])
 
-  const publicRooms = rooms.filter((room) => room.visibility !== 'private')
-  const yourRooms = rooms.filter((room) => room.visibility === 'private')
-  const ticket = (room: StudioRoomItem) => (
-    <div
-      key={room.recordId}
-      className={`studio-ticket ${selectedCode === room.joinCode ? 'studio-ticket--selected' : ''}`}
-    >
-      <button
-        type="button"
-        data-testid={`room-card-${room.joinCode}`}
-        aria-pressed={selectedCode === room.joinCode}
-        onClick={() => onSelectTicket(room.joinCode)}
-        className="studio-ticket__main"
+  const ticket = (room: StudioRoomItem) => {
+    const locked = room.joinCode === null
+    return (
+      <div
+        key={room.recordId}
+        className={`studio-ticket ${selectedCode !== null && selectedCode === room.joinCode ? 'studio-ticket--selected' : ''}`}
       >
-        <span className="truncate studio-ticket__name">{room.name}</span>
-        <span className="studio-ticket__meta">
-          <span className="inline-flex items-center gap-0.5">
-            {room.visibility === 'private' && <Lock className="studio-ticket__user-icon shrink-0" aria-label="Private" />}
-            {room.joinCode}
+        <button
+          type="button"
+          data-testid={`room-card-${room.joinCode ?? room.recordId}`}
+          data-locked={locked ? '1' : undefined}
+          aria-label={locked ? `${room.name} (private) — enter its code to join` : `Join ${room.name}`}
+          onClick={() => onSelectRoom(room)}
+          className="studio-ticket__main"
+        >
+          <span className="truncate studio-ticket__name">{room.name}</span>
+          <span className="studio-ticket__meta">
+            <span className="inline-flex items-center gap-0.5">
+              {locked && <Lock className="studio-ticket__user-icon shrink-0" aria-label="Private" />}
+              {roomMeta(room).join(' · ')}
+            </span>
+            <span className="inline-flex items-center gap-0.5">
+              <Users className="studio-ticket__user-icon shrink-0" aria-hidden />
+              {room.playerCount}
+            </span>
           </span>
-          <span className="inline-flex items-center gap-0.5">
-            <Users className="studio-ticket__user-icon shrink-0" aria-hidden />
-            {room.playerCount}
-          </span>
-        </span>
-      </button>
-      {currentUserId === room.hostId && (
-        <div className="studio-pack-wrap">{renderPackUp(room)}</div>
-      )}
-    </div>
-  )
+        </button>
+        {currentUserId === room.hostId && <div className="studio-pack-wrap">{renderPackUp(room)}</div>}
+      </div>
+    )
+  }
 
   return (
     <div
-      data-testid="public-rooms-list"
+      data-testid="games-list"
       style={style}
       className={`studio-corkboard ${mobile ? 'studio-corkboard--mobile' : ''} ${strip ? 'studio-corkboard--strip' : ''}`.trim()}
     >
       <div className="studio-corkboard__header">
-        <h2 className="studio-corkboard__title">Room tickets</h2>
-        <span className="studio-corkboard__count">{rooms.length + 1}</span>
+        <h2 className="studio-corkboard__title">Open games</h2>
+        <span className="studio-corkboard__count">{rooms.length}</span>
       </div>
 
       <div className="studio-corkboard__rail">
-      <div ref={rail} className="studio-corkboard__tickets">
-        {/* Gold Public board ticket pinned first */}
-        <div
-          className={`studio-ticket studio-ticket--gold ${
-            selectedCode === 'play' ? 'studio-ticket--selected' : ''
-          }`}
-        >
-          <button
-            type="button"
-            data-testid="room-card-play"
-            aria-pressed={selectedCode === 'play'}
-            onClick={() => onSelectTicket('play')}
-            className="studio-ticket__main"
-          >
-            <span className="truncate studio-ticket__name">Public board</span>
-            <span className="studio-ticket__meta">
-              <span>OPEN</span>
-              <span className="inline-flex items-center gap-0.5">
-                <Users className="studio-ticket__user-icon shrink-0" aria-hidden />
-                {defaultBoardPlayers}
-              </span>
-            </span>
-          </button>
-          <Link
-            to="/r/play"
-            data-testid="lobby-play-now"
-            aria-label="Play Public board now"
-            onClick={(event) => onEnterRoom('/r/play', event)}
-            className="studio-ticket__go"
-          >
-            Play
-          </Link>
+        <div ref={rail} className="studio-corkboard__tickets">
+          {rooms.length === 0 ? (
+            <p data-testid="games-empty" className="studio-corkboard__empty">
+              {roomsLoading ? 'Looking around…' : 'No games right now — host one!'}
+            </p>
+          ) : (
+            rooms.map(ticket)
+          )}
         </div>
-
-        {rooms.length === 0 ? (
-          <p className="studio-corkboard__empty">
-            {roomsLoading ? 'Looking around…' : 'No custom tickets yet'}
-          </p>
-        ) : (
-          <>
-            {publicRooms.map(ticket)}
-            {yourRooms.length > 0 && (
-              <>
-                <h3 data-testid="your-rooms-heading" className="studio-corkboard__sub">Your rooms</h3>
-                {yourRooms.map(ticket)}
-              </>
-            )}
-          </>
-        )}
-      </div>
-      {strip && more && <span data-testid="ticket-rail-more" className="studio-corkboard__more" aria-hidden="true">›</span>}
+        {strip && more && <span data-testid="ticket-rail-more" className="studio-corkboard__more" aria-hidden="true">›</span>}
       </div>
     </div>
   )
@@ -509,7 +474,7 @@ function StudioObjects({
   transformSeq,
   hatEffect,
   hatError,
-  onSelectTicket,
+  onSelectRoom,
   onJoinCodeChange,
   onSubmitCode,
   onUpstairs,
@@ -523,7 +488,7 @@ function StudioObjects({
   transformSeq: number
   hatEffect: HatEffect
   hatError: string | null
-  onSelectTicket: (code: string) => void
+  onSelectRoom: (room: StudioRoomItem) => void
   onJoinCodeChange: (value: string) => void
   onSubmitCode: (e: FormEvent) => void
   onUpstairs: (event: MouseEvent) => void
@@ -537,20 +502,14 @@ function StudioObjects({
   }, [composition, onComposition])
 
   const rect = studioLayout[composition]
+  const selectedRoom = selectedCode ? props.rooms.find((r) => r.joinCode === selectedCode) : undefined
   const fallbackRoom = selectedCode
-    ? selectedCode === 'play'
-      ? {
-          name: 'Public board',
-          joinCode: 'play',
-          playerCount: props.defaultBoardPlayers,
-          status: 'playing' as const,
-        }
-      : props.rooms.find((r) => r.joinCode === selectedCode) ?? {
-          name: `Room ${selectedCode}`,
-          joinCode: selectedCode,
-          playerCount: 0,
-          status: 'playing' as const,
-        }
+    ? {
+        name: selectedRoom?.name ?? `Room ${selectedCode}`,
+        joinCode: selectedCode,
+        playerCount: selectedRoom?.playerCount ?? 0,
+        status: selectedRoom?.status ?? 'playing',
+      }
     : null
 
   return (
@@ -567,12 +526,10 @@ function StudioObjects({
           <CorkboardTickets
             rooms={props.rooms}
             roomsLoading={props.roomsLoading}
-            defaultBoardPlayers={props.defaultBoardPlayers}
             selectedCode={selectedCode}
             currentUserId={props.currentUserId}
             renderPackUp={props.renderPackUp}
-            onSelectTicket={onSelectTicket}
-            onEnterRoom={onEnterRoom}
+            onSelectRoom={onSelectRoom}
             style={rectToPercent(rect.corkboard, composition)}
           />
 
@@ -613,12 +570,10 @@ function StudioObjects({
         <CorkboardTickets
           rooms={props.rooms}
           roomsLoading={props.roomsLoading}
-          defaultBoardPlayers={props.defaultBoardPlayers}
           selectedCode={selectedCode}
           currentUserId={props.currentUserId}
           renderPackUp={props.renderPackUp}
-          onSelectTicket={onSelectTicket}
-          onEnterRoom={onEnterRoom}
+          onSelectRoom={onSelectRoom}
           strip
           style={rectToPercent(rect.corkboard, composition)}
         />
@@ -671,6 +626,11 @@ export function StudioLobby(props: StudioLobbyProps) {
   const [hatEffect, setHatEffect] = useState<HatEffect>('idle')
   const [hatError, setHatError] = useState<string | null>(null)
   const [stageBox, setStageBox] = useState({ w: 0, h: 0, scale: 4 })
+  // A locked game asks for its code instead of joining: the room itself never sends that code to us.
+  const [lockedRoom, setLockedRoom] = useState<StudioRoomItem | null>(null)
+  const [privateCode, setPrivateCode] = useState('')
+  const [privateError, setPrivateError] = useState<string | null>(null)
+  const [privateJoining, setPrivateJoining] = useState(false)
   // `measured`: stage size known (layout effect, before first paint). `armed`: the measured pose has painted,
   // so camera changes may animate from here on. Until then camera updates are applied without a transition.
   const [measured, setMeasured] = useState(false)
@@ -814,20 +774,49 @@ export function StudioLobby(props: StudioLobbyProps) {
     el.focus({ preventScroll: true })
   }, [])
 
-  const handleSelectTicket = useCallback(
-    (code: string) => {
+  // A public game (or one of yours) joins straight away. A locked one asks for its code first.
+  const handleSelectRoom = useCallback(
+    (room: StudioRoomItem) => {
       setHatError(null)
       setEaselSmoke(null)
-      setSelectedCode(code)
-      setTransformSeq((seq) => seq + 1)
-      if (composition === 'portrait') {
-        root.current?.querySelector('.studio-world__stage')?.scrollIntoView({
-          behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
-          block: 'start',
-        })
+      if (room.joinCode) {
+        // Put the game on the easel first and walk in on the next frame: the camera measures the easel while its
+        // preview is showing, so the board lands on the canvas square instead of the whole paper.
+        const joinCode = room.joinCode
+        setSelectedCode(joinCode)
+        requestAnimationFrame(() => goRoom(`/r/${encodeURIComponent(joinCode)}`))
+        return
       }
+      if (!props.signedIn) {
+        props.onRequestSignIn()
+        return
+      }
+      setLockedRoom(room)
+      setPrivateCode('')
+      setPrivateError(null)
     },
-    [composition],
+    [goRoom, props],
+  )
+
+  const handlePrivateSubmit = useCallback(
+    async (event: FormEvent) => {
+      event.preventDefault()
+      const trimmed = privateCode.trim().toUpperCase()
+      if (!trimmed || privateJoining) return
+      setPrivateJoining(true)
+      setPrivateError(null)
+      // The join action re-finds the room by code and checks access: the client never learns the answer.
+      const result = await props.onConjureCode(trimmed)
+      setPrivateJoining(false)
+      if (result.status !== 'ok') {
+        setPrivateError('That code does not open a game.')
+        return
+      }
+      setLockedRoom(null)
+      setSelectedCode(result.joinCode)
+      requestAnimationFrame(() => goRoom(`/r/${encodeURIComponent(result.joinCode)}`))
+    },
+    [goRoom, privateCode, privateJoining, props],
   )
 
   const handleCodeSubmit = useCallback(
@@ -835,7 +824,7 @@ export function StudioLobby(props: StudioLobbyProps) {
       e.preventDefault()
       const trimmed = props.joinCodeInput.trim()
       if (!trimmed) return
-      if (trimmed.toLowerCase() !== 'play' && !/^[A-Za-z0-9]{4}$/.test(trimmed)) {
+      if (!/^[A-Za-z0-9]{4}$/.test(trimmed)) {
         // Say what is wrong with the code rather than pretending to look for an easel that cannot exist.
         setHatEffect('idle')
         setEaselSmoke(null)
@@ -999,7 +988,7 @@ export function StudioLobby(props: StudioLobbyProps) {
             transformSeq={transformSeq}
             hatEffect={hatEffect}
             hatError={hatError}
-            onSelectTicket={handleSelectTicket}
+            onSelectRoom={handleSelectRoom}
             onJoinCodeChange={(v) => {
               setHatError(null)
               props.onJoinCodeChange(v)
@@ -1015,7 +1004,6 @@ export function StudioLobby(props: StudioLobbyProps) {
 
         <nav className="studio-dock" aria-label="Studio shortcuts" inert={Boolean(room)}>
           <a href="/home" onClick={goUpstairs}>Upstairs</a>
-          <Link to="/r/play" onClick={(event) => goRoom('/r/play', event)}>Public board</Link>
           <button type="button" onClick={() => jumpToForm('create-room-name')}>
             Set up easel
           </button>
@@ -1055,6 +1043,61 @@ export function StudioLobby(props: StudioLobbyProps) {
             onCreateRoom={props.onCreateRoom}
             onRequestSignIn={props.onRequestSignIn}
           />
+        </div>
+      )}
+
+      {lockedRoom && (
+        <div className="studio-locked-backdrop" onClick={() => setLockedRoom(null)}>
+          <form
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="locked-game-title"
+            data-testid="private-join-dialog"
+            className="pp-wood-panel studio-locked"
+            onClick={(event) => event.stopPropagation()}
+            onSubmit={handlePrivateSubmit}
+          >
+            <h2 id="locked-game-title" className="studio-locked__title">
+              {lockedRoom.name}
+            </h2>
+            <p className="studio-locked__copy">This game is private. Enter its code to come in.</p>
+            <input
+              autoFocus
+              data-testid="private-join-code"
+              aria-label="Private game code"
+              placeholder="4-char code"
+              maxLength={64}
+              value={privateCode}
+              onChange={(event) => {
+                setPrivateError(null)
+                setPrivateCode(event.target.value.toUpperCase())
+              }}
+              className="studio-locked__input"
+            />
+            {privateError && (
+              <p role="status" data-testid="private-join-error" className="studio-locked__error">
+                {privateError}
+              </p>
+            )}
+            <div className="studio-locked__actions">
+              <button
+                type="button"
+                data-testid="private-join-cancel"
+                className="pp-chip studio-locked__cancel"
+                onClick={() => setLockedRoom(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                data-testid="private-join-submit"
+                disabled={privateJoining || !privateCode.trim()}
+                className="pp-btn studio-locked__submit"
+              >
+                {privateJoining ? 'Knocking…' : 'Join'}
+              </button>
+            </div>
+          </form>
         </div>
       )}
     </div>

@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { DailyStateView, GradeView } from '../../server/daily-service'
 import {
-  canAskDaily,
   canPaintDaily,
   dailyReducer,
+  duePeekIndex,
   initialDailyClientState,
   shouldFireAutoGrade,
   shouldFinalGrade,
@@ -17,11 +17,9 @@ const baseState: DailyStateView = {
   startedAt: 1_000_000,
   endsAt: 1_300_000,
   autoUsed: 0,
-  asksUsed: 0,
   finalUsed: false,
   best: 400,
   windows: [],
-  asksLeft: 3,
   nextAutoAt: null,
   serverNow: 1_000_000,
 }
@@ -29,26 +27,28 @@ const baseState: DailyStateView = {
 const sampleGrade: GradeView = {
   guess: 'a lighthouse',
   reason: 'Clear tower and beam.',
-  fit: 400,
-  recognition: 320,
-  speed: 80,
-  total: 800,
-  elapsedMs: 60_000,
+  match: 80,
+  recognition: 80,
+  quality: 60,
+  matchPoints: 340,
+  qualityBonus: 204,
+  total: 544,
+  elapsedMs: 150_000,
 }
 
 describe('client-schedule', () => {
   it('initial state is not loaded', () => {
     expect(initialDailyClientState().loaded).toBe(false)
   })
-  it('fires a due window after a long tick gap', () => {
-    const due = 1_060_000
+  it('fires a due halfway judgement after a long tick gap', () => {
+    const due = 1_150_000
     const state = { ...initialDailyClientState(), ...baseState, nextAutoAt: due }
     expect(shouldFireAutoGrade(state, due + 25_000, true)).toBe(true)
     expect(shouldFireAutoGrade(state, due + 30_000, true)).toBe(true)
     expect(shouldFireAutoGrade(state, due + 31_000, true)).toBe(false)
   })
   it('does not fire while grading, before due, or without a local canvas', () => {
-    const due = 1_060_000
+    const due = 1_150_000
     const state = { ...initialDailyClientState(), ...baseState, nextAutoAt: due }
     expect(shouldFireAutoGrade({ ...state, grading: true }, due, true)).toBe(false)
     expect(shouldFireAutoGrade(state, due - 1, true)).toBe(false)
@@ -56,8 +56,8 @@ describe('client-schedule', () => {
     expect(shouldFireAutoGrade({ ...state, nextAutoAt: null }, due, true)).toBe(false)
   })
   it('uses server clock offset', () => {
-    const clientNow = 1_030_000
-    const due = 1_060_000
+    const clientNow = 1_120_000
+    const due = 1_150_000
     const dateNow = vi.spyOn(Date, 'now').mockReturnValue(clientNow)
     try {
       const state = dailyReducer(initialDailyClientState(baseState.day), { type: 'state_loaded', state: { ...baseState, serverNow: due, nextAutoAt: due } })
@@ -68,16 +68,16 @@ describe('client-schedule', () => {
       dateNow.mockRestore()
     }
   })
-  it.each([['skipped_blank', 'Auto-grade skipped: nothing drawn yet'], ['skipped_unchanged', 'Auto-grade skipped: no changes since your last grade']] as const)('grade_skipped sets notice and windows for %s', (status, notice) => {
-    const windows = [{ index: 0, dueAt: 1_060_000, status, score: null, late: false }]
+  it.each([['skipped_blank', 'Skipped: nothing drawn yet'], ['skipped_unchanged', 'Skipped: no changes since the last judgement']] as const)('grade_skipped sets notice and windows for %s', (status, notice) => {
+    const windows = [{ index: 0, dueAt: 1_150_000, status, score: null, late: false }]
     const previous = { ...initialDailyClientState(baseState.day), ...baseState, grading: true }
-    const skipped = dailyReducer(previous, { type: 'grade_skipped', status, window: 0, state: { ...baseState, windows, nextAutoAt: 1_120_000 } })
-    expect(skipped).toMatchObject({ grading: false, notice, windows, nextAutoAt: 1_120_000 })
+    const skipped = dailyReducer(previous, { type: 'grade_skipped', status, window: 0, state: { ...baseState, windows, nextAutoAt: null } })
+    expect(skipped).toMatchObject({ grading: false, notice, windows, nextAutoAt: null })
     expect(dailyReducer(skipped, { type: 'clear_notice' }).notice).toBeNull()
   })
   it('clears a previous notice on grade start and success', () => {
     const state = { ...initialDailyClientState(baseState.day), ...baseState, notice: 'old notice' }
-    expect(dailyReducer(state, { type: 'grade_start', kind: 'ask' }).notice).toBeNull()
+    expect(dailyReducer(state, { type: 'grade_start', kind: 'auto' }).notice).toBeNull()
     expect(dailyReducer(state, { type: 'grade_ok', grade: sampleGrade, state: baseState }).notice).toBeNull()
   })
   it('computes shouldFinalGrade when attempt window is reached', () => {
@@ -98,19 +98,19 @@ describe('client-schedule', () => {
     const afterFirst = dailyReducer(initial, {
       type: 'grade_ok',
       grade: sampleGrade,
-      state: { ...baseState, asksUsed: 1, best: 700 },
+      state: { ...baseState, best: 700 },
     })
     expect(afterFirst.latest).toEqual(sampleGrade)
     expect(afterFirst.best).toBe(700)
     expect(afterFirst.grading).toBe(false)
     expect(afterFirst.lastError).toBeNull()
 
-    // A lower subsequent grade keeps best at the max
+    // A lower subsequent grade keeps the server's best
     const lowerGrade: GradeView = { ...sampleGrade, total: 550 }
     const afterSecond = dailyReducer(afterFirst, {
       type: 'grade_ok',
       grade: lowerGrade,
-      state: { ...baseState, asksUsed: 2, best: 800 },
+      state: { ...baseState, best: 800 },
     })
     expect(afterSecond.latest).toEqual(lowerGrade)
     expect(afterSecond.best).toBe(800)
@@ -132,20 +132,11 @@ describe('client-schedule', () => {
     expect(resting.best).toBe(620)
     expect(resting.grading).toBe(false)
 
-    // unchanged and too_soon are silent
-    const unchanged = dailyReducer(resting, {
-      type: 'grade_rejected',
-      reason: 'unchanged',
-    })
-    expect(unchanged.lastError).toBeNull()
-    expect(unchanged.best).toBe(620)
-
-    const tooSoon = dailyReducer(resting, {
-      type: 'grade_rejected',
-      reason: 'too_soon',
-    })
-    expect(tooSoon.lastError).toBeNull()
-    expect(tooSoon.best).toBe(620)
+    for (const reason of ['unchanged', 'too_soon', 'final_used']) {
+      const silent = dailyReducer(resting, { type: 'grade_rejected', reason })
+      expect(silent.lastError).toBeNull()
+      expect(silent.best).toBe(620)
+    }
   })
 
   it('backs off failed auto grades and stops retrying missed windows', () => {
@@ -155,23 +146,23 @@ describe('client-schedule', () => {
       ...baseState,
       startedAt: s,
       endsAt: s + 300_000,
-      nextAutoAt: s + 60_000,
+      nextAutoAt: s + 150_000,
     }
 
-    expect(shouldFireAutoGrade(st, s + 60_000, true)).toBe(true)
+    expect(shouldFireAutoGrade(st, s + 150_000, true)).toBe(true)
     const rejectedResting = dailyReducer(st, {
       type: 'grade_rejected',
       reason: 'judge_resting',
       kind: 'auto',
-      now: s + 62_000,
-      state: { ...baseState, startedAt: s, endsAt: s + 300_000, nextAutoAt: s + 60_000 },
+      now: s + 152_000,
+      state: { ...baseState, startedAt: s, endsAt: s + 300_000, nextAutoAt: s + 150_000 },
     })
-    expect(shouldFireAutoGrade(rejectedResting, s + 63_000, true)).toBe(false)
-    expect(shouldFireAutoGrade(rejectedResting, s + 80_000, true)).toBe(true)
-    expect(shouldFireAutoGrade(rejectedResting, s + 120_000, true)).toBe(false)
+    expect(shouldFireAutoGrade(rejectedResting, s + 153_000, true)).toBe(false)
+    expect(shouldFireAutoGrade(rejectedResting, s + 170_000, true)).toBe(true)
+    expect(shouldFireAutoGrade(rejectedResting, s + 200_000, true)).toBe(false)
   })
 
-  it('blocks Ask-now and all further grades once finalizing starts or end is pending/failed', () => {
+  it('locks painting and all further judgements once finalizing starts or the end is pending/failed', () => {
     const s = 1_000_000
     let st: DailyClientState = {
       ...initialDailyClientState('2026-11-17'),
@@ -179,15 +170,15 @@ describe('client-schedule', () => {
       startedAt: s,
       endsAt: s + 300_000,
     }
-    expect(canAskDaily(st, s + 50_000)).toBe(true)
+    expect(canPaintDaily(st, s + 50_000)).toBe(true)
 
-    // Finalizing starts (Done clicked or 5:00 reached)
+    // Finalizing starts (5:00 reached and the final is in flight)
     st = dailyReducer(st, { type: 'finalize_start' })
     expect(st.finalizing).toBe(true)
-    expect(canAskDaily(st, s + 50_000)).toBe(false)
-    expect(shouldFireAutoGrade(st, s + 60_000, true)).toBe(false)
+    expect(canPaintDaily(st, s + 50_000)).toBe(false)
+    expect(shouldFireAutoGrade(st, s + 150_000, true)).toBe(false)
 
-    // Final grade completes, but /api/daily/end is still in flight
+    // The final grade completes but the server has not confirmed the ended state
     st = dailyReducer(st, {
       type: 'grade_ok',
       grade: sampleGrade,
@@ -195,17 +186,25 @@ describe('client-schedule', () => {
     })
     expect(st.grading).toBe(false)
     expect(st.finalizing).toBe(true)
-    expect(canAskDaily(st, s + 55_000)).toBe(false)
+    expect(canPaintDaily(st, s + 55_000)).toBe(false)
 
-    // If /api/daily/end fails, attempt stays locked in finalizing with an error until end succeeds
+    // A failed final keeps the attempt locked with an error until a retry succeeds
     st = dailyReducer(st, { type: 'end_failed', message: 'Could not finish attempt. Retrying…' })
     expect(st.finalizing).toBe(true)
     expect(st.endFailed).toBe(true)
     expect(st.lastError).toBe('Could not finish attempt. Retrying…')
-    expect(canAskDaily(st, s + 56_000)).toBe(false)
     expect(canPaintDaily(st, s + 56_000)).toBe(false)
 
-    // When /api/daily/end succeeds, state transitions to 'ended' and clears finalizing
+    // An early submit whose verdict never landed gives the canvas back
+    const resumed = dailyReducer(
+      dailyReducer({ ...initialDailyClientState('2026-11-17'), ...baseState, startedAt: s, endsAt: s + 300_000 }, { type: 'finalize_start' }),
+      { type: 'finalize_aborted' },
+    )
+    expect(resumed.finalizing).toBe(false)
+    expect(resumed.grading).toBe(false)
+    expect(canPaintDaily(resumed, s + 56_000)).toBe(true)
+
+    // When the server confirms the end, state transitions to 'ended' and clears finalizing
     st = dailyReducer(st, {
       type: 'state_loaded',
       state: { ...baseState, status: 'ended', finalUsed: true, best: 800 },
@@ -213,7 +212,6 @@ describe('client-schedule', () => {
     expect(st.status).toBe('ended')
     expect(st.finalizing).toBe(false)
     expect(st.endFailed).toBe(false)
-    expect(canAskDaily(st, s + 60_000)).toBe(false)
   })
 
   it('disables painting when now >= endsAt or while finalizing or ended', () => {
@@ -228,13 +226,23 @@ describe('client-schedule', () => {
     // At or past endsAt (5:00), painting is disabled immediately
     expect(canPaintDaily(playing, s + 300_000)).toBe(false)
     expect(canPaintDaily(playing, s + 305_000)).toBe(false)
+    expect(canPaintDaily(dailyReducer(playing, { type: 'finalize_start' }), s + 100_000)).toBe(false)
+    expect(canPaintDaily({ ...playing, status: 'ended' }, s + 100_000)).toBe(false)
+  })
 
-    // During finalization (even before 5:00 when Done is clicked early), painting is disabled
-    const finalizing = dailyReducer(playing, { type: 'finalize_start' })
-    expect(canPaintDaily(finalizing, s + 100_000)).toBe(false)
-
-    // When ended, painting is disabled
-    const ended: DailyClientState = { ...playing, status: 'ended' }
-    expect(canPaintDaily(ended, s + 100_000)).toBe(false)
+  it('schedules the two silent peeks inside their windows only', () => {
+    const s = 1_000_000
+    const fired = [false, false]
+    expect(duePeekIndex(s + 74_000, s, 0, fired)).toBeNull()
+    expect(duePeekIndex(s + 75_000, s, 0, fired)).toBe(0)
+    expect(duePeekIndex(s + 104_000, s, 0, fired)).toBe(0)
+    expect(duePeekIndex(s + 106_000, s, 0, fired)).toBeNull()
+    expect(duePeekIndex(s + 225_000, s, 0, fired)).toBe(1)
+    expect(duePeekIndex(s + 250_000, s, 0, fired)).toBe(1)
+    expect(duePeekIndex(s + 260_000, s, 0, fired)).toBeNull()
+    expect(duePeekIndex(s + 225_000, s, 0, [true, false])).toBe(1)
+    expect(duePeekIndex(s + 225_000, s, 0, [true, true])).toBeNull()
+    // The server clock offset moves the window too.
+    expect(duePeekIndex(s + 60_000, s, 15_000, fired)).toBe(0)
   })
 })

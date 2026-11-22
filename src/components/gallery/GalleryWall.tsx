@@ -1,4 +1,5 @@
 import { useContext, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from 'react'
+import { Link } from 'react-router-dom'
 import { PixelMedal } from '../daily/PixelMedals'
 import { PixelThumb } from '../daily/PixelThumb'
 import { SceneComposition } from '../../scene/PixelScene'
@@ -65,17 +66,23 @@ function WallPage({ items, layout, border, mat, cell, scale, refEl }: { items: W
       {items.map((item, index) => {
         const slot = wallSlot(layout, index, items.length)
         const medal = item.medal >= 1 && item.medal <= 3 ? (item.medal as 1 | 2 | 3) : 0
+        const pending = item.pending
         return (
-          <article key={item.day} className="wall-painting" data-testid={`gallery-frame-${item.day}`} data-frame-kind={medal ? 'gilt' : 'wood'} style={place({ x: slot.frame.x, y: slot.frame.y, w: layout.frame, h: layout.frame + 1 + layout.card })} onClick={stop}>
-            <div className={`wall-frame wall-frame--${medal ? 'gilt' : 'wood'}`} style={{ left: 0, top: 0, width: '100%', height: unit(layout.frame), borderWidth: border, padding: mat }}>
-              <PixelThumb cells={item.cells} size={cell * 32} className="wall-frame__thumb" />
+          <article key={item.day} className="wall-painting" data-testid={pending ? 'gallery-pending-today' : `gallery-frame-${item.day}`} data-frame-kind={pending ? 'empty' : medal ? 'gilt' : 'wood'} style={place({ x: slot.frame.x, y: slot.frame.y, w: layout.frame, h: layout.frame + 1 + layout.card })} onClick={stop}>
+            <div className={`wall-frame wall-frame--${pending ? 'empty' : medal ? 'gilt' : 'wood'}`} style={{ left: 0, top: 0, width: '100%', height: unit(layout.frame), borderWidth: border, padding: mat }}>
+              {pending ? (
+                <div className="wall-frame__gate" data-testid="gallery-pending-message">
+                  <p className="wall-frame__gate-line">Finish today&apos;s Daily to see {pending.name ? `${pending.name}'s` : 'their'} painting</p>
+                  <Link to="/home" className="wall-frame__gate-paint">Paint today&apos;s prompt</Link>
+                </div>
+              ) : <PixelThumb cells={item.cells} size={cell * 32} className="wall-frame__thumb" />}
             </div>
             {medal ? <PixelMedal medal={medal} scale="scene" label={`${MEDALS[medal - 1]} medal`} className="wall-card__medal" /> : null}
             <div className="wall-card" data-testid="gallery-caption" style={{ left: 0, top: unit(layout.frame + 1), width: '100%', height: cardPx ? `${cardPx}px` : unit(layout.card) }}>
               <h2 className="wall-card__prompt">{item.prompt}</h2>
               <p className="wall-card__meta">
-                <span className="wall-card__date">{formatDay(item.day)}</span>
-                <span className="wall-card__grade">{item.score} / 1000</span>
+                <span className="wall-card__date">{pending ? 'Not hung yet' : formatDay(item.day)}</span>
+                {pending ? null : <span className="wall-card__grade">{item.score} / 1000</span>}
               </p>
             </div>
           </article>

@@ -101,6 +101,11 @@
   100% { transform: none; }
 }
 
+/* The username editor sits in the account rows, one line plus its status. */
+.settings-letter__fields .username-form--compact {
+  max-width: 460px;
+}
+
 /* Keep the letter compact enough that the whole composition (letter + mailbox) fits a phone. */
 @media (max-width: 640px) {
   .settings-head {

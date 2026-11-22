@@ -1,7 +1,7 @@
 import type { Env } from '../../worker.js'
 import { DAILY } from '../game/config'
 import { cellsHash } from '../game/daily/attempt'
-import { buildBlindBody, buildScoreBody, clampReason, parseBlind, parseScore, type DailyJudgeBody } from '../game/daily/judge'
+import { buildBlindBody, buildPeekBody, buildScoreBody, clampReason, parseBlind, parsePeek, parseScore, type DailyJudgeBody, type ScoreKind } from '../game/daily/judge'
 import { decodeCells, type Grid } from '../game/grid'
 import { extractText } from '../game/judge'
 import { renderZonePng, toBase64 } from '../game/png'
@@ -14,9 +14,12 @@ export function configuredJudgeMode(): 'fake' | 'local' | 'real' {
   return typeof __DAILY_JUDGE__ !== 'undefined' ? __DAILY_JUDGE__ : 'fake'
 }
 
+export interface ScoredGrade { match: number; recognition: number; quality: number; reason: string }
 export interface DailyJudge {
-  blind(png: string): Promise<{ guess: string } | null>
-  score(png: string, prompt: string, subject: string, guess: string): Promise<{ fit: number; recognition: number; reason: string } | null>
+  blind(png: string): Promise<{ guess: string; writing: string } | null>
+  score(png: string, prompt: string, subject: string, guess: string, kind?: ScoreKind): Promise<ScoredGrade | null>
+  /** A silent, non-scoring look: one playful line, never a score. */
+  peek?(png: string, prompt: string): Promise<{ line: string } | null>
 }
 
 const CANNED_GUESSES = [
@@ -38,6 +41,13 @@ const CANNED_GUESSES = [
   'a snowman',
 ] as const
 
+const CANNED_PEEKS = [
+  'Ooh, that is coming along nicely.',
+  'I am squinting. In a supportive way.',
+  'Do not look now, but I think it is working.',
+  'A bold choice. I respect it.',
+] as const
+
 const LOCAL_JUDGE_URL = 'http://127.0.0.1:8789/judge'
 const REAL_TIMEOUT_MS = 20_000
 const LOCAL_TIMEOUT_MS = 60_000
@@ -46,19 +56,25 @@ export function fakeDailyJudge(): DailyJudge {
   return {
     async blind(png: string) {
       const hash = parseInt(cellsHash(png), 16)
-      return { guess: CANNED_GUESSES[hash % CANNED_GUESSES.length] }
+      // The fake judge never reads letters: every fake drawing is art, so spelling tests drive the rule directly.
+      return { guess: CANNED_GUESSES[hash % CANNED_GUESSES.length], writing: '' }
     },
     async score(png: string, _prompt: string, subject: string, guess: string) {
       const hash = parseInt(cellsHash(png), 16)
       const subjectLower = subject.trim().toLowerCase()
       const guessLower = guess.trim().toLowerCase()
       const recognized = subjectLower.length > 0 && guessLower.includes(subjectLower)
-      // A wrong guess must never look like a good drawing: recognition 0 and a
-      // low fit (0-34), matching the strict real-judge rubric.
-      const fit = recognized ? (hash >>> 8) % 101 : (hash >>> 8) % 35
+      // A wrong guess must never look like a good drawing: recognition 0, a low prompt match, and
+      // craft that cannot rescue it (the score formula caps the prompt part for unrecognized art).
+      const match = recognized ? 55 + ((hash >>> 8) % 46) : 10 + ((hash >>> 8) % 30)
+      const quality = 40 + ((hash >>> 16) % 61)
       const recognition = recognized ? 100 : 0
       const reason = clampReason(`Fake judge saw "${guess}" for ${subject}.`)
-      return { fit, recognition, reason }
+      return { match, recognition, quality, reason }
+    },
+    async peek(png: string, _prompt: string) {
+      const hash = parseInt(cellsHash(png), 16)
+      return { line: CANNED_PEEKS[hash % CANNED_PEEKS.length] }
     },
   }
 }
@@ -94,34 +110,33 @@ async function callLocal(body: DailyJudgeBody): Promise<string | null> {
   }
 }
 
+function modeJudge(call: (body: DailyJudgeBody) => Promise<string | null>, peeks: boolean): DailyJudge {
+  return {
+    async blind(png: string) {
+      const text = await call(buildBlindBody(png))
+      return text ? parseBlind(text) : null
+    },
+    async score(png: string, prompt: string, subject: string, guess: string, kind: ScoreKind = 'halfway') {
+      const text = await call(buildScoreBody(png, prompt, subject, guess, kind))
+      return text ? parseScore(text) : null
+    },
+    ...(peeks
+      ? {
+          async peek(png: string, prompt: string) {
+            const text = await call(buildPeekBody(png, prompt))
+            return text ? parsePeek(text) : null
+          },
+        }
+      : {}),
+  }
+}
+
 export function createDailyJudge(
   env: Env,
   mode: 'fake' | 'local' | 'real' = configuredJudgeMode(),
 ): DailyJudge {
-  if (mode === 'local') {
-    return {
-      async blind(png: string) {
-        const text = await callLocal(buildBlindBody(png))
-        return text ? parseBlind(text) : null
-      },
-      async score(png: string, prompt: string, subject: string, guess: string) {
-        const text = await callLocal(buildScoreBody(png, prompt, subject, guess))
-        return text ? parseScore(text) : null
-      },
-    }
-  }
-  if (mode === 'real') {
-    return {
-      async blind(png: string) {
-        const text = await callReal(env, buildBlindBody(png))
-        return text ? parseBlind(text) : null
-      },
-      async score(png: string, prompt: string, subject: string, guess: string) {
-        const text = await callReal(env, buildScoreBody(png, prompt, subject, guess))
-        return text ? parseScore(text) : null
-      },
-    }
-  }
+  if (mode === 'local') return modeJudge(callLocal, true)
+  if (mode === 'real') return modeJudge(body => callReal(env, body), true)
   return fakeDailyJudge()
 }
 

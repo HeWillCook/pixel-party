@@ -7,6 +7,7 @@ export const dailyScoresSchema: CollectionSchema = {
   permissions: serverWrittenPermissions(true),
   columns: [
     ...['day', 'userId', 'displayName', 'avatarUrl'].map(name => ({ name, storage: 'text' as const, interpretation: 'plain' as const })),
-    ...['score', 'fit', 'recognition', 'speed', 'bestElapsedMs', 'ended', 'medal'].map(name => ({ name, storage: 'number' as const, interpretation: 'plain' as const })),
+    // matchPoints + qualityBonus add up to score; match/quality/recognition are the raw judge percents.
+    ...['score', 'match', 'quality', 'matchPoints', 'qualityBonus', 'recognition', 'startedAt', 'ended', 'medal'].map(name => ({ name, storage: 'number' as const, interpretation: 'plain' as const })),
   ],
 }

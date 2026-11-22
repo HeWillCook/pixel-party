@@ -65,10 +65,13 @@ export async function addDebugPaintings(tools: ServerTools, user: { userId: stri
     const seed = Date.parse(`${day}T00:00:00Z`) / 86_400_000
     const rand = random(seed)
     const score = 250 + Math.floor(rand() * 700)
-    const fit = Math.round(score * 0.5), recognition = Math.round(score * 0.4)
+    const matchPoints = Math.round(score * 0.5), qualityBonus = score - matchPoints
+    const match = 55 + Math.floor(rand() * 41)
+    const quality = 50 + Math.floor(rand() * 51)
+    const recognition = 40 + Math.floor(rand() * 61)
     must(await tools.create('dailyScores', {
-      day, userId: user.userId, displayName: user.name, avatarUrl: DEBUG_AVATAR, score, fit, recognition,
-      speed: score - fit - recognition, bestElapsedMs: 60_000 + Math.floor(rand() * 200_000), ended: 1, medal: 0,
+      day, userId: user.userId, displayName: user.name, avatarUrl: DEBUG_AVATAR, score, match, quality, matchPoints, qualityBonus, recognition,
+      startedAt: Date.parse(`${day}T00:00:00Z`) + Math.floor(rand() * 86_400_000), ended: 1, medal: 0,
     }))
     must(await tools.create('dailyDrawings', {
       day, userId: user.userId, displayName: user.name, prompt: promptForDay(day).prompt, cells: encodeCells(debugCells(seed)),

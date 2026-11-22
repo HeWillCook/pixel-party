@@ -4,8 +4,8 @@ import { applyPlacements, applyJudgeOutcome, applyPlacement, advance, countPlaye
 import { WORDS } from './words'
 import { createGrid, pixelsUsed } from './grid'
 
-const room = () => newRoomState({ roomId: 'room', mode: 'coop', isDefaultBoard: false }, 1000, () => 0)
-const judged = { kind: 'judged' as const, zone: 'all' as const, result: { guesses: ['house'], confidence: 0.9 }, matched: true }
+const room = () => newRoomState({ roomId: 'room', mode: 'coop' }, 1000, () => 0)
+const judged = { kind: 'judged' as const, zone: 'all' as const, result: { guesses: ['house'], confidence: 0.9, writing: '', text: false }, matched: true }
 
 describe('room logic', () => {
   it('counts distinct normalized signed-in identities', () => {
@@ -55,7 +55,7 @@ describe('room logic', () => {
     expect(nextAlarmAt(erased, 20000)).toBe(erased.round.startedAt + MODES.coop.capMs)
     expect(nextAlarmAt(erased, 2000)).toBeGreaterThan(2000 + JUDGE.tickMs)
   })
-  it('round-trips grid, authors, cooldowns, calls and word entry, clearing in-flight', () => {
+  it('round-trips grid, authors, paint buckets, calls and word entry, clearing in-flight', () => {
     const s = applyPlacement(room(), { x: 3, y: 2, c: 4, userId: 'a' }, 2000, 1).state
     s.judgeCalls = [3000]; s.judgeInFlight = true
     expect(deserializeRoomState(serializeRoomState(s))).toEqual({ ...s, judgeInFlight: false })
@@ -71,11 +71,10 @@ describe('room logic', () => {
     expect(resumed.state.status).toBe('playing')
     expect(s.status).toBe('playing')
   })
-  it('closes empty non-default rooms and leaves default rooms unscheduled', () => {
+  it('closes empty rooms after the timeout', () => {
     const paused = advance(room(), 2000, 0, () => 0).state
     expect(nextAlarmAt(paused, 2000)).toBe(2000 + ROOMS.closeAfterEmptyMs)
     expect(advance(paused, 2000 + ROOMS.closeAfterEmptyMs, 0, () => 0).state.status).toBe('closed')
-    expect(nextAlarmAt({ ...paused, isDefaultBoard: true }, 2000)).toBeNull()
   })
   it('preserves the paused round after a long absence', () => {
     const paused = advance(room(), 2000, 0, () => 0).state
@@ -107,10 +106,10 @@ describe('room logic', () => {
     expect(next.events).toContainEqual({ type: 'cleared' })
     expect(startNextRound(next.state, 400000, () => 0).state.round.id).not.toBe(next.state.round.id)
   })
-  it('scores wins and includes contributors and final guesses', () => {
+  it('ends a won round without a score and includes contributors and final guesses', () => {
     const s = applyPlacement(room(), { x: 1, y: 1, c: 2, userId: 'a' }, 2000, 1).state
     const result = applyJudgeOutcome(s, judged, 4000)
-    expect(result.state.round.result).toEqual({ outcome: 'won', score: 995, contributorCount: 1 })
+    expect(result.state.round.result).toEqual({ outcome: 'won', contributorCount: 1 })
     expect(result.events).toContainEqual(expect.objectContaining({ type: 'roundEnded', event: expect.objectContaining({ contributorIds: ['a'], finalGuesses: ['house'], pixelsUsed: 1 }) }))
     expect(result.state.intermissionEndsAt).toBeNull()
     expect(s.status).toBe('playing')
@@ -140,21 +139,23 @@ describe('room logic', () => {
     expect(shouldJudge(state, 70000, 1, 'tick')).toEqual({ ok: true })
     expect(nextAlarmAt(state, 70000)).toBe(70000)
   })
-  it('records the last writer per cell and keeps cooldowns per user', () => {
+  it('records the last writer per cell and keeps a separate paint bucket per user', () => {
     const original = room()
     const first = applyPlacement(original, { x: 0, y: 0, c: 1, userId: 'a' }, 2000, 2).state
     const second = applyPlacement(first, { x: 0, y: 0, c: 2, userId: 'b' }, 2001, 2).state
     expect(second.grid.cells[0]).toBe(2)
     expect(second.grid.placedBy[0]).toBe('b')
     expect(second.version).toBe(original.version + 2)
-    expect(applyPlacement(second, { x: 1, y: 0, c: 1, userId: 'a' }, 2002, 2).events[0]).toMatchObject({ reason: 'cooldown' })
+    // With friends there is no per-pixel wait: the next cell is accepted straight away.
+    expect(applyPlacement(second, { x: 1, y: 0, c: 1, userId: 'a' }, 2002, 2).events[0]).toMatchObject({ type: 'pixel' })
     expect(applyPlacement(second, { x: 1, y: 0, c: 1, userId: 'c' }, 2002, 2).events[0]).toMatchObject({ type: 'pixel' })
+    expect(Object.keys(second.paintBuckets).sort()).toEqual(['a', 'b'])
   })
-  it('prunes placement timestamps older than the maximum cooldown on a successful write', () => {
-    const state = room(); state.lastPlacedAt = { old: 9999, boundary: 10000, recent: 19999 }
+  it('prunes paint buckets idle for more than a second on a successful write', () => {
+    const state = room(); state.paintBuckets = { old: { tokens: 0, updatedAt: 9999 }, recent: { tokens: 0, updatedAt: 19999 } }
     const next = applyPlacement(state, { x: 0, y: 0, c: 1, userId: 'new' }, 20000, 1).state
-    expect(next.lastPlacedAt).toEqual({ boundary: 10000, recent: 19999, new: 20000 })
-    expect(state.lastPlacedAt.old).toBe(9999)
+    expect(next.paintBuckets).toEqual({ recent: { tokens: 0, updatedAt: 19999 }, new: { tokens: 59, updatedAt: 20000 } })
+    expect(state.paintBuckets.old).toEqual({ tokens: 0, updatedAt: 9999 })
   })
   it('excludes all ten recent words and retains only ten', () => {
     const state = room(); state.recentWords = WORDS.slice(0, 10).map(entry => entry.word)
@@ -165,17 +166,17 @@ describe('room logic', () => {
   })
   it('preserves last guesses for a timeout and clears them for the next round', () => {
     const s = room()
-    const seen = applyJudgeOutcome(s, { ...judged, result: { guesses: ['tree', 'plant'], confidence: 0.2 }, matched: false }, 3000).state
+    const seen = applyJudgeOutcome(s, { ...judged, result: { guesses: ['tree', 'plant'], confidence: 0.2, writing: '', text: false }, matched: false }, 3000).state
     expect(seen.lastGuesses).toEqual(['tree', 'plant'])
     const timeout = advance(seen, s.round.startedAt + MODES.coop.capMs, 1, () => 0)
     expect(timeout.events).toContainEqual(expect.objectContaining({ type: 'roundEnded', event: expect.objectContaining({ finalGuesses: ['tree', 'plant'] }) }))
     expect(startNextRound(timeout.state, 400000, () => 0).state.lastGuesses).toEqual([])
   })
-  it('uses grid size for score and the winning judgement for final guesses', () => {
+  it('keeps the winning judgement as the final guesses', () => {
     const s = room(); s.grid = createGrid(2, 2)
     const placed = applyPlacement(s, { x: 0, y: 0, c: 1, userId: 'a' }, 2000, 1).state
     const result = applyJudgeOutcome(placed, judged, 1000)
-    expect(result.state.round.result?.score).toBe(875)
+    expect(result.state.round.result?.outcome).toBe('won')
     expect(result.state.lastGuesses).toEqual(['house'])
     expect(result.events).toContainEqual(expect.objectContaining({ type: 'roundEnded', event: expect.objectContaining({ finalGuesses: ['house'] }) }))
   })
@@ -203,21 +204,19 @@ describe('room logic', () => {
     const noop = applyPlacement(s, { x: 5, y: 5, c: 0, userId: 'a', id: 11 }, 2000, 2)
     expect(noop.events).toEqual([{ type: 'noop', x: 5, y: 5, id: 11 }])
     expect(noop.state).toBe(s)
-    expect(noop.state.lastPlacedAt).toEqual({})
+    expect(noop.state.paintBuckets).toEqual({})
     const painted = applyPlacement(noop.state, { x: 1, y: 1, c: 4, userId: 'a' }, 2001, 2)
     expect(painted.events[0]).toMatchObject({ type: 'pixel', x: 1, y: 1, c: 4, by: 'a' })
-    const noopDuringCooldown = applyPlacement(painted.state, { x: 6, y: 6, c: 0, userId: 'a' }, 2002, 2)
-    expect(noopDuringCooldown.events).toEqual([{ type: 'noop', x: 6, y: 6 }])
-    expect(noopDuringCooldown.state).toBe(painted.state)
+    const noopDuringPaint = applyPlacement(painted.state, { x: 6, y: 6, c: 0, userId: 'a' }, 2002, 2)
+    expect(noopDuringPaint.events).toEqual([{ type: 'noop', x: 6, y: 6 }])
+    expect(noopDuringPaint.state).toBe(painted.state)
   })
-  it('erase during cooldown is rejected', () => {
+  it('erase is a normal placement: no wait behind a paint', () => {
     const s1 = applyPlacement(room(), { x: 0, y: 0, c: 4, userId: 'a' }, 2000, 2).state
     const s2 = applyPlacement(s1, { x: 1, y: 0, c: 5, userId: 'b' }, 2000, 2).state
-    const rejected = applyPlacement(s2, { x: 1, y: 0, c: 0, userId: 'a', id: 21 }, 2001, 2)
-    expect(rejected.events).toEqual([
-      expect.objectContaining({ type: 'reject', reason: 'cooldown', x: 1, y: 0, id: 21 }),
-    ])
-    expect(rejected.state.grid.cells[1]).toBe(5)
+    const erased = applyPlacement(s2, { x: 1, y: 0, c: 0, userId: 'a', id: 21 }, 2001, 2)
+    expect(erased.events).toEqual([expect.objectContaining({ type: 'pixel', x: 1, y: 0, c: 0, by: 'a' })])
+    expect(erased.state.grid.cells[1]).toBe(0)
   })
   it('white 16 accepted; 17 rejected', () => {
     const s = room()
@@ -228,29 +227,51 @@ describe('room logic', () => {
   })
 })
 
-describe('solo placement abuse cap', () => {
-  it('accepts a solid stroke instantly, caps bursts, persists and refills per user', () => {
+describe('paint pace per painter', () => {
+  it('accepts a 20-cell drag from each of three painters at the same instant', () => {
+    let state = room()
+    const events: string[] = []
+    for (const [row, user] of ['a', 'b', 'c'].entries()) {
+      const cells = Array.from({ length: 20 }, (_, x) => ({ x, y: 2 + row, c: 4 }))
+      const step = applyPlacements(state, cells, user, 5000, 3)
+      state = step.state
+      events.push(...step.events.map(event => event.type))
+    }
+    expect(events).toHaveLength(60)
+    expect(events.every(type => type === 'pixel')).toBe(true)
+    expect(pixelsUsed(state.grid)).toBe(60)
+    expect(Object.keys(state.paintBuckets).sort()).toEqual(['a', 'b', 'c'])
+  })
+
+  it('rejects a flood past one painter’s party bucket without touching the others', () => {
+    const cells = Array.from({ length: 64 }, (_, i) => ({ x: i % 32, y: Math.floor(i / 32), c: 4 }))
+    const batch = applyPlacements(room(), cells, 'flood', 2000, 2)
+    expect(batch.events.filter(event => event.type === 'pixel')).toHaveLength(40)
+    expect(batch.events.filter(event => event.type === 'reject')).toHaveLength(24)
+    expect(batch.events.at(-1)).toMatchObject({ type: 'reject', reason: 'rate_limited', x: 31, y: 1 })
+    expect(pixelsUsed(batch.state.grid)).toBe(40)
+    // A second painter has a full bucket of their own, even at the same instant.
+    expect(applyPlacements(batch.state, [{ x: 0, y: 2, c: 5 }], 'friend', 2000, 2).events[0].type).toBe('pixel')
+    // And the flooder refills at 40/s: 25ms later the next cell is accepted.
+    expect(applyPlacement(batch.state, { x: 1, y: 2, c: 5, userId: 'flood' }, 2025, 2).events[0].type).toBe('pixel')
+  })
+
+  it('keeps the solo bucket at 60 cells and survives a wake', () => {
     const cells = Array.from({ length: 64 }, (_, i) => ({ x: i % 32, y: Math.floor(i / 32), c: 4 }))
     const original = room()
     const batch = applyPlacements(original, cells, 'solo', 2000, 1)
     expect(batch.events.filter(event => event.type === 'pixel')).toHaveLength(60)
     expect(batch.events.filter(event => event.type === 'reject')).toHaveLength(4)
-    expect(batch.events.at(-1)).toMatchObject({ reason: 'rate_limited', x: 31, y: 1 })
     const restored = deserializeRoomState(serializeRoomState(batch.state))
     expect(applyPlacement(restored, { ...cells[0], userId: 'solo' }, 2000, 1).events[0]).toMatchObject({ reason: 'rate_limited' })
     expect(applyPlacement(restored, { ...cells[0], userId: 'solo' }, 2017, 1).events[0].type).toBe('pixel')
     expect(applyPlacement(restored, { ...cells[0], userId: 'other' }, 2000, 1).events[0].type).toBe('pixel')
     expect(original.version).toBe(0)
   })
-  it('keeps multiplayer cooldown within a batch', () => {
-    const batch = applyPlacements(room(), [{ x: 0, y: 0, c: 4 }, { x: 1, y: 0, c: 4 }], 'a', 2000, 2)
-    expect(batch.events.map(event => event.type)).toEqual(['pixel', 'reject'])
-    expect(batch.events[1]).toMatchObject({ reason: 'cooldown', retryAt: 2500, x: 1, y: 0 })
-  })
 })
 
 describe('private waiting room', () => {
-  const lobby = () => newRoomState({ roomId: 'private', mode: 'coop', isDefaultBoard: false, startsInLobby: true }, 1000, () => 0)
+  const lobby = () => newRoomState({ roomId: 'private', mode: 'coop', startsInLobby: true }, 1000, () => 0)
   it('has no word or timer, refuses painting and judging, and starts on command', () => {
     const state = lobby()
     expect(state.status).toBe('lobby')
@@ -284,7 +305,6 @@ describe('explicit next permissions', () => {
     const state = { ...room(), status: 'playing' as const }
     expect(nextRoundRejection(state, 'host', 'host', ['host', 'guest'])).toBeNull()
     expect(nextRoundRejection(state, 'guest', 'host', ['guest'])).toBe('not_host')
-    expect(nextRoundRejection({ ...state, isDefaultBoard: true }, 'guest', null, ['guest'])).toBe('not_host')
   })
 
   it.each(['lobby', 'intermission'] as const)('requires a connected signed-in caller in %s', status => {
@@ -294,7 +314,6 @@ describe('explicit next permissions', () => {
     expect(nextRoundRejection(state, 'guest', 'host', ['host', 'guest'])).toBe('not_host')
     expect(nextRoundRejection(state, 'host', 'host', ['host', 'guest'])).toBeNull()
     expect(nextRoundRejection(state, 'guest', 'host', ['guest'])).toBeNull()
-    expect(nextRoundRejection({ ...state, isDefaultBoard: true }, 'guest', null, ['guest'])).toBeNull()
     expect(nextRoundRejection(state, 'guest', null, ['guest'])).toBe('not_host')
   })
 })

@@ -1,0 +1,262 @@
+/* Player statistics: a cream plaque with wood and brass trim, matching scores/gallery chrome. */
+
+.pstats-card {
+  display: grid;
+  gap: calc(var(--px, 3px) * 1.6);
+  min-width: 0;
+  padding: calc(var(--px, 3px) * 2.6) calc(var(--px, 3px) * 3.2);
+  background: #fff0cc;
+  color: #392a45;
+  border: calc(var(--px, 3px) * 1) solid #985c5a;
+  box-shadow:
+    inset 0 0 0 calc(var(--px, 3px) * 0.7) #ecd4b0,
+    calc(var(--px, 3px) * 1.2) calc(var(--px, 3px) * 1.2) 0 rgba(57, 42, 69, 0.5);
+  border-radius: 0;
+}
+
+.pstats-card--dialog {
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+.pstats-head {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--px, 3px) * 3);
+  min-width: 0;
+}
+
+.pstats-avatar.pstats-avatar {
+  width: 48px !important;
+  height: 48px !important;
+  flex: none;
+  border-radius: 0;
+  border: calc(var(--px, 3px) * 1) solid #985c5a;
+  background: #34516a;
+  color: #fff0cc;
+  image-rendering: pixelated;
+}
+
+.pstats-avatar-fallback {
+  border-radius: 0;
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1;
+  text-transform: uppercase;
+  color: #fff0cc;
+  background: #34516a;
+}
+
+.pstats-id { min-width: 0; }
+
+.pstats-name {
+  margin: 0;
+  font-size: max(20px, calc(var(--px, 3px) * 8));
+  line-height: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pstats-tagline {
+  margin: calc(var(--px, 3px) * 0.6) 0 0;
+  font-size: max(11px, calc(var(--px, 3px) * 4.6));
+  line-height: 1.1;
+  color: #6b5750;
+}
+
+.pstats-block {
+  display: grid;
+  gap: calc(var(--px, 3px) * 1);
+  min-width: 0;
+}
+
+.pstats-block-title {
+  margin: 0;
+  font-size: max(12px, calc(var(--px, 3px) * 4.6));
+  line-height: 1;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #985c5a;
+}
+
+.pstats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: calc(var(--px, 3px) * 1) calc(var(--px, 3px) * 2);
+  margin: 0;
+}
+
+.pstats-grid--party { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+.pstats-stat { min-width: 0; }
+
+.pstats-stat dt {
+  margin: 0;
+  font-size: max(11px, calc(var(--px, 3px) * 3.8));
+  line-height: 1.1;
+  letter-spacing: 0.4px;
+  color: #6b5750;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pstats-stat dd {
+  margin: 0;
+  font-size: max(19px, calc(var(--px, 3px) * 6.4));
+  line-height: 1;
+  color: #392a45;
+  white-space: nowrap;
+}
+
+.pstats-max {
+  font-size: max(11px, calc(var(--px, 3px) * 3.8));
+  color: #6b5750;
+}
+
+.pstats-medals {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: calc(var(--px, 3px) * 2.4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pstats-medal {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--px, 3px) * 0.8);
+}
+
+.pstats-medal-count {
+  font-size: max(16px, calc(var(--px, 3px) * 5.2));
+  line-height: 1;
+}
+
+.pstats-note,
+.pstats-status {
+  margin: 0;
+  font-size: max(13px, calc(var(--px, 3px) * 4.6));
+  line-height: 1.25;
+  color: #6b5750;
+}
+
+.pstats-status { align-self: center; }
+
+.pstats-retry {
+  min-height: 32px;
+  padding: 0 calc(var(--px, 3px) * 2);
+  font: inherit;
+  color: #392a45;
+  background: #ecd4b0;
+  border: 2px solid #985c5a;
+  border-radius: 0;
+  cursor: pointer;
+}
+
+.pstats-retry:focus-visible {
+  outline: 3px solid #392a45;
+  outline-offset: 2px;
+}
+
+/* Wide plaque: identity, daily and party side by side on the deck. */
+@media (min-width: 900px) {
+  .pstats-card--plaque {
+    grid-template-columns: minmax(150px, 0.8fr) minmax(0, 2fr) minmax(0, 1fr);
+    align-items: center;
+    column-gap: calc(var(--px, 3px) * 4);
+  }
+  .pstats-card--plaque .pstats-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .pstats-card--plaque .pstats-grid--party { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .pstats-card--plaque .pstats-note,
+  .pstats-card--plaque .pstats-status { grid-column: 1 / -1; }
+}
+
+/* The dialog is wide enough for one row of daily numbers from tablet width up. */
+@media (min-width: 520px) {
+  .pstats-card--dialog .pstats-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .pstats-card--dialog .pstats-grid--party { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+/* A phone keeps all six daily numbers on one row too, without the "/1000" suffix, so the plaque
+   fits the deck boards instead of scrolling. */
+@media (max-width: 639px) {
+  .pstats-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .pstats-grid--party { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .pstats-max { display: none; }
+  .pstats-card { gap: calc(var(--px, 3px) * 1); padding: calc(var(--px, 3px) * 2) calc(var(--px, 3px) * 2.4); }
+  .pstats-avatar.pstats-avatar { width: 40px !important; height: 40px !important; }
+  .pstats-medals { gap: calc(var(--px, 3px) * 1.8); }
+  .pstats-medal-icon { transform: scale(0.82); transform-origin: left center; }
+}
+
+/* The dialog around the card. */
+.pstats-dialog.pstats-dialog {
+  width: min(560px, calc(100vw - 24px));
+  max-width: min(560px, calc(100vw - 24px));
+  max-height: min(86vh, 720px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  gap: calc(var(--px, 3px) * 2);
+  padding: calc(var(--px, 3px) * 4);
+}
+
+.pstats-dialog__title {
+  margin: 0;
+  font-size: max(20px, calc(var(--px, 3px) * 7));
+  line-height: 1;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #985c5a;
+}
+
+.pstats-dialog__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: calc(var(--px, 3px) * 2);
+}
+
+.pstats-dialog__gallery,
+.pstats-dialog__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 calc(var(--px, 3px) * 2.4);
+  font-size: max(16px, calc(var(--px, 3px) * 5.2));
+  line-height: 1;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+/* The player page's plaque lives on the deck boards, clear of the paintings. */
+.gallery-stats-plaque {
+  position: fixed;
+  z-index: 3;
+  left: 16px;
+  bottom: 10px;
+  width: min(920px, calc(100vw - 32px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  pointer-events: auto;
+}
+
+@media (max-width: 640px) {
+  .gallery-stats-plaque {
+    left: 8px;
+    bottom: 8px;
+    width: calc(100vw - 16px);
+  }
+}
+
+.gallery-page--leaving .gallery-stats-plaque { pointer-events: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pstats-card, .gallery-stats-plaque { scroll-behavior: auto; }
+}

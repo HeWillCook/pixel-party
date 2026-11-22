@@ -79,11 +79,13 @@ export const BUDGET = {
 export const DAILY = {
   attemptMs: 300_000,
   graceMs: 15_000,
-  autoWindowsMs: [60_000, 120_000, 180_000, 240_000] as const,
+  /** The single automatic judgement: the halfway verdict at 2:30 (skipped if the player submits first). The final verdict lands at 5:00 or the moment the player submits. */
+  autoWindowsMs: [150_000] as const,
   autoLateMs: 5_000,
   autoMissAfterMs: 30_000,
-  maxAsks: 3,
-  askMinGapMs: 20_000,
+  /** Haiku's two silent peeks at the canvas (one playful line each, never a score). */
+  peekWindowsMs: [75_000, 225_000] as const,
+  maxPeeks: 2,
   inFlightStaleMs: 90_000,
   renderPx: 512,
   /** Longest judge reason any box can show without clipping (measured with W/M-heavy text; see tests/offline/daily.spec.ts). */

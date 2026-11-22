@@ -4,7 +4,6 @@ import { signOut, useAuthProfileReady, useQuery } from 'deepspace'
 import {
   ArrowLeft,
   CheckCircle2,
-  Sparkles,
   Volume2,
   VolumeX,
 } from 'lucide-react'
@@ -26,6 +25,7 @@ import { ToolBar } from '../../components/game/ToolBar'
 import { PlayLayout } from '../../components/play/PlayLayout'
 import { HoverEasel } from '../../components/play/HoverEasel'
 import { ScoreCard } from '../../components/play/ScoreCard'
+import { SubmitConfirm } from '../../components/play/SubmitConfirm'
 import { StudioSprite } from '../../components/play/StudioSprite'
 import { PainterTray } from '../../components/game/PainterTray'
 import { PlayBackdrop, type PlayTransition } from '../../components/play/PlayBackdrop'
@@ -34,7 +34,7 @@ import { untransformedRect, useSceneRegistration } from '../../scene/registratio
 import { porchEaselBoardRect } from '../../scene/porch/layout'
 import { Badge, Button, Modal } from '../../components/ui'
 import { DAILY, MAX_COLOR } from '../../game/config'
-import { canAskDaily, canPaintDaily } from '../../game/daily/client-schedule'
+import { canPaintDaily } from '../../game/daily/client-schedule'
 import { decodeCells } from '../../game/grid'
 import { emptyHistory, record, redo, undo, type History } from '../../game/history'
 import { DAILY_TOOLS, floodFill, pickAt, type Tool } from '../../game/tools'
@@ -60,10 +60,12 @@ interface DailyScoreRecord {
   displayName: string
   avatarUrl: string
   score: number
-  fit: number
+  match: number
   recognition: number
-  speed: number
-  bestElapsedMs: number
+  quality: number
+  matchPoints: number
+  qualityBonus: number
+  startedAt: number
   ended: number
   medal: number
 }
@@ -89,7 +91,7 @@ const PORCH_TEXT_FADE_MS = 120
 
 export default function DailyHomePage() {
   const { isLoaded, isSignedIn, user } = useAuthProfileReady({ requireUser: false })
-  const { state, cells, paint, replaceCells, start, askNow, done } = useDaily()
+  const { state, cells, paint, replaceCells, start, submit, voice } = useDaily()
   const { muted, toggleMute } = useDailySounds(state)
   // A callback ref (not a mutable ref) so the measuring effect re-runs the first time the
   // board actually mounts. It mounts a commit after `state.status` flips to 'playing' (the
@@ -120,11 +122,13 @@ export default function DailyHomePage() {
   }), [])
   const [mobileScoreOpen, setMobileScoreOpen] = useState(false)
   const [mobileHaikuOpen, setMobileHaikuOpen] = useState(false)
+  const [submitConfirmOpen, setSubmitConfirmOpen] = useState(false)
 
   useEffect(() => {
     if (state.status !== 'playing') {
       setMobileScoreOpen(false)
       setMobileHaikuOpen(false)
+      setSubmitConfirmOpen(false)
     }
   }, [state.status])
 
@@ -241,8 +245,8 @@ export default function DailyHomePage() {
     limit: 1,
   })
 
-  const bestDrawingDoc = myDrawings[0]?.data
-  const bestScoreDoc = myScores[0]?.data
+  const drawingDoc = myDrawings[0]?.data
+  const scoreDoc = myScores[0]?.data
 
   // What Haiku (the porch cat) can tell you when you say hello: today's top score and your painting from yesterday. The first query is
   // the very one the chalkboard already makes, so it costs nothing more.
@@ -255,10 +259,10 @@ export default function DailyHomePage() {
   const { records: todaysScores } = useQuery<DailyScoreRecord>('dailyScores', { where: { day: queryDay }, limit: 1000 })
   const { records: yesterdaysScores } = useQuery<DailyScoreRecord>('dailyScores', { where: { day: yesterdayDay, userId: queryUserId }, limit: 1 })
   const haikuFacts = useMemo(() => ({
-    best: state.status === 'ended' ? Math.max(state.best, bestScoreDoc?.score ?? 0) : 0,
+    best: state.status === 'ended' ? Math.max(state.best, scoreDoc?.score ?? 0) : 0,
     top: todaysScores.reduce((top, record) => Math.max(top, typeof record.data?.score === 'number' ? record.data.score : 0), 0),
     yesterday: yesterdaysScores[0]?.data?.score ?? 0,
-  }), [state.status, state.best, bestScoreDoc?.score, todaysScores, yesterdaysScores])
+  }), [state.status, state.best, scoreDoc?.score, todaysScores, yesterdaysScores])
 
   const [activeColor, setActiveColor] = useState<number>(4)
   const [tool, setTool] = useState<Tool>('paint')
@@ -304,9 +308,16 @@ export default function DailyHomePage() {
     return () => clearInterval(interval)
   }, [state.status])
 
-  const asksLeft = state.asksLeft
   const canDraw = isSignedIn && canPaintDaily(state, now)
-  const canAsk = isSignedIn && canAskDaily(state, now)
+
+  // The early finish: the confirm is a real dialog, and the final itself is single-fire inside the
+  // hook (finishPromiseRef), so a fast double click can never send two verdicts.
+  const submitLocked = state.finalizing || state.finalUsed
+  const submitLabel = state.endFailed ? 'Retry submit' : state.finalizing ? 'Finishing…' : 'Submit'
+  const confirmSubmit = useCallback(() => {
+    setSubmitConfirmOpen(false)
+    void submit()
+  }, [submit])
 
   useEffect(() => {
     if (canDraw) return
@@ -404,53 +415,48 @@ export default function DailyHomePage() {
     enabled: isSignedIn && state.loaded && state.status === 'playing' && canDraw,
   })
 
-  const endedBestScore = Math.max(
+  const endedScore = Math.max(
     state.best,
-    bestScoreDoc?.score ?? 0,
-    bestDrawingDoc?.score ?? 0,
+    scoreDoc?.score ?? 0,
+    drawingDoc?.score ?? 0,
   )
 
+  // The image is the MOST RECENT canvas the player had; the score is the HIGHER judgement.
   const endedCells = useMemo(
-    () => decodeSnapshotOrFallback(bestDrawingDoc?.cells ?? state.bestCells ?? state.lastCells, cells),
-    [bestDrawingDoc?.cells, state.bestCells, state.lastCells, cells],
+    () => decodeSnapshotOrFallback(drawingDoc?.cells ?? state.lastCells, cells),
+    [drawingDoc?.cells, state.lastCells, cells],
   )
 
   const endedGrade = useMemo((): GradeView | null => {
-    if (bestScoreDoc || bestDrawingDoc) {
-      const fit = bestScoreDoc?.fit ?? (state.latest?.total === endedBestScore ? state.latest.fit : 0)
-      const recognition =
-        bestScoreDoc?.recognition ??
-        (state.latest?.total === endedBestScore ? state.latest.recognition : 0)
-      const speed =
-        bestScoreDoc?.speed ?? (state.latest?.total === endedBestScore ? state.latest.speed : 0)
-      const total = bestScoreDoc?.score ?? bestDrawingDoc?.score ?? endedBestScore
-      const guess =
-        bestDrawingDoc?.guess ||
-        (state.latest?.total === endedBestScore ? state.latest.guess : '')
-      const reason =
-        bestDrawingDoc?.reason ||
-        (state.latest?.total === endedBestScore ? state.latest.reason : '')
-      const elapsedMs =
-        bestScoreDoc?.bestElapsedMs ??
-        (state.latest?.total === endedBestScore ? state.latest.elapsedMs : 0)
+    if (scoreDoc || drawingDoc) {
+      const total = Math.max(endedScore, scoreDoc?.score ?? 0, drawingDoc?.score ?? 0)
+      // Score parts come from the winning judgement; the caption (guess/reason) travels with the
+      // latest canvas, so it comes from the most recent judgement.
+      const guess = drawingDoc?.guess ?? state.latest?.guess ?? ''
+      const reason = drawingDoc?.reason ?? state.latest?.reason ?? ''
+      const match = scoreDoc?.match ?? (state.latest?.total === total ? state.latest.match : 0)
+      const recognition = scoreDoc?.recognition ?? (state.latest?.total === total ? state.latest.recognition : 0)
+      const quality = scoreDoc?.quality ?? (state.latest?.total === total ? state.latest.quality : 0)
+      const matchPoints = scoreDoc?.matchPoints ?? (state.latest?.total === total ? state.latest.matchPoints : 0)
+      const qualityBonus = scoreDoc?.qualityBonus ?? (state.latest?.total === total ? state.latest.qualityBonus : 0)
 
       if (total > 0 || Boolean(guess) || Boolean(reason)) {
         return {
           guess,
           reason,
-          fit,
+          match,
           recognition,
-          speed,
+          quality,
+          matchPoints,
+          qualityBonus,
           total,
-          elapsedMs,
+          elapsedMs: 0,
         }
       }
     }
-    if (state.latest && state.latest.total >= state.best) {
-      return state.latest
-    }
+    if (state.latest) return state.latest
     return null
-  }, [bestScoreDoc, bestDrawingDoc, state.latest, state.best, endedBestScore])
+  }, [scoreDoc, drawingDoc, state.latest, endedScore])
 
   const handleStart = async () => {
     enableNavMotion()
@@ -522,7 +528,7 @@ export default function DailyHomePage() {
         <PorchScene easelState={signedOut ? 'signin' : ended ? 'finished' : 'cover'} easelLabel={signedOut ? 'Sign in to paint' : ended ? 'View result' : 'Start Daily Challenge'}
           easelTestId={signedOut ? 'daily-sign-in-button' : ended ? undefined : 'daily-start-button'} easelDisabled={starting}
           easelCells={ended ? endedCells : undefined}
-          easelText={<EaselFaceText mode={signedOut ? 'signin' : ended ? 'finished' : 'cover'} best={endedBestScore} />}
+          easelText={<EaselFaceText mode={signedOut ? 'signin' : ended ? 'finished' : 'cover'} best={endedScore} />}
           signedIn={!!isSignedIn} galleryHref={`/u/${encodeURIComponent(userId)}`} muted={muted} haikuFacts={haikuFacts}
           wall={isSignedIn && userId ? <OwnGalleryWall userId={userId} /> : undefined}
           pendingChain={pendingChain}
@@ -556,23 +562,33 @@ export default function DailyHomePage() {
   ).find(w => w.status === 'pending')
   const nextAutoAt = pendingWindow?.dueAt ?? state.nextAutoAt
   const nextAutoSec = nextAutoAt != null ? Math.max(0, Math.ceil((nextAutoAt - serverNow) / 1000)) : null
+  const finalAt = state.startedAt != null ? state.startedAt + DAILY.attemptMs : null
+  const finalInSec = finalAt != null ? Math.max(0, Math.ceil((finalAt - serverNow) / 1000)) : null
   const nextAutoLabel = state.grading
     ? 'Looking…'
-    : nextAutoSec != null
-      ? `Next ${Math.floor(nextAutoSec / 60)}:${String(nextAutoSec % 60).padStart(2, '0')}`
-      : 'Grades done'
+    : state.finalizing && !state.endFailed
+      ? 'Verdict…'
+      : nextAutoSec != null
+        ? `Look in ${Math.floor(nextAutoSec / 60)}:${String(nextAutoSec % 60).padStart(2, '0')}`
+        : finalInSec != null
+          ? `Verdict in ${Math.floor(finalInSec / 60)}:${String(finalInSec % 60).padStart(2, '0')}`
+          : 'Final verdict'
 
   const haikuState: HaikuState = state.grading
     ? 'thinking'
     : state.lastError && state.lastError.includes('napping')
       ? 'resting'
-      : state.latest
-        ? state.latest.total >= 700
-          ? 'correct'
-          : state.latest.total >= 350
+      : voice.verdict === 'suspense'
+        ? 'thinking'
+        : state.latest
+          ? state.latest.total >= 700
+            ? 'correct'
+            : state.latest.total >= 350
+              ? 'guess'
+              : 'idle'
+          : voice.line
             ? 'guess'
             : 'idle'
-        : 'idle'
 
   const guessWord = state.latest?.guess?.trim()
   const isBlankGuess = Boolean(
@@ -588,6 +604,21 @@ export default function DailyHomePage() {
         : `Looks like a ${guessWord}!`
       : 'Scored!'
 
+  const gradedBubble = state.latest ? (
+    <span className="daily-haiku__speech">
+      {voice.line ? (
+        <strong data-testid="daily-haiku-voice" className="daily-haiku__headline">{voice.line}</strong>
+      ) : (
+        <strong className="daily-haiku__headline">
+          {guessLine}&nbsp;&middot;&nbsp;{state.latest.total}
+        </strong>
+      )}
+      {state.latest.reason && (
+        <span className="daily-haiku__reason">{state.latest.reason}</span>
+      )}
+    </span>
+  ) : null
+
   const haikuBubble = state.grading ? (
     'Hmm…'
   ) : state.lastError ? (
@@ -596,13 +627,10 @@ export default function DailyHomePage() {
       <span className="daily-haiku__reason">{state.lastError}</span>
     </span>
   ) : state.latest ? (
+    gradedBubble
+  ) : voice.line ? (
     <span className="daily-haiku__speech">
-      <strong className="daily-haiku__headline">
-        {guessLine}&nbsp;&middot;&nbsp;{state.latest.total}
-      </strong>
-      {state.latest.reason && (
-        <span className="daily-haiku__reason">{state.latest.reason}</span>
-      )}
+      <span data-testid="daily-haiku-voice" className="daily-haiku__reason">{voice.line}</span>
     </span>
   ) : state.notice && state.notice.toLowerCase().includes('nothing drawn') ? (
     <span className="daily-haiku__speech">
@@ -612,12 +640,12 @@ export default function DailyHomePage() {
   ) : (
     <span className="daily-haiku__speech">
       <strong className="daily-haiku__headline">Paint away!</strong>
-      <span className="daily-haiku__reason">Tap Grade when you want a look.</span>
+      <span className="daily-haiku__reason">I look at 2:30, or give the verdict when you submit.</span>
     </span>
   )
 
   const ended = state.status === 'ended'
-  const closeupPrompt = state.prompt ?? bestDrawingDoc?.prompt
+  const closeupPrompt = state.prompt ?? drawingDoc?.prompt
   const exitCloseup = () => { enableNavMotion(); setPhase('leaving') }
   // DEV ONLY (__DEBUG_TOOLS__)
   const retryButton = __DEBUG_TOOLS__ ? (
@@ -666,7 +694,7 @@ export default function DailyHomePage() {
                     {closeupPrompt}
                   </span>
                   {ended
-                    ? <span className="text-base text-[var(--sunset-1)]">Best: {endedBestScore} / 1000</span>
+                    ? <span className="text-base text-[var(--sunset-1)]">Best: {endedScore} / 1000</span>
                     : <DailyTimer startedAt={state.startedAt} endsAt={state.endsAt} clockOffsetMs={state.clockOffsetMs} />}
                 </div>
               }
@@ -676,7 +704,8 @@ export default function DailyHomePage() {
                   windows={state.windows}
                   now={serverNow}
                   startedAt={state.startedAt}
-                  manualUsed={state.asksUsed}
+                  finalUsed={state.finalUsed}
+                  ended={ended}
                 />
               }
               exit={
@@ -714,7 +743,7 @@ export default function DailyHomePage() {
                   </div>
                   <div className="daily-mobile-top__right">
                     {ended
-                      ? <span className="text-base text-[var(--sunset-1)]">{endedBestScore} / 1000</span>
+                      ? <span className="text-base text-[var(--sunset-1)]">{endedScore} / 1000</span>
                       : <DailyTimer startedAt={state.startedAt} endsAt={state.endsAt} clockOffsetMs={state.clockOffsetMs} />}
                   </div>
                 </div>
@@ -743,9 +772,22 @@ export default function DailyHomePage() {
               }
               score={
                 ended ? (
-                  <div className="daily-right-stage">
-                    <GradePanel latest={endedGrade} best={endedBestScore} grading={state.grading} lastError={state.lastError} ended />
-                  </div>
+                  voice.verdict === 'suspense' ? (
+                    <div className="daily-right-stage">
+                      <div className="daily-haiku-perch">
+                        <div className="daily-haiku-perch__stool" aria-hidden="true">
+                          <StudioSprite sprite={studioSprites.criticStool} scale={3} />
+                        </div>
+                        <div className="daily-haiku-perch__cat">
+                          <Haiku state="thinking" bubble={voice.line ?? undefined} scale={3} />
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="daily-right-stage">
+                      <GradePanel latest={endedGrade} best={endedScore} grading={state.grading} lastError={state.lastError} ended stage={voice.verdict} />
+                    </div>
+                  )
                 ) : (
                   <div className="daily-right-stage">
                     <div className="daily-haiku-perch">
@@ -763,33 +805,17 @@ export default function DailyHomePage() {
                       lastError={state.lastError}
                       notice={state.notice}
                       actions={
-                        <div className="play-actions daily-plaques">
-                          <Button
-                            type="button"
-                            data-testid="daily-ask-button"
-                            disabled={!canAsk}
-                            onClick={() => void askNow()}
-                            className="pp-btn daily-plaque daily-plaque--ask gap-2 px-3 py-1.5 text-base uppercase tracking-wider"
-                          >
-                            <Sparkles className="h-4 w-4 shrink-0" aria-hidden />
-                            <span>Grade now ({asksLeft} left)</span>
-                          </Button>
-                          <div className="daily-chalkboard__chains daily-chalkboard__chains--between" aria-hidden="true">
-                            <span />
-                            <span />
-                          </div>
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            data-testid="daily-done-button"
-                            disabled={state.stale || state.grading || (state.finalizing && !state.endFailed)}
-                            onClick={() => void done()}
-                            className="pp-btn daily-plaque daily-plaque--submit gap-1.5 px-3 py-1.5 text-base uppercase tracking-wider"
-                          >
-                            <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden />
-                            <span>{state.endFailed ? 'Retry submit' : state.finalizing ? 'Finishing…' : 'Submit & finish'}</span>
-                          </Button>
-                        </div>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          data-testid="daily-done-button"
+                          disabled={submitLocked}
+                          onClick={() => setSubmitConfirmOpen(true)}
+                          className="pp-btn daily-plaque daily-plaque--submit gap-1.5 px-3 py-1.5 text-base uppercase tracking-wider"
+                        >
+                          <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden />
+                          <span>{submitLabel}</span>
+                        </Button>
                       }
                     />
                   </div>
@@ -829,7 +855,9 @@ export default function DailyHomePage() {
               mobileFooter={ended ? (
                 <div ref={mobileFooterRef} className="daily-mobile-footer">
                   <div className="daily-mobile-strip">
-                    <span data-testid="daily-best-score" className="daily-mobile-strip__best">Best {endedBestScore}/1000</span>
+                    <span data-testid="daily-best-score" className="daily-mobile-strip__best">
+                      {voice.verdict === 'suspense' ? 'Verdict…' : `Best ${endedScore}/1000`}
+                    </span>
                     <Button type="button" variant="secondary" data-testid="daily-ended-porch-button" aria-label="Back to porch" onClick={exitCloseup} className="pp-btn daily-mobile-strip__btn">
                       <span>Porch</span>
                     </Button>
@@ -839,8 +867,8 @@ export default function DailyHomePage() {
                   </div>
                   <Modal open={mobileScoreOpen} onClose={() => setMobileScoreOpen(false)} aria-label="How you were scored" hideClose className="daily-chalk-sheet-modal">
                     <div className="daily-chalk-sheet">
-                      <GradePanel latest={endedGrade} best={endedBestScore} grading={state.grading} lastError={state.lastError} ended />
-                      <AutoGradeTimeline embedded windows={state.windows} now={serverNow} startedAt={state.startedAt} manualUsed={state.asksUsed} />
+                      <GradePanel latest={endedGrade} best={endedScore} grading={state.grading} lastError={state.lastError} ended stage={voice.verdict} />
+                      <AutoGradeTimeline embedded windows={state.windows} now={serverNow} startedAt={state.startedAt} finalUsed={state.finalUsed} ended={ended} />
                       <button type="button" onClick={() => setMobileScoreOpen(false)} className="pp-btn daily-chalk-sheet__close" aria-label="Close score breakdown">Close</button>
                     </div>
                   </Modal>
@@ -914,25 +942,19 @@ export default function DailyHomePage() {
                       </span>
                       <span className="daily-mobile-strip__auto">{nextAutoLabel}</span>
                     </button>
-                    <Button
+                    <button
                       type="button"
-                      data-testid="daily-ask-button"
-                      disabled={!canAsk}
-                      onClick={() => void askNow()}
-                      className="pp-btn daily-mobile-strip__btn daily-mobile-strip__btn--ask"
-                    >
-                      <span>{state.grading ? 'Looking…' : `Grade (${asksLeft})`}</span>
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="secondary"
                       data-testid="daily-done-button"
-                      disabled={state.stale || state.grading || (state.finalizing && !state.endFailed)}
-                      onClick={() => void done()}
+                      disabled={submitLocked}
+                      onClick={() => {
+                        setMobileHaikuOpen(false)
+                        setMobileScoreOpen(false)
+                        setSubmitConfirmOpen(true)
+                      }}
                       className="pp-btn daily-mobile-strip__btn daily-mobile-strip__btn--submit"
                     >
-                      <span>{state.endFailed ? 'Retry' : state.finalizing ? 'Saving…' : 'Submit'}</span>
-                    </Button>
+                      <span>{submitLabel}</span>
+                    </button>
                   </div>
                   <Modal
                     open={mobileScoreOpen}
@@ -966,7 +988,8 @@ export default function DailyHomePage() {
                         windows={state.windows}
                         now={serverNow}
                         startedAt={state.startedAt}
-                        manualUsed={state.asksUsed}
+                        finalUsed={state.finalUsed}
+                        ended={ended}
                       />
                       {/* DEV ONLY (__DEBUG_TOOLS__) */}
                       {__DEBUG_TOOLS__ && <TempRetryDailyButton compact onAfterReset={() => setMobileScoreOpen(false)} />}
@@ -977,6 +1000,14 @@ export default function DailyHomePage() {
             />
           </div>
         </div>
+        {!ended && (
+          <SubmitConfirm
+            open={submitConfirmOpen}
+            disabled={submitLocked}
+            onCancel={() => setSubmitConfirmOpen(false)}
+            onConfirm={confirmSubmit}
+          />
+        )}
       </div>
 
     </div>

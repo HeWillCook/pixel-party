@@ -9,7 +9,7 @@ export interface HaikuFacts {
 }
 
 export const HAIKU_INTRO = "Hi, I'm Haiku. I judge the Daily."
-const FALLBACK = 'Welcome back! Paint something and I will judge it.'
+const FALLBACK = 'Welcome back! Paint for up to five minutes — submit whenever you’re happy.'
 
 /**
  * `visit` counts the times he has been greeted before: the first is the introduction. Later ones go round whatever there is to

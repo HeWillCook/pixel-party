@@ -11,7 +11,6 @@ import { authenticatedRoomRequest, resolveAppRole, verifyJwt } from 'deepspace/w
 import type { JwtVerifierConfig, VerifyResult } from 'deepspace/worker'
 import type { AppContext, Env } from '../../worker.js'
 import { createServerTools } from './server-tools'
-import { ensureDefaultBoard } from './default-board'
 import { addRoomMember, findRoom, joinCodePattern } from './rooms'
 
 function jwtConfig(env: Env): JwtVerifierConfig {
@@ -49,10 +48,10 @@ function wsRoute(
 export function registerRealtimeRoutes(app: Hono<AppContext>): void {
   app.get('/api/pixel/:joinCode/ws', async context => {
     const rawCode = context.req.param('joinCode')
-    const joinCode = rawCode.toLowerCase() === 'play' ? 'play' : rawCode.toUpperCase()
+    const joinCode = rawCode.toUpperCase()
     if (!joinCodePattern.test(rawCode)) return new Response('Not found', { status: 404 })
     const tools = createServerTools(context.env)
-    const lookup = joinCode === 'play' ? await ensureDefaultBoard(tools) : await findRoom(tools, joinCode)
+    const lookup = await findRoom(tools, joinCode)
     if (!lookup.success) return new Response('Room unavailable', { status: 503 })
     if (!lookup.data) return new Response('Not found', { status: 404 })
     const room = lookup.data
@@ -67,12 +66,10 @@ export function registerRealtimeRoutes(app: Hono<AppContext>): void {
       if (!joined.success) return new Response('Room unavailable', { status: 503 })
     }
     const request = authenticatedRoomRequest(context.req.raw, auth)
-    for (const header of ['X-Room-Id', 'X-Room-Mode', 'X-Room-Default', 'X-Room-Host', 'X-Room-Lobby', 'X-Room-Spectate']) request.headers.delete(header)
+    for (const header of ['X-Room-Id', 'X-Room-Mode', 'X-Room-Host', 'X-Room-Spectate']) request.headers.delete(header)
     request.headers.set('X-Room-Id', room.recordId)
     request.headers.set('X-Room-Mode', room.data.mode)
-    request.headers.set('X-Room-Default', String(Boolean(room.data.isDefaultBoard)))
     request.headers.set('X-Room-Host', room.data.hostId)
-    request.headers.set('X-Room-Lobby', String(room.data.status === 'lobby'))
     request.headers.set('X-Room-Spectate', String(spectate))
     return context.env.PIXEL_ROOMS.get(context.env.PIXEL_ROOMS.idFromName(room.recordId)).fetch(request)
   })

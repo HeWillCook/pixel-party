@@ -18,7 +18,7 @@ import { memoryTools } from './room-test-tools'
 const { integration, recordTools } = vi.hoisted(() => ({ integration: vi.fn(), recordTools: vi.fn() }))
 vi.mock('./server-tools', () => ({ createServerTools: () => ({ ...recordTools(), integration }) }))
 
-const init = { roomId: 'test', mode: 'coop' as const, isDefaultBoard: false }
+const init = { roomId: 'test', mode: 'coop' as const }
 type TestDatabase = {
   exec(query: string): void
   prepare(query: string): {
@@ -34,15 +34,15 @@ const { DatabaseSync } = await import(sqliteModule) as { DatabaseSync: new (file
 describe('PixelRoom persistence recovery', () => {
   afterEach(() => { vi.restoreAllMocks() })
 
-  it('defaults later fields while retaining the saved round, pixels and cooldowns', () => {
+  it('defaults later fields while retaining the saved round, pixels and paint buckets', () => {
     const state = newRoomState(init, 100, () => 0)
     state.grid.cells[2] = 6
     state.grid.placedBy[2] = 'owner'
-    state.lastPlacedAt.owner = 400
+    state.paintBuckets.owner = { tokens: 12, updatedAt: 400 }
     state.round = { ...state.round, result: { outcome: 'won', contributorCount: 1 } }
     const saved = JSON.parse(serializeRoomState(state))
     delete saved.lastGuesses
-    delete saved.soloBuckets
+    delete saved.paintBuckets
     delete saved.recentWords
     delete saved.roundCounter
     saved.judgeInFlight = true
@@ -50,9 +50,8 @@ describe('PixelRoom persistence recovery', () => {
     expect(restored.round).toEqual(state.round)
     expect(restored.grid.cells[2]).toBe(6)
     expect(restored.grid.placedBy[2]).toBe('owner')
-    expect(restored.lastPlacedAt.owner).toBe(400)
     expect(restored.lastGuesses).toEqual([])
-    expect(restored.soloBuckets).toEqual({})
+    expect(restored.paintBuckets).toEqual({})
     expect(restored.status).toBe('playing')
     expect(restored.recentWords).toEqual([state.wordEntry.word])
     expect(restored.roundCounter).toBe(0)
@@ -91,11 +90,10 @@ describe('next authorization seam', () => {
     expect(nextCommandRejection(state, null)).toBe('not_signed_in')
     expect(nextCommandRejection(state, 'anon-socket')).toBe('not_signed_in')
   })
-  it('denies unknown hosts, allows default-board players and recovers when a host leaves', () => {
+  it('denies unknown hosts and recovers when the host leaves', () => {
     const state = { ...newRoomState(init, 100, () => 0), status: 'intermission' as const }
     expect(nextCommandRejection(state, 'owner', null, ['owner'])).toBe('not_host')
-    expect(nextCommandRejection({ ...state, isDefaultBoard: true }, 'owner', null, ['owner'])).toBeNull()
-    expect(nextCommandRejection({ ...state, isDefaultBoard: true }, 'owner', 'owner', ['owner'])).toBeNull()
+    expect(nextCommandRejection(state, 'owner', 'owner', ['owner'])).toBeNull()
     expect(nextCommandRejection(state, 'other', 'owner', ['owner', 'other'])).toBe('not_host')
     expect(nextCommandRejection(state, 'owner', 'owner', ['owner'])).toBeNull()
     expect(nextCommandRejection(state, 'other', 'owner', ['other'])).toBeNull()
@@ -143,6 +141,7 @@ function socket(userId: string, spectate = false) {
 
 class TestPixelRoom extends PixelRoom {
   reserveForTest() { return (this as unknown as { reserveBudget(): Promise<{ ok: boolean }> }).reserveBudget() }
+  flushForTest() { (this as unknown as { flushPaint(): void }).flushPaint() }
   connect(connection: WebSocket) { return this.onConnect(connection, connection.deserializeAttachment()) }
   disconnect(connection: WebSocket) { return this.onDisconnect(connection) }
   tick() { return this.onAlarm() }
@@ -153,17 +152,21 @@ class TestPixelRoom extends PixelRoom {
   writeStatus(event: import('../game/room-logic').RoomStatusEvent) { return super.onRoomStatus(event) }
 }
 
-function roomHarness(isDefaultBoard = false, configure: (state: RoomState) => RoomState = state => state) {
+function roomHarness(configure: (state: RoomState) => RoomState = state => state) {
   const database = new DatabaseSync(':memory:')
   const sockets: WebSocket[] = []
   const durable = durableState(database, sockets)
   const env = { BUDGET_ROOMS: { idFromName: vi.fn(() => 'global'), get: () => ({ fetch: reserve }) } } as unknown as Env
-  const initial = configure(newRoomState({ ...init, isDefaultBoard }, Date.now(), () => 0))
+  const initial = configure(newRoomState(init, Date.now(), () => 0))
   database.exec('CREATE TABLE pixel_state (id INTEGER PRIMARY KEY, room_id TEXT, mode TEXT, is_default INTEGER, state TEXT, resting_day TEXT)')
-  database.prepare('INSERT INTO pixel_state VALUES (1, ?, ?, ?, ?, NULL)').run(init.roomId, init.mode, Number(isDefaultBoard), serializeRoomState(initial))
+  database.prepare('INSERT INTO pixel_state VALUES (1, ?, ?, 0, ?, NULL)').run(init.roomId, init.mode, serializeRoomState(initial))
   const makeRoom = () => new TestPixelRoom(durable as unknown as DurableObjectState, env)
   const room = makeRoom()
-  const saved = () => JSON.parse((database.prepare('SELECT state FROM pixel_state').get() as { state: string }).state) as RoomState
+  const saved = () => {
+    // Paint writes are coalesced; read what the room would persist, not a frame mid-window.
+    room.flushForTest()
+    return JSON.parse((database.prepare('SELECT state FROM pixel_state').get() as { state: string }).state) as RoomState
+  }
   const connect = async (userId: string, target = room, spectate = false) => {
     const client = socket(userId, spectate)
     sockets.push(client.connection)
@@ -326,27 +329,18 @@ describe('durable room boundaries', () => {
     harness.database.close()
   })
 
-  it('cannot close the default board', async () => {
-    const harness = roomHarness(true)
-    expect((await harness.room.fetch(new Request('https://pixel/close', { method: 'POST', headers: { 'X-Room-Id': 'test', 'X-Room-Host': 'host' } }))).status).toBe(403)
-    expect(harness.saved().status).not.toBe('closed')
+  it('lets a connected guest start when the host is absent', async () => {
+    const harness = roomHarness(state => ({ ...state, status: 'intermission', intermissionEndsAt: 1, round: { ...state.round, state: 'intermission' } }))
+    harness.database.prepare('UPDATE pixel_state SET host_id = ?').run('host')
+    const room = harness.makeRoom()
+    const guest = await harness.connect('guest', room)
+    await room.tick()
+    expect(harness.saved().status).toBe('intermission')
+    expect(harness.durable.storage.deleteAlarm).toHaveBeenCalled()
+    await room.command(guest.connection, { t: 'next' })
+    expect(harness.saved().status).toBe('playing')
+    expect(harness.saved().roundCounter).toBe(1)
     harness.database.close()
-  })
-
-  it('lets a connected guest start when the host is absent, and lets any default-board player start', async () => {
-    for (const isDefault of [false, true]) {
-      const harness = roomHarness(isDefault, state => ({ ...state, status: 'intermission', intermissionEndsAt: 1, round: { ...state.round, state: 'intermission' } }))
-      harness.database.prepare('UPDATE pixel_state SET host_id = ?').run('host')
-      const room = harness.makeRoom()
-      const guest = await harness.connect('guest', room)
-      await room.tick()
-      expect(harness.saved().status).toBe('intermission')
-      expect(harness.durable.storage.deleteAlarm).toHaveBeenCalled()
-      await room.command(guest.connection, { t: 'next' })
-      expect(harness.saved().status).toBe('playing')
-      expect(harness.saved().roundCounter).toBe(1)
-      harness.database.close()
-    }
   })
 
   it('batches solo cells into one durable write and keeps the abuse cap after wake', async () => {
@@ -369,7 +363,7 @@ describe('durable room boundaries', () => {
   })
 
   it.each([1, 2])('keeps a private lobby inert and lets only its host start with %s players', async count => {
-    const harness = roomHarness(false, () => newRoomState({ ...init, startsInLobby: true }, Date.now(), () => 0))
+    const harness = roomHarness(() => newRoomState({ ...init, startsInLobby: true }, Date.now(), () => 0))
     harness.database.prepare('UPDATE pixel_state SET host_id = ?').run('host')
     const restored = harness.makeRoom()
     const host = await harness.connect('host', restored)
@@ -411,23 +405,37 @@ describe('durable room boundaries', () => {
     harness.database.close()
   })
 
-  it('writes complete private round history and awards only won contributors', async () => {
+  it('writes complete private round history without touching a score collection', async () => {
     const memory = memoryTools()
     recordTools.mockReturnValue(memory.tools)
     memory.rows('rooms').set('test', { hostId: 'host', visibility: 'private', memberIds: ['host', 'guest'] })
-    memory.rows('scores').set('host', { userId: 'host', totalPoints: 10, roundsWon: 2 })
     const harness = roomHarness()
-    const event = { roomId: 'test', roundId: 'round1', mode: 'coop' as const, word: 'cat', startedAt: 100, endedAt: 200, outcome: 'won' as const, score: 50, pixelsUsed: 12, durationMs: 100, contributorIds: ['host', 'guest'], finalGuesses: ['cat'] }
+    const event = { roomId: 'test', roundId: 'round1', mode: 'coop' as const, word: 'cat', startedAt: 100, endedAt: 200, outcome: 'won' as const, pixelsUsed: 12, durationMs: 100, contributorIds: ['host', 'guest'], finalGuesses: ['cat'] }
     await harness.room.writeRound(event)
     expect([...memory.rows('rounds').values()][0]).toMatchObject({ ...event, visibility: 'private', memberIds: ['host', 'guest'], snapshotFileIds: [] })
-    expect(memory.rows('scores').get('host')).toMatchObject({ totalPoints: 60, roundsWon: 3 })
-    expect(memory.rows('scores').get('guest')).toMatchObject({ totalPoints: 50, roundsWon: 1 })
     await harness.room.writeRound({ ...event, roundId: 'round2', outcome: 'timeout' })
-    expect(memory.rows('scores').get('host')!.roundsWon).toBe(3)
+    expect([...memory.rows('rounds').values()]).toHaveLength(2)
     const status = { roomId: 'test', status: 'paused' as const, playerCount: 0, lastActiveAt: 300, currentRoundId: 'round2' }
     await harness.room.writeStatus(status)
     expect(memory.rows('rooms').get('test')).toMatchObject({ status: 'paused', playerCount: 0, lastActiveAt: 300, currentRoundId: 'round2' })
     expect(memory.update).toHaveBeenCalledWith('rooms', 'test', { status: 'paused', playerCount: 0, lastActiveAt: 300, currentRoundId: 'round2' })
+    harness.database.close()
+  })
+
+  it('records each contributor\'s party stats at round end, once per round', async () => {
+    const memory = memoryTools()
+    recordTools.mockReturnValue(memory.tools)
+    memory.rows('rooms').set('test', { hostId: 'host', visibility: 'public', memberIds: ['host', 'guest'] })
+    const harness = roomHarness()
+    const event = { roomId: 'test', roundId: 'round1', mode: 'coop' as const, word: 'cat', startedAt: 100, endedAt: 200, outcome: 'won' as const, pixelsUsed: 12, durationMs: 100, contributorIds: ['host', 'guest'], finalGuesses: ['cat'] }
+    await harness.room.writeRound(event)
+    await harness.room.writeRound(event)
+    const stats = new Map([...memory.rows('playerStats').values()].map(row => [row.userId as string, row]))
+    expect(stats.get('host')).toMatchObject({ partyRounds: 1, partyGuessed: 1, gamesHosted: 1 })
+    expect(stats.get('guest')).toMatchObject({ partyRounds: 1, partyGuessed: 1, gamesHosted: 0 })
+    await harness.room.writeRound({ ...event, roundId: 'round2', outcome: 'timeout', contributorIds: ['guest'] })
+    const after = new Map([...memory.rows('playerStats').values()].map(row => [row.userId as string, row]))
+    expect(after.get('guest')).toMatchObject({ partyRounds: 2, partyGuessed: 1 })
     harness.database.close()
   })
 
@@ -485,13 +493,13 @@ describe('durable room boundaries', () => {
     harness.database.close()
   })
 
-  it('pauses the default board when its last signed-in socket closes even with spectators', async () => {
-    const harness = roomHarness(true)
+  it('pauses when its last signed-in socket closes even with spectators', async () => {
+    const harness = roomHarness()
     const owner = await harness.connect('owner')
     await harness.connect('anon-spectator')
     await harness.room.disconnect(owner.connection)
     expect(harness.saved()).toMatchObject({ status: 'paused', round: { state: 'paused' }, judgeInFlight: false })
-    expect(harness.durable.storage.deleteAlarm).toHaveBeenCalled()
+    expect(harness.durable.storage.setAlarm).toHaveBeenCalled()
     const fresh = await harness.connect('anon-fresh', harness.makeRoom())
     expect(messages(fresh).find(message => message.t === 'snapshot')).toMatchObject({ players: 0, round: { state: 'paused' } })
     harness.database.close()
@@ -605,7 +613,7 @@ describe('durable room boundaries', () => {
     integration.mockResolvedValue({ success: true, data: { content: [{ type: 'text', text: '{"guesses":["sun"],"confidence":0.9}' }] } })
     await vi.advanceTimersByTimeAsync(JUDGE.askMinMs)
     await harness.room.command(owner.connection, { t: 'ask' })
-    expect(messages(owner)).toContainEqual({ t: 'judgement', zone: 'all', guesses: ['sun'], confidence: 0.9, matched: false })
+    expect(messages(owner)).toContainEqual({ t: 'judgement', zone: 'all', guesses: ['sun'], confidence: 0.9, matched: false, text: false })
     expect(vi.getTimerCount()).toBe(0)
     harness.database.close()
   })
@@ -652,7 +660,7 @@ describe('durable room boundaries', () => {
     harness.database.close()
   })
 
-  it.each(['connect', 'message', 'disconnect', 'alarm'])('maintains the correct alarm after %s persistence fails', async handler => {
+  it.each(['connect', 'disconnect', 'alarm'])('maintains the correct alarm after %s persistence fails', async handler => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(1_800_000_000_000)
     const harness = roomHarness()
@@ -662,7 +670,6 @@ describe('durable room boundaries', () => {
     vi.spyOn(harness.durable.storage.sql, 'exec').mockImplementation(() => { throw new Error('storage failed') })
     harness.durable.storage.setAlarm.mockClear()
     const pending = handler === 'connect' ? harness.connect('new-owner')
-      : handler === 'message' ? harness.room.command(owner.connection, { t: 'place', x: 1, y: 1, c: 6 })
       : handler === 'disconnect' ? harness.room.disconnect(owner.connection)
       : harness.room.tick()
     await expect(pending).rejects.toThrow('storage failed')
@@ -670,6 +677,48 @@ describe('durable room boundaries', () => {
       expect(harness.durable.storage.deleteAlarm).toHaveBeenCalled()
       expect(harness.durable.storage.setAlarm).not.toHaveBeenCalled()
     } else expect(harness.durable.storage.setAlarm).toHaveBeenCalledOnce()
+    harness.database.close()
+  })
+
+  it('coalesces a painter’s drag into one durable write per window', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+    vi.setSystemTime(1_800_000_000_000)
+    const harness = roomHarness()
+    const owner = await harness.connect('owner')
+    const sql = vi.spyOn(harness.durable.storage.sql, 'exec')
+    const inserts = () => sql.mock.calls.filter(([query]) => query.startsWith('INSERT')).length
+    const before = inserts()
+    const stroke = Array.from({ length: 20 }, (_, x) => ({ x, y: 4, c: 6 }))
+    // Three animation-frame-sized batches of one stroke: one durable write, not three.
+    for (let frame = 0; frame < 3; frame++) {
+      await harness.room.webSocketMessage(owner.connection, JSON.stringify({ t: 'place', cells: stroke.slice(frame * 7, frame * 7 + 7) }))
+    }
+    expect(inserts()).toBe(before)
+    await vi.advanceTimersByTimeAsync(250)
+    expect(inserts()).toBe(before + 1)
+    expect(harness.saved().version).toBe(20)
+
+    // Leaving (a structural change) writes at once and folds in any paint still pending.
+    await harness.room.webSocketMessage(owner.connection, JSON.stringify({ t: 'place', cells: [{ x: 2, y: 8, c: 6 }] }))
+    expect(inserts()).toBe(before + 1)
+    await harness.room.disconnect(owner.connection)
+    expect(inserts()).toBe(before + 2)
+    expect(decodeCells(harness.saved().grid.cells as unknown as string, 1024)[8 * 32 + 2]).toBe(6)
+    harness.database.close()
+  })
+
+  it('logs a failed coalesced paint write and rewrites it on the next transition', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+    vi.setSystemTime(1_800_000_000_000)
+    const harness = roomHarness()
+    const owner = await harness.connect('owner')
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const sql = vi.spyOn(harness.durable.storage.sql, 'exec').mockImplementation(() => { throw new Error('storage failed') })
+    await harness.room.webSocketMessage(owner.connection, JSON.stringify({ t: 'place', cells: [{ x: 3, y: 3, c: 6 }] }))
+    await vi.advanceTimersByTimeAsync(250)
+    expect(warn).toHaveBeenCalledWith('[PixelRoom] Coalesced paint write failed; the next transition rewrites it')
+    sql.mockRestore()
+    expect(decodeCells(harness.saved().grid.cells as unknown as string, 1024)[3 * 32 + 3]).toBe(6)
     harness.database.close()
   })
 
@@ -684,7 +733,7 @@ describe('durable room boundaries', () => {
   })
 
   it('returns 410 before upgrading a persisted closed room', async () => {
-    const harness = roomHarness(false, state => ({ ...state, status: 'closed', round: { ...state.round, state: 'paused' } }))
+    const harness = roomHarness(state => ({ ...state, status: 'closed', round: { ...state.round, state: 'paused' } }))
     const response = await harness.room.fetch(new Request('https://room/ws', { headers: { Upgrade: 'websocket' } }))
     expect(response.status).toBe(410)
     harness.database.close()
@@ -703,7 +752,7 @@ describe('durable room boundaries', () => {
   })
 
   it.each(['unchanged', 'too_soon', 'rate_cap', 'not_playing'])('always replies to a skipped ask: %s', async reason => {
-    const harness = roomHarness(false, state => ({
+    const harness = roomHarness(state => ({
       ...state,
       version: reason === 'unchanged' ? 0 : 1,
       lastJudgedAt: reason === 'rate_cap' ? Date.now() - JUDGE.askMinMs : Date.now(),
@@ -737,7 +786,7 @@ describe('durable room boundaries', () => {
   })
 
   it('excludes lobby spectate previews from player/watcher counts, unpausing, and room commands', async () => {
-    const harness = roomHarness(false, state => ({
+    const harness = roomHarness(state => ({
       ...state,
       status: 'paused',
       pausedAt: Date.now() - 5000,
@@ -803,7 +852,7 @@ describe('durable room boundaries', () => {
     database.close()
   })
 
-  it('handles party erase, free empty erase during cooldown, and white 16/17 bounds', async () => {
+  it('handles party erase, free empty erase, white 16/17 bounds and per-painter pacing', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(1_800_000_000_000)
     const harness = roomHarness()
@@ -817,7 +866,8 @@ describe('durable room boundaries', () => {
     await harness.room.command(alice.connection, { t: 'place', x: 3, y: 3, c: 17 })
     expect(messages(alice).at(-1)).toMatchObject({ t: 'reject', reason: 'bad_color', x: 3, y: 3 })
 
-    // During cooldown (players=2 -> 500ms): erasing empty sends sender-only noop echoing placement id without persisting; erasing non-empty is rejected
+    // Erasing an already-empty cell sends a sender-only noop echoing the placement id: nothing is persisted or broadcast.
+    harness.saved()
     const sql = vi.spyOn(harness.durable.storage.sql, 'exec')
     alice.send.mockClear()
     bob.send.mockClear()
@@ -830,15 +880,21 @@ describe('durable room boundaries', () => {
     expect(messages(bob)).toEqual([])
     expect(sql.mock.calls.filter(([query]) => query.startsWith('INSERT'))).toHaveLength(0)
 
+    // Erasing a painted cell is an ordinary placement: no wait behind a cooldown.
+    alice.send.mockClear()
     await harness.room.command(alice.connection, { t: 'place', x: 2, y: 2, c: 0, id: 9 })
-    expect(messages(alice).at(-1)).toMatchObject({ t: 'reject', reason: 'cooldown', x: 2, y: 2, id: 9 })
-
-    // After cooldown expires, erasing bob's pixel clears cell and attribution
-    vi.setSystemTime(Date.now() + 2500)
-    await harness.room.command(alice.connection, { t: 'place', x: 2, y: 2, c: 0 })
     expect(savedCells()[2 * 32 + 2]).toBe(0)
     expect(harness.saved().grid.placedBy[2 * 32 + 2]).toBe('')
     expect(messages(bob).at(-1)).toEqual({ t: 'pixel', x: 2, y: 2, c: 0, by: 'alice' })
+
+    // A flood is paced by the sender's own bucket; the other painter is unaffected.
+    const flood = Array.from({ length: 48 }, (_, i) => ({ x: i % 32, y: 20 + Math.floor(i / 32), c: 4 }))
+    await harness.room.command(alice.connection, { t: 'place', cells: flood })
+    const paced = messages(alice).filter(message => message.reason === 'rate_limited')
+    expect(paced.length).toBeGreaterThan(0)
+    bob.send.mockClear()
+    await harness.room.command(bob.connection, { t: 'place', x: 4, y: 4, c: 6 })
+    expect(messages(bob).at(-1)).toMatchObject({ t: 'pixel', x: 4, y: 4, c: 6, by: 'bob' })
     harness.database.close()
   })
 })

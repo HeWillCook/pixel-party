@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 import { DAILY } from '../game/config'
+import { NO_SPELLING_REASON } from '../game/daily/judge'
 import { promptForDay } from '../game/daily/prompts'
-import { gradeScore } from '../game/daily/scoring'
+import { blankGradeParts, gradeScore } from '../game/daily/scoring'
 import { encodeCells } from '../game/grid'
 import { fakeDailyJudge } from './daily-judge'
 import { memoryAttemptStore } from './daily-room'
-import { dailyState, endDaily, gradeDaily, startDaily, todaysDrawings } from './daily-service'
+import { dailyState, endDaily, gradeDaily, peekDaily, saveDailyCanvas, startDaily, todaysDrawings } from './daily-service'
 import type { DailyDeps } from './daily-service'
 import { memoryTools } from './room-test-tools'
 
@@ -14,6 +15,8 @@ const day = '2026-11-17'
 const startedAt = Date.UTC(2026, 10, 17, 12)
 const cells = encodeCells(new Uint8Array(1024).fill(2))
 const otherCells = encodeCells(new Uint8Array(1024).fill(3))
+const HALFWAY = startedAt + 150_000
+const FINAL = startedAt + 300_000
 
 function setup(initialNow = startedAt) {
   let now = initialNow
@@ -22,7 +25,7 @@ function setup(initialNow = startedAt) {
   const deps: DailyDeps = {
     now: () => now,
     store: memoryAttemptStore(records.tools),
-    judge: { blind: vi.fn(judge.blind), score: vi.fn(judge.score) },
+    judge: { blind: vi.fn(judge.blind), score: vi.fn(judge.score), peek: vi.fn(judge.peek) },
     tools: records.tools,
     reserveBudget: vi.fn(async () => true),
     render: vi.fn(async (value: string) => value),
@@ -36,81 +39,102 @@ function onlyRow(records: ReturnType<typeof memoryTools>, collection: string) {
 }
 
 describe('daily service', () => {
-  it('keeps submitted score and cells when another tab finishes an in-flight auto', async () => {
-    const { deps, at } = setup()
-    let release!: () => void
-    let entered!: () => void
-    const gate = new Promise<void>(resolve => { release = resolve })
-    const judging = new Promise<void>(resolve => { entered = resolve })
-    const blind = deps.judge.blind
-    deps.judge.blind = vi.fn(async png => { entered(); await gate; return blind(png) })
+  it('the halfway judgement uses both judge calls, the new scoring, and saves the snapshot', async () => {
+    const { deps, records, at } = setup()
     await startDaily(deps, user)
-    at(startedAt + 60_000)
-    const auto = gradeDaily(deps, user, 'auto', cells, day, 0)
-    await judging
-    expect(await gradeDaily(deps, user, 'final', otherCells, day)).toMatchObject({ ok: false, reason: 'busy' })
-    const submitted = await endDaily(deps, user, otherCells, day)
-    release()
-    await auto
-    const row = await deps.store.get(user.userId, day)
-    expect(row).toMatchObject({ endedAt: startedAt + 60_000, bestScore: submitted.best, lastCells: otherCells })
-    expect(row?.bestGrade).toBeUndefined()
-    expect(row?.windows[0].status).toBe('graded')
+    at(HALFWAY)
+    const result = await gradeDaily(deps, user, 'auto', cells, day, 0)
+    const prompt = promptForDay(day)
+    const judge = fakeDailyJudge()
+    const blind = (await judge.blind(cells))!
+    const score = (await judge.score(cells, prompt.prompt, prompt.subject, blind.guess))!
+    const expected = gradeScore(score)
+    expect(result).toMatchObject({ ok: true, grade: { ...expected, guess: blind.guess, reason: score.reason, elapsedMs: HALFWAY - startedAt }, state: { lastCells: cells } })
+    expect(onlyRow(records, 'dailyScores')).toMatchObject({
+      score: expected.total, match: score.match, quality: score.quality, recognition: score.recognition,
+      matchPoints: expected.matchPoints, qualityBonus: expected.qualityBonus, startedAt,
+    })
+    expect(onlyRow(records, 'dailyDrawings')).toMatchObject({ cells, guess: blind.guess, reason: score.reason, score: expected.total })
+    expect(deps.reserveBudget).toHaveBeenCalledTimes(2)
   })
-  it('auto on blank cells skips without judge', async () => {
+
+  it('a spelled answer never counts as recognition and the verdict says why', async () => {
+    const { deps, records, at } = setup()
+    await startDaily(deps, user)
+    at(HALFWAY)
+    vi.mocked(deps.judge.blind).mockResolvedValueOnce({ guess: 'a lighthouse', writing: promptForDay(day).subject.toUpperCase() })
+    vi.mocked(deps.judge.score).mockResolvedValueOnce({ match: 90, recognition: 100, quality: 80, reason: 'A tidy lighthouse.' })
+    const result = await gradeDaily(deps, user, 'auto', cells, day, 0)
+    expect(result).toMatchObject({ ok: true, grade: { guess: 'a lighthouse', recognition: 0, reason: NO_SPELLING_REASON } })
+    if (!result.ok) throw new Error('grade refused')
+    // Recognition 0 caps the prompt score at 30, so the whole grade stays at the unrecognised ceiling.
+    expect(result.grade.matchPoints).toBeLessThanOrEqual(150)
+    expect(result.grade.total).toBeLessThanOrEqual(300)
+    expect(onlyRow(records, 'dailyScores')).toMatchObject({ recognition: 0, score: result.grade.total })
+    expect(onlyRow(records, 'dailyDrawings')).toMatchObject({ guess: 'a lighthouse', reason: NO_SPELLING_REASON })
+  })
+
+  it('other writing on the canvas is part of the picture and keeps its recognition', async () => {
     const { deps, at } = setup()
     await startDaily(deps, user)
-    at(startedAt + 60_000)
-    expect(await gradeDaily(deps, user, 'auto', encodeCells(new Uint8Array(1024)))).toMatchObject({ skipped: 'skipped_blank', window: 0, state: { serverNow: startedAt + 60_000 } })
+    at(HALFWAY)
+    vi.mocked(deps.judge.blind).mockResolvedValueOnce({ guess: 'a clock', writing: '12 3 6 9' })
+    vi.mocked(deps.judge.score).mockResolvedValueOnce({ match: 90, recognition: 100, quality: 80, reason: 'A tidy clock.' })
+    const result = await gradeDaily(deps, user, 'auto', cells, day, 0)
+    expect(result).toMatchObject({ ok: true, grade: { recognition: 100, reason: 'A tidy clock.' } })
+  })
+
+  it('auto on blank cells skips without the judge', async () => {
+    const { deps, at } = setup()
+    await startDaily(deps, user)
+    at(HALFWAY)
+    expect(await gradeDaily(deps, user, 'auto', encodeCells(new Uint8Array(1024)))).toMatchObject({ skipped: 'skipped_blank', window: 0, state: { serverNow: HALFWAY } })
     expect(deps.judge.blind).not.toHaveBeenCalled()
     expect(deps.judge.score).not.toHaveBeenCalled()
     expect((await dailyState(deps, user.userId)).windows[0]).toMatchObject({ status: 'skipped_blank' })
   })
-  it('me settles missed windows and persists them', async () => {
+
+  it('me settles a missed halfway window and persists it', async () => {
     const { deps, at } = setup()
     await startDaily(deps, user)
-    at(startedAt + 210_000)
-    expect((await dailyState(deps, user.userId)).windows[2].status).toBe('pending')
-    at(startedAt + 211_000)
+    at(HALFWAY + 20_000)
+    expect((await dailyState(deps, user.userId)).windows[0].status).toBe('pending')
+    at(HALFWAY + 31_000)
     const state = await dailyState(deps, user.userId)
-    expect(state.windows.map(window => window.status)).toEqual(['missed', 'missed', 'missed', 'pending'])
-    expect(state).toMatchObject({ nextAutoAt: startedAt + 240_000, serverNow: startedAt + 211_000, asksLeft: 3 })
-    expect((await deps.store.get(user.userId, day))?.windows.map(window => window.status)).toEqual(['missed', 'missed', 'missed', 'pending'])
+    expect(state.windows.map(window => window.status)).toEqual(['missed'])
+    expect(state).toMatchObject({ nextAutoAt: null, serverNow: HALFWAY + 31_000 })
+    expect((await deps.store.get(user.userId, day))?.windows.map(window => window.status)).toEqual(['missed'])
   })
-  it('second auto for same window is not graded twice', async () => {
+
+  it('a second call for the same window is never graded twice', async () => {
     const { deps, at } = setup()
     await startDaily(deps, user)
-    at(startedAt + 60_000)
+    at(HALFWAY)
     const results = await Promise.all([gradeDaily(deps, user, 'auto', cells), gradeDaily(deps, user, 'auto', cells)])
     expect(results.filter(result => result.ok === true)).toHaveLength(1)
     expect(results.some(result => ('reason' in result && result.reason === 'busy') || ('skipped' in result && result.skipped === 'skipped_unchanged'))).toBe(true)
     expect(deps.judge.blind).toHaveBeenCalledTimes(1)
     expect(deps.judge.score).toHaveBeenCalledTimes(1)
   })
-  it('ask does not move nextAutoAt', async () => {
+
+  it('does not reveal the prompt or another player\'s cells before starting', async () => {
     const { deps, at } = setup()
     await startDaily(deps, user)
-    at(startedAt + 30_000)
-    expect(await gradeDaily(deps, user, 'ask', cells)).toMatchObject({ ok: true, state: { nextAutoAt: startedAt + 60_000, serverNow: startedAt + 30_000, asksLeft: 2 } })
-  })
-  it('does not reveal the prompt or another player\'s cells before starting', async () => {
-    const { deps } = setup()
-    await startDaily(deps, user)
-    await gradeDaily(deps, user, 'ask', cells)
+    at(HALFWAY)
+    await gradeDaily(deps, user, 'auto', cells, day, 0)
     const state = await dailyState(deps, 'bob')
-    expect(state).toMatchObject({ day, status: 'not_started', autoUsed: 0, asksUsed: 0, finalUsed: false, best: 0 })
+    expect(state).toMatchObject({ day, status: 'not_started', autoUsed: 0, finalUsed: false, best: 0 })
     expect(state).not.toHaveProperty('prompt')
     expect(state).not.toHaveProperty('lastCells')
   })
 
-  it('starts once, reveals the prompt, and initializes private records without resetting them', async () => {
+  it('starts once, reveals the prompt, and initializes private records', async () => {
     const { deps, records, at } = setup()
     const state = await startDaily(deps, user)
-    expect(state).toMatchObject({ day, status: 'playing', prompt: promptForDay(day).prompt, startedAt, endsAt: startedAt + 300_000, nextAutoAt: startedAt + 60_000 })
+    expect(state).toMatchObject({ day, status: 'playing', prompt: promptForDay(day).prompt, startedAt, endsAt: FINAL, nextAutoAt: HALFWAY })
     expect(onlyRow(records, 'dailyScores')).toMatchObject({ day, userId: user.userId, displayName: 'Alice', avatarUrl: 'alice.png', score: 0, ended: 0 })
     expect(onlyRow(records, 'dailyDrawings')).toMatchObject({ day, userId: user.userId, visibility: 'private' })
     at(startedAt + 5000)
-    await gradeDaily(deps, user, 'ask', cells)
     const saved = { ...onlyRow(records, 'dailyScores') }
     at(startedAt + 10_000)
     expect((await startDaily(deps, user)).startedAt).toBe(startedAt)
@@ -118,172 +142,177 @@ describe('daily service', () => {
     onlyRow(records, 'dailyDrawings')
   })
 
-  it('grades with both judge calls, weighted scoring, and saves the best snapshot', async () => {
+  it('publishes the higher score with the latest canvas and the latest verdict caption', async () => {
     const { deps, records, at } = setup()
+    vi.mocked(deps.judge.score)
+      .mockResolvedValueOnce({ match: 100, recognition: 100, quality: 100, reason: 'halfway winner' })
+      .mockResolvedValueOnce({ match: 5, recognition: 100, quality: 10, reason: 'final, quieter' })
     await startDaily(deps, user)
-    at(startedAt + 5000)
-    const result = await gradeDaily(deps, user, 'ask', cells)
-    const prompt = promptForDay(day)
-    const judge = fakeDailyJudge()
-    const blind = (await judge.blind(cells))!
-    const score = (await judge.score(cells, prompt.prompt, prompt.subject, blind.guess))!
-    expect(result).toMatchObject({ ok: true, grade: { ...gradeScore({ ...score, elapsedMs: 5000 }), guess: blind.guess, reason: score.reason, elapsedMs: 5000 }, state: { asksUsed: 1, lastCells: cells } })
-    expect(onlyRow(records, 'dailyScores')).toMatchObject({ score: gradeScore({ ...score, elapsedMs: 5000 }).total, bestElapsedMs: 5000 })
-    expect(onlyRow(records, 'dailyDrawings')).toMatchObject({ cells, guess: blind.guess, reason: score.reason })
-    expect(deps.reserveBudget).toHaveBeenCalledTimes(2)
+    at(HALFWAY)
+    const first = await gradeDaily(deps, user, 'auto', cells, day, 0)
+    expect(first).toMatchObject({ ok: true })
+    at(FINAL)
+    const final = await gradeDaily(deps, user, 'final', otherCells)
+    expect(final).toMatchObject({ ok: true, state: { status: 'ended', best: 1000, lastCells: otherCells } })
+    if (final.ok !== true) throw new Error('final failed')
+    expect(final.grade.total).toBeLessThan(1000)
+    expect(final.grade.reason).toBe('final, quieter')
+
+    const score = onlyRow(records, 'dailyScores')
+    expect(score).toMatchObject({ score: 1000, matchPoints: 500, qualityBonus: 500, ended: 1 })
+    // Image = the latest canvas (the final one), caption = the most recent verdict, score = the best.
+    expect(onlyRow(records, 'dailyDrawings')).toMatchObject({ cells: otherCells, reason: 'final, quieter', score: 1000 })
+    expect((await deps.store.get(user.userId, day))).toMatchObject({
+      endedAt: FINAL,
+      bestGrade: { cells },
+      lastGrade: { cells: otherCells },
+      lastCells: otherCells,
+    })
   })
 
-  it('reserves atomically so parallel asks produce one success and one busy', async () => {
-    const { deps } = setup()
-    await startDaily(deps, user)
-    const results = await Promise.all([gradeDaily(deps, user, 'ask', cells), gradeDaily(deps, user, 'ask', otherCells)])
-    expect(results.filter(result => result.ok)).toHaveLength(1)
-    expect(results.find(result => !result.ok)).toMatchObject({ ok: false, reason: 'busy' })
-    expect(deps.reserveBudget).toHaveBeenCalledTimes(2)
-  })
-
-  it.each([1, 2])('refunds the ask when budget reservation %i is refused', async refused => {
+  it('an unchanged final reuses the halfway grade with no model call and still ends the attempt', async () => {
     const { deps, at } = setup()
     await startDaily(deps, user)
-    const budget = vi.mocked(deps.reserveBudget)
-    if (refused === 2) budget.mockResolvedValueOnce(true)
-    budget.mockResolvedValueOnce(false)
-    expect(await gradeDaily(deps, user, 'ask', cells)).toMatchObject({ ok: false, reason: 'judge_resting', state: { asksUsed: 0 } })
-    expect(deps.judge.score).not.toHaveBeenCalled()
-    at(startedAt + DAILY.askMinGapMs)
-    expect((await gradeDaily(deps, user, 'ask', cells)).ok).toBe(true)
-  })
-
-  it.each(['blind', 'score'] as const)('retries a null %s once and reserves budget for every actual call', async method => {
-    const { deps } = setup()
-    await startDaily(deps, user)
-    vi.mocked(deps.judge[method]).mockResolvedValueOnce(null)
-    expect((await gradeDaily(deps, user, 'ask', cells)).ok).toBe(true)
-    expect(deps.reserveBudget).toHaveBeenCalledTimes(3)
-    expect(deps.judge[method]).toHaveBeenCalledTimes(2)
-  })
-
-  it.each(['blind', 'score'] as const)('refunds after two null %s results and permits another ask', async method => {
-    const { deps, at } = setup()
-    await startDaily(deps, user)
-    vi.mocked(deps.judge[method]).mockResolvedValueOnce(null).mockResolvedValueOnce(null)
-    expect(await gradeDaily(deps, user, 'ask', cells)).toMatchObject({ ok: false, reason: 'judge_resting', state: { asksUsed: 0 } })
-    at(startedAt + DAILY.askMinGapMs)
-    expect((await gradeDaily(deps, user, 'ask', cells)).ok).toBe(true)
-  })
-
-  it('stops before retrying if the retry budget is refused', async () => {
-    const { deps } = setup()
-    await startDaily(deps, user)
-    vi.mocked(deps.judge.blind).mockResolvedValueOnce(null)
-    vi.mocked(deps.reserveBudget).mockResolvedValueOnce(true).mockResolvedValueOnce(false)
-    expect(await gradeDaily(deps, user, 'ask', cells)).toMatchObject({ ok: false, reason: 'judge_resting', state: { asksUsed: 0 } })
-    expect(deps.judge.blind).toHaveBeenCalledTimes(1)
-    expect(deps.judge.score).not.toHaveBeenCalled()
-  })
-
-  it.each(['render', 'blind', 'score', 'reserveBudget'] as const)('releases the slot on a thrown %s error', async method => {
-    const { deps, at } = setup()
-    await startDaily(deps, user)
-    const operation = method === 'blind' || method === 'score' ? deps.judge[method] : deps[method]
-    vi.mocked(operation).mockRejectedValueOnce(new Error('offline'))
-    expect(await gradeDaily(deps, user, 'ask', cells)).toMatchObject({ ok: false, reason: 'judge_resting', state: { asksUsed: 0 } })
-    at(startedAt + DAILY.askMinGapMs)
-    expect((await gradeDaily(deps, user, 'ask', cells)).ok).toBe(true)
-  })
-
-  it('rejects unchanged auto grades without spending budget or invoking the judge', async () => {
-    const { deps, records, at } = setup()
-    await startDaily(deps, user)
-    await gradeDaily(deps, user, 'ask', cells)
+    at(HALFWAY)
+    const halfway = await gradeDaily(deps, user, 'auto', cells, day, 0)
+    if (halfway.ok !== true) throw new Error('halfway failed')
     vi.clearAllMocks()
-    at(startedAt + 60_000)
-    expect(await gradeDaily(deps, user, 'auto', cells)).toMatchObject({ skipped: 'skipped_unchanged', window: 0 })
+    at(FINAL)
+    const final = await gradeDaily(deps, user, 'final', cells)
+    expect(final).toMatchObject({ ok: true, state: { status: 'ended' } })
+    if (final.ok !== true) throw new Error('final failed')
+    expect(final.grade).toMatchObject({ total: halfway.grade.total, reason: halfway.grade.reason, guess: halfway.grade.guess })
     expect(deps.reserveBudget).not.toHaveBeenCalled()
     expect(deps.judge.blind).not.toHaveBeenCalled()
     expect(deps.judge.score).not.toHaveBeenCalled()
-    expect(records.update).not.toHaveBeenCalled()
   })
 
-  it('keeps the best drawing and score after a lower grade and end, and exposes bestCells only once ended', async () => {
-    const { deps, records, at } = setup()
-    vi.mocked(deps.judge.score).mockResolvedValueOnce({ fit: 100, recognition: 100, reason: 'great' }).mockResolvedValueOnce({ fit: 1, recognition: 1, reason: 'worse' })
+  it('the final still ends with a verdict when the judge is resting', async () => {
+    const { deps, at } = setup()
     await startDaily(deps, user)
-    const first = await gradeDaily(deps, user, 'ask', cells)
-    expect(first).toMatchObject({ ok: true })
-    if ('ok' in first && first.ok) expect(first.state.bestCells).toBeUndefined()
-    at(startedAt + 20_000)
-    const second = await gradeDaily(deps, user, 'ask', otherCells)
-    expect(second).toMatchObject({ ok: true, state: { best: 1000, lastCells: otherCells } })
-    if ('ok' in second && second.ok) expect(second.state.bestCells).toBeUndefined()
-    expect((await dailyState(deps, user.userId)).bestCells).toBeUndefined()
-    const ended = await endDaily(deps, user, otherCells)
-    expect(ended.bestCells).toBe(cells)
-    expect(onlyRow(records, 'dailyScores')).toMatchObject({ score: 1000, ended: 1 })
-    expect(onlyRow(records, 'dailyDrawings')).toMatchObject({ cells, score: 1000 })
+    at(HALFWAY)
+    await gradeDaily(deps, user, 'auto', cells, day, 0)
+    vi.mocked(deps.judge.blind).mockResolvedValue(null)
+    at(FINAL)
+    const final = await gradeDaily(deps, user, 'final', otherCells)
+    expect(final).toMatchObject({ ok: true, state: { status: 'ended', lastCells: otherCells } })
+    if (final.ok !== true) throw new Error('final failed')
+    expect(final.grade.reason).toBeTruthy()
+  })
+
+  it('an early final before 2:30 ends the attempt with its single judgement', async () => {
+    const { deps, records, at } = setup()
+    await startDaily(deps, user)
+    at(startedAt + 60_000)
+    const final = await gradeDaily(deps, user, 'final', cells)
+    if (final.ok !== true) throw new Error('final failed')
+    expect(final.state).toMatchObject({ status: 'ended', finalUsed: true, best: final.grade.total, lastCells: cells })
+    // The halfway window was never reached, so the final is the only judgement.
+    expect((await deps.store.get(user.userId, day))?.windows.map(window => window.status)).toEqual(['not_reached'])
+    expect(onlyRow(records, 'dailyScores')).toMatchObject({ ended: 1, score: final.grade.total })
+    expect(deps.judge.blind).toHaveBeenCalledTimes(1)
+    expect(deps.judge.score).toHaveBeenCalledTimes(1)
+  })
+
+  it('an early final after 2:30 keeps the better of the two judgements', async () => {
+    const { deps, at } = setup()
+    vi.mocked(deps.judge.score)
+      .mockResolvedValueOnce({ match: 100, recognition: 100, quality: 100, reason: 'halfway winner' })
+      .mockResolvedValueOnce({ match: 5, recognition: 100, quality: 10, reason: 'final, quieter' })
+    await startDaily(deps, user)
+    at(HALFWAY)
+    const halfway = await gradeDaily(deps, user, 'auto', cells, day, 0)
+    if (halfway.ok !== true) throw new Error('halfway failed')
+    at(HALFWAY + 30_000)
+    const final = await gradeDaily(deps, user, 'final', otherCells)
+    if (final.ok !== true) throw new Error('final failed')
+    expect(halfway.grade.total).toBe(1000)
+    expect(final.grade.total).toBeLessThan(1000)
+    // Score = the better (halfway), image = the latest canvas (the final one).
+    expect(final.state).toMatchObject({ status: 'ended', best: 1000, lastCells: otherCells })
+    expect((await deps.store.get(user.userId, day))).toMatchObject({
+      endedAt: HALFWAY + 30_000,
+      bestGrade: { cells },
+      lastGrade: { cells: otherCells },
+    })
+  })
+
+  it('refuses a second final and a peek once the attempt has ended', async () => {
+    const { deps, at } = setup()
+    await startDaily(deps, user)
+    at(startedAt + 60_000)
+    expect(await gradeDaily(deps, user, 'final', cells)).toMatchObject({ ok: true, state: { status: 'ended' } })
+    expect(await gradeDaily(deps, user, 'final', otherCells)).toMatchObject({ ok: false, reason: 'ended' })
+    expect(await peekDaily(deps, user, cells)).toMatchObject({ ok: false, reason: 'ended' })
+    expect(deps.judge.blind).toHaveBeenCalledTimes(1)
+  })
+
+  it('ends an ungraded attempt early with its canvas and a zero score', async () => {
+    const { deps, records, at } = setup()
+    await startDaily(deps, user)
+    at(startedAt + 30_000)
+    expect(await endDaily(deps, user, cells)).toMatchObject({ status: 'ended', lastCells: cells, best: 0 })
+    expect(onlyRow(records, 'dailyScores')).toMatchObject({ ended: 1, score: 0 })
+    expect(deps.judge.blind).not.toHaveBeenCalled()
+  })
+
+  it('enforces the time limits and allows the final through the grace window', async () => {
+    const { deps, at } = setup()
+    await startDaily(deps, user)
+    at(FINAL + 1)
+    expect(await gradeDaily(deps, user, 'auto', cells, day, 0)).toMatchObject({ ok: false, reason: 'time_up' })
+    expect((await gradeDaily(deps, user, 'final', cells)).ok).toBe(true)
+    at(FINAL + DAILY.graceMs + 1)
+    expect(await gradeDaily(deps, user, 'final', otherCells)).toMatchObject({ ok: false, reason: 'ended', state: { status: 'ended' } })
   })
 
   it.each(['!', encodeCells(new Uint8Array(1023)), encodeCells(new Uint8Array(1024).fill(17))])('rejects invalid encoded grids before reserving (including 17)', async invalid => {
-    const { deps } = setup()
+    const { deps, at } = setup()
     await startDaily(deps, user)
-    expect(await gradeDaily(deps, user, 'ask', invalid)).toMatchObject({ ok: false, reason: 'bad_cells', state: { asksUsed: 0 } })
+    at(HALFWAY)
+    expect(await gradeDaily(deps, user, 'auto', invalid)).toMatchObject({ ok: false, reason: 'bad_cells' })
     expect(deps.reserveBudget).not.toHaveBeenCalled()
     expect(deps.render).not.toHaveBeenCalled()
   })
 
-  it('white paint is accepted by daily validation', async () => {
-    const { deps } = setup()
-    await startDaily(deps, user)
-    const whiteCells = encodeCells(new Uint8Array(1024).fill(16))
-    expect(await gradeDaily(deps, user, 'ask', whiteCells)).toMatchObject({ ok: true, state: { lastCells: whiteCells } })
-  })
-
-  it('legacy cells still valid', async () => {
-    const { deps } = setup()
-    await startDaily(deps, user)
-    const raw = new Uint8Array(1024)
-    for (let i = 0; i < raw.length; i++) raw[i] = i % 16
-    const legacy = encodeCells(raw)
-    expect(await gradeDaily(deps, user, 'ask', legacy)).toMatchObject({ ok: true, state: { lastCells: legacy } })
-  })
-
-  it('enforces time limits including the final-only grace window', async () => {
+  it('white paint is accepted', async () => {
     const { deps, at } = setup()
     await startDaily(deps, user)
-    at(startedAt + 300_001)
-    expect(await gradeDaily(deps, user, 'ask', cells)).toMatchObject({ ok: false, reason: 'time_up' })
-    expect((await gradeDaily(deps, user, 'final', cells)).ok).toBe(true)
-    at(startedAt + 316_000)
-    expect(await gradeDaily(deps, user, 'final', otherCells)).toMatchObject({ ok: false, reason: 'time_up', state: { status: 'ended' } })
+    at(HALFWAY)
+    const whiteCells = encodeCells(new Uint8Array(1024).fill(16))
+    expect(await gradeDaily(deps, user, 'auto', whiteCells, day, 0)).toMatchObject({ ok: true, state: { lastCells: whiteCells } })
   })
 
   it('ends an ungraded attempt with its final cells and never restarts it', async () => {
-    const { deps, records } = setup()
+    const { deps, records, at } = setup()
     await startDaily(deps, user)
+    at(FINAL)
     expect(await endDaily(deps, user, cells)).toMatchObject({ status: 'ended', lastCells: cells })
     expect(onlyRow(records, 'dailyScores')).toMatchObject({ ended: 1, score: 0 })
     expect(onlyRow(records, 'dailyDrawings')).toMatchObject({ cells, score: 0, visibility: 'private' })
     expect((await startDaily(deps, user)).status).toBe('ended')
-    expect(await gradeDaily(deps, user, 'ask', cells)).toMatchObject({ ok: false, reason: 'ended' })
+    expect(await gradeDaily(deps, user, 'final', cells)).toMatchObject({ ok: false, reason: 'ended' })
   })
 
   it('resumes the original attempt after midnight until it ends', async () => {
     const late = Date.UTC(2026, 10, 17, 23, 57)
     const { deps, records, at } = setup(late)
     await startDaily(deps, user)
-    at(late + 200_000)
-    expect(await gradeDaily(deps, user, 'ask', cells, day)).toMatchObject({ ok: true, state: { day, status: 'playing' } })
+    at(late + 150_000)
+    expect(await gradeDaily(deps, user, 'auto', cells, day, 0)).toMatchObject({ ok: true, state: { day, status: 'playing' } })
     expect(onlyRow(records, 'dailyScores')).toMatchObject({ day })
     expect(await dailyState(deps, user.userId)).toMatchObject({ day, status: 'playing' })
+    at(late + 300_000)
     expect(await endDaily(deps, user, cells, day)).toMatchObject({ day, status: 'ended' })
     expect(await todaysDrawings(deps, user.userId)).toEqual({ ok: false })
   })
 
-  it('denies drawings before ending and returns only today after ending, including paginated rows', async () => {
-    const { deps, records } = setup()
+  it('denies drawings before ending and returns only today after ending', async () => {
+    const { deps, records, at } = setup()
     expect(await todaysDrawings(deps, user.userId)).toEqual({ ok: false })
     await startDaily(deps, user)
     expect(await todaysDrawings(deps, user.userId)).toEqual({ ok: false })
+    at(FINAL)
     await endDaily(deps, user, cells)
     await records.tools.create('dailyDrawings', { day: '2026-11-16', userId: 'old', cells: otherCells })
     for (let index = 0; index < 51; index++) await records.tools.create('dailyDrawings', { day, userId: `player-${index}`, cells })
@@ -294,129 +323,158 @@ describe('daily service', () => {
     expect(result.drawings).not.toContainEqual(expect.objectContaining({ data: expect.objectContaining({ userId: 'old' }) }))
   })
 
+  it('narrows today\'s drawings to one player on request, still gated on the caller having ended', async () => {
+    const { deps, records, at } = setup()
+    await records.tools.create('dailyDrawings', { day, userId: 'bob', cells: otherCells, score: 700 })
+    await records.tools.create('dailyDrawings', { day, userId: 'carol', cells: otherCells, score: 800 })
+    expect(await todaysDrawings(deps, user.userId, 'bob')).toEqual({ ok: false })
+    await startDaily(deps, user)
+    expect(await todaysDrawings(deps, user.userId, 'bob')).toEqual({ ok: false })
+    at(FINAL)
+    await endDaily(deps, user, cells)
+    const bob = await todaysDrawings(deps, user.userId, 'bob')
+    expect(bob.ok).toBe(true)
+    if (!bob.ok) throw new Error('drawings denied')
+    expect(bob.drawings).toHaveLength(1)
+    expect(bob.drawings[0]).toMatchObject({ data: { userId: 'bob', score: 700 } })
+    // The unfiltered call the leaderboard makes is unchanged: everyone's today.
+    const all = await todaysDrawings(deps, user.userId)
+    expect(all.ok && all.drawings).toHaveLength(3)
+  })
+
   it('does not start an attempt implicitly when grading or ending', async () => {
     const { deps, records } = setup()
-    expect(await gradeDaily(deps, user, 'ask', cells)).toMatchObject({ ok: false, reason: 'not_started' })
+    expect(await gradeDaily(deps, user, 'auto', cells, day, 0)).toMatchObject({ ok: false, reason: 'not_started' })
     expect((await endDaily(deps, user, null)).status).toBe('not_started')
     expect(records.rows('dailyScores').size).toBe(0)
   })
 
   it('ignores stale successful completions after a replacement reservation', async () => {
     const { deps, records, at } = setup()
-    let resolveBlind!: (value: { guess: string }) => void
+    let resolveBlind!: (value: { guess: string; writing: string }) => void
     vi.mocked(deps.judge.blind).mockImplementationOnce(() => new Promise(resolve => { resolveBlind = resolve }))
     await startDaily(deps, user)
-    const pending = gradeDaily(deps, user, 'ask', cells)
+    at(HALFWAY)
+    const pending = gradeDaily(deps, user, 'auto', cells, day, 0)
     await vi.waitFor(() => expect(deps.judge.blind).toHaveBeenCalledTimes(1))
-    at(startedAt + DAILY.inFlightStaleMs)
-    expect((await gradeDaily(deps, user, 'ask', otherCells)).ok).toBe(true)
+    at(FINAL)
+    const replacement = await gradeDaily(deps, user, 'final', otherCells)
+    expect(replacement.ok).toBe(true)
     const saved = { ...onlyRow(records, 'dailyScores') }
-    resolveBlind({ guess: 'stale' })
+    resolveBlind({ guess: 'stale', writing: '' })
     expect(await pending).toMatchObject({ ok: false, reason: 'stale' })
-    expect(deps.judge.score).toHaveBeenCalledTimes(1)
     expect(onlyRow(records, 'dailyScores')).toEqual(saved)
     expect(onlyRow(records, 'dailyDrawings').cells).toBe(otherCells)
     expect((await dailyState(deps, user.userId)).lastCells).toBe(otherCells)
   })
 
-  it('does not let a stale failure refund or clear a replacement in-flight ask', async () => {
-    const { deps, at } = setup()
-    let rejectOld!: (error: Error) => void
-    let resolveNew!: (value: { guess: string }) => void
-    vi.mocked(deps.judge.blind)
-      .mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectOld = reject }))
-      .mockImplementationOnce(() => new Promise(resolve => { resolveNew = resolve }))
+  it('saves the latest canvas while the attempt is active only', async () => {
+    const { deps, records, at } = setup()
     await startDaily(deps, user)
-    const oldGrade = gradeDaily(deps, user, 'ask', cells)
-    await vi.waitFor(() => expect(deps.judge.blind).toHaveBeenCalledTimes(1))
-    at(startedAt + DAILY.inFlightStaleMs)
-    const newGrade = gradeDaily(deps, user, 'ask', otherCells)
-    await vi.waitFor(() => expect(deps.judge.blind).toHaveBeenCalledTimes(2))
-    rejectOld(new Error('old request timed out'))
-    expect(await oldGrade).toMatchObject({ ok: false, reason: 'stale', state: { asksUsed: 1 } })
-    expect(await deps.store.get(user.userId, day)).toMatchObject({ inFlightSince: startedAt + DAILY.inFlightStaleMs, inFlightKind: 'ask', asksUsed: 1 })
-    resolveNew({ guess: 'new' })
-    expect(await newGrade).toMatchObject({ ok: true, state: { asksUsed: 1, lastCells: otherCells } })
+    at(startedAt + 10_000)
+    expect(await saveDailyCanvas(deps, user, cells)).toEqual({ ok: true })
+    expect((await dailyState(deps, user.userId)).lastCells).toBe(cells)
+    at(startedAt + 20_000)
+    expect(await saveDailyCanvas(deps, user, otherCells)).toEqual({ ok: true })
+    expect((await dailyState(deps, user.userId)).lastCells).toBe(otherCells)
+    // Each save publishes, so a closed tab's latest canvas reaches the day's drawing record.
+    expect(onlyRow(records, 'dailyDrawings')).toMatchObject({ cells: otherCells, visibility: 'private' })
+    at(FINAL)
+    await endDaily(deps, user, null)
+    expect(await saveDailyCanvas(deps, user, cells)).toEqual({ ok: false, reason: 'ended' })
+    expect(await saveDailyCanvas(deps, user, 'bad')).toEqual({ ok: false, reason: 'bad_cells' })
+  })
+
+  it('caps silent peeks at two per attempt and never touches the score or grade hash', async () => {
+    const { deps, at } = setup()
+    await startDaily(deps, user)
+    at(startedAt + 75_000)
+    const first = await peekDaily(deps, user, cells)
+    expect(first).toMatchObject({ ok: true })
+    if (!first.ok) throw new Error('peek failed')
+    expect(first.line.length).toBeGreaterThan(0)
+    expect(await deps.store.get(user.userId, day)).toMatchObject({ peeksUsed: 1, bestScore: 0, lastGradedHash: null, inFlightSince: null })
+    at(startedAt + 225_000)
+    expect((await peekDaily(deps, user, cells)).ok).toBe(true)
+    at(startedAt + 226_000)
+    expect(await peekDaily(deps, user, cells)).toEqual({ ok: false, reason: 'no_peeks_left' })
+    expect((await dailyState(deps, user.userId)).best).toBe(0)
+    expect(deps.judge.score).not.toHaveBeenCalled()
+    expect(deps.judge.blind).not.toHaveBeenCalled()
+  })
+
+  it('a peek respects the global budget gate and falls back instead of scoring', async () => {
+    const { deps, at } = setup()
+    await startDaily(deps, user)
+    vi.mocked(deps.reserveBudget).mockResolvedValueOnce(false)
+    at(startedAt + 75_000)
+    expect(await peekDaily(deps, user, cells)).toEqual({ ok: false, reason: 'judge_resting' })
+    expect(deps.judge.peek).not.toHaveBeenCalled()
+    // A look that never produced a line gives the peek back.
+    expect(await deps.store.get(user.userId, day)).toMatchObject({ peeksUsed: 0 })
+    vi.mocked(deps.judge.peek!).mockRejectedValueOnce(new Error('judge down'))
+    expect(await peekDaily(deps, user, cells)).toEqual({ ok: false, reason: 'judge_resting' })
+    expect(await deps.store.get(user.userId, day)).toMatchObject({ peeksUsed: 0 })
+  })
+
+  it('rejects a peek after the attempt ended and on invalid cells', async () => {
+    const { deps, at } = setup()
+    await startDaily(deps, user)
+    at(FINAL)
+    await endDaily(deps, user, cells)
+    expect(await peekDaily(deps, user, cells)).toEqual({ ok: false, reason: 'ended' })
+    expect(await peekDaily(deps, user, 'bad')).toEqual({ ok: false, reason: 'bad_cells' })
   })
 })
 
 describe('daily blank-canvas guard', () => {
   const blank = () => encodeCells(new Uint8Array(1024))
 
-  it('ask on a blank canvas returns a zero grade without AI, budget, render, or burning an ask', async () => {
+  it('a blank final earns zero and still ends the attempt without the judge', async () => {
     const { deps, records, at } = setup()
     await startDaily(deps, user)
-    at(startedAt + 5000)
-    const result = await gradeDaily(deps, user, 'ask', blank())
-    expect(result).toMatchObject({
-      ok: true,
-      grade: { guess: '', reason: 'Nothing is drawn yet — paint something first.', fit: 0, recognition: 0, speed: 0, total: 0, elapsedMs: 5000 },
-      state: { asksUsed: 0, best: 0 },
-    })
-    expect(deps.judge.blind).not.toHaveBeenCalled()
-    expect(deps.judge.score).not.toHaveBeenCalled()
-    expect(deps.reserveBudget).not.toHaveBeenCalled()
-    expect(deps.render).not.toHaveBeenCalled()
-    expect(await deps.store.get(user.userId, day)).toMatchObject({ asksUsed: 0, bestScore: 0, inFlightSince: null })
-    expect(onlyRow(records, 'dailyScores')).toMatchObject({ score: 0 })
-  })
-
-  it('final on a blank canvas earns zero points and never calls the judge', async () => {
-    const { deps, records, at } = setup()
-    await startDaily(deps, user)
-    at(startedAt + 5000)
+    at(FINAL)
     const result = await gradeDaily(deps, user, 'final', blank())
-    expect(result).toMatchObject({ ok: true, grade: { guess: '', reason: 'Nothing is drawn yet — paint something first.', fit: 0, recognition: 0, speed: 0, total: 0 } })
+    expect(result).toMatchObject({ ok: true, grade: { guess: '', reason: 'Nothing is drawn yet — paint something first.', ...blankGradeParts() } })
     expect(deps.judge.blind).not.toHaveBeenCalled()
     expect(deps.judge.score).not.toHaveBeenCalled()
     expect(deps.reserveBudget).not.toHaveBeenCalled()
-    const ended = await endDaily(deps, user, blank())
-    expect(ended).toMatchObject({ status: 'ended', best: 0 })
-    expect(onlyRow(records, 'dailyScores')).toMatchObject({ score: 0, speed: 0 })
+    expect(result.ok && result.state.status).toBe('ended')
+    expect(onlyRow(records, 'dailyScores')).toMatchObject({ score: 0, qualityBonus: 0, ended: 1 })
     expect(onlyRow(records, 'dailyDrawings')).toMatchObject({ score: 0 })
   })
 
-  it('a blank final never overwrites a prior non-zero best', async () => {
+  it('a blank final never overwrites a prior non-zero best, but the latest image is blank', async () => {
     const { deps, records, at } = setup()
     await startDaily(deps, user)
-    at(startedAt + 5000)
-    await gradeDaily(deps, user, 'ask', cells)
+    at(HALFWAY)
+    await gradeDaily(deps, user, 'auto', cells, day, 0)
     const prior = (await deps.store.get(user.userId, day))!.bestScore
     expect(prior).toBeGreaterThan(0)
+    at(FINAL)
     const result = await gradeDaily(deps, user, 'final', blank())
-    expect(result).toMatchObject({ ok: true, grade: { total: 0, speed: 0 } })
-    await endDaily(deps, user, blank())
+    expect(result).toMatchObject({ ok: true, grade: { total: 0 } })
     expect(onlyRow(records, 'dailyScores')).toMatchObject({ score: prior })
+    expect(onlyRow(records, 'dailyDrawings')).toMatchObject({ cells: blank(), score: prior })
   })
 
-  it('blank ask and final before the attempt started report not_started', async () => {
+  it('blank grading before the attempt started reports not_started', async () => {
     const { deps } = setup()
-    for (const kind of ['ask', 'final'] as const) {
-      expect(await gradeDaily(deps, user, kind, blank())).toMatchObject({ ok: false, reason: 'not_started' })
-    }
+    expect(await gradeDaily(deps, user, 'final', blank())).toMatchObject({ ok: false, reason: 'not_started' })
     expect(deps.judge.blind).not.toHaveBeenCalled()
     expect(deps.reserveBudget).not.toHaveBeenCalled()
   })
 
-  it.each(['ask', 'final'] as const)('a blank %s after the attempt ended reports ended, not a grade', async kind => {
+  it('a blank final after the attempt ended reports ended, not a grade', async () => {
     const { deps, records, at } = setup()
     await startDaily(deps, user)
-    at(startedAt + 5000)
-    const ended = await endDaily(deps, user, null)
-    expect(ended.status).toBe('ended')
+    at(FINAL)
+    expect((await endDaily(deps, user, null)).status).toBe('ended')
     const saved = { ...onlyRow(records, 'dailyScores') }
-    expect(await gradeDaily(deps, user, kind, blank())).toMatchObject({ ok: false, reason: 'ended', state: { status: 'ended' } })
+    expect(await gradeDaily(deps, user, 'final', blank())).toMatchObject({ ok: false, reason: 'ended', state: { status: 'ended' } })
     expect(deps.judge.blind).not.toHaveBeenCalled()
     expect(deps.judge.score).not.toHaveBeenCalled()
     expect(deps.reserveBudget).not.toHaveBeenCalled()
     expect(onlyRow(records, 'dailyScores')).toEqual(saved)
-  })
-
-  it('a blank ask past the attempt clock reports time_up instead of a grade', async () => {
-    const { deps, at } = setup()
-    await startDaily(deps, user)
-    at(startedAt + 300_001)
-    expect(await gradeDaily(deps, user, 'ask', blank())).toMatchObject({ ok: false, reason: 'time_up' })
-    expect(deps.judge.blind).not.toHaveBeenCalled()
   })
 })

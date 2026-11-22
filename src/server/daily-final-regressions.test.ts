@@ -11,6 +11,8 @@ import { memoryTools } from './room-test-tools'
 const user = { userId: 'alice', name: 'Alice', image: 'alice.png' }
 const day = '2026-11-17'
 const startedAt = Date.UTC(2026, 10, 17, 12)
+const HALFWAY = startedAt + 150_000
+const FINAL = startedAt + 300_000
 const cells = encodeCells(new Uint8Array(1024).fill(2))
 const otherCells = encodeCells(new Uint8Array(1024).fill(3))
 
@@ -26,7 +28,7 @@ function setup(start = startedAt) {
   const fake = fakeDailyJudge()
   const deps: DailyDeps = {
     now: () => now, store: memoryAttemptStore(records.tools), tools: records.tools,
-    judge: { blind: vi.fn(fake.blind), score: vi.fn(fake.score) },
+    judge: { blind: vi.fn(fake.blind), score: vi.fn(fake.score), peek: vi.fn(fake.peek) },
     reserveBudget: vi.fn(async () => true), render: vi.fn(async value => value),
   }
   const row = (collection: string) => [...records.rows(collection).values()].find(value => value.day === day)!
@@ -55,49 +57,54 @@ describe('final review regressions', () => {
     const { deps, records, row, at } = setup()
     await startDaily(deps, user)
     vi.mocked(deps.judge.score)
-      .mockResolvedValueOnce({ fit: 50, recognition: 50, reason: 'old' })
-      .mockResolvedValueOnce({ fit: 100, recognition: 100, reason: 'best' })
+      .mockResolvedValueOnce({ match: 50, recognition: 50, quality: 50, reason: 'old' })
+      .mockResolvedValueOnce({ match: 100, recognition: 100, quality: 100, reason: 'best' })
     const held = deferred<void>()
     const update = records.update.getMockImplementation()!
     records.update.mockImplementationOnce(async (...args) => { await held.promise; return update(...args) })
-    const first = gradeDaily(deps, user, 'ask', cells)
+    at(HALFWAY)
+    const first = gradeDaily(deps, user, 'auto', cells, day, 0)
     await vi.waitFor(() => expect(records.update).toHaveBeenCalled())
-    at(startedAt + 20_000)
-    const second = gradeDaily(deps, user, 'ask', otherCells)
-    await vi.waitFor(async () => expect((await deps.store.get(user.userId, day))?.bestScore).toBe(993))
+    at(FINAL)
+    const second = gradeDaily(deps, user, 'final', otherCells)
+    await vi.waitFor(async () => expect((await deps.store.get(user.userId, day))?.bestScore).toBe(1000))
     held.resolve()
     await Promise.all([first, second])
-    expect(row('dailyScores')).toMatchObject({ score: 993, fit: 500, recognition: 400 })
-    expect(row('dailyDrawings')).toMatchObject({ score: 993, cells: otherCells, reason: 'best' })
+    expect(row('dailyScores')).toMatchObject({ score: 1000, matchPoints: 500, qualityBonus: 500, match: 100, quality: 100 })
+    // Score = the higher judgement; image = the latest canvas; caption = the most recent verdict.
+    expect(row('dailyDrawings')).toMatchObject({ score: 1000, cells: otherCells, reason: 'best' })
   })
 
   it.each(['dailyScores', 'dailyDrawings'])('I2 repairs a failed %s projection on a later lower grade', async failedCollection => {
     const { deps, records, row, at } = setup()
     await startDaily(deps, user)
     vi.mocked(deps.judge.score)
-      .mockResolvedValueOnce({ fit: 100, recognition: 100, reason: 'winner' })
-      .mockResolvedValueOnce({ fit: 1, recognition: 1, reason: 'lower' })
+      .mockResolvedValueOnce({ match: 100, recognition: 100, quality: 100, reason: 'winner' })
+      .mockResolvedValueOnce({ match: 1, recognition: 1, quality: 1, reason: 'lower' })
     const update = records.update.getMockImplementation()!
     records.update.mockImplementation(async (...args) => {
       if (args[0] === failedCollection) throw new Error('temporary record outage')
       return update(...args)
     })
-    await expect(gradeDaily(deps, user, 'ask', cells)).rejects.toThrow()
+    at(HALFWAY)
+    await expect(gradeDaily(deps, user, 'auto', cells, day, 0)).rejects.toThrow()
     records.update.mockImplementation(update)
-    at(startedAt + 20_000)
-    await gradeDaily(deps, user, 'ask', otherCells)
-    expect(row('dailyScores')).toMatchObject({ score: 1000, bestElapsedMs: 0 })
-    expect(row('dailyDrawings')).toMatchObject({ score: 1000, cells, reason: 'winner' })
+    at(FINAL)
+    await gradeDaily(deps, user, 'final', otherCells)
+    expect(row('dailyScores')).toMatchObject({ score: 1000, startedAt })
+    expect(row('dailyDrawings')).toMatchObject({ score: 1000, cells: otherCells, reason: 'lower' })
   })
 
   it.each(['state', 'end', 'start'])('I2 repairs the durable winner on %s without regrading', async repair => {
-    const { deps, records, row } = setup()
+    const { deps, records, row, at } = setup()
     await startDaily(deps, user)
-    vi.mocked(deps.judge.score).mockResolvedValueOnce({ fit: 100, recognition: 100, reason: 'winner' })
+    vi.mocked(deps.judge.score).mockResolvedValueOnce({ match: 100, recognition: 100, quality: 100, reason: 'winner' })
     records.update.mockRejectedValueOnce(new Error('outage'))
-    await expect(gradeDaily(deps, user, 'ask', cells)).rejects.toThrow()
+    at(HALFWAY)
+    await expect(gradeDaily(deps, user, 'auto', cells, day, 0)).rejects.toThrow()
+    at(FINAL)
     if (repair === 'state') await dailyState(deps, user.userId)
-    if (repair === 'end') await endDaily(deps, user, otherCells)
+    if (repair === 'end') await endDaily(deps, user, cells)
     if (repair === 'start') await startDaily(deps, user)
     expect(row('dailyScores')).toMatchObject({ score: 1000 })
     expect(row('dailyDrawings')).toMatchObject({ cells, score: 1000, reason: 'winner' })
@@ -108,13 +115,14 @@ describe('final review regressions', () => {
     const late = Date.UTC(2026, 10, 17, 23, 57)
     const { deps, at } = setup(late)
     await startDaily(deps, user)
-    at(late + 200_000)
+    at(late + 180_000)
     expect(await dailyState(deps, user.userId)).toMatchObject({ day, status: 'playing', startedAt: late })
     expect(await startDaily(deps, user)).toMatchObject({ day: '2026-11-18' })
     expect(await dailyState(deps, user.userId)).toMatchObject({ day, status: 'playing' })
-    expect(await gradeDaily(deps, user, 'ask', cells, day)).toMatchObject({ ok: true, grade: { elapsedMs: 200_000 }, state: { day } })
+    expect(await gradeDaily(deps, user, 'auto', cells, day, 0)).toMatchObject({ ok: true, grade: { elapsedMs: 180_000 }, state: { day } })
+    at(late + 300_000)
     expect(await endDaily(deps, user, cells, day)).toMatchObject({ day, status: 'ended' })
-    expect(await deps.store.get(user.userId, '2026-11-18')).toMatchObject({ endedAt: null, asksUsed: 0 })
+    expect(await deps.store.get(user.userId, '2026-11-18')).toMatchObject({ endedAt: null, finalUsed: false })
     expect(await dailyState(deps, user.userId)).toMatchObject({ day: '2026-11-18', status: 'playing', best: 0 })
     expect(await todaysDrawings(deps, user.userId)).toEqual({ ok: false })
   })
@@ -122,6 +130,7 @@ describe('final review regressions', () => {
   it('M3 freezes an ended ungraded snapshot, including after public publication', async () => {
     const { deps, records, row, at } = setup()
     await startDaily(deps, user)
+    at(FINAL)
     await endDaily(deps, user, cells)
     await endDaily(deps, user, otherCells)
     expect(row('dailyDrawings').cells).toBe(cells)
@@ -137,15 +146,14 @@ describe('final review regressions', () => {
     expect((await deps.store.get(user.userId, day))?.lastCells).toBe(cells)
   })
 
-  it('M13 retains the first valid zero-point grade and its full snapshot', async () => {
+  it('M13 retains the first valid zero-point final and its full snapshot', async () => {
     const { deps, row, at } = setup()
     await startDaily(deps, user)
-    at(startedAt + DAILY.attemptMs)
-    vi.mocked(deps.judge.blind).mockResolvedValueOnce({ guess: 'zero guess' })
-    vi.mocked(deps.judge.score).mockResolvedValueOnce({ fit: 0, recognition: 0, reason: 'zero reason' })
+    at(FINAL)
+    vi.mocked(deps.judge.blind).mockResolvedValueOnce({ guess: 'zero guess', writing: '' })
+    vi.mocked(deps.judge.score).mockResolvedValueOnce({ match: 0, recognition: 0, quality: 0, reason: 'zero reason' })
     expect(await gradeDaily(deps, user, 'final', cells)).toMatchObject({ ok: true, grade: { total: 0 } })
-    await endDaily(deps, user, otherCells)
-    expect(row('dailyScores')).toMatchObject({ score: 0, bestElapsedMs: DAILY.attemptMs })
+    expect(row('dailyScores')).toMatchObject({ score: 0, startedAt })
     expect(row('dailyDrawings')).toMatchObject({ score: 0, cells, guess: 'zero guess', reason: 'zero reason' })
   })
 
@@ -165,15 +173,17 @@ describe('final review regressions', () => {
   it('I5 returns stale, not success, for a computed high grade whose lease was replaced', async () => {
     const { deps, row, at } = setup()
     await startDaily(deps, user)
-    const held = deferred<{ fit: number; recognition: number; reason: string }>()
+    const held = deferred<{ match: number; recognition: number; quality: number; reason: string }>()
+    vi.mocked(deps.judge.blind).mockResolvedValueOnce({ guess: 'old', writing: '' })
     vi.mocked(deps.judge.score).mockImplementationOnce(() => held.promise)
-      .mockResolvedValueOnce({ fit: 1, recognition: 1, reason: 'accepted' })
-    const old = gradeDaily(deps, user, 'ask', cells)
+      .mockResolvedValueOnce({ match: 100, recognition: 100, quality: 100, reason: 'accepted' })
+    at(HALFWAY)
+    const old = gradeDaily(deps, user, 'auto', cells, day, 0)
     await vi.waitFor(() => expect(deps.judge.score).toHaveBeenCalledTimes(1))
-    at(startedAt + DAILY.inFlightStaleMs)
-    const replacement = await gradeDaily(deps, user, 'ask', otherCells)
+    at(FINAL)
+    const replacement = await gradeDaily(deps, user, 'final', otherCells)
     expect(replacement.ok).toBe(true)
-    held.resolve({ fit: 100, recognition: 100, reason: 'stale winner' })
+    held.resolve({ match: 100, recognition: 100, quality: 100, reason: 'stale winner' })
     const stale = await old
     expect(stale).toMatchObject({ ok: false, reason: 'stale' })
     expect(stale).not.toHaveProperty('grade')
@@ -186,16 +196,17 @@ describe('final review regressions', () => {
   it('keeps the bounded four-call production retry sequence inside the 90-second lease', async () => {
     const { deps, at } = setup()
     await startDaily(deps, user)
+    at(HALFWAY)
     let elapsed = 0
-    const wait = () => { elapsed += 20_000; at(startedAt + elapsed) }
+    const wait = () => { elapsed += 20_000; at(HALFWAY + elapsed) }
     vi.mocked(deps.judge.blind)
       .mockImplementationOnce(async () => { wait(); return null })
-      .mockImplementationOnce(async () => { wait(); return { guess: 'cat' } })
+      .mockImplementationOnce(async () => { wait(); return { guess: 'cat', writing: '' } })
     vi.mocked(deps.judge.score)
       .mockImplementationOnce(async () => { wait(); return null })
-      .mockImplementationOnce(async () => { wait(); return { fit: 100, recognition: 100, reason: 'accepted' } })
+      .mockImplementationOnce(async () => { wait(); return { match: 100, recognition: 100, quality: 100, reason: 'accepted' } })
     expect(DAILY.inFlightStaleMs).toBeGreaterThan(4 * 20_000)
-    expect(await gradeDaily(deps, user, 'ask', cells)).toMatchObject({ ok: true, state: { asksUsed: 1 } })
+    expect(await gradeDaily(deps, user, 'auto', cells, day, 0)).toMatchObject({ ok: true })
     expect(deps.reserveBudget).toHaveBeenCalledTimes(4)
   })
 })

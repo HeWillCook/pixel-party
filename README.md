@@ -11,13 +11,14 @@
 
 ## What it is
 
-Everyone gets the same prompt each day ("a lighthouse in a storm") and one attempt: 5 minutes on a 32×32 canvas.
-Claude Haiku looks at the drawing without being told the prompt, guesses what it shows, and then scores it out of 1000.
-Scores go on a daily leaderboard, drawings hang in each player's gallery, and when the day closes the top three get
-medals.
+Everyone gets the same prompt each day ("a lighthouse in a storm") and one attempt: up to 5 minutes on a 32×32
+canvas. Claude Haiku looks at the drawing without being told the prompt, guesses what it shows, and then scores it out
+of 1000. Scores go on a daily leaderboard, drawings hang in each player's gallery, each player has stats, and when the
+day closes the top three get medals.
 
-A second mode, **Party** (`/party`), is a live shared canvas: friends draw together in a room while Haiku calls out
-guesses until it gets the word.
+A second mode, **Party** (`/party`), is a live shared canvas: someone hosts a room, friends join from the open-games
+list (private rooms need the code), and everyone click-and-drags on one canvas while Haiku calls out guesses until it
+gets the word. There is no score in Party; co-op is the only mode for now.
 
 | Daily leaderboard | A player's gallery | Party studio |
 |---|---|---|
@@ -27,15 +28,19 @@ guesses until it gets the word.
 
 ## How a Daily works
 
-1. Sign in and press **Start**. The server opens your one attempt for today (UTC) and starts the clock.
-2. Paint. Haiku grades automatically at minutes 1–4. You can ask for up to three extra grades, and the attempt ends
-   with a final grade (or press **Done** early).
-3. Each grade is two model calls: a **blind guess** (Haiku doesn't know the prompt), then a **score** with the
+1. Sign in (first time: pick a username) and press **Start**. The server opens your one attempt for today (UTC) and
+   starts the clock.
+2. Paint for up to 5 minutes. Haiku judges once at the halfway point (2:30) and gives a final verdict when you
+   **Submit**, or automatically at 5:00. Two non-scoring peeks along the way are just Haiku being a cat critic.
+3. Each judgement is two model calls: a **blind guess** (Haiku doesn't know the prompt), then a **score** with the
    prompt:
-   - **Fit**, 0–500: how well the drawing matches the prompt.
-   - **Recognition**, 0–400: whether the blind guess got the subject.
-   - **Speed**, 0–100: how early your best grade came.
-4. Your best grade counts. Drawings stay hidden until the day closes, so nobody can copy the answer.
+   - **Matches the prompt**, 0–500: the prompt match, weighted 60/40 with whether the blind guess got the subject
+     (capped low when it didn't).
+   - **Art quality bonus**, 0–500: pixel-art craft, paid in proportion to the match, so great art of the wrong thing
+     earns almost nothing.
+   - Spelling the answer in letters doesn't count as drawing it.
+4. Your higher judgement is your score; the painting shown is your latest canvas. Today's drawings unlock once you've
+   finished your own attempt, and go public when the day closes.
 
 ## Architecture
 
@@ -57,14 +62,14 @@ flowchart LR
 |---|---|---|
 | Auth | Play needs sign-in; the worker reads identity from the verified JWT. Boards and galleries are public. | `src/server/daily-routes.ts` |
 | `anthropic/chat-completion` | Vision judging, server-side only. It's the only DeepSpace integration that accepts images. Client-side integration calls are refused. | `src/server/daily-judge.ts`, `src/game/judge.ts` |
-| `BaseRoom` Durable Objects | `DailyRoom`: one attempt per user per day, atomic in SQLite. `PixelRoom`: validates every pixel and fans it out over WebSocket. `BudgetRoom`: a shared daily cap on AI calls. | `src/server/*-room.ts` |
-| Collections + permissions | Scores, drawings, rooms and rounds. Server-written, public-read; private rooms are member-only. | `src/schemas/` |
+| `BaseRoom` Durable Objects | `DailyRoom`: one attempt per user per day, atomic in SQLite. `PixelRoom`: validates every pixel and fans it out over WebSocket (a per-painter token bucket, so drags feel instant). `BudgetRoom`: a shared daily cap on AI calls. | `src/server/*-room.ts` |
+| Collections + permissions | Scores, drawings, rooms, rounds, usernames (`profiles`, unique) and party stats. Server-written, public-read; private rooms are member-only. | `src/schemas/` |
 | Cron | Closes each day: reveals drawings and awards medals. | `src/cron.ts`, `src/server/daily-close.ts` |
 | Presence | "3 on the porch · 1 painting now". Held in memory; nothing is stored. | `src/components/porch/PorchPresence.tsx` |
 
 **Why my own Durable Objects for pixels.** Records and `CanvasRoom` don't fit pixels. A record `put` broadcasts
 the whole record, so a tile-per-record canvas would resend a tile on every pixel, and a get-then-update action can
-race the cooldown. `CanvasRoom` is a Yjs document of freeform shapes. A `BaseRoom` gives one atomic
+race the per-painter rate limit. `CanvasRoom` is a Yjs document of freeform shapes. A `BaseRoom` gives one atomic
 validate-and-write per pixel and tiny broadcasts, the same pattern DeepSpace's own game examples use.
 
 **Left out on purpose:** payments (nothing to sell), email, AI image generation (the point is that people draw), and

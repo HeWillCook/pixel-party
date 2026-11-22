@@ -1,0 +1,187 @@
+/* First-sign-in onboarding: a porch postcard with Haiku hosting. */
+.onboarding-modal {
+  width: 100%;
+  max-width: min(560px, calc(100vw - 24px));
+  gap: 12px;
+  padding: 18px 18px 16px;
+  border: calc(var(--px, 2px) * 2) solid #8e5960;
+  box-shadow: inset 0 0 0 var(--px, 2px) #e3b28a, 0 calc(var(--px, 2px) * 2) 0 #614052;
+}
+
+.onboarding__host {
+  /* Haiku and the speech bubble on one line, the title under them: the title never shares a row with the bubble. */
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding-bottom: 10px;
+  border-bottom: var(--px, 2px) dashed #d1b5a3;
+}
+
+.onboarding__host .haiku__bubble {
+  max-width: 210px;
+  font-size: 18px;
+}
+
+.onboarding__head {
+  min-width: 0;
+  padding-bottom: 4px;
+}
+
+.onboarding__eyebrow {
+  margin: 0;
+  font-size: 14px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #614052;
+}
+
+.onboarding__title {
+  margin: 0;
+  color: #67435d;
+  font-size: 34px;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  text-shadow: min(var(--px, 2px), 2px) min(var(--px, 2px), 2px) #ecae7d;
+}
+
+.onboarding__body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+}
+
+.onboarding__lede,
+.onboarding__copy {
+  margin: 0;
+  color: #392a45;
+  font-size: 19px;
+  line-height: 1.25;
+}
+
+.onboarding__body--tour {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  align-items: center;
+  gap: 16px;
+  min-height: 150px;
+  padding: 6px 2px;
+  overflow-y: auto;
+}
+
+.onboarding__body--tour:focus {
+  outline: none;
+}
+
+.onboarding__art {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: start;
+  padding: 6px;
+  background: #ecd4b0;
+  border: var(--px, 2px) solid #8e5960;
+  box-shadow: inset 0 0 0 var(--px, 2px) #fff0cc;
+}
+
+.onboarding__skip {
+  margin: 0;
+  font-size: 16px;
+  color: #614052;
+  opacity: 0.85;
+}
+
+.onboarding__dots {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+
+.onboarding__dot {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  background: #ecd4b0;
+  border: var(--px, 2px) solid #8e5960;
+  border-radius: 0;
+  cursor: pointer;
+}
+
+.onboarding__dot[data-active] {
+  background: #a94958;
+  box-shadow: inset 0 0 0 var(--px, 2px) #ecae7d;
+}
+
+.onboarding__dot:focus-visible {
+  outline: var(--px, 2px) solid #392a45;
+  outline-offset: var(--px, 2px);
+}
+
+.onboarding__footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.onboarding__nav {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.onboarding__skip-btn,
+.onboarding__nav-btn {
+  min-height: 44px;
+  padding: 4px 14px;
+  font-size: 19px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.onboarding__skip-btn {
+  background: #ecd4b0;
+}
+
+.onboarding__nav-btn--next {
+  min-width: 92px;
+}
+
+@media (max-width: 480px) {
+  .onboarding-modal {
+    padding: 12px 12px 10px;
+  }
+
+  .onboarding__host {
+    gap: 10px;
+  }
+
+  .onboarding__title {
+    font-size: 27px;
+  }
+
+  .onboarding__lede,
+  .onboarding__copy {
+    font-size: 17px;
+  }
+
+  .onboarding__body--tour {
+    gap: 10px;
+    min-height: 120px;
+  }
+
+  .onboarding__skip-btn,
+  .onboarding__nav-btn {
+    font-size: 17px;
+    padding: 4px 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .onboarding-modal {
+    transition: none;
+  }
+}

@@ -4,7 +4,6 @@ import {
   getAuthToken,
   useAuthProfileReady,
   useMutations,
-  useQuery,
 } from 'deepspace'
 import { DeleteRoomButton } from '../../../components/game/DeleteRoomButton'
 import { requestVerticalSceneTransition } from '../../../components/porch/VerticalSceneTransition'
@@ -15,17 +14,20 @@ import { useToast } from '../../../components/ui'
 import type { Composition, Rect } from '../../../scene/camera'
 import { SCENE_ZOOM_MS } from '../../../scene/zoom'
 
-interface RoomRecord {
+/** One row from `GET /api/party/rooms`: a locked private game arrives with `joinCode: null`. */
+interface PartyRoom {
+  id: string
   name: string
-  mode: 'coop' | 'team'
-  visibility: 'public' | 'private'
-  joinCode: string
   hostId: string
+  mode: 'coop' | 'team'
   status: 'lobby' | 'playing' | 'intermission' | 'paused' | 'closed'
   playerCount: number
-  lastActiveAt: number
-  isDefaultBoard: boolean
+  visibility: 'public' | 'private'
+  joinCode: string | null
 }
+
+/** The lobby list refreshes on a timer: the rooms collection cannot show private games to non-members. */
+const ROOMS_REFRESH_MS = 10_000
 
 /**
  * The basement studio. `/party` (the lobby) and `/r/:code` (a room) are two views of one scene: this layout owns the
@@ -38,11 +40,8 @@ export default function StudioLayout() {
   const { ready: mutationsReady } = useMutations('rooms')
   const { error: toastError, success: toastSuccess } = useToast()
 
-  const { records: rooms, status: roomsStatus } = useQuery<RoomRecord>('rooms', {
-    orderBy: 'lastActiveAt',
-    orderDir: 'desc',
-    limit: 50,
-  })
+  const [rooms, setRooms] = useState<PartyRoom[]>([])
+  const [roomsStatus, setRoomsStatus] = useState<'loading' | 'ready'>('loading')
 
   const [roomName, setRoomName] = useState('')
   const [visibility, setVisibility] = useState<'public' | 'private'>('public')
@@ -53,30 +52,48 @@ export default function StudioLayout() {
   const [signInOpen, setSignInOpen] = useState(false)
   const [deletedRooms, setDeletedRooms] = useState<string[]>([])
 
-  // Public rooms for everyone, plus the private rooms this player hosts or has joined (the rooms query only returns
-  // private rooms to their host and members, so any private room that arrives here is "yours").
-  const listedRooms: StudioRoomItem[] = rooms
-    .filter(
-      (room) =>
-        room.data.status !== 'closed' &&
-        !deletedRooms.includes(room.recordId) &&
-        (room.data.visibility === 'public' || (isSignedIn && room.data.visibility === 'private')) &&
-        !room.data.isDefaultBoard &&
-        room.data.joinCode !== 'play',
-    )
-    .map((room) => ({
-      recordId: room.recordId,
-      name: room.data.name,
-      joinCode: room.data.joinCode,
-      hostId: room.data.hostId,
-      status: room.data.status,
-      playerCount: room.data.playerCount ?? 0,
-      visibility: room.data.visibility,
-    }))
+  // Every open game, public or private. The route reads with the server's access and strips private codes it
+  // must not hand out, so a locked row arrives with `joinCode: null` and the lobby asks for the code instead.
+  const loadRooms = useCallback(async () => {
+    try {
+      const token = isSignedIn ? await getAuthToken() : null
+      const response = await fetch('/api/party/rooms', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      })
+      if (!response.ok) return
+      const payload = (await response.json()) as { rooms?: PartyRoom[] }
+      if (Array.isArray(payload.rooms)) setRooms(payload.rooms)
+    } catch {
+      // Keep the last list: a refresh failure is not an empty lobby.
+    } finally {
+      setRoomsStatus('ready')
+    }
+  }, [isSignedIn])
 
-  const defaultBoardRoom = rooms.find(
-    (room) => room.data.isDefaultBoard || room.data.joinCode === 'play',
-  )
+  useEffect(() => {
+    void loadRooms()
+    const timer = setInterval(() => { void loadRooms() }, ROOMS_REFRESH_MS)
+    const onFocus = () => { void loadRooms() }
+    window.addEventListener('focus', onFocus)
+    return () => {
+      clearInterval(timer)
+      window.removeEventListener('focus', onFocus)
+    }
+  }, [loadRooms])
+
+  const listedRooms: StudioRoomItem[] = rooms
+    // Co-op is the only mode for now: an old team room is never listed.
+    .filter((room) => room.status !== 'closed' && room.mode !== 'team' && !deletedRooms.includes(room.id))
+    .map((room) => ({
+      recordId: room.id,
+      name: room.name,
+      mode: room.mode,
+      joinCode: room.joinCode,
+      hostId: room.hostId,
+      status: room.status,
+      playerCount: room.playerCount ?? 0,
+      visibility: room.visibility,
+    }))
 
   const createRoom = async (name: string, roomVisibility: 'public' | 'private') => {
     setCreating(true)
@@ -140,10 +157,7 @@ export default function StudioLayout() {
   const handleJoinCode = useCallback(async (rawCode: string): Promise<ConjureCodeResult> => {
     const raw = rawCode.trim()
     if (!raw) return { status: 'not_found' }
-    const normalized = raw.toLowerCase() === 'play' ? 'play' : raw.toUpperCase()
-    if (normalized === 'play') {
-      return { status: 'ok', joinCode: 'play' }
-    }
+    const normalized = raw.toUpperCase()
     if (!isSignedIn) {
       return { status: 'ok', joinCode: normalized }
     }
@@ -176,8 +190,8 @@ export default function StudioLayout() {
   // --- The room open on the easel (if any) ---------------------------------------------------------------
   const location = useLocation()
   const roomMatch = useMatch('/r/:code')
-  const roomCode = roomMatch ? decodeURIComponent(roomMatch.params.code ?? 'play') : null
-  const normalizedRoomCode = roomCode ? (roomCode.toLowerCase() === 'play' ? 'play' : roomCode.toUpperCase()) : null
+  const roomCode = roomMatch ? decodeURIComponent(roomMatch.params.code ?? '') : null
+  const normalizedRoomCode = roomCode ? roomCode.toUpperCase() : null
   const [boardRect, setBoardRectState] = useState<Rect | null>(null)
   const [summary, setSummaryState] = useState<RoomSummary | null>(null)
   const [minBoardPx, setMinBoardPx] = useState<number | null>(null)
@@ -189,6 +203,11 @@ export default function StudioLayout() {
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const sawParty = useRef(false)
   const inRoom = normalizedRoomCode !== null
+
+  // Coming back from a room: ask for the list again instead of waiting out the refresh timer.
+  useEffect(() => {
+    if (!inRoom) void loadRooms()
+  }, [inRoom, loadRooms])
 
   // A room reached from the lobby zooms in; a room opened cold (reload, shared link) is simply there.
   useEffect(() => {
@@ -277,7 +296,6 @@ export default function StudioLayout() {
         onRoomShift={setRoomShift}
         rooms={listedRooms}
         roomsLoading={roomsStatus === 'loading'}
-        defaultBoardPlayers={defaultBoardRoom?.data.playerCount ?? 0}
         signedIn={!!isSignedIn}
         currentUserId={user?.id}
         mutationsReady={mutationsReady}
@@ -295,13 +313,15 @@ export default function StudioLayout() {
         onCloseSignIn={() => setSignInOpen(false)}
         onJoinCodeChange={setJoinCodeInput}
         onConjureCode={handleJoinCode}
-        renderPackUp={(room) => (
-          <DeleteRoomButton
-            joinCode={room.joinCode}
-            label="Pack up"
-            onDeleted={() => setDeletedRooms((previous) => [...previous, room.recordId])}
-          />
-        )}
+        renderPackUp={(room) =>
+          room.joinCode ? (
+            <DeleteRoomButton
+              joinCode={room.joinCode}
+              label="Pack up"
+              onDeleted={() => setDeletedRooms((previous) => [...previous, room.recordId])}
+            />
+          ) : null
+        }
       />
       <Outlet />
       </div>

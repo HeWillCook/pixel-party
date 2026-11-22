@@ -5,10 +5,10 @@ import { memoryTools } from './room-test-tools'
 const day = '2026-11-17'
 const nextDay = '2026-11-18'
 
-function scoreRow(userId: string, rowDay: string, score: number, bestElapsedMs: number | null) {
+function scoreRow(userId: string, rowDay: string, score: number, startedAt: number) {
   return {
     day: rowDay, userId, displayName: userId, avatarUrl: `${userId}.png`,
-    score, fit: 0, recognition: 0, speed: 0, bestElapsedMs, ended: 0, medal: 0,
+    score, match: 50, quality: 50, matchPoints: 250, qualityBonus: 250, recognition: 50, startedAt, ended: 0, medal: 0,
   }
 }
 
@@ -29,8 +29,8 @@ function seedDay() {
     ['dave', 500, 100_000],
     ['erin', 0, 0],
   ]
-  for (const [userId, score, bestElapsedMs] of standings) {
-    records.rows('dailyScores').set(userId, scoreRow(userId, day, score, bestElapsedMs))
+  for (const [userId, score, startedAt] of standings) {
+    records.rows('dailyScores').set(userId, scoreRow(userId, day, score, startedAt))
     records.rows('dailyDrawings').set(userId, drawingRow(userId, day))
   }
   records.rows('dailyScores').set('later', scoreRow('later', nextDay, 950, 10_000))
@@ -51,7 +51,7 @@ describe('daily close', () => {
     expect(Object.fromEntries([...records.rows('dailyDrawings')].map(([recordId, row]) => [recordId, row.visibility])))
       .toEqual({ alice: 'public', bob: 'public', carol: 'public', dave: 'public', erin: 'public', later: 'private' })
 
-    // Carol beat Bob on the 700-point tie with the lower elapsed time; Erin is ranked despite scoring 0.
+    // Carol beat Bob on the 700-point tie by starting her attempt earlier that day; Erin is ranked despite scoring 0.
     expect(Object.fromEntries([...records.rows('dailyScores')].map(([recordId, row]) => [recordId, row.medal])))
       .toEqual({ alice: 1, carol: 2, bob: 3, dave: 0, erin: 0, later: 0 })
 
@@ -59,13 +59,13 @@ describe('daily close', () => {
       .toEqual({ alice: 1, bob: 1, carol: 1, dave: 1, erin: 1, later: 0 })
   })
 
-  it('ranks a row without a best elapsed time after timed rows on the same score', async () => {
+  it('ranks a row without a start time after timed rows on the same score', async () => {
     const records = memoryTools()
-    records.rows('dailyScores').set('slow', scoreRow('slow', day, 800, null))
-    records.rows('dailyScores').set('fast', scoreRow('fast', day, 800, 150_000))
+    records.rows('dailyScores').set('unknown', { ...scoreRow('unknown', day, 800, 0), startedAt: null })
+    records.rows('dailyScores').set('early', scoreRow('early', day, 800, 150_000))
     expect(await closeDay(records.tools, day)).toEqual({ published: 0, medals: 2 })
-    expect(records.rows('dailyScores').get('fast')!.medal).toBe(1)
-    expect(records.rows('dailyScores').get('slow')!.medal).toBe(2)
+    expect(records.rows('dailyScores').get('early')!.medal).toBe(1)
+    expect(records.rows('dailyScores').get('unknown')!.medal).toBe(2)
   })
 
   it('produces the same result when run twice', async () => {
@@ -77,9 +77,6 @@ describe('daily close', () => {
   })
 
   it('closes the two most recent UTC days so a delayed alarm cannot skip one', async () => {
-    // The alarm missed 2026-11-20 00:10 and fires on the 21st: the day that
-    // just ended is the 20th, and the 19th must be closed too or it stays
-    // private forever because the next run only ever looks at `now - 24h`.
     const records = memoryTools()
     for (const rowDay of ['2026-11-19', '2026-11-20']) {
       records.rows('dailyScores').set(`player-${rowDay}`, scoreRow('alice', rowDay, 800, 100_000))

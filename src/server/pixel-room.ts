@@ -14,28 +14,29 @@ import {
   newRoomState, nextAlarmAt, nextRoundRejection, serializeRoomState, startNextRound,
   type RoomState, type RoomTransition, type RoundEndedEvent, type RoomStatusEvent,
 } from '../game/room-logic'
-import { cooldownMs } from '../game/rules'
 import { reserveBudget } from './budget'
 import { configuredJudgeMode } from './daily-judge'
 import { createServerTools } from './server-tools'
+import { getUsername } from './usernames'
+import { recordPartyRound } from './player-stats'
 import { utcDay, withTimeout } from './room-time'
 import type { RoomData } from './rooms'
 
-type RoomInit = Pick<RoomState, 'roomId' | 'mode' | 'isDefaultBoard'>
+type RoomInit = Pick<RoomState, 'roomId' | 'mode'>
 type SavedRoom = { room_id: string; mode: string; is_default: number; state: string; resting_day: string | null; host_id: string }
 const finite = z.number().finite()
 const roomStateSchema = z.object({
-  roomId: z.string().min(1), isDefaultBoard: z.boolean(), mode: z.enum(['coop', 'team']),
+  roomId: z.string().min(1), mode: z.enum(['coop', 'team']),
   grid: z.object({ width: z.number().int().positive(), height: z.number().int().positive(), cells: z.instanceof(Uint8Array), placedBy: z.array(z.string()) }),
   version: finite.int().nonnegative(), lastJudgedVersion: finite.int().nonnegative(),
   round: z.object({
     id: z.string().min(1), word: z.string(), state: z.enum(['lobby', 'playing', 'intermission', 'paused']),
     startedAt: finite, endsAt: finite.nullable(), askAvailableAt: finite, endedAt: finite.optional(),
-    result: z.object({ outcome: z.enum(['won', 'timeout', 'teamWin']), score: finite.optional(), contributorCount: finite.int().nonnegative().optional(), winningTeam: z.enum(['red', 'blue', 'draw']).optional() }).optional(),
+    result: z.object({ outcome: z.enum(['won', 'timeout', 'teamWin']), contributorCount: finite.int().nonnegative().optional(), winningTeam: z.enum(['red', 'blue', 'draw']).optional() }).optional(),
   }),
-  wordEntry: z.object({ word: z.string().min(1), synonyms: z.array(z.string()), tier: z.enum(['easy', 'medium']) }),
+  wordEntry: z.object({ word: z.string().min(1), synonyms: z.array(z.string()), tier: z.enum(['easy', 'medium', 'hard']) }),
   recentWords: z.array(z.string()), lastGuesses: z.array(z.string()), roundCounter: finite.int().nonnegative(),
-  lastPlacedAt: z.record(z.string(), finite), soloBuckets: z.record(z.string(), z.object({ tokens: finite.nonnegative(), updatedAt: finite })), judgeCalls: z.array(finite), lastJudgedAt: finite,
+  paintBuckets: z.record(z.string(), z.object({ tokens: finite.nonnegative(), updatedAt: finite })), judgeCalls: z.array(finite), lastJudgedAt: finite,
   judgeInFlight: z.boolean(), emptySince: finite.nullable(), intermissionEndsAt: finite.nullable(),
   pausedAt: finite.nullable(), pausedFrom: z.enum(['playing', 'intermission']).nullable(),
   status: z.enum(['lobby', 'playing', 'intermission', 'paused', 'closed']),
@@ -44,6 +45,13 @@ const roomStateSchema = z.object({
 function signedInId(userId: string | null | undefined): string | null {
   return userId && !isAnonymousUserId(userId) ? userId : null
 }
+
+/**
+ * Paint arrives in one message per animation frame. A durable write per message would be a
+ * write per frame per painter once cooldowns are gone, so paint bursts are coalesced into at
+ * most one write per window; every structural change (round, pause, close, judge) writes at once.
+ */
+const PAINT_PERSIST_COALESCE_MS = 250
 
 function logAlarmError(): void {
   console.warn('[PixelRoom] Alarm scheduling failed')
@@ -83,6 +91,9 @@ export class PixelRoom extends BaseRoom<Env> {
   private recentJudgements: { roundId: string; list: RecentJudgement[] } = { roundId: '', list: [] }
   /** When each player first connected (memory only), so the roster keeps a stable join order across reconnects of other players. */
   private joinedAt = new Map<string, number>()
+  /** A paint burst waiting to be written, and its coalescing timer (memory only). */
+  private paintPersistDirty = false
+  private paintPersistTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor(state: DurableObjectState, env: Env) {
     super(state, env)
@@ -91,7 +102,7 @@ export class PixelRoom extends BaseRoom<Env> {
     if (!columns.some(column => column.name === 'host_id')) this.sql.exec("ALTER TABLE pixel_state ADD COLUMN host_id TEXT NOT NULL DEFAULT ''")
     const saved = this.sql.exec<SavedRoom>('SELECT room_id, mode, is_default, state, resting_day, host_id FROM pixel_state WHERE id = 1').toArray()[0]
     if (saved) {
-      this.game = restorePixelState(saved.state, { roomId: saved.room_id, mode: saved.mode === 'team' ? 'team' : 'coop', isDefaultBoard: saved.is_default === 1 }, Date.now(), Math.random)
+      this.game = restorePixelState(saved.state, { roomId: saved.room_id, mode: saved.mode === 'team' ? 'team' : 'coop' }, Date.now(), Math.random)
       this.restingDay = saved.resting_day
       this.hostUserId = saved.host_id
       this.persist()
@@ -104,15 +115,14 @@ export class PixelRoom extends BaseRoom<Env> {
     if ((request.headers.get('Upgrade') === 'websocket' || closing) && !this.game) {
       const roomId = request.headers.get('X-Room-Id')
       const mode = request.headers.get('X-Room-Mode')
-      const isDefault = request.headers.get('X-Room-Default')
       const hostId = request.headers.get('X-Room-Host')
-      if (!roomId || hostId === null || (mode !== 'coop' && mode !== 'team') || (isDefault !== 'true' && isDefault !== 'false')) return new Response('Missing room configuration', { status: 400 })
-      this.hostUserId = isDefault === 'true' ? '' : hostId
-      this.game = newRoomState({ roomId, mode: mode as Mode, isDefaultBoard: isDefault === 'true', startsInLobby: true }, Date.now(), Math.random)
+      if (!roomId || hostId === null || (mode !== 'coop' && mode !== 'team')) return new Response('Missing room configuration', { status: 400 })
+      this.hostUserId = hostId
+      this.game = newRoomState({ roomId, mode: mode as Mode, startsInLobby: true }, Date.now(), Math.random)
       this.persist()
     }
     if (closing) {
-      if (!this.game || this.game.isDefaultBoard || !this.hostUserId || request.headers.get('X-Room-Host') !== this.hostUserId || request.headers.get('X-Room-Id') !== this.game.roomId) return new Response('Forbidden', { status: 403 })
+      if (!this.game || !this.hostUserId || request.headers.get('X-Room-Host') !== this.hostUserId || request.headers.get('X-Room-Id') !== this.game.roomId) return new Response('Forbidden', { status: 403 })
       this.game = { ...this.game, status: 'closed', intermissionEndsAt: null, judgeInFlight: false }
       this.persist()
       this.broadcastGame({ t: 'closed' })
@@ -143,7 +153,10 @@ export class PixelRoom extends BaseRoom<Env> {
   protected override async onConnect(ws: WebSocket, user: UserAttachment): Promise<UserAttachment | void> {
     const spectate = Boolean(user.spectate) || this.connectingSpectator
     this.connectingSpectator = false
-    const attachment: UserAttachment = spectate ? { ...user, spectate: true } : user
+    // The roster shows the player's chosen username; the sign-in name is only a fallback.
+    const username = user.userId && !isAnonymousUserId(user.userId) ? await getUsername(this.env, user.userId) : null
+    const named: UserAttachment = username ? { ...user, userName: username } : user
+    const attachment: UserAttachment = spectate ? { ...named, spectate: true } : named
     try {
       if (this.game?.status === 'closed') {
         this.sendGame(ws, { t: 'closed' })
@@ -151,6 +164,7 @@ export class PixelRoom extends BaseRoom<Env> {
         return attachment
       }
       ws.serializeAttachment(attachment)
+      this.flushPaint()
       const players = this.playerCount()
       const next = advance(this.game!, Date.now(), players, Math.random)
       await this.transition(spectate ? next : this.withRoomStatus(next, players), undefined, ws)
@@ -204,6 +218,8 @@ export class PixelRoom extends BaseRoom<Env> {
   protected override async onAlarm(): Promise<void> {
     try {
       if (!this.game || this.game.status === 'closed') return
+      // A pending paint burst is written before the alarm reads state back from storage.
+      this.flushPaint()
       await this.transition(advance(this.game, Date.now(), this.playerCount(), Math.random))
       await this.judge('tick')
     } finally {
@@ -216,16 +232,14 @@ export class PixelRoom extends BaseRoom<Env> {
     const room = await tools.get<RoomData>('rooms', result.roomId)
     if (!room.success) throw new Error('Room lookup failed')
     const { hostId, memberIds, visibility } = room.data.record.data
-    const round = await tools.create('rounds', { ...result, score: result.score ?? 0, winningTeam: result.winningTeam ?? null, snapshotFileIds: [], hostId, memberIds, visibility }, `${result.roomId}:${result.roundId}`)
+    const round = await tools.create('rounds', { ...result, winningTeam: result.winningTeam ?? null, snapshotFileIds: [], hostId, memberIds, visibility }, `${result.roomId}:${result.roundId}`)
     if (!round.success) throw new Error('Round write failed')
-    if (result.outcome !== 'won') return
-    for (const userId of new Set(result.contributorIds)) {
-      if (!signedInId(userId)) continue
-      const existing = await tools.get<{ totalPoints: number; roundsWon: number }>('scores', userId)
-      if (!existing.success && existing.error !== 'Record not found') throw new Error('Score lookup failed')
-      const previous = existing.success ? existing.data.record.data : { totalPoints: 0, roundsWon: 0 }
-      const score = await tools.create('scores', { userId, totalPoints: previous.totalPoints + (result.score ?? 0), roundsWon: previous.roundsWon + 1 }, userId)
-      if (!score.success) throw new Error('Score write failed')
+    // Player stats (rounds played, words guessed, rounds hosted). Idempotent per room+round, and a
+    // stats hiccup must never break the round itself.
+    try {
+      await recordPartyRound(this.env, { roomId: result.roomId, roundId: result.roundId, mode: result.mode, contributorIds: result.contributorIds, outcome: result.outcome, hostId })
+    } catch (error) {
+      console.error('party stats write failed', error)
     }
   }
 
@@ -291,12 +305,11 @@ export class PixelRoom extends BaseRoom<Env> {
   private snapshot(ws: WebSocket): void {
     const state = this.game!
     const userId = this.socketUserId(ws)
-    const placedAt = userId === null ? undefined : state.lastPlacedAt[userId]
     const players = this.playerCount()
     this.sendGame(ws, {
       t: 'snapshot', mode: state.mode, width: state.grid.width, height: state.grid.height,
       cells: encodeCells(state.grid.cells), round: state.round, players, roster: this.playerRoster(), watching: this.watcherCount(),
-      you: { userId, cooldownUntil: placedAt === undefined ? 0 : placedAt + cooldownMs(players) },
+      you: { userId },
       aiResting: this.restingDay === utcDay(Date.now()),
       judgements: this.recentJudgements.roundId === state.round.id ? this.recentJudgements.list : [],
     })
@@ -308,8 +321,38 @@ export class PixelRoom extends BaseRoom<Env> {
   }
 
   private persist(): void {
+    if (this.paintPersistTimer !== null) {
+      clearTimeout(this.paintPersistTimer)
+      this.paintPersistTimer = null
+    }
+    if (!this.game) {
+      this.paintPersistDirty = false
+      return
+    }
+    // `is_default` is retired (party has no public board) but stays in the table so existing rooms keep restoring.
+    this.sql.exec('INSERT OR REPLACE INTO pixel_state (id, room_id, mode, is_default, state, resting_day, host_id) VALUES (1, ?, ?, 0, ?, ?, ?)', this.game.roomId, this.game.mode, serializeRoomState(this.game), this.restingDay, this.hostUserId)
+    this.paintPersistDirty = false
+  }
+
+  /** Coalesced write for paint: many painters' drag frames share one durable write per window. */
+  private persistPaint(): void {
     if (!this.game) return
-    this.sql.exec('INSERT OR REPLACE INTO pixel_state (id, room_id, mode, is_default, state, resting_day, host_id) VALUES (1, ?, ?, ?, ?, ?, ?)', this.game.roomId, this.game.mode, Number(this.game.isDefaultBoard), serializeRoomState(this.game), this.restingDay, this.hostUserId)
+    this.paintPersistDirty = true
+    if (this.paintPersistTimer !== null) return
+    this.paintPersistTimer = setTimeout(() => {
+      this.paintPersistTimer = null
+      if (!this.paintPersistDirty) return
+      try {
+        this.persist()
+      } catch {
+        console.warn('[PixelRoom] Coalesced paint write failed; the next transition rewrites it')
+      }
+    }, PAINT_PERSIST_COALESCE_MS)
+  }
+
+  /** Writes any pending paint before work that reads durability back (alarm, wake, close). */
+  private flushPaint(): void {
+    if (this.paintPersistDirty || this.paintPersistTimer !== null) this.persist()
   }
 
   private async armAlarm(): Promise<void> {
@@ -323,7 +366,12 @@ export class PixelRoom extends BaseRoom<Env> {
     const previousRound = this.game?.round
     if (this.game && (this.game.status !== transition.state.status || previousRound?.id !== transition.state.round.id)) this.withRoomStatus(transition, this.playerCount())
     this.game = transition.state
-    if (stateChanged || transition.events.some(event => event.type !== 'reject' && event.type !== 'noop')) this.persist()
+    const paintOnly = transition.events.some(event => event.type === 'pixel') &&
+      transition.events.every(event => event.type === 'pixel' || event.type === 'noop' || event.type === 'reject')
+    if (stateChanged || transition.events.some(event => event.type !== 'reject' && event.type !== 'noop')) {
+      if (paintOnly) this.persistPaint()
+      else this.persist()
+    }
     if (snapshotFirst) this.snapshot(snapshotFirst)
     for (const event of transition.events) {
       switch (event.type) {

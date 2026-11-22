@@ -162,7 +162,6 @@ export function MagicEasel({
 
   const previewTitle = useMemo(() => {
     if (!selectedCode) return null
-    if (selectedCode === 'play') return 'Public board'
     return fallbackRoom?.name ?? `Room ${selectedCode}`
   }, [fallbackRoom?.name, selectedCode])
 
@@ -254,7 +253,7 @@ export function MagicEasel({
               <div className="studio-magic-easel__hud">
                 {/* With a room open the code is already in the room's ticket stub and invite plank: this chip would only peek out at the board's corner (it keeps its place so the board does not move). */}
                 <span className="studio-magic-easel__code" style={roomView ? { visibility: 'hidden' } : undefined} aria-hidden={roomView ? true : undefined}>
-                  {selectedCode === 'play' ? 'OPEN' : selectedCode}
+                  {selectedCode}
                 </span>
                 <span data-testid="magic-easel-painters" className="studio-magic-easel__stat">
                   <Users className="studio-magic-easel__stat-icon" aria-hidden />
@@ -284,10 +283,10 @@ export function MagicEasel({
               <div className="studio-magic-easel__shimmer" aria-hidden="true" />
               <Sparkles className="studio-magic-easel__idle-icon" aria-hidden="true" />
               <p data-testid="studio-howto" className="studio-magic-easel__howto">
-                One secret word, everyone paints, Haiku guesses. Fewer pixels, faster guess, higher score.
+                One secret word, everyone paints, Haiku guesses. Draw it — spelled letters do not count.
               </p>
               <p className="studio-magic-easel__idle-text">
-                Select a ticket or drop in a code
+                Pick an open game, or drop in a code
               </p>
             </div>
           )}

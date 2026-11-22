@@ -17,7 +17,6 @@ export const roundsSchema: CollectionSchema = {
     { name: 'winningTeam', storage: 'text', interpretation: { kind: 'select', options: ['red', 'blue', 'draw'] } },
     { name: 'pixelsUsed', storage: 'number', interpretation: 'plain' },
     { name: 'durationMs', storage: 'number', interpretation: 'plain' },
-    { name: 'score', storage: 'number', interpretation: 'plain' },
     { name: 'contributorIds', storage: 'text', interpretation: { kind: 'json' } },
     { name: 'finalGuesses', storage: 'text', interpretation: { kind: 'json' } },
     { name: 'snapshotFileIds', storage: 'text', interpretation: { kind: 'json' } },

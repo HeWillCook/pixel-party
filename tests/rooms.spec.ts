@@ -44,10 +44,8 @@ test('room actions require authentication', async ({ request }) => {
   }
 })
 
-test('signed-out play WebSocket gets a snapshot', async ({ page }) => {
-  await page.goto('/')
-  const message = await gameSnapshot(page, 'play')
-  expect(message).toMatchObject({ t: 'snapshot', you: { userId: null } })
+test('the old always-on public board is gone', async ({ request }) => {
+  expect((await request.get('/api/pixel/play/ws')).status()).toBe(404)
 })
 
 test.describe('authenticated room API', () => {

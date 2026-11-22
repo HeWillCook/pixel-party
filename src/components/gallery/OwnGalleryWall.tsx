@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useAuthProfileReady } from 'deepspace'
 import { GalleryWall } from './GalleryWall'
 import { WallEmpty } from './WallEmpty'
 import { useGalleryItems } from './useGalleryItems'
@@ -11,6 +12,7 @@ import { useWallPage } from './useWallPager'
  */
 export function OwnGalleryWall({ userId, now = false }: { userId: string; now?: boolean }) {
   const [ready, setReady] = useState(now)
+  const { user } = useAuthProfileReady({ requireUser: false })
   useEffect(() => {
     if (now) { setReady(true); return }
     const idle = (window as unknown as { requestIdleCallback?: (cb: () => void, options?: { timeout: number }) => number }).requestIdleCallback
@@ -18,8 +20,9 @@ export function OwnGalleryWall({ userId, now = false }: { userId: string; now?: 
     const timer = window.setTimeout(() => setReady(true), 600)
     return () => window.clearTimeout(timer)
   }, [now])
-  const { items, status } = useGalleryItems(userId, ready)
+  const { items, status, name } = useGalleryItems(userId, ready)
   // The page the gallery page was last on, so a pan out of it lands on the very same paintings.
   const page = useWallPage(userId, 1 << 20)
-  return <GalleryWall inert items={items} page={page} loading={status === 'loading'} failed={status === 'error'} empty={<WallEmpty />} />
+  const isOwner = Boolean(user?.id && user.id === userId)
+  return <GalleryWall inert items={items} page={page} loading={status === 'loading'} failed={status === 'error'} empty={<WallEmpty isOwner={isOwner} ownerName={name} />} />
 }

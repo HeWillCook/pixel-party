@@ -73,7 +73,7 @@ interface LeaderboardEntry {
   score: number
 }
 
-/** The Scores page's exact ordering: best row per player, then score, then fastest best attempt. */
+/** The Scores page's exact ordering: best row per player, then score, then the earlier attempt start. */
 async function rankDay(executor: UserToolExecutor, day: string, count: number) {
   const [scores, drawings] = await Promise.all([
     query(executor, 'dailyScores', { where: { day }, limit: 1000 }),
@@ -88,7 +88,7 @@ async function rankDay(executor: UserToolExecutor, day: string, count: number) {
     if (userId && typeof data.guess === 'string') guessByUser.set(userId, data.guess)
   }
 
-  const bestByUser = new Map<string, { userId: string; displayName: string; score: number; bestElapsedMs: number | null; guess: string }>()
+  const bestByUser = new Map<string, { userId: string; displayName: string; score: number; startedAt: number | null; guess: string }>()
   for (const { data } of scores) {
     const userId = text(data, 'userId')
     if (!userId || typeof data.score !== 'number') continue
@@ -99,7 +99,7 @@ async function rankDay(executor: UserToolExecutor, day: string, count: number) {
       userId,
       displayName: text(data, 'displayName').trim() || 'Player',
       score: data.score,
-      bestElapsedMs: typeof data.bestElapsedMs === 'number' ? data.bestElapsedMs : null,
+      startedAt: typeof data.startedAt === 'number' ? data.startedAt : null,
       guess: typeof data.guess === 'string' ? data.guess : '',
     })
   }
@@ -127,8 +127,9 @@ export function buildTools(executor: UserToolExecutor, context: AgentToolContext
       return {
         day,
         attemptMinutes: DAILY.attemptMs / 60_000,
-        autoGradeMinutes: DAILY.autoWindowsMs.map(offset => offset / 60_000),
-        manualGrades: DAILY.maxAsks,
+        halfwayMinutes: DAILY.autoWindowsMs[0] / 60_000,
+        finalMinutes: DAILY.attemptMs / 60_000,
+        scoring: 'Match the prompt (0-500) plus an art-quality bonus (0-500) that grows with the match; no speed component. The score is the higher of the halfway and final judgements.',
         yesterday: {
           day: yesterday,
           prompt: promptForDay(yesterday).prompt,
@@ -139,7 +140,7 @@ export function buildTools(executor: UserToolExecutor, context: AgentToolContext
   })
 
   tools.today_leaderboard = tool({
-    description: 'Top Daily scores for a UTC day (default today), ranked exactly like the Scores page: best score per player, tie broken by the faster best attempt.',
+    description: 'Top Daily scores for a UTC day (default today), ranked exactly like the Scores page: best score per player, an exact tie broken by whoever started their attempt earlier.',
     inputSchema: z.object({
       day: daySchema.optional().describe('UTC day to read, YYYY-MM-DD. Defaults to today.'),
       limit: z.number().int().optional().describe('Number of entries to return, 1-50. Defaults to 10.'),
@@ -201,9 +202,7 @@ export function buildTools(executor: UserToolExecutor, context: AgentToolContext
         .filter(({ data }) =>
           text(data, 'visibility') === 'public'
           && text(data, 'status') !== 'closed'
-          && data.isDefaultBoard !== true
-          && data.isDefaultBoard !== 1
-          && text(data, 'joinCode') !== 'play')
+          && text(data, 'hostId') !== '')
         .sort((left, right) => numberValue(right.data, 'lastActiveAt') - numberValue(left.data, 'lastActiveAt'))
         .map(({ data }) => ({
           code: text(data, 'joinCode'),

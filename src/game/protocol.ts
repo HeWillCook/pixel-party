@@ -19,24 +19,28 @@ export interface RoundView {
   endsAt: number | null
   askAvailableAt: number
   endedAt?: number
-  result?: { outcome: 'won' | 'timeout' | 'teamWin'; score?: number; contributorCount?: number; winningTeam?: 'red' | 'blue' | 'draw' }
+  /** Party rounds have no score: a win records who painted, and team mode records the winner. */
+  result?: { outcome: 'won' | 'timeout' | 'teamWin'; contributorCount?: number; winningTeam?: 'red' | 'blue' | 'draw' }
 }
 
 export interface ConnectedPlayer { userId: string; name: string }
 
-/** One of Haiku's recent judgements, replayed to anyone who joins or reloads mid-round (`at` is epoch ms). */
-export interface RecentJudgement { zone: ZoneId; guesses: string[]; confidence: number; matched: boolean; at: number }
+/**
+ * One of Haiku's recent judgements, replayed to anyone who joins or reloads mid-round (`at` is epoch ms).
+ * `text` marks a drawing that spelled letters, words or numbers: it never counts as a match.
+ */
+export interface RecentJudgement { zone: ZoneId; guesses: string[]; confidence: number; matched: boolean; text?: boolean; at: number }
 /** How many judgements the room remembers for late joiners. */
 export const RECENT_JUDGEMENTS = 5
 
 export type ServerMsg =
   | { t: 'closed' }
-  | { t: 'snapshot'; mode: Mode; width: number; height: number; cells: string; round: RoundView; you: { userId: string | null; cooldownUntil: number; team?: 'red' | 'blue' }; players: number; roster?: ConnectedPlayer[]; watching?: number; aiResting: boolean; judgements?: RecentJudgement[] }
+  | { t: 'snapshot'; mode: Mode; width: number; height: number; cells: string; round: RoundView; you: { userId: string | null; team?: 'red' | 'blue' }; players: number; roster?: ConnectedPlayer[]; watching?: number; aiResting: boolean; judgements?: RecentJudgement[] }
   | { t: 'pixel'; x: number; y: number; c: number; by: string }
   | { t: 'noop'; x: number; y: number; id?: number }
   | { t: 'reject'; reason: RejectReason | 'ask_too_soon' | 'not_host' | 'canvas_unchanged' | 'canvas_blank'; retryAt?: number; x?: number; y?: number; id?: number }
   | { t: 'round'; round: RoundView }
-  | { t: 'judgement'; zone: ZoneId; guesses: string[]; confidence: number; matched: boolean }
+  | { t: 'judgement'; zone: ZoneId; guesses: string[]; confidence: number; matched: boolean; text?: boolean }
   | { t: 'players'; count: number; roster?: ConnectedPlayer[]; watching?: number }
   | { t: 'ai_resting' }
 
@@ -57,7 +61,6 @@ const REJECT_REASONS = new Set<string>([
   'round_inactive',
   'out_of_bounds',
   'bad_color',
-  'cooldown',
   'rate_limited',
   'ask_too_soon',
   'not_host',

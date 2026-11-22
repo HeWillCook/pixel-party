@@ -37,22 +37,23 @@ export type DailyAction =
       now?: number
     }
   | { type: 'finalize_start' }
+  | { type: 'finalize_aborted' }
   | { type: 'end_failed'; message: string }
   | { type: 'error'; message: string; kind?: GradeKind; now?: number }
   | { type: 'clear_error' }
 
 const AUTO_RETRY_BACKOFF_MS = 10_000
+/** A peek only fires near its moment; reopening the tab at 4:00 should not burn two calls at once. */
+const PEEK_GRACE_MS = 30_000
 
 export function initialDailyClientState(day = ''): DailyClientState {
   return {
     day,
     status: 'not_started',
     autoUsed: 0,
-    asksUsed: 0,
     finalUsed: false,
     best: 0,
     windows: [],
-    asksLeft: DAILY.maxAsks,
     nextAutoAt: null,
     serverNow: 0,
     loaded: false,
@@ -87,13 +88,6 @@ export function canPaintDaily(state: DailyClientState, now: number): boolean {
   return true
 }
 
-export function canAskDaily(state: DailyClientState, now: number): boolean {
-  if (!canPaintDaily(state, now)) return false
-  if (state.grading) return false
-  if (state.asksUsed >= DAILY.maxAsks) return false
-  return true
-}
-
 export function shouldFireAutoGrade(
   state: DailyClientState,
   now: number,
@@ -110,20 +104,36 @@ export function shouldFireAutoGrade(
   return true
 }
 
+/**
+ * The next silent peek due, if any: Haiku looks at the canvas twice (1:15 and 3:45) without scoring
+ * it. `fired` tracks the ones already requested this attempt.
+ */
+export function duePeekIndex(
+  now: number,
+  startedAt: number,
+  clockOffsetMs: number,
+  fired: readonly boolean[],
+): number | null {
+  const elapsed = now + clockOffsetMs - startedAt
+  for (let index = 0; index < DAILY.peekWindowsMs.length; index++) {
+    if (fired[index]) continue
+    const due = DAILY.peekWindowsMs[index]
+    if (elapsed >= due && elapsed <= due + PEEK_GRACE_MS) return index
+  }
+  return null
+}
+
 function rejectErrorMessage(reason: DailyRejectReason): string | null {
   switch (reason) {
     case 'unchanged':
     case 'too_soon':
+    case 'no_auto_left':
+    case 'final_used':
       return null
     case 'judge_resting':
       return "Haiku's napping — keep drawing"
     case 'busy':
-      return 'Grading already in progress'
-    case 'no_asks_left':
-      return 'No manual grades left for this attempt'
-    case 'no_auto_left':
-    case 'final_used':
-      return null
+      return 'Haiku is already looking'
     case 'time_up':
     case 'ended':
       return 'Attempt has ended'
@@ -150,15 +160,12 @@ function mergeServerState(prev: DailyClientState, next: DailyStateView): DailyCl
     startedAt: next.startedAt,
     endsAt: next.endsAt,
     autoUsed: next.autoUsed,
-    asksUsed: next.asksUsed,
     finalUsed: next.finalUsed,
     best: next.best,
     windows: next.windows,
-    asksLeft: next.asksLeft,
     serverNow: next.serverNow,
     nextAutoAt: next.nextAutoAt,
     lastCells: next.lastCells,
-    bestCells: next.bestCells,
     finalizing: isNowEnded || isNewStart ? false : prev.finalizing,
     endFailed: isNowEnded || isNewStart ? false : prev.endFailed,
     ...(isNewStart
@@ -186,7 +193,7 @@ export function dailyReducer(state: DailyClientState, action: DailyAction): Dail
     }
     case 'grade_skipped': {
       const merged = mergeServerState(state, action.state)
-      return { ...merged, grading: false, lastError: null, autoRetryAfter: null, notice: action.status === 'skipped_unchanged' ? 'Auto-grade skipped: no changes since your last grade' : 'Auto-grade skipped: nothing drawn yet' }
+      return { ...merged, grading: false, lastError: null, autoRetryAfter: null, notice: action.status === 'skipped_unchanged' ? 'Skipped: no changes since the last judgement' : 'Skipped: nothing drawn yet' }
     }
     case 'clear_notice':
       return { ...state, notice: null }
@@ -195,6 +202,13 @@ export function dailyReducer(state: DailyClientState, action: DailyAction): Dail
         ...state,
         finalizing: true,
         endFailed: false,
+      }
+    case 'finalize_aborted':
+      // An early submit whose final never landed: the player keeps their canvas and can try again.
+      return {
+        ...state,
+        grading: false,
+        finalizing: false,
       }
     case 'end_failed':
       return {

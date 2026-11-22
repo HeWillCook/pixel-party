@@ -40,6 +40,11 @@ describe('summarizePorch', () => {
     expect(summary.names).toEqual(['A visitor', 'Dee', 'A neighbour'])
   })
 
+  it('prefers the published username over the sign-in roster name', () => {
+    const summary = summarizePorch([peer('u1', 'Will Cook', { name: 'PixelWill' })], false)
+    expect(summary.names).toEqual(['PixelWill'])
+  })
+
   it('shortens a very long name', () => {
     expect(summarizePorch([peer('u1', 'A'.repeat(60))], false).names[0]).toHaveLength(22)
   })

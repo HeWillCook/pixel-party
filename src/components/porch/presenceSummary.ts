@@ -22,8 +22,11 @@ export interface PorchSummary {
 
 const nameOf = (peer: PorchPeer): string => {
   if (isAnonymousUserId(peer.userId)) return 'A visitor'
+  // The published name is the player's chosen username (or their sign-in name
+  // when the profile is unknown); the SDK roster's `userName` is the fallback.
   const published = typeof peer.state?.name === 'string' ? peer.state.name : ''
-  const raw = (peer.userName && peer.userName !== 'Anonymous' ? peer.userName : published).trim()
+  const roster = peer.userName && peer.userName !== 'Anonymous' ? peer.userName : ''
+  const raw = (published || roster).trim()
   return raw ? (raw.length > 22 ? `${raw.slice(0, 21).trimEnd()}…` : raw) : 'A neighbour'
 }
 

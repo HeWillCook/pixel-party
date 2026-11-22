@@ -5,10 +5,11 @@ import { reserveBudget } from './budget'
 import { createDailyJudge, renderCellsPng } from './daily-judge'
 import { registerDailyDebugRoutes } from './daily-debug-routes'
 import { doAttemptStore } from './daily-room'
-import { dailyState, endDaily, gradeDaily, InvalidAttemptDay, startDaily, todaysDrawings } from './daily-service'
+import { dailyState, endDaily, gradeDaily, InvalidAttemptDay, peekDaily, saveDailyCanvas, startDaily, todaysDrawings } from './daily-service'
 import type { DailyDeps, DailyUser } from './daily-service'
 import { resolveAuth } from './http-routes'
 import { createServerTools } from './server-tools'
+import { getUsername } from './usernames'
 
 function dependencies(env: Env): DailyDeps {
   return {
@@ -34,7 +35,9 @@ export function registerDailyRoutes(app: Hono<AppContext>): void {
   daily.use('*', async (c, next) => {
     const auth = await resolveAuth(c.req.raw, c.env)
     if (!auth) return c.json({ error: 'sign_in_required' }, 401)
-    c.set('dailyUser', { userId: auth.userId, name: auth.claims.name ?? 'Player', image: auth.claims.image ?? '' })
+    // Scores and the gallery show the player's chosen username; the sign-in name is only a fallback.
+    const name = (await getUsername(c.env, auth.userId)) ?? auth.claims.name ?? 'Player'
+    c.set('dailyUser', { userId: auth.userId, name, image: auth.claims.image ?? '' })
     await next()
   })
 
@@ -45,10 +48,20 @@ export function registerDailyRoutes(app: Hono<AppContext>): void {
   if (__DEBUG_TOOLS__) registerDailyDebugRoutes(daily, dependencies)
   daily.post('/grade', async c => {
     const body: unknown = await c.req.json().catch(() => null)
-    if (!objectBody(body) || !dayBody(body.day) || (body.kind !== 'auto' && body.kind !== 'ask' && body.kind !== 'final') || typeof body.cells !== 'string' || (body.kind === 'auto' && (!Number.isInteger(body.window) || (body.window as number) < 0 || (body.window as number) >= DAILY.autoWindowsMs.length))) {
+    if (!objectBody(body) || !dayBody(body.day) || (body.kind !== 'auto' && body.kind !== 'final') || typeof body.cells !== 'string' || (body.kind === 'auto' && (!Number.isInteger(body.window) || (body.window as number) < 0 || (body.window as number) >= DAILY.autoWindowsMs.length))) {
       return c.json({ error: 'bad_request' }, 400)
     }
     return c.json(await gradeDaily(dependencies(c.env), c.get('dailyUser'), body.kind, body.cells, body.day, body.window as number | undefined))
+  })
+  daily.post('/peek', async c => {
+    const body: unknown = await c.req.json().catch(() => null)
+    if (!objectBody(body) || !dayBody(body.day) || typeof body.cells !== 'string') return c.json({ error: 'bad_request' }, 400)
+    return c.json(await peekDaily(dependencies(c.env), c.get('dailyUser'), body.cells, body.day))
+  })
+  daily.post('/canvas', async c => {
+    const body: unknown = await c.req.json().catch(() => null)
+    if (!objectBody(body) || !dayBody(body.day) || typeof body.cells !== 'string') return c.json({ error: 'bad_request' }, 400)
+    return c.json(await saveDailyCanvas(dependencies(c.env), c.get('dailyUser'), body.cells, body.day))
   })
   daily.post('/end', async c => {
     const body: unknown = await c.req.json().catch(() => null)
@@ -62,7 +75,10 @@ export function registerDailyRoutes(app: Hono<AppContext>): void {
   })
   daily.get('/me', async c => c.json(await dailyState(dependencies(c.env), c.get('dailyUser').userId)))
   daily.get('/today/drawings', async c => {
-    const result = await todaysDrawings(dependencies(c.env), c.get('dailyUser').userId)
+    // `userId` narrows today's gallery to one player (a friend's wall); anything else in it is a bad request, not a guess.
+    const filterUserId = c.req.query('userId')
+    if (filterUserId !== undefined && (filterUserId.length === 0 || filterUserId.length > 128)) return c.json({ error: 'bad_request' }, 400)
+    const result = await todaysDrawings(dependencies(c.env), c.get('dailyUser').userId, filterUserId)
     return c.json(result, result.ok ? 200 : 403)
   })
   app.route('/api/daily', daily)

@@ -56,20 +56,20 @@ describe('sound events', () => {
   })
   it('returns only win, not guess, when a matched judgement ends the round', () => {
     for (const outcome of ['won', 'teamWin'] as const) {
-      expect(soundEventsFor(loaded, { ...loaded, guessLog: [{ ...entry, matched: true }], round: { ...round, state: 'intermission', result: { outcome, score: 1 } } })).toEqual(['win'])
+      expect(soundEventsFor(loaded, { ...loaded, guessLog: [{ ...entry, matched: true }], round: { ...round, state: 'intermission', result: { outcome } } })).toEqual(['win'])
     }
   })
   it('returns timeout when playing ends with outcome timeout', () => {
-    expect(soundEventsFor(loaded, { ...loaded, round: { ...round, state: 'intermission', result: { outcome: 'timeout', score: 0 } } })).toEqual(['timeout'])
-    expect(soundEventsFor(loaded, { ...loaded, guessLog: [entry], round: { ...round, state: 'intermission', result: { outcome: 'timeout', score: 0 } } })).toEqual(['guess', 'timeout'])
+    expect(soundEventsFor(loaded, { ...loaded, round: { ...round, state: 'intermission', result: { outcome: 'timeout' } } })).toEqual(['timeout'])
+    expect(soundEventsFor(loaded, { ...loaded, guessLog: [entry], round: { ...round, state: 'intermission', result: { outcome: 'timeout' } } })).toEqual(['guess', 'timeout'])
   })
   it('returns nothing when joining a room already in intermission', () => {
-    expect(soundEventsFor(initialClientState(), { ...loaded, round: { ...round, state: 'intermission', result: { outcome: 'won', score: 1 } } })).toEqual([])
+    expect(soundEventsFor(initialClientState(), { ...loaded, round: { ...round, state: 'intermission', result: { outcome: 'won' } } })).toEqual([])
   })
   it("returns nothing when a reconnect snapshot lands in the same round's intermission", () => {
     const prev = { ...loaded, snapshotSeq: 1 }
     for (const outcome of ['won', 'timeout'] as const) {
-      const next = { ...loaded, snapshotSeq: 2, round: { ...round, state: 'intermission' as const, result: { outcome, score: 1 } } }
+      const next = { ...loaded, snapshotSeq: 2, round: { ...round, state: 'intermission' as const, result: { outcome } } }
       expect(soundEventsFor(prev, next)).toEqual([])
     }
   })

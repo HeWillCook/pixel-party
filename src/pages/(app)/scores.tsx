@@ -24,7 +24,7 @@ export default function ScoresPage() {
     where: state.day && userId ? { day: state.day, userId } : { day: '__none__' },
   })
   const bestDrawingCells = useMemo(() => {
-    const raw = todayDrawings[0]?.data.cells ?? state.bestCells ?? state.lastCells
+    const raw = todayDrawings[0]?.data.cells ?? state.lastCells
     if (!raw) return undefined
     try {
       const parsed = decodeCells(raw, 1024)
@@ -32,7 +32,7 @@ export default function ScoresPage() {
     } catch {
       return undefined
     }
-  }, [todayDrawings, state.bestCells, state.lastCells])
+  }, [todayDrawings, state.lastCells])
   const easelState: 'signin' | 'finished' | 'cover' = !isSignedIn
     ? 'signin'
     : state.status === 'ended'
